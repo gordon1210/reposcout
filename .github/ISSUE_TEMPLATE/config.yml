@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/gordon1210/reposcout/security/advisories
+    about: Report vulnerabilities privately without publishing sensitive details.
+  - name: Documentation
+    url: https://github.com/gordon1210/reposcout/blob/main/docs/README.md
+    about: Check the installation, CLI, configuration, metrics, and development guides.

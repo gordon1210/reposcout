@@ -6,6 +6,11 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added structured bug and feature issue forms plus a concise pull-request template for public
+  contributions.
+
 ## [0.1.1] - 2026-07-26
 
 ### Fixed

@@ -1,0 +1,74 @@
+name: Bug report
+description: Report reproducible incorrect behavior in RepoScout
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve RepoScout. For vulnerabilities, use the private security reporting link instead of this form.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for this problem.
+          required: true
+        - label: This report does not contain a security vulnerability or sensitive data.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: RepoScout version
+      description: Run `reposcout --version`.
+      placeholder: reposcout 0.1.1
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include your operating system and architecture.
+      placeholder: macOS 15 arm64 or Ubuntu 24.04 x86_64
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and configuration
+      description: Include the command and relevant RepoScout configuration. Remove sensitive paths or values.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Describe the smallest reliable way to reproduce the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the error or relevant output. Remove sensitive data.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add logs, screenshots, or a minimal repository link when useful.
