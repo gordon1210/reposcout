@@ -19,9 +19,8 @@ within their section.
 - Added a daemon `safe` profile and `--no-project-config` trust control, non-loopback refusal unless
   `--unsafe-no-auth` is explicit, loopback Host/Origin validation, CSRF-resistant rescans, a rescan
   cooldown, and a concurrent SSE-client cap.
-- Added pinned CodeQL analysis for Rust and JavaScript/TypeScript, scheduled RustSec dependency
-  audits, auditable dependency metadata, CycloneDX release SBOMs, and GitHub build-provenance
-  attestations for release artifacts.
+- Added scheduled RustSec dependency audits, auditable dependency metadata, CycloneDX release
+  SBOMs, and GitHub build-provenance attestations for release artifacts.
 
 ### Security
 
