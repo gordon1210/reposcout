@@ -71,6 +71,8 @@ pub fn run(
                 oversized_bytes: base.oversized_bytes + current.oversized_bytes,
                 files_omitted_by_limit: base.files_omitted_by_limit
                     + current.files_omitted_by_limit,
+                files_omitted_count_incomplete: base.files_omitted_count_incomplete
+                    || current.files_omitted_count_incomplete,
                 scan_truncated: base.scan_truncated || current.scan_truncated,
                 duration_limit_reached: base.duration_limit_reached
                     || current.duration_limit_reached,

@@ -608,12 +608,17 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
         );
     }
     if diagnostics.files_omitted_by_limit > 0 {
+        let count = if diagnostics.files_omitted_count_incomplete {
+            format!("at least {}", thousands(diagnostics.files_omitted_by_limit))
+        } else {
+            thousands(diagnostics.files_omitted_by_limit)
+        };
         kv(
             out,
-            "Files omitted",
+            "Known files omitted",
             &format!(
                 "{} (known size {})",
-                thousands(diagnostics.files_omitted_by_limit),
+                count,
                 human_bytes(diagnostics.bytes_omitted_by_limit)
             ),
         );
@@ -948,11 +953,15 @@ fn render_review(out: &mut String, report: &ScanReport, color: bool) {
         );
     }
     if review.diagnostics.files_omitted_by_limit > 0 {
-        kv(
-            out,
-            "Snapshot files omitted",
-            &thousands(review.diagnostics.files_omitted_by_limit),
-        );
+        let count = if review.diagnostics.files_omitted_count_incomplete {
+            format!(
+                "at least {} (traversal stopped before an exact count)",
+                thousands(review.diagnostics.files_omitted_by_limit)
+            )
+        } else {
+            thousands(review.diagnostics.files_omitted_by_limit)
+        };
+        kv(out, "Known snapshot files omitted", &count);
     }
     if review.diagnostics.duration_limit_reached {
         kv(out, "Review duration", "limit reached");
@@ -1189,5 +1198,21 @@ mod tests {
         assert!(out.contains("Seed pairs skipped"));
         assert!(out.contains("42"));
         assert!(out.contains("Match buffer limit"));
+    }
+
+    #[test]
+    fn incomplete_omission_counts_are_labeled_as_lower_bounds() {
+        let diagnostics = ScanDiagnostics {
+            files_omitted_by_limit: 1,
+            files_omitted_count_incomplete: true,
+            scan_truncated: true,
+            ..ScanDiagnostics::default()
+        };
+        let mut out = String::new();
+
+        render_scan_diagnostics(&mut out, &diagnostics, false);
+
+        assert!(out.contains("Known files omitted"));
+        assert!(out.contains("at least 1"));
     }
 }

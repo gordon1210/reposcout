@@ -37,6 +37,9 @@ within their section.
   `openssl`, and to store installer receipts with owner-only permissions.
 - Dependabot now reports grouped major dependency updates instead of ignoring them globally.
 - Updated `crossbeam-epoch` to 0.9.20 to resolve RUSTSEC-2026-0204.
+- Closed follow-up review gaps by rejecting daemon requests without a valid Host or URI authority,
+  exposing when an omitted-file diagnostic is only a known lower bound, and limiting actual
+  decompressed archive bytes in addition to declared Tar entry sizes.
 
 ## [0.1.1] - 2026-07-26
 

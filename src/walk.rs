@@ -67,8 +67,10 @@ pub struct Discovered {
     pub oversized_files: usize,
     /// Aggregate bytes in recognized files skipped as individually oversized.
     pub oversized_bytes: u64,
-    /// Files omitted after a file-count or aggregate-byte limit was reached.
+    /// Known files omitted after a file-count or aggregate-byte limit was reached.
     pub files_omitted_by_limit: usize,
+    /// Traversal stopped before the exact omitted-file count could be established.
+    pub files_omitted_count_incomplete: bool,
     /// Aggregate known bytes omitted by resource limits.
     pub bytes_omitted_by_limit: u64,
     /// Discovery ended before all eligible entries were accepted.
@@ -195,6 +197,7 @@ pub(crate) fn discover_with_exclusions_until(
     let mut oversized_files = 0usize;
     let mut oversized_bytes = 0u64;
     let mut files_omitted_by_limit = 0usize;
+    let mut files_omitted_count_incomplete = false;
     let mut bytes_omitted_by_limit = 0u64;
     let mut scan_truncated = false;
     let mut duration_limit_reached = false;
@@ -202,6 +205,7 @@ pub(crate) fn discover_with_exclusions_until(
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             duration_limit_reached = true;
             scan_truncated = true;
+            files_omitted_count_incomplete = true;
             break;
         }
         let entry = match result {
@@ -219,6 +223,7 @@ pub(crate) fn discover_with_exclusions_until(
             observed_files = observed_files.saturating_add(1);
             if observed_files > cfg.max_files {
                 files_omitted_by_limit = files_omitted_by_limit.saturating_add(1);
+                files_omitted_count_incomplete = true;
                 scan_truncated = true;
                 break;
             }
@@ -290,6 +295,7 @@ pub(crate) fn discover_with_exclusions_until(
         oversized_files,
         oversized_bytes,
         files_omitted_by_limit,
+        files_omitted_count_incomplete,
         bytes_omitted_by_limit,
         scan_truncated,
         duration_limit_reached,
@@ -372,6 +378,7 @@ pub fn discover_missing_file(target: &Path) -> Result<Discovered> {
         oversized_files: 0,
         oversized_bytes: 0,
         files_omitted_by_limit: 0,
+        files_omitted_count_incomplete: false,
         bytes_omitted_by_limit: 0,
         scan_truncated: false,
         duration_limit_reached: false,
@@ -464,6 +471,7 @@ mod tests {
         assert_eq!(discovered.files.len(), 1);
         assert_eq!(discovered.observed_files, 2);
         assert_eq!(discovered.files_omitted_by_limit, 1);
+        assert!(discovered.files_omitted_count_incomplete);
         assert!(discovered.scan_truncated);
     }
 
@@ -481,6 +489,7 @@ mod tests {
 
         assert_eq!(discovered.files.len(), 1);
         assert_eq!(discovered.files_omitted_by_limit, 1);
+        assert!(!discovered.files_omitted_count_incomplete);
         assert!(discovered.bytes_omitted_by_limit > 0);
         assert!(discovered.scan_truncated);
     }

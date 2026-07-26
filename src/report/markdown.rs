@@ -609,10 +609,17 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
         );
     }
     if diagnostics.files_omitted_by_limit > 0 {
+        let count = if diagnostics.files_omitted_count_incomplete {
+            format!(
+                "at least {} (traversal stopped before an exact count)",
+                thousands(diagnostics.files_omitted_by_limit)
+            )
+        } else {
+            thousands(diagnostics.files_omitted_by_limit)
+        };
         let _ = writeln!(
             out,
-            "- Files omitted by resource limits: **{}** (known size **{}**).",
-            thousands(diagnostics.files_omitted_by_limit),
+            "- Known files omitted by resource limits: **{count}** (known size **{}**).",
             human_bytes(diagnostics.bytes_omitted_by_limit)
         );
     }
@@ -923,10 +930,17 @@ fn render_review(out: &mut String, report: &ScanReport) {
         );
     }
     if review.diagnostics.files_omitted_by_limit > 0 {
+        let count = if review.diagnostics.files_omitted_count_incomplete {
+            format!(
+                "at least {} (traversal stopped before an exact count)",
+                thousands(review.diagnostics.files_omitted_by_limit)
+            )
+        } else {
+            thousands(review.diagnostics.files_omitted_by_limit)
+        };
         let _ = writeln!(
             out,
-            "Snapshot files omitted by resource limits: **{}**.",
-            thousands(review.diagnostics.files_omitted_by_limit)
+            "Known snapshot files omitted by resource limits: **{count}**."
         );
     }
     if review.diagnostics.duration_limit_reached {
@@ -1173,5 +1187,20 @@ mod tests {
         assert!(out.contains("Type-2 analysis is **partial**"));
         assert!(out.contains("42 candidate seed pairs"));
         assert!(out.contains("match buffer limit was reached"));
+    }
+
+    #[test]
+    fn incomplete_omission_counts_are_labeled_as_lower_bounds() {
+        let diagnostics = ScanDiagnostics {
+            files_omitted_by_limit: 1,
+            files_omitted_count_incomplete: true,
+            scan_truncated: true,
+            ..ScanDiagnostics::default()
+        };
+        let mut out = String::new();
+
+        render_scan_diagnostics(&mut out, &diagnostics);
+
+        assert!(out.contains("at least 1 (traversal stopped before an exact count)"));
     }
 }

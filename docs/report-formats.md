@@ -68,7 +68,7 @@ Scan reports carry `schema_version: "1.0"`. The top-level contract is organized 
 | `root`, `target`, `generated_at`, `encoding` | Report identity |
 | `analysis_profile` | Enabled analyzers, diff scope, health, duplication, finding, and resource policy |
 | `execution` | Profile, config provenance, timings, cache facts, and safety limits |
-| `diagnostics` | Discovery coverage and partial Type-2 state |
+| `diagnostics` | Discovery coverage, omitted-count completeness, and partial Type-2 state |
 | `summary` | Repository totals, language rollups, rankings, risks, tests, and assessment |
 | `files` | Per-file metrics and facts; omitted by compact modes |
 | `duplicates` | Exact/near groups, precise pairs, and coverage; omitted by compact modes |

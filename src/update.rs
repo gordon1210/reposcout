@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use std::fs;
 #[cfg(unix)]
 use std::io::Write;
-use std::io::{ErrorKind, Read};
+use std::io::{self, ErrorKind, Read};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
@@ -24,6 +24,7 @@ const MAX_BINARY_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_XZ_MEMORY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 256;
+const MAX_TAR_STREAM_BYTES: u64 = MAX_UNPACKED_BYTES + ((MAX_ARCHIVE_ENTRIES as u64 + 1) * 1024);
 
 pub fn run() -> Result<String> {
     let loaded = load_receipt()?;
@@ -378,14 +379,52 @@ fn verify_archive_digest(asset: &GithubAsset, archive: &[u8]) -> Result<()> {
     Ok(())
 }
 
+struct ReadLimit<R> {
+    inner: R,
+    remaining: u64,
+}
+
+impl<R> ReadLimit<R> {
+    fn new(inner: R, limit: u64) -> Self {
+        Self {
+            inner,
+            remaining: limit,
+        }
+    }
+}
+
+impl<R: Read> Read for ReadLimit<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        if self.remaining == 0 {
+            let mut probe = [0u8; 1];
+            return match self.inner.read(&mut probe)? {
+                0 => Ok(0),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "decompressed archive exceeds the extraction limit",
+                )),
+            };
+        }
+
+        let allowed = usize::try_from(self.remaining.min(buffer.len() as u64))
+            .expect("the read limit never exceeds the destination buffer");
+        let read = self.inner.read(&mut buffer[..allowed])?;
+        self.remaining = self.remaining.saturating_sub(read as u64);
+        Ok(read)
+    }
+}
+
 fn extract_release_binary(archive: &[u8], output: &mut fs::File) -> Result<()> {
     let stream = xz2::stream::Stream::new_stream_decoder(MAX_XZ_MEMORY_BYTES, 0)
         .context("could not initialize bounded XZ decompression")?;
     let decoder = xz2::read::XzDecoder::new_stream(archive, stream);
-    let mut tar = tar::Archive::new(decoder);
+    let mut tar = tar::Archive::new(ReadLimit::new(decoder, MAX_TAR_STREAM_BYTES));
     let mut found = false;
     let mut entries_seen = 0usize;
-    let mut unpacked_bytes = 0u64;
+    let mut declared_unpacked_bytes = 0u64;
 
     for entry in tar
         .entries()
@@ -405,8 +444,8 @@ fn extract_release_binary(archive: &[u8], output: &mut fs::File) -> Result<()> {
         {
             bail!("the RepoScout release archive contains an unsafe path");
         }
-        unpacked_bytes = unpacked_bytes.saturating_add(entry.size());
-        if unpacked_bytes > MAX_UNPACKED_BYTES {
+        declared_unpacked_bytes = declared_unpacked_bytes.saturating_add(entry.size());
+        if declared_unpacked_bytes > MAX_UNPACKED_BYTES {
             bail!("the RepoScout release archive exceeds the extraction limit");
         }
         if !entry.header().entry_type().is_file()
@@ -575,5 +614,16 @@ mod tests {
 
         let duplicate = archive(&[("first/reposcout", b"one"), ("second/reposcout", b"two")]);
         assert!(extract_release_binary(&duplicate, &mut tempfile::tempfile().unwrap()).is_err());
+    }
+
+    #[test]
+    fn decompressed_stream_limit_counts_actual_bytes_read() {
+        let mut reader = ReadLimit::new(std::io::Cursor::new(b"abcde"), 4);
+        let mut actual = Vec::new();
+
+        let error = reader.read_to_end(&mut actual).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(actual, b"abcd");
     }
 }
