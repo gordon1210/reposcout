@@ -55,7 +55,10 @@ pub fn capabilities() -> CapabilitiesReport {
             .into_iter()
             .map(str::to_string)
             .collect(),
-        daemon_profiles: ["lite", "full"].into_iter().map(str::to_string).collect(),
+        daemon_profiles: ["lite", "full", "safe"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
         first_class_languages: crate::lang::FIRST_CLASS_LANGUAGE_NAMES
             .iter()
             .map(|name| (*name).to_string())

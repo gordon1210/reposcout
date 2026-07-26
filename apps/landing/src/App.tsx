@@ -30,7 +30,8 @@ const releasesUrl = `${githubUrl}/releases/latest`
 const docsUrl = `${githubUrl}/blob/main/docs/README.md`
 const cliExamplesUrl = `${githubUrl}/blob/main/docs/cli-reference.md#common-examples`
 const securityUrl = `${githubUrl}/security/policy`
-const installCommand = "curl -fsSL https://getreposcout.vercel.app/install.sh | sh"
+const installCommand =
+  "curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh"
 
 type Signal = {
   icon: LucideIcon

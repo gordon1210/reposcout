@@ -565,6 +565,7 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
     if diagnostics.unsupported_files == 0
         && diagnostics.unreadable_files == 0
         && diagnostics.walker_errors == 0
+        && !diagnostics.scan_truncated
         && !diagnostics.type2_analysis_partial
     {
         return;
@@ -597,6 +598,31 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
             out,
             "- Walker errors: **{}**",
             thousands(diagnostics.walker_errors)
+        );
+    }
+    if diagnostics.oversized_files > 0 {
+        let _ = writeln!(
+            out,
+            "- Oversized files skipped: **{}** (**{}**).",
+            thousands(diagnostics.oversized_files),
+            human_bytes(diagnostics.oversized_bytes)
+        );
+    }
+    if diagnostics.files_omitted_by_limit > 0 {
+        let _ = writeln!(
+            out,
+            "- Files omitted by resource limits: **{}** (known size **{}**).",
+            thousands(diagnostics.files_omitted_by_limit),
+            human_bytes(diagnostics.bytes_omitted_by_limit)
+        );
+    }
+    if diagnostics.duration_limit_reached {
+        let _ = writeln!(out, "- The cooperative scan duration limit was reached.");
+    }
+    if diagnostics.scan_truncated {
+        let _ = writeln!(
+            out,
+            "- Scan results are **partial** because an input or runtime limit was reached."
         );
     }
     if diagnostics.type2_analysis_partial {
@@ -887,6 +913,24 @@ fn render_review(out: &mut String, report: &ScanReport) {
             thousands(review.diagnostics.binary_files),
             thousands(review.diagnostics.unreadable_files)
         );
+    }
+    if review.diagnostics.oversized_files > 0 {
+        let _ = writeln!(
+            out,
+            "Oversized snapshot files skipped: **{}** (**{}**).",
+            thousands(review.diagnostics.oversized_files),
+            human_bytes(review.diagnostics.oversized_bytes)
+        );
+    }
+    if review.diagnostics.files_omitted_by_limit > 0 {
+        let _ = writeln!(
+            out,
+            "Snapshot files omitted by resource limits: **{}**.",
+            thousands(review.diagnostics.files_omitted_by_limit)
+        );
+    }
+    if review.diagnostics.duration_limit_reached {
+        let _ = writeln!(out, "The cooperative review duration limit was reached.");
     }
     let _ = writeln!(out);
 

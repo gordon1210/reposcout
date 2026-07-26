@@ -102,7 +102,15 @@ Release packaging uses cargo-dist and the configuration in
 
 Archives contain the binary, README, changelog, MIT license, and third-party notices. The workflow
 also publishes individual checksums, an aggregate checksum file, source archive, manifest, and
-shell installer.
+shell installer. The generated installer is hardened to fail closed unless it can verify SHA-256,
+release actions are pinned to immutable commits, and every published artifact receives GitHub
+build-provenance attestation. Release binaries embed auditable dependency metadata, and each
+release includes a CycloneDX software bill of materials.
+
+The release workflow is intentionally hand-hardened and `allow-dirty = ["ci"]` prevents
+cargo-dist from overwriting its least-privilege permissions, immutable action pins, installer
+verification patch, and attestation step. Review and refresh those customizations deliberately
+when upgrading cargo-dist.
 
 The initial distribution channel is GitHub Releases. crates.io and Homebrew are deliberately
 deferred.

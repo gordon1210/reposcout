@@ -10,11 +10,12 @@ consolidated view of repository size, complexity, duplication, health, structure
 Install the latest stable GitHub release on macOS or Linux:
 
 ```sh
-curl -fsSL https://getreposcout.vercel.app/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh
 ```
 
-The installer selects the matching prebuilt archive, verifies its checksum, and installs the
-binary under Cargo's binary directory.
+The installer selects the matching prebuilt archive and refuses to install it unless SHA-256
+verification succeeds. It installs the binary under Cargo's binary directory and stores an
+owner-writable install receipt for later updates.
 
 Update an installer-managed copy later with:
 
@@ -22,11 +23,28 @@ Update an installer-managed copy later with:
 reposcout update
 ```
 
-`reposcout update` follows the latest stable GitHub Release. It refuses source builds and
-executables whose version or location does not match the installer's receipt.
+`reposcout update` follows the latest stable, immutable GitHub Release. It downloads the exact
+platform archive with its embedded TLS client, verifies the SHA-256 digest reported by GitHub, and
+replaces the binary and receipt atomically with rollback on receipt failure. It never executes a
+downloaded shell script and refuses source builds or executables whose version or location does
+not match the installer's receipt.
 
 Release archives and checksums are available on
 [GitHub Releases](https://github.com/gordon1210/reposcout/releases).
+Published artifacts also carry GitHub build-provenance attestations:
+
+```sh
+gh attestation verify reposcout-aarch64-apple-darwin.tar.xz \
+  --repo gordon1210/reposcout
+```
+
+The short install URL is a convenience HTTPS redirect. To remove the landing host from the
+bootstrap trust path, download the same immutable release installer directly from GitHub:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh | sh
+```
 
 ## Build from source
 

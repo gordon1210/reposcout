@@ -68,7 +68,12 @@ duplication_mode = "mild"           # strict, mild, weak
 duplication_format_scope = "exact"  # exact, compatible, all
 duplication_report_snippets = false
 
-churn_max_commits = 5000            # 0 means unlimited
+churn_max_commits = 5000            # 0 selects the absolute 100,000-commit ceiling
+max_file_bytes = 33554432           # 32 MiB per recognized worktree file
+max_total_bytes = 536870912         # 512 MiB per discovery pass
+max_files = 100000                  # filesystem files observed by discovery
+max_git_blob_bytes = 33554432       # 32 MiB per deep-review Git blob
+max_scan_seconds = 1800             # cooperative wall-clock budget
 
 [context]
 enabled = false
@@ -98,6 +103,9 @@ reposcout -f json --summary --profile agent .
 Starts from the agent profile and additionally:
 
 - ignores the project configuration file;
+- caps worktree files at 4 MiB each and 128 MiB in aggregate;
+- caps discovery at 20,000 files and deep-review Git blobs at 4 MiB;
+- applies a 120-second cooperative scan deadline;
 - caps workers, top lists, Git history, context, and duplication work;
 - requires normal ignore handling;
 - excludes hidden files and lockfiles; and
@@ -109,6 +117,13 @@ reposcout -f json --summary --profile safe .
 
 An explicit analyzer request may opt back into that analyzer under the safe limits. The
 `execution.safety_limits` and `analysis_profile` blocks disclose the result.
+
+Every profile also has non-disableable absolute ceilings: 64 workers, 100,000 churn commits,
+5,000,000 context tokens, 10,000 context files, 256 MiB for one worktree file or Git blob, 4 GiB
+aggregate discovery bytes, 500,000 observed files, and a two-hour cooperative deadline.
+The deadline prevents new stages and files from starting after it expires; an analyzer already
+processing one accepted file is allowed to finish. Resource omissions set `scan_truncated` and
+include oversized/omitted file and byte counts in `diagnostics`.
 
 ## Discovery policy
 

@@ -5,10 +5,12 @@ use crate::debug_log;
 use crate::model::{DepGraph, ScanReport};
 use crate::scan;
 use anyhow::{Context, Result, anyhow};
-use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::extract::{Query, Request, State};
+use axum::http::uri::Authority;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive};
-use axum::response::{IntoResponse, Sse};
+use axum::response::{IntoResponse, Response, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use notify::event::ModifyKind;
@@ -19,8 +21,8 @@ use std::ffi::OsStr;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{Mutex, RwLock, broadcast, mpsc, watch};
+use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, broadcast, mpsc, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -30,7 +32,11 @@ pub struct DaemonOptions {
     pub port: u16,
     pub debounce: Duration,
     pub profile: &'static str,
+    pub unsafe_no_auth: bool,
 }
+
+const RESCAN_COOLDOWN: Duration = Duration::from_secs(1);
+const MAX_SSE_CLIENTS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -88,6 +94,13 @@ struct AppState {
     events: broadcast::Sender<DaemonEvent>,
     trigger: mpsc::Sender<()>,
     shutdown: watch::Receiver<bool>,
+    last_rescan: Arc<Mutex<Option<Instant>>>,
+    sse_slots: Arc<Semaphore>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RequestPolicy {
+    loopback: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +136,11 @@ pub fn run(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
 }
 
 async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
+    if !options.host.is_loopback() && !options.unsafe_no_auth {
+        return Err(anyhow!(
+            "refusing unauthenticated non-loopback daemon binding; keep the loopback default or pass --unsafe-no-auth explicitly"
+        ));
+    }
     let target = target
         .canonicalize()
         .with_context(|| format!("failed to resolve daemon target {}", target.display()))?;
@@ -145,6 +163,8 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
         events: event_tx.clone(),
         trigger: trigger_tx.clone(),
         shutdown: shutdown_tx.subscribe(),
+        last_rescan: Arc::new(Mutex::new(None)),
+        sse_slots: Arc::new(Semaphore::new(MAX_SSE_CLIENTS)),
     };
 
     let exclusions = debug_log::path()
@@ -183,7 +203,7 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
         .with_context(|| format!("failed to bind daemon to {address}"))?;
     println!("reposcout daemon listening on http://{address}");
 
-    let server = axum::serve(listener, router(state))
+    let server = axum::serve(listener, router(state, options.host))
         .with_graceful_shutdown(wait_for_shutdown(shutdown_tx.subscribe()));
 
     let shutdown_on_signal = shutdown_tx.clone();
@@ -202,7 +222,7 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
     server_result
 }
 
-fn router(state: AppState) -> Router {
+fn router(state: AppState, host: IpAddr) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
@@ -210,6 +230,60 @@ fn router(state: AppState) -> Router {
         .route("/api/events", get(events))
         .route("/api/rescan", post(rescan))
         .with_state(state)
+        .layer(middleware::from_fn_with_state(
+            RequestPolicy {
+                loopback: host.is_loopback(),
+            },
+            enforce_request_policy,
+        ))
+}
+
+async fn enforce_request_policy(
+    State(policy): State<RequestPolicy>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|host| !allowed_request_host(host, policy.loopback))
+    {
+        return StatusCode::MISDIRECTED_REQUEST.into_response();
+    }
+    if request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|origin| !allowed_origin(origin, policy.loopback))
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    next.run(request).await
+}
+
+fn allowed_request_host(value: &str, loopback: bool) -> bool {
+    let Ok(authority) = value.parse::<Authority>() else {
+        return false;
+    };
+    allowed_network_host(authority.host(), loopback)
+}
+
+fn allowed_origin(value: &str, loopback: bool) -> bool {
+    let Ok(uri) = value.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    uri.host()
+        .is_some_and(|host| allowed_network_host(host, loopback))
+}
+
+fn allowed_network_host(value: &str, loopback: bool) -> bool {
+    if value.eq_ignore_ascii_case("localhost") {
+        return loopback;
+    }
+    let host = value.trim_matches(['[', ']']);
+    host.parse::<IpAddr>()
+        .is_ok_and(|address| !loopback || address.is_loopback())
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -279,7 +353,21 @@ fn api_error(status: StatusCode, error: String) -> (StatusCode, Json<ApiError>) 
     (status, Json(ApiError { error }))
 }
 
-async fn rescan(State(state): State<AppState>) -> impl IntoResponse {
+async fn rescan(headers: HeaderMap, State(state): State<AppState>) -> impl IntoResponse {
+    if headers
+        .get("x-reposcout-request")
+        .and_then(|value| value.to_str().ok())
+        != Some("rescan")
+    {
+        return StatusCode::BAD_REQUEST;
+    }
+    let mut last_rescan = state.last_rescan.lock().await;
+    let now = Instant::now();
+    if last_rescan.is_some_and(|previous| now.duration_since(previous) < RESCAN_COOLDOWN) {
+        return StatusCode::TOO_MANY_REQUESTS;
+    }
+    *last_rescan = Some(now);
+    drop(last_rescan);
     match state.trigger.try_send(()) {
         Ok(()) | Err(mpsc::error::TrySendError::Full(())) => StatusCode::ACCEPTED,
         Err(mpsc::error::TrySendError::Closed(())) => StatusCode::SERVICE_UNAVAILABLE,
@@ -288,14 +376,27 @@ async fn rescan(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn events(
     State(state): State<AppState>,
-) -> Sse<impl tokio_stream::Stream<Item = std::result::Result<Event, Infallible>>> {
-    Sse::new(event_stream(state.events.subscribe(), state.shutdown))
-        .keep_alive(KeepAlive::default())
+) -> std::result::Result<
+    Sse<impl tokio_stream::Stream<Item = std::result::Result<Event, Infallible>>>,
+    StatusCode,
+> {
+    let permit = state
+        .sse_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| StatusCode::TOO_MANY_REQUESTS)?;
+    Ok(Sse::new(event_stream(
+        state.events.subscribe(),
+        state.shutdown,
+        permit,
+    ))
+    .keep_alive(KeepAlive::default()))
 }
 
 fn event_stream(
     events: broadcast::Receiver<DaemonEvent>,
     shutdown: watch::Receiver<bool>,
+    permit: OwnedSemaphorePermit,
 ) -> impl tokio_stream::Stream<Item = std::result::Result<Event, Infallible>> {
     let stream = BroadcastStream::new(events).filter_map(|message| {
         message.ok().and_then(|event| {
@@ -307,7 +408,11 @@ fn event_stream(
             })
         })
     });
-    futures_util::StreamExt::take_until(stream, wait_for_shutdown(shutdown))
+    let guarded = stream.map(move |event| {
+        let _permit = &permit;
+        event
+    });
+    futures_util::StreamExt::take_until(guarded, wait_for_shutdown(shutdown))
 }
 
 async fn wait_for_shutdown(mut shutdown: watch::Receiver<bool>) {
@@ -570,6 +675,8 @@ mod tests {
             events,
             trigger,
             shutdown,
+            last_rescan: Arc::new(Mutex::new(None)),
+            sse_slots: Arc::new(Semaphore::new(MAX_SSE_CLIENTS)),
         };
 
         let Json(snapshot) = snapshot(State(state)).await;
@@ -598,11 +705,29 @@ mod tests {
             events,
             trigger,
             shutdown,
+            last_rescan: Arc::new(Mutex::new(None)),
+            sse_slots: Arc::new(Semaphore::new(MAX_SSE_CLIENTS)),
         };
 
         assert_eq!(
-            rescan(State(state)).await.into_response().status(),
+            rescan(HeaderMap::new(), State(state.clone()))
+                .await
+                .into_response()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert("x-reposcout-request", "rescan".parse().unwrap());
+        assert_eq!(
+            rescan(headers.clone(), State(state.clone()))
+                .await
+                .into_response()
+                .status(),
             StatusCode::ACCEPTED
+        );
+        assert_eq!(
+            rescan(headers, State(state)).await.into_response().status(),
+            StatusCode::TOO_MANY_REQUESTS
         );
         assert!(queued.try_recv().is_ok());
         assert!(queued.try_recv().is_err());
@@ -643,6 +768,8 @@ mod tests {
             events,
             trigger,
             shutdown,
+            last_rescan: Arc::new(Mutex::new(None)),
+            sse_slots: Arc::new(Semaphore::new(MAX_SSE_CLIENTS)),
         };
 
         let Json(first) = repository_graph(
@@ -678,7 +805,8 @@ mod tests {
     async fn event_stream_closes_when_shutdown_begins() {
         let (events, _) = broadcast::channel(1);
         let (shutdown_tx, shutdown) = watch::channel(false);
-        let mut stream = std::pin::pin!(event_stream(events.subscribe(), shutdown));
+        let permit = Arc::new(Semaphore::new(1)).try_acquire_owned().unwrap();
+        let mut stream = std::pin::pin!(event_stream(events.subscribe(), shutdown, permit));
 
         shutdown_tx.send(true).unwrap();
 
@@ -688,5 +816,35 @@ mod tests {
                 .expect("SSE stream should close promptly")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn request_policy_rejects_dns_rebinding_hosts_and_remote_origins() {
+        assert!(allowed_request_host("localhost:5173", true));
+        assert!(allowed_request_host("127.0.0.1:7331", true));
+        assert!(!allowed_request_host("attacker.example:7331", true));
+        assert!(allowed_origin("http://localhost:5173", true));
+        assert!(!allowed_origin("https://attacker.example", true));
+        assert!(allowed_request_host("192.0.2.10:7331", false));
+        assert!(!allowed_request_host("daemon.example:7331", false));
+    }
+
+    #[tokio::test]
+    async fn remote_binding_requires_explicit_unsafe_override() {
+        let error = serve(
+            PathBuf::from("."),
+            Config::default(),
+            DaemonOptions {
+                host: "0.0.0.0".parse().unwrap(),
+                port: 7331,
+                debounce: Duration::from_millis(300),
+                profile: "full",
+                unsafe_no_auth: false,
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("--unsafe-no-auth"));
     }
 }

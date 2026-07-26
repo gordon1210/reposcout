@@ -8,9 +8,23 @@ use crate::lang::{self, HealthInclude, HealthScope, LangInfo};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const GLOBAL_CONFIG_ENV: &str = "REPOSCOUT_GLOBAL_CONFIG";
+pub const ABSOLUTE_MAX_JOBS: usize = 64;
+pub const ABSOLUTE_MAX_TOP: usize = 1_000;
+pub const ABSOLUTE_MAX_CHURN_COMMITS: usize = 100_000;
+pub const ABSOLUTE_MIN_DUP_TOKENS: usize = 8;
+pub const ABSOLUTE_MIN_DUP_SIMILARITY: f64 = 0.5;
+pub const ABSOLUTE_MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
+pub const ABSOLUTE_MAX_TOTAL_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+pub const ABSOLUTE_MAX_FILES: usize = 500_000;
+pub const ABSOLUTE_MAX_GIT_BLOB_BYTES: u64 = 256 * 1024 * 1024;
+pub const ABSOLUTE_MAX_SCAN_SECONDS: u64 = 7_200;
+pub const ABSOLUTE_MAX_CONTEXT_TOKENS: usize = 5_000_000;
+pub const ABSOLUTE_MAX_CONTEXT_FILES: usize = 10_000;
+const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -89,8 +103,18 @@ pub struct Config {
     pub duplication_format_scope: DuplicationFormatScope,
     /// Include bounded source fragments in detailed duplicate findings.
     pub duplication_report_snippets: bool,
-    /// Cap on commits walked for churn (0 = unlimited).
+    /// Cap on commits walked for churn (0 selects the absolute ceiling).
     pub churn_max_commits: usize,
+    /// Largest recognized worktree file accepted for analysis.
+    pub max_file_bytes: u64,
+    /// Aggregate recognized worktree bytes accepted for one discovery pass.
+    pub max_total_bytes: u64,
+    /// Maximum filesystem entries accepted by one discovery pass.
+    pub max_files: usize,
+    /// Largest Git blob accepted by deep review.
+    pub max_git_blob_bytes: u64,
+    /// Cooperative wall-clock budget for one scan.
+    pub max_scan_seconds: u64,
     /// Build an explainable, token-budgeted reading plan.
     pub context: bool,
     /// Maximum aggregate tokens in the reading plan.
@@ -160,6 +184,11 @@ impl Default for Config {
             duplication_format_scope: DuplicationFormatScope::Exact,
             duplication_report_snippets: false,
             churn_max_commits: 5000,
+            max_file_bytes: 32 * 1024 * 1024,
+            max_total_bytes: 512 * 1024 * 1024,
+            max_files: 100_000,
+            max_git_blob_bytes: 32 * 1024 * 1024,
+            max_scan_seconds: 1_800,
             context: false,
             context_budget: 32_000,
             context_max_files: 25,
@@ -208,6 +237,11 @@ struct FileConfig {
     duplication_format_scope: Option<DuplicationFormatScope>,
     duplication_report_snippets: Option<bool>,
     churn_max_commits: Option<usize>,
+    max_file_bytes: Option<u64>,
+    max_total_bytes: Option<u64>,
+    max_files: Option<usize>,
+    max_git_blob_bytes: Option<u64>,
+    max_scan_seconds: Option<u64>,
     context: Option<ContextFileConfig>,
 }
 
@@ -264,6 +298,11 @@ pub struct ConfigValues {
     pub duplication_format_scope: DuplicationFormatScope,
     pub duplication_report_snippets: bool,
     pub churn_max_commits: usize,
+    pub max_file_bytes: u64,
+    pub max_total_bytes: u64,
+    pub max_files: usize,
+    pub max_git_blob_bytes: u64,
+    pub max_scan_seconds: u64,
     pub context: bool,
     pub context_budget: usize,
     pub context_max_files: usize,
@@ -294,6 +333,11 @@ impl From<&Config> for ConfigValues {
             duplication_format_scope: config.duplication_format_scope,
             duplication_report_snippets: config.duplication_report_snippets,
             churn_max_commits: config.churn_max_commits,
+            max_file_bytes: config.max_file_bytes,
+            max_total_bytes: config.max_total_bytes,
+            max_files: config.max_files,
+            max_git_blob_bytes: config.max_git_blob_bytes,
+            max_scan_seconds: config.max_scan_seconds,
             context: config.context,
             context_budget: config.context_budget,
             context_max_files: config.context_max_files,
@@ -411,6 +455,21 @@ impl Config {
         if let Some(v) = fc.churn_max_commits {
             self.churn_max_commits = v;
         }
+        if let Some(v) = fc.max_file_bytes {
+            self.max_file_bytes = v;
+        }
+        if let Some(v) = fc.max_total_bytes {
+            self.max_total_bytes = v;
+        }
+        if let Some(v) = fc.max_files {
+            self.max_files = v;
+        }
+        if let Some(v) = fc.max_git_blob_bytes {
+            self.max_git_blob_bytes = v;
+        }
+        if let Some(v) = fc.max_scan_seconds {
+            self.max_scan_seconds = v;
+        }
         if let Some(context) = fc.context {
             if let Some(v) = context.enabled {
                 self.context = v;
@@ -429,6 +488,31 @@ impl Config {
     /// scan-wide duplication eligibility.
     pub fn includes_in_health(&self, info: &LangInfo) -> bool {
         lang::included_in_health(info, self.health_scope, &self.health_includes)
+    }
+
+    pub fn enforce_absolute_limits(&mut self) {
+        self.jobs = self.jobs.clamp(1, ABSOLUTE_MAX_JOBS);
+        self.top = self.top.min(ABSOLUTE_MAX_TOP);
+        if self.churn_max_commits == 0 || self.churn_max_commits > ABSOLUTE_MAX_CHURN_COMMITS {
+            self.churn_max_commits = ABSOLUTE_MAX_CHURN_COMMITS;
+        }
+        self.min_dup_tokens = self.min_dup_tokens.max(ABSOLUTE_MIN_DUP_TOKENS);
+        self.min_dup_lines = self.min_dup_lines.max(1);
+        self.near_dup_min_similarity = if self.near_dup_min_similarity.is_finite() {
+            self.near_dup_min_similarity
+                .clamp(ABSOLUTE_MIN_DUP_SIMILARITY, 1.0)
+        } else {
+            Config::default().near_dup_min_similarity
+        };
+        self.max_file_bytes = self.max_file_bytes.clamp(1, ABSOLUTE_MAX_FILE_BYTES);
+        self.max_total_bytes = self.max_total_bytes.clamp(1, ABSOLUTE_MAX_TOTAL_BYTES);
+        self.max_files = self.max_files.clamp(1, ABSOLUTE_MAX_FILES);
+        self.max_git_blob_bytes = self
+            .max_git_blob_bytes
+            .clamp(1, ABSOLUTE_MAX_GIT_BLOB_BYTES);
+        self.max_scan_seconds = self.max_scan_seconds.clamp(1, ABSOLUTE_MAX_SCAN_SECONDS);
+        self.context_budget = self.context_budget.min(ABSOLUTE_MAX_CONTEXT_TOKENS);
+        self.context_max_files = self.context_max_files.min(ABSOLUTE_MAX_CONTEXT_FILES);
     }
 }
 
@@ -508,6 +592,7 @@ fn resolve_with_options(
     }
     .to_string();
 
+    config.enforce_absolute_limits();
     Ok(ConfigResolution {
         config,
         sources: ConfigSources { global, project },
@@ -539,8 +624,32 @@ fn read_config_if_present(path: &Path) -> Result<Option<FileConfig>> {
 }
 
 fn read_config(path: &Path) -> Result<FileConfig> {
-    let text = std::fs::read_to_string(path)
+    let mut file = std::fs::File::open(path)
         .with_context(|| format!("failed to read config {}", path.display()))?;
+    if file
+        .metadata()
+        .with_context(|| format!("failed to inspect config {}", path.display()))?
+        .len()
+        > MAX_CONFIG_BYTES
+    {
+        return Err(anyhow::anyhow!(
+            "config {} exceeds the 1 MiB size limit",
+            path.display()
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(MAX_CONFIG_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read config {}", path.display()))?;
+    if bytes.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(anyhow::anyhow!(
+            "config {} exceeds the 1 MiB size limit",
+            path.display()
+        ));
+    }
+    let text = String::from_utf8(bytes)
+        .with_context(|| format!("config {} is not UTF-8", path.display()))?;
     toml::from_str::<FileConfig>(&text)
         .map_err(|error| anyhow::anyhow!("failed to parse config {}: {error}", path.display()))
 }
@@ -574,6 +683,11 @@ impl FileConfig {
         key!(duplication_format_scope);
         key!(duplication_report_snippets);
         key!(churn_max_commits);
+        key!(max_file_bytes);
+        key!(max_total_bytes);
+        key!(max_files);
+        key!(max_git_blob_bytes);
+        key!(max_scan_seconds);
         if let Some(context) = &self.context {
             if context.enabled.is_some() {
                 keys.push("context.enabled".to_string());
@@ -614,6 +728,61 @@ mod tests {
 
         assert!(error.contains("failed to parse config"));
         assert!(error.contains("reposcout.toml"));
+    }
+
+    #[test]
+    fn project_configuration_cannot_disable_absolute_limits() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("reposcout.toml"),
+            concat!(
+                "jobs = 999999\n",
+                "top = 999999\n",
+                "churn_max_commits = 0\n",
+                "min_dup_tokens = 0\n",
+                "near_dup_min_similarity = 0.01\n",
+                "max_file_bytes = 999999999999\n",
+                "max_total_bytes = 999999999999\n",
+                "max_files = 999999999\n",
+                "max_git_blob_bytes = 999999999999\n",
+                "max_scan_seconds = 999999999\n",
+                "[context]\n",
+                "budget = 999999999\n",
+                "max_files = 999999999\n",
+            ),
+        )
+        .unwrap();
+
+        let config = load_project(dir.path());
+
+        assert_eq!(config.jobs, 64);
+        assert_eq!(config.top, 1_000);
+        assert_eq!(config.churn_max_commits, 100_000);
+        assert_eq!(config.min_dup_tokens, 8);
+        assert_eq!(config.near_dup_min_similarity, 0.5);
+        assert_eq!(config.max_file_bytes, 256 * 1024 * 1024);
+        assert_eq!(config.max_total_bytes, 4 * 1024 * 1024 * 1024);
+        assert_eq!(config.max_files, 500_000);
+        assert_eq!(config.max_git_blob_bytes, 256 * 1024 * 1024);
+        assert_eq!(config.max_scan_seconds, 7_200);
+        assert_eq!(config.context_budget, 5_000_000);
+        assert_eq!(config.context_max_files, 10_000);
+    }
+
+    #[test]
+    fn configuration_files_have_a_size_limit() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("reposcout.toml"),
+            vec![b' '; 1024 * 1024 + 1],
+        )
+        .unwrap();
+
+        let error = resolve_with_global(dir.path(), None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("1 MiB size limit"), "error was: {error}");
     }
 
     #[test]

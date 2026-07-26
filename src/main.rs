@@ -268,6 +268,7 @@ fn run_config(args: ConfigArgs) -> Result<ExitCode> {
         Config::resolve(&args.path)?
     };
     apply_execution_profile(&mut resolved.config, args.profile);
+    enforce_absolute_limits(&mut resolved.config);
     if args.profile == ExecutionProfile::Safe {
         enforce_safe_limits(&mut resolved.config);
     }
@@ -284,16 +285,26 @@ fn run_config(args: ConfigArgs) -> Result<ExitCode> {
 }
 
 fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
-    let mut cfg = Config::load(&args.path)?;
+    let safe = args.profile == DaemonProfile::Safe;
+    let mut cfg = if args.no_project_config || safe {
+        Config::load_without_project(&args.path)?
+    } else {
+        Config::load(&args.path)?
+    };
     cfg.quiet_progress = true;
     cfg.execution_profile = match args.profile {
         DaemonProfile::Lite => "lite",
         DaemonProfile::Full => "full",
+        DaemonProfile::Safe => "safe",
     }
     .to_string();
-    if args.profile == DaemonProfile::Lite {
+    if matches!(args.profile, DaemonProfile::Lite | DaemonProfile::Safe) {
         cfg.enabled.duplication = false;
         cfg.enabled.churn = false;
+    }
+    enforce_absolute_limits(&mut cfg);
+    if safe {
+        enforce_safe_limits(&mut cfg);
     }
     log_configuration("daemon", &args.path, &cfg);
     reposcout::daemon::run(
@@ -306,7 +317,9 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
             profile: match args.profile {
                 DaemonProfile::Lite => "lite",
                 DaemonProfile::Full => "full",
+                DaemonProfile::Safe => "safe",
             },
+            unsafe_no_auth: args.unsafe_no_auth,
         },
     )?;
     Ok(ExitCode::SUCCESS)
@@ -340,6 +353,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
     };
     apply_execution_profile(&mut cfg, profile);
     apply_overrides(&mut cfg, &args);
+    enforce_absolute_limits(&mut cfg);
     if let Some(en) = sub_enabled {
         cfg.enabled = en;
     } else if !args.only.is_empty() {
@@ -480,6 +494,7 @@ fn run_explain(args: ExplainArgs) -> Result<ExitCode> {
     };
     apply_execution_profile(&mut cfg, profile);
     apply_common_overrides(&mut cfg, &args.common);
+    enforce_absolute_limits(&mut cfg);
     if profile == ExecutionProfile::Safe {
         enforce_safe_limits(&mut cfg);
     }
@@ -518,6 +533,7 @@ fn run_locate(args: LocateArgs) -> Result<ExitCode> {
     };
     apply_execution_profile(&mut cfg, profile);
     apply_common_overrides(&mut cfg, &args.common);
+    enforce_absolute_limits(&mut cfg);
     if profile == ExecutionProfile::Safe {
         enforce_safe_limits(&mut cfg);
     }
@@ -719,6 +735,21 @@ fn apply_common_overrides(cfg: &mut Config, args: &CommonArgs) {
     if let Some(jobs) = args.jobs {
         cfg.jobs = jobs.max(1);
     }
+    if let Some(bytes) = args.max_file_bytes {
+        cfg.max_file_bytes = bytes;
+    }
+    if let Some(bytes) = args.max_total_bytes {
+        cfg.max_total_bytes = bytes;
+    }
+    if let Some(files) = args.max_files {
+        cfg.max_files = files;
+    }
+    if let Some(bytes) = args.max_git_blob_bytes {
+        cfg.max_git_blob_bytes = bytes;
+    }
+    if let Some(seconds) = args.max_scan_seconds {
+        cfg.max_scan_seconds = seconds;
+    }
     if let Some(maximum) = args.max_complexity {
         cfg.max_complexity = maximum;
     }
@@ -776,9 +807,18 @@ fn apply_execution_profile(cfg: &mut Config, profile: ExecutionProfile) {
     }
 }
 
+fn enforce_absolute_limits(cfg: &mut Config) {
+    cfg.enforce_absolute_limits();
+}
+
 fn enforce_safe_limits(cfg: &mut Config) {
     const SAFE_MAX_JOBS: usize = 2;
     const SAFE_MAX_CHURN_COMMITS: usize = 1_000;
+    const SAFE_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+    const SAFE_MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
+    const SAFE_MAX_FILES: usize = 20_000;
+    const SAFE_MAX_GIT_BLOB_BYTES: u64 = 4 * 1024 * 1024;
+    const SAFE_MAX_SCAN_SECONDS: u64 = 120;
     const SAFE_MAX_CONTEXT_TOKENS: usize = 32_000;
     const SAFE_MAX_CONTEXT_FILES: usize = 25;
     const SAFE_MAX_TOP: usize = 25;
@@ -798,6 +838,11 @@ fn enforce_safe_limits(cfg: &mut Config) {
     if cfg.churn_max_commits == 0 || cfg.churn_max_commits > SAFE_MAX_CHURN_COMMITS {
         cfg.churn_max_commits = SAFE_MAX_CHURN_COMMITS;
     }
+    cfg.max_file_bytes = cfg.max_file_bytes.min(SAFE_MAX_FILE_BYTES);
+    cfg.max_total_bytes = cfg.max_total_bytes.min(SAFE_MAX_TOTAL_BYTES);
+    cfg.max_files = cfg.max_files.min(SAFE_MAX_FILES);
+    cfg.max_git_blob_bytes = cfg.max_git_blob_bytes.min(SAFE_MAX_GIT_BLOB_BYTES);
+    cfg.max_scan_seconds = cfg.max_scan_seconds.min(SAFE_MAX_SCAN_SECONDS);
     cfg.context_budget = cfg.context_budget.min(SAFE_MAX_CONTEXT_TOKENS);
     cfg.context_max_files = cfg.context_max_files.min(SAFE_MAX_CONTEXT_FILES);
     cfg.safety_limits = vec![
@@ -815,6 +860,11 @@ fn enforce_safe_limits(cfg: &mut Config) {
         "dup-format-scope=exact".to_string(),
         "dup-snippets=disabled".to_string(),
         format!("churn-commits<={SAFE_MAX_CHURN_COMMITS}"),
+        format!("file-bytes<={SAFE_MAX_FILE_BYTES}"),
+        format!("total-bytes<={SAFE_MAX_TOTAL_BYTES}"),
+        format!("files<={SAFE_MAX_FILES}"),
+        format!("git-blob-bytes<={SAFE_MAX_GIT_BLOB_BYTES}"),
+        format!("scan-seconds<={SAFE_MAX_SCAN_SECONDS}"),
         format!("context-tokens<={SAFE_MAX_CONTEXT_TOKENS}"),
         format!("context-files<={SAFE_MAX_CONTEXT_FILES}"),
     ];

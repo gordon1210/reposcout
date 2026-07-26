@@ -199,6 +199,8 @@ signals, so disabled work never appears as a confident zero.
 Every scan reports:
 
 - discovered, analyzed, unsupported, and unreadable file counts;
+- oversized and resource-omitted file/byte counts;
+- whether discovery or analysis stopped at a file, byte, or cooperative time limit;
 - walker errors;
 - cache hits, misses, and lazy enrichments;
 - broad stage timings; and

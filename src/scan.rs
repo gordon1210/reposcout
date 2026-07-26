@@ -38,6 +38,8 @@ enum AnalysisOutcome {
     Analyzed(Box<AnalyzedFile>),
     Unsupported,
     Unreadable,
+    Oversized(u64),
+    DurationLimit,
 }
 
 impl AnalysisOutcome {
@@ -46,6 +48,8 @@ impl AnalysisOutcome {
             Self::Analyzed(_) => "analyzed",
             Self::Unsupported => "unsupported",
             Self::Unreadable => "unreadable",
+            Self::Oversized(_) => "oversized",
+            Self::DurationLimit => "duration_limit",
         }
     }
 }
@@ -66,6 +70,7 @@ struct PreparedScan {
     impact_changed_files: HashSet<PathBuf>,
     context_changes: Option<crate::context::ChangeSeeds>,
     all_report_paths: Vec<PathBuf>,
+    deadline: Option<Instant>,
 }
 
 struct AnalyzedScan {
@@ -207,9 +212,14 @@ pub(crate) fn run_with_artifacts(
     requirements: ArtifactRequirements,
 ) -> Result<ScanArtifacts> {
     let total_started = start_stage("total");
+    let deadline = Some(
+        total_started
+            .checked_add(Duration::from_secs(cfg.max_scan_seconds))
+            .unwrap_or(total_started),
+    );
     let mut stage_ms = BTreeMap::new();
     let stage_started = start_stage("discovery");
-    let prepared = prepare_scan(target, cfg, exclusions)?;
+    let prepared = prepare_scan(target, cfg, exclusions, deadline)?;
     record_stage(&mut stage_ms, "discovery", stage_started.elapsed());
     debug_log::event("discovery_summary", || {
         serde_json::json!({
@@ -256,6 +266,9 @@ pub(crate) fn run_with_artifacts(
     record_stage(&mut stage_ms, "report_assembly", stage_started.elapsed());
     record_stage(&mut stage_ms, "total", total_started.elapsed());
     artifacts.report.execution.stage_ms = stage_ms;
+    if deadline_reached(deadline) {
+        mark_duration_limit(&mut artifacts.report.diagnostics, 0);
+    }
     Ok(artifacts)
 }
 
@@ -273,14 +286,31 @@ fn record_stage(stages: &mut BTreeMap<String, usize>, name: &str, elapsed: Durat
     );
 }
 
-fn prepare_scan(target: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<PreparedScan> {
+fn deadline_reached(deadline: Option<Instant>) -> bool {
+    deadline.is_some_and(|deadline| Instant::now() >= deadline)
+}
+
+fn mark_duration_limit(diagnostics: &mut ScanDiagnostics, omitted_files: usize) {
+    diagnostics.duration_limit_reached = true;
+    diagnostics.scan_truncated = true;
+    diagnostics.files_omitted_by_limit = diagnostics
+        .files_omitted_by_limit
+        .saturating_add(omitted_files);
+}
+
+fn prepare_scan(
+    target: &Path,
+    cfg: &Config,
+    exclusions: &[PathBuf],
+    deadline: Option<Instant>,
+) -> Result<PreparedScan> {
     let effective_exclusions = scan_exclusions(cfg, exclusions);
     let target_missing = !target.exists();
     let mut discovered =
         if target_missing && (cfg.impact || cfg.context) && cfg.diff_scope.is_some() {
             walk::discover_missing_file(target)?
         } else {
-            walk::discover_with_exclusions(target, cfg, &effective_exclusions)?
+            walk::discover_with_exclusions_until(target, cfg, &effective_exclusions, deadline)?
         };
     let root = discovered.root.clone();
     let diff_base = match cfg.diff_scope.as_ref() {
@@ -314,10 +344,11 @@ fn prepare_scan(target: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<P
     }
     let needs_planning_universe = cfg.context && cfg.diff_scope.is_some();
     let full_discovered = if cfg.impact || needs_planning_universe {
-        Some(walk::discover_with_exclusions(
+        Some(walk::discover_with_exclusions_until(
             &root,
             cfg,
             &effective_exclusions,
+            deadline,
         )?)
     } else {
         None
@@ -350,6 +381,7 @@ fn prepare_scan(target: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<P
         impact_changed_files,
         context_changes,
         all_report_paths,
+        deadline,
     })
 }
 
@@ -492,6 +524,7 @@ fn analyze_discovered_files(
         progress,
         requirements,
         "primary",
+        prepared.deadline,
     )
 }
 
@@ -502,6 +535,7 @@ fn analyze_files(
     progress: &ScanProgress,
     requirements: ArtifactRequirements,
     batch: &'static str,
+    deadline: Option<Instant>,
 ) -> Result<FileAnalysis> {
     let counter = if cfg.enabled.tokens {
         Some(Arc::new(TokenCounter::new(&cfg.encoding)?))
@@ -543,14 +577,18 @@ fn analyze_files(
                         "path": file.report_path.to_string_lossy(),
                     })
                 });
-                let outcome = analyze_file(
-                    &file.absolute_path,
-                    &file.report_path,
-                    cfg,
-                    counter_ref,
-                    &cache,
-                    requirements,
-                );
+                let outcome = if deadline_reached(deadline) {
+                    AnalysisOutcome::DurationLimit
+                } else {
+                    analyze_file(
+                        &file.absolute_path,
+                        &file.report_path,
+                        cfg,
+                        counter_ref,
+                        &cache,
+                        requirements,
+                    )
+                };
                 if let Some(started) = debug_started {
                     debug_log::event("file_end", || {
                         serde_json::json!({
@@ -570,8 +608,14 @@ fn analyze_files(
     progress.stage("processing analyzed files");
 
     let mut diagnostics = ScanDiagnostics {
-        discovered_files: discovered.files.len(),
+        discovered_files: discovered.observed_files,
         walker_errors: discovered.walker_errors,
+        oversized_files: discovered.oversized_files,
+        oversized_bytes: discovered.oversized_bytes,
+        files_omitted_by_limit: discovered.files_omitted_by_limit,
+        bytes_omitted_by_limit: discovered.bytes_omitted_by_limit,
+        scan_truncated: discovered.scan_truncated,
+        duration_limit_reached: discovered.duration_limit_reached,
         ..ScanDiagnostics::default()
     };
     let mut analyzed = Vec::new();
@@ -580,6 +624,14 @@ fn analyze_files(
             AnalysisOutcome::Analyzed(file) => analyzed.push(*file),
             AnalysisOutcome::Unsupported => diagnostics.unsupported_files += 1,
             AnalysisOutcome::Unreadable => diagnostics.unreadable_files += 1,
+            AnalysisOutcome::Oversized(bytes) => {
+                diagnostics.oversized_files = diagnostics.oversized_files.saturating_add(1);
+                diagnostics.oversized_bytes = diagnostics.oversized_bytes.saturating_add(bytes);
+                diagnostics.scan_truncated = true;
+            }
+            AnalysisOutcome::DurationLimit => {
+                mark_duration_limit(&mut diagnostics, 1);
+            }
         }
     }
     diagnostics.analyzed_files = analyzed.len();
@@ -610,13 +662,17 @@ fn analyze_cross_file_metrics(
 ) -> AnalyzedScan {
     let analyzed = &mut file_analysis.analyzed;
 
-    attach_churn(
-        &prepared.root,
-        analyzed,
-        cfg,
-        progress,
-        "analyzing git history",
-    );
+    if deadline_reached(prepared.deadline) {
+        mark_duration_limit(&mut file_analysis.diagnostics, 0);
+    } else {
+        attach_churn(
+            &prepared.root,
+            analyzed,
+            cfg,
+            progress,
+            "analyzing git history",
+        );
+    }
 
     let (
         mut duplication,
@@ -624,7 +680,7 @@ fn analyze_cross_file_metrics(
         duplication_token_counts,
         duplication_formats,
         type2_diagnostics,
-    ) = if cfg.enabled.duplication {
+    ) = if cfg.enabled.duplication && !deadline_reached(prepared.deadline) {
         let inputs: Vec<DupInput> = analyzed
             .iter()
             .filter(|file| {
@@ -669,6 +725,9 @@ fn analyze_cross_file_metrics(
             dup::fuzzy::Type2Diagnostics::default(),
         )
     };
+    if deadline_reached(prepared.deadline) {
+        mark_duration_limit(&mut file_analysis.diagnostics, 0);
+    }
     apply_type2_diagnostics(&mut file_analysis.diagnostics, type2_diagnostics);
     if type2_diagnostics.truncated {
         debug_log::event("type2_analysis_partial", || {
@@ -777,14 +836,19 @@ fn analyze_planning_universe(
         progress,
         requirements,
         "planning_universe",
+        prepared.deadline,
     )?;
-    attach_churn(
-        &prepared.root,
-        &mut analysis.analyzed,
-        cfg,
-        progress,
-        "analyzing planning-universe history",
-    );
+    if deadline_reached(prepared.deadline) {
+        mark_duration_limit(&mut analysis.diagnostics, 0);
+    } else {
+        attach_churn(
+            &prepared.root,
+            &mut analysis.analyzed,
+            cfg,
+            progress,
+            "analyzing planning-universe history",
+        );
+    }
     progress.stage("saving planning-universe cache");
     if let Err(error) = analysis.cache.save(true) {
         debug_log::event("cache_save_error", || {
@@ -887,6 +951,7 @@ fn assemble_report(
                 prepared.diff_base.as_deref(),
                 changed,
                 &prepared.effective_exclusions,
+                prepared.deadline,
             )?)
         }
         _ => None,
@@ -1156,6 +1221,13 @@ fn scan_profile(cfg: &Config, diff_base: Option<String>) -> ScanProfile {
             risk_algorithm_version: crate::findings::RISK_ALGORITHM_VERSION,
             risk_threshold: crate::findings::RISK_THRESHOLD,
         }),
+        resources: Some(ResourceProfile {
+            max_file_bytes: cfg.max_file_bytes,
+            max_total_bytes: cfg.max_total_bytes,
+            max_files: cfg.max_files,
+            max_git_blob_bytes: cfg.max_git_blob_bytes,
+            max_scan_seconds: cfg.max_scan_seconds,
+        }),
     }
 }
 
@@ -1410,6 +1482,7 @@ fn scan_profiles_compatible_except_base(left: &ScanProfile, right: &ScanProfile)
         && left.diff_scope == right.diff_scope
         && left.duplication == right.duplication
         && left.health == right.health
+        && left.resources == right.resources
 }
 
 fn target_scope(root: &Path, target: &Path) -> String {
@@ -1432,11 +1505,10 @@ fn analyze_file(
     if lang::detect(path).is_none() {
         return AnalysisOutcome::Unsupported;
     }
-    // read_to_string fails on non-UTF8/binary files, which we report as
-    // unreadable rather than silently dropping.
-    let content = match std::fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(_) => return AnalysisOutcome::Unreadable,
+    let content = match walk::read_text_bounded(path, cfg.max_file_bytes) {
+        walk::BoundedText::Content(content) => content,
+        walk::BoundedText::Oversized(bytes) => return AnalysisOutcome::Oversized(bytes),
+        walk::BoundedText::Unreadable => return AnalysisOutcome::Unreadable,
     };
     let rel = report_path.to_path_buf();
     let rel_str = rel.to_string_lossy().to_string();
@@ -2500,6 +2572,20 @@ mod tests {
 
         assert!(scan_profiles_compatible(&first, &alias));
         assert!(!scan_profiles_compatible(&first, &different));
+    }
+
+    #[test]
+    fn baseline_profiles_require_matching_resource_limits() {
+        let first = scan_profile(&Config::default(), None);
+        let changed = scan_profile(
+            &Config {
+                max_file_bytes: Config::default().max_file_bytes / 2,
+                ..Config::default()
+            },
+            None,
+        );
+
+        assert!(!scan_profiles_compatible(&first, &changed));
     }
 
     #[test]

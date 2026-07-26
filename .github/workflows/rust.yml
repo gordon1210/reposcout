@@ -22,6 +22,8 @@ on:
       - main
     types:
       - opened
+      - synchronize
+      - reopened
       - ready_for_review
     paths:
       - .cargo/**
@@ -36,6 +38,8 @@ on:
       - rustfmt.toml
       - src/**
       - tests/**
+  schedule:
+    - cron: "41 5 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -70,6 +74,12 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-on-failure: true
+
+      - name: Install RustSec audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Audit dependencies
+        run: cargo audit
 
       - name: Check formatting
         run: cargo fmt --check

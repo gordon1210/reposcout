@@ -141,12 +141,21 @@ pub struct DaemonArgs {
     /// Analyzer profile: lite omits expensive whole-repository duplication and churn
     #[arg(long, value_enum, default_value_t = DaemonProfile::Full)]
     pub profile: DaemonProfile,
+
+    /// Ignore the nearest repository-owned reposcout configuration
+    #[arg(long)]
+    pub no_project_config: bool,
+
+    /// Permit an unauthenticated non-loopback listener
+    #[arg(long)]
+    pub unsafe_no_auth: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaemonProfile {
     Lite,
     Full,
+    Safe,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -191,6 +200,26 @@ pub struct CommonArgs {
     /// Number of worker threads [default: CPU count]
     #[arg(short = 'j', long)]
     pub jobs: Option<usize>,
+
+    /// Maximum bytes accepted from one recognized worktree file
+    #[arg(long, value_name = "BYTES")]
+    pub max_file_bytes: Option<u64>,
+
+    /// Maximum aggregate bytes accepted during one discovery pass
+    #[arg(long, value_name = "BYTES")]
+    pub max_total_bytes: Option<u64>,
+
+    /// Maximum filesystem entries accepted during one discovery pass
+    #[arg(long, value_name = "N")]
+    pub max_files: Option<usize>,
+
+    /// Maximum bytes accepted from one Git blob during deep review
+    #[arg(long, value_name = "BYTES")]
+    pub max_git_blob_bytes: Option<u64>,
+
+    /// Cooperative wall-clock budget for one scan
+    #[arg(long, value_name = "SECONDS")]
+    pub max_scan_seconds: Option<u64>,
 
     /// Disable the incremental cache
     #[arg(long = "no-cache")]
@@ -608,6 +637,8 @@ mod tests {
         assert_eq!(daemon.debounce_ms, 300);
         assert_eq!(daemon.profile, DaemonProfile::Full);
         assert_eq!(daemon.path, PathBuf::from("."));
+        assert!(!daemon.no_project_config);
+        assert!(!daemon.unsafe_no_auth);
 
         let cli = Cli::try_parse_from([
             "reposcout",
@@ -621,6 +652,8 @@ mod tests {
             "75",
             "--profile",
             "lite",
+            "--no-project-config",
+            "--unsafe-no-auth",
         ])
         .unwrap();
         let Command::Daemon(daemon) = cli.command.unwrap() else {
@@ -631,6 +664,14 @@ mod tests {
         assert_eq!(daemon.debounce_ms, 75);
         assert_eq!(daemon.profile, DaemonProfile::Lite);
         assert_eq!(daemon.path, PathBuf::from("src"));
+        assert!(daemon.no_project_config);
+        assert!(daemon.unsafe_no_auth);
+
+        let cli = Cli::try_parse_from(["reposcout", "daemon", "--profile", "safe"]).unwrap();
+        let Command::Daemon(daemon) = cli.command.unwrap() else {
+            panic!("expected daemon command");
+        };
+        assert_eq!(daemon.profile, DaemonProfile::Safe);
     }
 
     #[test]

@@ -3,11 +3,15 @@
 
 use crate::config::Config;
 use crate::debug_log;
+use crate::lang;
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 use std::collections::HashSet;
+use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// Common dependency lockfiles skipped by default: they are generated, huge,
 /// and dominate token/duplication counts without reflecting authored code.
@@ -55,8 +59,60 @@ pub struct Discovered {
     /// Canonicalized scan target (may be a subdir/file of `root`).
     pub target: PathBuf,
     pub files: Vec<DiscoveredFile>,
+    /// Files observed before resource limits removed or truncated entries.
+    pub observed_files: usize,
     /// Number of traversal errors skipped while discovering files.
     pub walker_errors: usize,
+    /// Recognized files skipped because they exceed `max_file_bytes`.
+    pub oversized_files: usize,
+    /// Aggregate bytes in recognized files skipped as individually oversized.
+    pub oversized_bytes: u64,
+    /// Files omitted after a file-count or aggregate-byte limit was reached.
+    pub files_omitted_by_limit: usize,
+    /// Aggregate known bytes omitted by resource limits.
+    pub bytes_omitted_by_limit: u64,
+    /// Discovery ended before all eligible entries were accepted.
+    pub scan_truncated: bool,
+    /// Discovery stopped because the cooperative scan deadline elapsed.
+    pub duration_limit_reached: bool,
+}
+
+pub(crate) enum BoundedText {
+    Content(String),
+    Oversized(u64),
+    Unreadable,
+}
+
+pub(crate) fn read_text_bounded(path: &Path, max_bytes: u64) -> BoundedText {
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return BoundedText::Unreadable,
+    };
+    let metadata_bytes = match file.metadata() {
+        Ok(metadata) => metadata.len(),
+        Err(_) => return BoundedText::Unreadable,
+    };
+    if metadata_bytes > max_bytes {
+        return BoundedText::Oversized(metadata_bytes);
+    }
+
+    let capacity = usize::try_from(metadata_bytes.min(max_bytes)).unwrap_or(usize::MAX);
+    let mut bytes = Vec::with_capacity(capacity);
+    if file
+        .by_ref()
+        .take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return BoundedText::Unreadable;
+    }
+    if bytes.len() as u64 > max_bytes {
+        return BoundedText::Oversized((bytes.len() as u64).max(metadata_bytes));
+    }
+    match String::from_utf8(bytes) {
+        Ok(content) => BoundedText::Content(content),
+        Err(_) => BoundedText::Unreadable,
+    }
 }
 
 /// Locate the git working-tree root containing `target`, if any.
@@ -75,6 +131,21 @@ pub fn discover_with_exclusions(
     target: &Path,
     cfg: &Config,
     exclusions: &[PathBuf],
+) -> Result<Discovered> {
+    let started = Instant::now();
+    let deadline = Some(
+        started
+            .checked_add(Duration::from_secs(cfg.max_scan_seconds))
+            .unwrap_or(started),
+    );
+    discover_with_exclusions_until(target, cfg, exclusions, deadline)
+}
+
+pub(crate) fn discover_with_exclusions_until(
+    target: &Path,
+    cfg: &Config,
+    exclusions: &[PathBuf],
+    deadline: Option<Instant>,
 ) -> Result<Discovered> {
     let target = target
         .canonicalize()
@@ -118,8 +189,21 @@ pub fn discover_with_exclusions(
     }
 
     let mut files = Vec::new();
-    let mut walker_errors = 0;
+    let mut observed_files = 0usize;
+    let mut accepted_bytes = 0u64;
+    let mut walker_errors = 0usize;
+    let mut oversized_files = 0usize;
+    let mut oversized_bytes = 0u64;
+    let mut files_omitted_by_limit = 0usize;
+    let mut bytes_omitted_by_limit = 0u64;
+    let mut scan_truncated = false;
+    let mut duration_limit_reached = false;
     for result in builder.build() {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            duration_limit_reached = true;
+            scan_truncated = true;
+            break;
+        }
         let entry = match result {
             Ok(e) => e,
             Err(_) => {
@@ -132,6 +216,12 @@ pub fn discover_with_exclusions(
             if exclusions.contains(&absolute_path) {
                 continue;
             }
+            observed_files = observed_files.saturating_add(1);
+            if observed_files > cfg.max_files {
+                files_omitted_by_limit = files_omitted_by_limit.saturating_add(1);
+                scan_truncated = true;
+                break;
+            }
             let report_path = match report_base {
                 Some(base) => absolute_path
                     .strip_prefix(base)
@@ -141,6 +231,30 @@ pub fn discover_with_exclusions(
                     .unwrap_or_else(|| fallback_report_path(&absolute_path)),
                 None => fallback_report_path(&absolute_path),
             };
+            if lang::detect(&report_path).is_some() {
+                match absolute_path.metadata() {
+                    Ok(metadata) => {
+                        let bytes = metadata.len();
+                        if bytes > cfg.max_file_bytes {
+                            oversized_files = oversized_files.saturating_add(1);
+                            oversized_bytes = oversized_bytes.saturating_add(bytes);
+                            scan_truncated = true;
+                            continue;
+                        }
+                        if accepted_bytes.saturating_add(bytes) > cfg.max_total_bytes {
+                            files_omitted_by_limit = files_omitted_by_limit.saturating_add(1);
+                            bytes_omitted_by_limit = bytes_omitted_by_limit.saturating_add(bytes);
+                            scan_truncated = true;
+                            continue;
+                        }
+                        accepted_bytes = accepted_bytes.saturating_add(bytes);
+                    }
+                    Err(_) => {
+                        walker_errors = walker_errors.saturating_add(1);
+                        continue;
+                    }
+                }
+            }
             files.push(DiscoveredFile {
                 absolute_path,
                 report_path,
@@ -171,7 +285,14 @@ pub fn discover_with_exclusions(
         root,
         target,
         files,
+        observed_files,
         walker_errors,
+        oversized_files,
+        oversized_bytes,
+        files_omitted_by_limit,
+        bytes_omitted_by_limit,
+        scan_truncated,
+        duration_limit_reached,
     })
 }
 
@@ -246,7 +367,14 @@ pub fn discover_missing_file(target: &Path) -> Result<Discovered> {
         root,
         target,
         files: Vec::new(),
+        observed_files: 0,
         walker_errors: 0,
+        oversized_files: 0,
+        oversized_bytes: 0,
+        files_omitted_by_limit: 0,
+        bytes_omitted_by_limit: 0,
+        scan_truncated: false,
+        duration_limit_reached: false,
     })
 }
 
@@ -258,7 +386,9 @@ fn fallback_report_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{discover, discover_missing_file, discover_with_exclusions};
+    use super::{
+        BoundedText, discover, discover_missing_file, discover_with_exclusions, read_text_bounded,
+    };
     use crate::config::Config;
     use std::fs;
     use std::path::Path;
@@ -287,6 +417,72 @@ mod tests {
             discovered.files[0].report_path,
             Path::new("src/nested/lib.rs")
         );
+    }
+
+    #[test]
+    fn oversized_files_are_skipped_with_explicit_diagnostics() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("small.rs"), "fn small() {}\n").unwrap();
+        fs::write(dir.path().join("large.rs"), "x".repeat(128)).unwrap();
+        let cfg = Config {
+            max_file_bytes: 32,
+            ..Config::default()
+        };
+
+        let discovered = discover(dir.path(), &cfg).unwrap();
+
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(discovered.oversized_files, 1);
+        assert_eq!(discovered.oversized_bytes, 128);
+        assert!(discovered.scan_truncated);
+    }
+
+    #[test]
+    fn bounded_text_reads_never_allocate_past_the_file_limit() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("large.rs");
+        fs::write(&file, "x".repeat(128)).unwrap();
+
+        assert!(matches!(
+            read_text_bounded(&file, 32),
+            BoundedText::Oversized(128)
+        ));
+    }
+
+    #[test]
+    fn file_count_limit_stops_discovery() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.rs"), "fn a() {}\n").unwrap();
+        fs::write(dir.path().join("b.rs"), "fn b() {}\n").unwrap();
+        let cfg = Config {
+            max_files: 1,
+            ..Config::default()
+        };
+
+        let discovered = discover(dir.path(), &cfg).unwrap();
+
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(discovered.observed_files, 2);
+        assert_eq!(discovered.files_omitted_by_limit, 1);
+        assert!(discovered.scan_truncated);
+    }
+
+    #[test]
+    fn aggregate_byte_limit_skips_excess_files() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.rs"), "fn a() { let x = 1; }\n").unwrap();
+        fs::write(dir.path().join("b.rs"), "fn b() { let x = 2; }\n").unwrap();
+        let cfg = Config {
+            max_total_bytes: 30,
+            ..Config::default()
+        };
+
+        let discovered = discover(dir.path(), &cfg).unwrap();
+
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(discovered.files_omitted_by_limit, 1);
+        assert!(discovered.bytes_omitted_by_limit > 0);
+        assert!(discovered.scan_truncated);
     }
 
     #[test]

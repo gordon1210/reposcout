@@ -574,6 +574,7 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
     if diagnostics.unsupported_files == 0
         && diagnostics.unreadable_files == 0
         && diagnostics.walker_errors == 0
+        && !diagnostics.scan_truncated
         && !diagnostics.type2_analysis_partial
     {
         return;
@@ -594,6 +595,34 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
     }
     if diagnostics.walker_errors > 0 {
         kv(out, "Walker errors", &thousands(diagnostics.walker_errors));
+    }
+    if diagnostics.oversized_files > 0 {
+        kv(
+            out,
+            "Oversized files",
+            &format!(
+                "{} ({})",
+                thousands(diagnostics.oversized_files),
+                human_bytes(diagnostics.oversized_bytes)
+            ),
+        );
+    }
+    if diagnostics.files_omitted_by_limit > 0 {
+        kv(
+            out,
+            "Files omitted",
+            &format!(
+                "{} (known size {})",
+                thousands(diagnostics.files_omitted_by_limit),
+                human_bytes(diagnostics.bytes_omitted_by_limit)
+            ),
+        );
+    }
+    if diagnostics.duration_limit_reached {
+        kv(out, "Scan duration", "limit reached");
+    }
+    if diagnostics.scan_truncated {
+        kv(out, "Scan completeness", "partial (resource limit reached)");
     }
     if diagnostics.type2_analysis_partial {
         kv(out, "Type-2 analysis", "partial (safety limit reached)");
@@ -906,6 +935,27 @@ fn render_review(out: &mut String, report: &ScanReport, color: bool) {
                 thousands(review.diagnostics.unreadable_files)
             ),
         );
+    }
+    if review.diagnostics.oversized_files > 0 {
+        kv(
+            out,
+            "Oversized snapshots",
+            &format!(
+                "{} ({})",
+                thousands(review.diagnostics.oversized_files),
+                human_bytes(review.diagnostics.oversized_bytes)
+            ),
+        );
+    }
+    if review.diagnostics.files_omitted_by_limit > 0 {
+        kv(
+            out,
+            "Snapshot files omitted",
+            &thousands(review.diagnostics.files_omitted_by_limit),
+        );
+    }
+    if review.diagnostics.duration_limit_reached {
+        kv(out, "Review duration", "limit reached");
     }
     let _ = writeln!(out);
 

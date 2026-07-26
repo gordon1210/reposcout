@@ -5,8 +5,13 @@ members = ["cargo:."]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.32.0"
+# The generated CI is security-hardened by hand; cargo-dist must not overwrite it
+allow-dirty = ["ci"]
 # CI backends to support
 ci = "github"
+# Embed dependency metadata in binaries and publish a CycloneDX SBOM
+cargo-auditable = true
+cargo-cyclonedx = true
 # The installers to generate for each app
 installers = ["shell"]
 # Additional legal notices shipped beside the binary

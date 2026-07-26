@@ -11,6 +11,7 @@ use crate::model::{
 use crate::snapshot::SourceSnapshot;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 pub fn run(
     root: &Path,
@@ -19,11 +20,12 @@ pub fn run(
     base_tree_id: Option<&str>,
     changed_files: Vec<ReviewChangedFile>,
     exclusions: &[PathBuf],
+    deadline: Option<Instant>,
 ) -> Result<ReviewReport> {
-    let current = SourceSnapshot::current(root, cfg, scope, exclusions)?;
+    let current = SourceSnapshot::current(root, cfg, scope, exclusions, deadline)?;
     let current_catalog = catalog(&current, cfg);
     if cfg.review == Some(ReviewMode::Deep) {
-        let base = SourceSnapshot::base(root, cfg, scope, base_tree_id, exclusions)?;
+        let base = SourceSnapshot::base(root, cfg, scope, base_tree_id, exclusions, deadline)?;
         let before = crate::findings::remap_renames(&catalog(&base, cfg), &changed_files);
         let delta = crate::findings::compare(&before, &current_catalog);
         let binary_files = changed_files.iter().filter(|file| file.binary).count();
@@ -65,6 +67,13 @@ pub fn run(
             diagnostics: ReviewDiagnostics {
                 binary_files,
                 unreadable_files: base.unreadable_files + current.unreadable_files,
+                oversized_files: base.oversized_files + current.oversized_files,
+                oversized_bytes: base.oversized_bytes + current.oversized_bytes,
+                files_omitted_by_limit: base.files_omitted_by_limit
+                    + current.files_omitted_by_limit,
+                scan_truncated: base.scan_truncated || current.scan_truncated,
+                duration_limit_reached: base.duration_limit_reached
+                    || current.duration_limit_reached,
             },
         });
     }
@@ -154,6 +163,7 @@ pub fn filter_lines(
         diagnostics: ReviewDiagnostics {
             binary_files,
             unreadable_files: 0,
+            ..ReviewDiagnostics::default()
         },
     }
 }

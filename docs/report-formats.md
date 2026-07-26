@@ -66,7 +66,7 @@ Scan reports carry `schema_version: "1.0"`. The top-level contract is organized 
 | Block | Contents |
 |---|---|
 | `root`, `target`, `generated_at`, `encoding` | Report identity |
-| `analysis_profile` | Enabled analyzers, diff scope, health, duplication, and finding policy |
+| `analysis_profile` | Enabled analyzers, diff scope, health, duplication, finding, and resource policy |
 | `execution` | Profile, config provenance, timings, cache facts, and safety limits |
 | `diagnostics` | Discovery coverage and partial Type-2 state |
 | `summary` | Repository totals, language rollups, rankings, risks, tests, and assessment |
@@ -104,7 +104,8 @@ Baselines must match:
 - resolved diff base tree;
 - health-file policy;
 - duplication thresholds/mode/format scope; and
-- finding profile.
+- finding profile; and
+- effective file, byte, Git-blob, file-count, and scan-time limits.
 
 Reports without modern analysis-profile metadata are rejected because their health semantics
 cannot be established. Compatible reports without a finding catalog retain aggregate-only
