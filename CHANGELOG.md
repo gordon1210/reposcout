@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-26
+
 ### Added
 
 - Added structured bug and feature issue forms plus a concise pull-request template for public
