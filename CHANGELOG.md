@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Reworked the repository documentation around a concise, badge-backed project README and a
+  navigable `docs/` reference for installation, CLI usage, agent workflows, metrics,
+  configuration, machine formats, the live dashboard, development, contributing, and security.
+
 ## [0.1.0] - 2026-07-26
 
 ### Fixed

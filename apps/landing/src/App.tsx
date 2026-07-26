@@ -27,6 +27,9 @@ import { useSectionParallax } from "./useSectionParallax"
 
 const githubUrl = "https://github.com/gordon1210/reposcout"
 const releasesUrl = `${githubUrl}/releases/latest`
+const docsUrl = `${githubUrl}/blob/main/docs/README.md`
+const cliExamplesUrl = `${githubUrl}/blob/main/docs/cli-reference.md#common-examples`
+const securityUrl = `${githubUrl}/security/policy`
 const installCommand = "curl -fsSL https://getreposcout.vercel.app/install.sh | sh"
 
 type Signal = {
@@ -658,7 +661,7 @@ export function App() {
                 plan the changed files, tests, and dependents worth reading; review changed lines;
                 and gate regressions with the same contract.
               </p>
-              <a href={githubUrl + "#examples"} target="_blank" rel="noreferrer">
+              <a href={cliExamplesUrl} target="_blank" rel="noreferrer">
                 Explore the CLI examples <ArrowRight size={17} />
               </a>
             </div>
@@ -781,8 +784,11 @@ export function App() {
             <a href={releasesUrl} target="_blank" rel="noreferrer">
               Releases
             </a>
-            <a href={githubUrl + "#usage"} target="_blank" rel="noreferrer">
+            <a href={docsUrl} target="_blank" rel="noreferrer">
               Docs
+            </a>
+            <a href={securityUrl} target="_blank" rel="noreferrer">
+              Security
             </a>
           </div>
         </div>
