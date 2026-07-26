@@ -1,0 +1,15 @@
+{
+  "name": "reposcout-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25",
+  "scripts": {
+    "build:landing": "pnpm --filter @reposcout/landing build",
+    "build:web": "pnpm --filter @reposcout/web build",
+    "dev:daemon": "reposcout daemon .",
+    "dev:landing": "pnpm --filter @reposcout/landing dev",
+    "dev:web": "pnpm --filter @reposcout/web dev",
+    "test:web": "pnpm --filter @reposcout/web test",
+    "typecheck:landing": "pnpm --filter @reposcout/landing typecheck",
+    "typecheck:web": "pnpm --filter @reposcout/web typecheck"
+  }
+}

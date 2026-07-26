@@ -1,0 +1,479 @@
+//! File discovery. Uses the `ignore` crate for gitignore-aware traversal and
+//! `git2` to locate the repository root.
+
+use crate::config::Config;
+use crate::debug_log;
+use anyhow::{Context, Result};
+use ignore::WalkBuilder;
+use ignore::overrides::OverrideBuilder;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+/// Common dependency lockfiles skipped by default: they are generated, huge,
+/// and dominate token/duplication counts without reflecting authored code.
+const LOCKFILES: &[&str] = &[
+    "Cargo.lock",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lock",
+    "bun.lockb",
+    "go.sum",
+    "poetry.lock",
+    "Pipfile.lock",
+    "pdm.lock",
+    "uv.lock",
+    "composer.lock",
+    "Gemfile.lock",
+    "Podfile.lock",
+    "flake.lock",
+    "packages.lock.json",
+    "deno.lock",
+    "mix.lock",
+    "pubspec.lock",
+    "gradle.lockfile",
+];
+
+pub(crate) fn is_lockfile(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| LOCKFILES.contains(&name))
+}
+
+/// A file selected for analysis, with separate filesystem and public identities.
+pub struct DiscoveredFile {
+    /// Absolute path used to read the file and query git metadata.
+    pub absolute_path: PathBuf,
+    /// Stable relative path used in reports, cache keys, and cross-file data.
+    pub report_path: PathBuf,
+}
+
+pub struct Discovered {
+    /// Git working-tree root, or the target itself if not in a repo.
+    pub root: PathBuf,
+    /// Canonicalized scan target (may be a subdir/file of `root`).
+    pub target: PathBuf,
+    pub files: Vec<DiscoveredFile>,
+    /// Number of traversal errors skipped while discovering files.
+    pub walker_errors: usize,
+}
+
+/// Locate the git working-tree root containing `target`, if any.
+pub fn git_root(target: &Path) -> Option<PathBuf> {
+    let repo = git2::Repository::discover(target).ok()?;
+    repo.workdir().map(|p| p.to_path_buf())
+}
+
+/// Walk `target`, honoring configuration (gitignore, hidden files, excludes).
+pub fn discover(target: &Path, cfg: &Config) -> Result<Discovered> {
+    discover_with_exclusions(target, cfg, &[])
+}
+
+/// Walk `target`, omitting files whose filesystem identities exactly match an exclusion.
+pub fn discover_with_exclusions(
+    target: &Path,
+    cfg: &Config,
+    exclusions: &[PathBuf],
+) -> Result<Discovered> {
+    let target = target
+        .canonicalize()
+        .with_context(|| format!("path not found: {}", target.display()))?;
+    let exclusions = exclusions
+        .iter()
+        .map(|path| exact_path_identity(path))
+        .collect::<Result<HashSet<_>>>()?;
+    let repo_root = git_root(&target);
+    let root = repo_root.clone().unwrap_or_else(|| target.clone());
+    let report_base = repo_root
+        .as_deref()
+        .or_else(|| target.is_dir().then_some(&target));
+
+    let mut builder = WalkBuilder::new(&target);
+    builder
+        .hidden(!cfg.include_hidden)
+        .git_ignore(cfg.respect_gitignore)
+        .git_global(cfg.respect_gitignore)
+        .git_exclude(cfg.respect_gitignore)
+        .ignore(cfg.respect_gitignore)
+        .parents(cfg.respect_gitignore)
+        .follow_links(false);
+    builder.add_custom_ignore_filename(".reposcoutignore");
+
+    let mut exclude_globs: Vec<String> = Vec::new();
+    if cfg.exclude_lockfiles {
+        // A leading '!' turns an override into an ignore rule; a slash-free
+        // pattern matches the file name at any depth (gitignore semantics).
+        exclude_globs.extend(LOCKFILES.iter().map(|name| format!("!{name}")));
+    }
+    exclude_globs.extend(cfg.extra_excludes.iter().map(|pat| format!("!{pat}")));
+
+    if !exclude_globs.is_empty() {
+        let mut ob = OverrideBuilder::new(&target);
+        for glob in &exclude_globs {
+            ob.add(glob)
+                .with_context(|| format!("invalid exclude glob: {glob}"))?;
+        }
+        builder.overrides(ob.build().context("building exclude overrides")?);
+    }
+
+    let mut files = Vec::new();
+    let mut walker_errors = 0;
+    for result in builder.build() {
+        let entry = match result {
+            Ok(e) => e,
+            Err(_) => {
+                walker_errors += 1;
+                continue;
+            }
+        };
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            let absolute_path = entry.into_path();
+            if exclusions.contains(&absolute_path) {
+                continue;
+            }
+            let report_path = match report_base {
+                Some(base) => absolute_path
+                    .strip_prefix(base)
+                    .ok()
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| fallback_report_path(&absolute_path)),
+                None => fallback_report_path(&absolute_path),
+            };
+            files.push(DiscoveredFile {
+                absolute_path,
+                report_path,
+            });
+            if debug_log::enabled() && (files.len() == 1 || files.len().is_multiple_of(1_000)) {
+                let latest = files
+                    .last()
+                    .expect("a discovered file was just appended")
+                    .report_path
+                    .to_string_lossy();
+                debug_log::event("discovery_progress", || {
+                    serde_json::json!({
+                        "files": files.len(),
+                        "latest_path": latest.as_ref(),
+                        "walker_errors": walker_errors,
+                    })
+                });
+            }
+        }
+    }
+    files.sort_by(|a, b| {
+        a.report_path
+            .cmp(&b.report_path)
+            .then_with(|| a.absolute_path.cmp(&b.absolute_path))
+    });
+
+    Ok(Discovered {
+        root,
+        target,
+        files,
+        walker_errors,
+    })
+}
+
+/// Resolve an existing or future path to the exact identity used by discovery.
+pub fn exact_path_identity(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .context("failed to resolve current directory")?
+            .join(path)
+    };
+
+    match absolute.canonicalize() {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let parent = absolute
+                .parent()
+                .context("excluded path has no parent directory")?
+                .canonicalize()
+                .with_context(|| format!("path not found: {}", path.display()))?;
+            let name = absolute
+                .file_name()
+                .context("excluded path has no file name")?;
+            Ok(parent.join(name))
+        }
+        Err(error) => Err(error)
+            .with_context(|| format!("failed to resolve excluded path: {}", path.display())),
+    }
+}
+
+/// Describe a missing file target inside a git repository.
+///
+/// This exists for diff impact: a file deleted by the selected diff has no
+/// filesystem entry to walk, but it still has a stable repo-relative identity
+/// and may have importers worth reporting.
+pub fn discover_missing_file(target: &Path) -> Result<Discovered> {
+    let absolute = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .context("failed to resolve current directory")?
+            .join(target)
+    };
+    let mut existing = absolute.as_path();
+    let mut suffix = Vec::new();
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .context("missing target has no existing ancestor")?;
+        suffix.push(name.to_os_string());
+        existing = existing
+            .parent()
+            .context("missing target has no existing ancestor")?;
+    }
+    let existing = existing
+        .canonicalize()
+        .with_context(|| format!("failed to resolve ancestor of {}", target.display()))?;
+    let root = git_root(&existing).context("diff impact requires a git repository")?;
+    let mut target = existing;
+    for component in suffix.iter().rev() {
+        target.push(component);
+    }
+    if !target.starts_with(&root) {
+        return Err(anyhow::anyhow!(
+            "diff impact target is outside the git repository: {}",
+            target.display()
+        ));
+    }
+
+    Ok(Discovered {
+        root,
+        target,
+        files: Vec::new(),
+        walker_errors: 0,
+    })
+}
+
+fn fallback_report_path(path: &Path) -> PathBuf {
+    path.file_name()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("scan-target"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{discover, discover_missing_file, discover_with_exclusions};
+    use crate::config::Config;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[test]
+    fn repo_files_use_repository_relative_report_paths() {
+        let dir = tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let file = dir.path().join("src/nested/lib.rs");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "pub fn example() {}\n").unwrap();
+
+        let target = dir.path().join("src");
+        let discovered = discover(&target, &Config::default()).unwrap();
+
+        assert_eq!(discovered.root, dir.path().canonicalize().unwrap());
+        assert_eq!(discovered.target, target.canonicalize().unwrap());
+        assert_eq!(discovered.walker_errors, 0);
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(
+            discovered.files[0].absolute_path,
+            file.canonicalize().unwrap()
+        );
+        assert_eq!(
+            discovered.files[0].report_path,
+            Path::new("src/nested/lib.rs")
+        );
+    }
+
+    #[test]
+    fn repository_root_excludes_only_the_matching_path() {
+        let dir = tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let source = dir.path().join("src/lib.rs");
+        let output = dir.path().join("report.json");
+        let lookalike = dir.path().join("report.json.bak");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, "pub fn example() {}\n").unwrap();
+        fs::write(&output, "{}\n").unwrap();
+        fs::write(&lookalike, "{}\n").unwrap();
+
+        let aliased_output = dir.path().join("src/../report.json");
+        let discovered =
+            discover_with_exclusions(dir.path(), &Config::default(), &[aliased_output]).unwrap();
+        let paths = discovered
+            .files
+            .iter()
+            .map(|file| file.report_path.as_path())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            paths,
+            [Path::new("report.json.bak"), Path::new("src/lib.rs")]
+        );
+    }
+
+    #[test]
+    fn standalone_directory_files_use_target_relative_report_paths() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("nested/file.rs");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "fn example() {}\n").unwrap();
+
+        let discovered = discover(dir.path(), &Config::default()).unwrap();
+
+        assert_eq!(discovered.root, dir.path().canonicalize().unwrap());
+        assert_eq!(discovered.target, dir.path().canonicalize().unwrap());
+        assert_eq!(discovered.walker_errors, 0);
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(
+            discovered.files[0].absolute_path,
+            file.canonicalize().unwrap()
+        );
+        assert_eq!(discovered.files[0].report_path, Path::new("nested/file.rs"));
+    }
+
+    #[test]
+    fn excludes_an_exact_nonexistent_path_when_it_is_created_later() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.rs");
+        let output = dir.path().join("report.json");
+        fs::write(&source, "fn example() {}\n").unwrap();
+
+        let exclusions = vec![output.clone()];
+        let first = discover_with_exclusions(dir.path(), &Config::default(), &exclusions).unwrap();
+        fs::write(&output, "{}\n").unwrap();
+        let second = discover_with_exclusions(dir.path(), &Config::default(), &exclusions).unwrap();
+
+        assert_eq!(first.files.len(), 1);
+        assert_eq!(first.files[0].absolute_path, source.canonicalize().unwrap());
+        assert_eq!(second.files.len(), 1);
+        assert_eq!(
+            second.files[0].absolute_path,
+            source.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn relative_exclusion_is_resolved_from_the_current_directory() {
+        let current_dir = std::env::current_dir().unwrap();
+        let dir = tempfile::Builder::new()
+            .prefix("reposcout-walk-test-")
+            .tempdir_in(&current_dir)
+            .unwrap();
+        let source = dir.path().join("source.rs");
+        let output = dir.path().join("report.json");
+        fs::write(&source, "fn example() {}\n").unwrap();
+        fs::write(&output, "{}\n").unwrap();
+        let relative_output = output.strip_prefix(&current_dir).unwrap().to_path_buf();
+
+        let discovered = discover_with_exclusions(
+            dir.path(),
+            &Config::default(),
+            std::slice::from_ref(&relative_output),
+        )
+        .unwrap();
+
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(
+            discovered.files[0].absolute_path,
+            source.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn repository_subpath_honors_an_exact_exclusion() {
+        let dir = tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let source = dir.path().join("src/lib.rs");
+        let output = dir.path().join("src/report.json");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, "pub fn example() {}\n").unwrap();
+        fs::write(&output, "{}\n").unwrap();
+
+        let discovered = discover_with_exclusions(
+            source.parent().unwrap(),
+            &Config::default(),
+            std::slice::from_ref(&output),
+        )
+        .unwrap();
+
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(discovered.files[0].report_path, Path::new("src/lib.rs"));
+    }
+
+    #[test]
+    fn standalone_file_uses_its_basename_as_report_path() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("only.rs");
+        fs::write(&file, "fn example() {}\n").unwrap();
+
+        let discovered = discover(&file, &Config::default()).unwrap();
+
+        assert_eq!(discovered.root, file.canonicalize().unwrap());
+        assert_eq!(discovered.target, file.canonicalize().unwrap());
+        assert_eq!(discovered.walker_errors, 0);
+        assert_eq!(discovered.files.len(), 1);
+        assert_eq!(
+            discovered.files[0].absolute_path,
+            file.canonicalize().unwrap()
+        );
+        assert_eq!(discovered.files[0].report_path, Path::new("only.rs"));
+    }
+
+    #[test]
+    fn standalone_file_target_can_be_excluded() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("only.rs");
+        fs::write(&file, "fn example() {}\n").unwrap();
+
+        let discovered =
+            discover_with_exclusions(&file, &Config::default(), std::slice::from_ref(&file))
+                .unwrap();
+
+        assert!(discovered.files.is_empty());
+    }
+
+    #[test]
+    fn missing_file_in_repo_has_a_stable_target_identity() {
+        let dir = tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let missing = dir.path().join("src/deleted.js");
+        fs::create_dir_all(missing.parent().unwrap()).unwrap();
+
+        let discovered = discover_missing_file(&missing).unwrap();
+
+        assert_eq!(discovered.root, dir.path().canonicalize().unwrap());
+        assert_eq!(
+            discovered.target,
+            missing
+                .parent()
+                .unwrap()
+                .canonicalize()
+                .unwrap()
+                .join("deleted.js")
+        );
+        assert!(discovered.files.is_empty());
+    }
+
+    #[test]
+    fn missing_file_with_deleted_parent_has_a_stable_target_identity() {
+        let dir = tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let missing = dir.path().join("removed/nested/deleted.js");
+
+        let discovered = discover_missing_file(&missing).unwrap();
+
+        assert_eq!(discovered.root, dir.path().canonicalize().unwrap());
+        assert_eq!(
+            discovered.target,
+            dir.path()
+                .canonicalize()
+                .unwrap()
+                .join("removed/nested/deleted.js")
+        );
+    }
+}

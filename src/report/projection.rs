@@ -1,0 +1,231 @@
+use crate::lang;
+use crate::model::{FindingRecord, FunctionComplexity, LanguageStat, MetricDelta, ScanReport};
+use std::path::Path;
+
+pub(crate) fn callable_cyclomatic_average(functions: &[FunctionComplexity]) -> Option<f64> {
+    if functions.is_empty() {
+        return None;
+    }
+
+    Some(
+        functions
+            .iter()
+            .map(|function| function.cyclomatic as u64)
+            .sum::<u64>() as f64
+            / functions.len() as f64,
+    )
+}
+
+pub(crate) fn file_cyclomatic_average(report: &ScanReport, path: &Path) -> Option<f64> {
+    let complexity = report
+        .files
+        .iter()
+        .find(|file| file.path.as_path() == path)?
+        .complexity
+        .as_ref()?;
+    callable_cyclomatic_average(&complexity.functions)
+}
+
+/// Keep human reports source-first while preserving one honest rollup for the
+/// non-source inventory retained in machine-readable summaries.
+pub(crate) fn source_language_rollup(languages: &[LanguageStat]) -> Vec<LanguageStat> {
+    let mut rows = Vec::new();
+    let mut other = LanguageStat::default();
+    let mut other_formats = 0usize;
+
+    for language in languages {
+        if language.source || lang::is_source_name(&language.name) {
+            rows.push(language.clone());
+        } else {
+            other_formats += 1;
+            other.files += language.files;
+            other.bytes += language.bytes;
+            other.loc += language.loc;
+            other.sloc += language.sloc;
+            other.comment_lines += language.comment_lines;
+            other.tokens += language.tokens;
+        }
+    }
+    if other_formats > 0 {
+        other.name = format!("Other content ({other_formats} formats)");
+        rows.push(other);
+    }
+    rows
+}
+
+pub(crate) struct MetricDeltaDisplay {
+    pub baseline: String,
+    pub current: String,
+    pub delta: String,
+}
+
+pub(crate) fn metric_delta_display(metric: &MetricDelta) -> MetricDeltaDisplay {
+    if matches!(
+        metric.metric.as_str(),
+        "files" | "tokens" | "sloc" | "cyclomatic_max" | "untested_source_files"
+    ) {
+        MetricDeltaDisplay {
+            baseline: format!("{:.0}", metric.baseline),
+            current: format!("{:.0}", metric.current),
+            delta: format!("{:+.0}", metric.delta),
+        }
+    } else {
+        MetricDeltaDisplay {
+            baseline: format!("{:.2}", metric.baseline),
+            current: format!("{:.2}", metric.current),
+            delta: format!("{:+.2}", metric.delta),
+        }
+    }
+}
+
+pub(crate) fn metric_label(metric: &str) -> &str {
+    if metric == "untested_source_files" {
+        "source_files_without_matching_test"
+    } else {
+        metric
+    }
+}
+
+pub(crate) fn human_test_signal(value: &str) -> String {
+    value
+        .replace("untested sources", "source files without a matching test")
+        .replace("untested", "no matching test file")
+}
+
+pub(crate) fn finding_location(finding: &FindingRecord) -> String {
+    let location = &finding.primary_location;
+    if location.start_line == 0 {
+        return location.path.display().to_string();
+    }
+    if location.end_line > location.start_line {
+        format!(
+            "{}:{}-{}",
+            location.path.display(),
+            location.start_line,
+            location.end_line
+        )
+    } else {
+        format!("{}:{}", location.path.display(), location.start_line)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::FindingLocation;
+    use std::path::PathBuf;
+
+    #[test]
+    fn baseline_counts_and_ratios_have_stable_precision() {
+        let count = MetricDelta {
+            metric: "tokens".to_string(),
+            baseline: 10.4,
+            current: 12.6,
+            delta: 2.2,
+        };
+        let count = metric_delta_display(&count);
+        assert_eq!(
+            (
+                count.baseline.as_str(),
+                count.current.as_str(),
+                count.delta.as_str()
+            ),
+            ("10", "13", "+2")
+        );
+
+        let ratio = MetricDelta {
+            metric: "duplicated_pct".to_string(),
+            baseline: 10.456,
+            current: 9.111,
+            delta: -1.345,
+        };
+        let ratio = metric_delta_display(&ratio);
+        assert_eq!(
+            (
+                ratio.baseline.as_str(),
+                ratio.current.as_str(),
+                ratio.delta.as_str()
+            ),
+            ("10.46", "9.11", "-1.34")
+        );
+    }
+
+    #[test]
+    fn callable_cyclomatic_average_requires_callable_facts() {
+        let functions = [
+            FunctionComplexity {
+                cyclomatic: 2,
+                ..FunctionComplexity::default()
+            },
+            FunctionComplexity {
+                cyclomatic: 7,
+                ..FunctionComplexity::default()
+            },
+        ];
+
+        assert_eq!(callable_cyclomatic_average(&functions), Some(4.5));
+        assert_eq!(callable_cyclomatic_average(&[]), None);
+    }
+
+    #[test]
+    fn finding_locations_cover_file_line_and_range() {
+        let mut finding = FindingRecord {
+            primary_location: FindingLocation {
+                path: PathBuf::from("src/lib.rs"),
+                ..FindingLocation::default()
+            },
+            ..FindingRecord::default()
+        };
+        assert_eq!(finding_location(&finding), "src/lib.rs");
+
+        finding.primary_location.start_line = 7;
+        finding.primary_location.end_line = 7;
+        assert_eq!(finding_location(&finding), "src/lib.rs:7");
+
+        finding.primary_location.end_line = 11;
+        assert_eq!(finding_location(&finding), "src/lib.rs:7-11");
+    }
+
+    #[test]
+    fn coverage_heuristic_is_not_presented_as_coverage() {
+        assert_eq!(
+            metric_label("untested_source_files"),
+            "source_files_without_matching_test"
+        );
+        assert_eq!(
+            human_test_signal("untested sources +2 (now 4)"),
+            "source files without a matching test +2 (now 4)"
+        );
+        assert_eq!(human_test_signal("untested"), "no matching test file");
+    }
+
+    #[test]
+    fn language_rollup_keeps_source_rows_and_collapses_content() {
+        let rows = source_language_rollup(&[
+            LanguageStat {
+                name: "Rust".to_string(),
+                files: 2,
+                tokens: 100,
+                ..LanguageStat::default()
+            },
+            LanguageStat {
+                name: "JSON".to_string(),
+                files: 3,
+                tokens: 200,
+                ..LanguageStat::default()
+            },
+            LanguageStat {
+                name: "Markdown".to_string(),
+                files: 1,
+                tokens: 50,
+                ..LanguageStat::default()
+            },
+        ]);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "Rust");
+        assert_eq!(rows[1].name, "Other content (2 formats)");
+        assert_eq!(rows[1].files, 4);
+        assert_eq!(rows[1].tokens, 250);
+    }
+}

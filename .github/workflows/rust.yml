@@ -1,0 +1,81 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .cargo/**
+      - Cargo.lock
+      - Cargo.toml
+      - benches/**
+      - build.rs
+      - clippy.toml
+      - examples/**
+      - rust-toolchain
+      - rust-toolchain.toml
+      - rustfmt.toml
+      - src/**
+      - tests/**
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - ready_for_review
+    paths:
+      - .cargo/**
+      - Cargo.lock
+      - Cargo.toml
+      - benches/**
+      - build.rs
+      - clippy.toml
+      - examples/**
+      - rust-toolchain
+      - rust-toolchain.toml
+      - rustfmt.toml
+      - src/**
+      - tests/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked

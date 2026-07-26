@@ -1,0 +1,5 @@
+[env]
+# RepoScout integration tests launch the CLI. Keep bare `cargo test` safe by
+# preventing libtest from multiplying CLI processes across CPU cores. An
+# explicit `--test-threads` argument can still override this when desired.
+RUST_TEST_THREADS = "1"

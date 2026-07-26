@@ -1,0 +1,922 @@
+[[language]]
+name = "Rust"
+slug = "rust"
+filename = "sample.rs"
+exact = '''
+fn calculate(values: &[i32]) -> i32 {
+    let mut total = 0;
+    for value in values {
+        total += *value;
+    }
+    total
+}
+'''
+near_a = '''
+fn calculate(values: &[i32]) -> i32 {
+    let mut total = 0;
+    for value in values {
+        total += *value;
+    }
+    total
+}
+'''
+near_b = '''
+fn calculate(items: &[i32]) -> i32 {
+    let mut sum = 0;
+    for item in items {
+        sum += *item;
+    }
+    sum
+}
+'''
+
+[[language]]
+name = "C"
+slug = "c"
+filename = "sample.c"
+exact = '''
+int calculate(const int *values, int count) {
+    int total = 0;
+    for (int index = 0; index < count; index++) {
+        total += values[index];
+    }
+    return total;
+}
+'''
+near_a = '''
+int calculate(const int *values, int count) {
+    int total = 0;
+    for (int index = 0; index < count; index++) {
+        total += values[index];
+    }
+    return total;
+}
+'''
+near_b = '''
+int calculate(const int *items, int length) {
+    int sum = 0;
+    for (int position = 0; position < length; position++) {
+        sum += items[position];
+    }
+    return sum;
+}
+'''
+
+[[language]]
+name = "JSON"
+slug = "json"
+filename = "sample.json"
+exact = '''
+{
+  "service": "catalog",
+  "enabled": true,
+  "retries": 3,
+  "endpoint": "/api/catalog"
+}
+'''
+near_a = '''
+{
+  "service": "catalog",
+  "enabled": true,
+  "retries": 3,
+  "endpoint": "/api/catalog"
+}
+'''
+near_b = '''
+{
+  "service": "inventory",
+  "enabled": true,
+  "retries": 3,
+  "endpoint": "/api/catalog"
+}
+'''
+
+[[language]]
+name = "Dockerfile"
+slug = "dockerfile"
+filename = "Dockerfile"
+exact = '''
+FROM alpine:3.20
+RUN addgroup -S application
+RUN adduser -S application -G application
+WORKDIR /srv/application
+COPY . /srv/application
+CMD ["./application"]
+'''
+near_a = '''
+FROM alpine:3.20
+RUN addgroup -S application
+RUN adduser -S application -G application
+WORKDIR /srv/application
+COPY . /srv/application
+CMD ["./application"]
+'''
+near_b = '''
+FROM alpine:3.20
+RUN addgroup -S service
+RUN adduser -S service -G service
+WORKDIR /srv/service
+COPY . /srv/service
+CMD ["./application"]
+'''
+
+[[language]]
+name = "Python"
+slug = "python"
+filename = "sample.py"
+exact = '''
+def calculate(values):
+    total = 0
+    for value in values:
+        total += value
+    return total
+'''
+near_a = '''
+def calculate(values):
+    total = 0
+    for value in values:
+        total += value
+    return total
+'''
+near_b = '''
+def calculate(items):
+    result = 0
+    for item in items:
+        result += item
+    return result
+'''
+
+[[language]]
+name = "JavaScript"
+slug = "javascript"
+filename = "sample.js"
+exact = '''
+export function calculate(values) {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return total;
+}
+'''
+near_a = '''
+export function calculate(values) {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return total;
+}
+'''
+near_b = '''
+export function calculate(items) {
+  let result = 0;
+  for (const item of items) {
+    result += item;
+  }
+  return result;
+}
+'''
+
+[[language]]
+name = "TypeScript"
+slug = "typescript"
+filename = "sample.ts"
+exact = '''
+export function calculate(values: number[]): number {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return total;
+}
+'''
+near_a = '''
+export function calculate(values: number[]): number {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return total;
+}
+'''
+near_b = '''
+export function calculate(items: number[]): number {
+  let result = 0;
+  for (const item of items) {
+    result += item;
+  }
+  return result;
+}
+'''
+
+[[language]]
+name = "TSX"
+slug = "tsx"
+filename = "sample.tsx"
+exact = '''
+export function Total({ values }: { values: number[] }) {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return <span>{total}</span>;
+}
+'''
+near_a = '''
+export function Total({ values }: { values: number[] }) {
+  let total = 0;
+  for (const value of values) {
+    total += value;
+  }
+  return <span>{total}</span>;
+}
+'''
+near_b = '''
+export function Total({ items }: { items: number[] }) {
+  let result = 0;
+  for (const item of items) {
+    result += item;
+  }
+  return <span>{result}</span>;
+}
+'''
+
+[[language]]
+name = "Go"
+slug = "go"
+filename = "sample.go"
+exact = '''
+package totals
+func calculate(values []int) int {
+    total := 0
+    for _, value := range values {
+        total += value
+    }
+    return total
+}
+'''
+near_a = '''
+package totals
+func calculate(values []int) int {
+    total := 0
+    for _, value := range values {
+        total += value
+    }
+    return total
+}
+'''
+near_b = '''
+package totals
+func calculate(items []int) int {
+    result := 0
+    for _, item := range items {
+        result += item
+    }
+    return result
+}
+'''
+
+[[language]]
+name = "C++"
+slug = "cpp"
+filename = "sample.cpp"
+exact = '''
+int calculate(const std::vector<int>& values) {
+    int total = 0;
+    for (int value : values) {
+        total += value;
+    }
+    return total;
+}
+'''
+near_a = '''
+int calculate(const std::vector<int>& values) {
+    int total = 0;
+    for (int value : values) {
+        total += value;
+    }
+    return total;
+}
+'''
+near_b = '''
+int calculate(const std::vector<int>& items) {
+    int result = 0;
+    for (int item : items) {
+        result += item;
+    }
+    return result;
+}
+'''
+
+[[language]]
+name = "C/C++ Header"
+slug = "c_header"
+filename = "sample.h"
+exact = '''
+static inline int calculate(const int *values, int count) {
+    int total = 0;
+    for (int index = 0; index < count; ++index) {
+        total += values[index];
+    }
+    return total;
+}
+'''
+near_a = '''
+static inline int calculate(const int *values, int count) {
+    int total = 0;
+    for (int index = 0; index < count; ++index) {
+        total += values[index];
+    }
+    return total;
+}
+'''
+near_b = '''
+static inline int calculate(const int *items, int length) {
+    int result = 0;
+    for (int position = 0; position < length; ++position) {
+        result += items[position];
+    }
+    return result;
+}
+'''
+
+[[language]]
+name = "C#"
+slug = "csharp"
+filename = "Sample.cs"
+exact = '''
+public static int Calculate(int[] values) {
+    int total = 0;
+    foreach (int value in values) {
+        total += value;
+    }
+    return total;
+}
+'''
+near_a = '''
+public static int Calculate(int[] values) {
+    int total = 0;
+    foreach (int value in values) {
+        total += value;
+    }
+    return total;
+}
+'''
+near_b = '''
+public static int Calculate(int[] items) {
+    int result = 0;
+    foreach (int item in items) {
+        result += item;
+    }
+    return result;
+}
+'''
+
+[[language]]
+name = "Java"
+slug = "java"
+filename = "Sample.java"
+exact = '''
+static int calculate(int[] values) {
+    int total = 0;
+    for (int value : values) {
+        total += value;
+    }
+    return total;
+}
+'''
+near_a = '''
+static int calculate(int[] values) {
+    int total = 0;
+    for (int value : values) {
+        total += value;
+    }
+    return total;
+}
+'''
+near_b = '''
+static int calculate(int[] items) {
+    int result = 0;
+    for (int item : items) {
+        result += item;
+    }
+    return result;
+}
+'''
+
+[[language]]
+name = "Kotlin"
+slug = "kotlin"
+filename = "sample.kt"
+exact = '''
+fun calculate(values: List<Int>): Int {
+    var total = 0
+    for (value in values) {
+        total += value
+    }
+    return total
+}
+'''
+near_a = '''
+fun calculate(values: List<Int>): Int {
+    var total = 0
+    for (value in values) {
+        total += value
+    }
+    return total
+}
+'''
+near_b = '''
+fun calculate(items: List<Int>): Int {
+    var result = 0
+    for (item in items) {
+        result += item
+    }
+    return result
+}
+'''
+
+[[language]]
+name = "Swift"
+slug = "swift"
+filename = "sample.swift"
+exact = '''
+func calculate(_ values: [Int]) -> Int {
+    var total = 0
+    for value in values {
+        total += value
+    }
+    return total
+}
+'''
+near_a = '''
+func calculate(_ values: [Int]) -> Int {
+    var total = 0
+    for value in values {
+        total += value
+    }
+    return total
+}
+'''
+near_b = '''
+func calculate(_ items: [Int]) -> Int {
+    var result = 0
+    for item in items {
+        result += item
+    }
+    return result
+}
+'''
+
+[[language]]
+name = "Ruby"
+slug = "ruby"
+filename = "sample.rb"
+exact = '''
+def calculate(values)
+  total = 0
+  values.each do |value|
+    total += value
+  end
+  total
+end
+'''
+near_a = '''
+def calculate(values)
+  total = 0
+  values.each do |value|
+    total += value
+  end
+  total
+end
+'''
+near_b = '''
+def calculate(items)
+  result = 0
+  items.each do |item|
+    result += item
+  end
+  result
+end
+'''
+
+[[language]]
+name = "PHP"
+slug = "php"
+filename = "sample.php"
+exact = '''
+<?php
+function calculate(array $values): int {
+    $total = 0;
+    foreach ($values as $value) {
+        $total += $value;
+    }
+    return $total;
+}
+'''
+near_a = '''
+<?php
+function calculate(array $values): int {
+    $total = 0;
+    foreach ($values as $value) {
+        $total += $value;
+    }
+    return $total;
+}
+'''
+near_b = '''
+<?php
+function calculate(array $items): int {
+    $result = 0;
+    foreach ($items as $item) {
+        $result += $item;
+    }
+    return $result;
+}
+'''
+
+[[language]]
+name = "Shell"
+slug = "shell"
+filename = "sample.sh"
+exact = '''
+calculate() {
+  local total=0
+  for value in "$@"; do
+    total=$((total + value))
+  done
+  printf '%s\n' "$total"
+}
+'''
+near_a = '''
+calculate() {
+  local total=0
+  for value in "$@"; do
+    total=$((total + value))
+  done
+  printf '%s\n' "$total"
+}
+'''
+near_b = '''
+calculate() {
+  local result=0
+  for item in "$@"; do
+    result=$((result + item))
+  done
+  printf '%s\n' "$result"
+}
+'''
+
+[[language]]
+name = "Scala"
+slug = "scala"
+filename = "Sample.scala"
+exact = '''
+def calculate(values: List[Int]): Int = {
+  var total = 0
+  for (value <- values) {
+    total += value
+  }
+  total
+}
+'''
+near_a = '''
+def calculate(values: List[Int]): Int = {
+  var total = 0
+  for (value <- values) {
+    total += value
+  }
+  total
+}
+'''
+near_b = '''
+def calculate(items: List[Int]): Int = {
+  var result = 0
+  for (item <- items) {
+    result += item
+  }
+  result
+}
+'''
+
+[[language]]
+name = "Haskell"
+slug = "haskell"
+filename = "Sample.hs"
+exact = '''
+calculate :: [Int] -> Int
+calculate values =
+  let step total value = total + value
+  in foldl step 0 values
+'''
+near_a = '''
+calculate :: [Int] -> Int
+calculate values =
+  let step total value = total + value
+  in foldl step 0 values
+'''
+near_b = '''
+calculate :: [Int] -> Int
+calculate items =
+  let combine result item = result + item
+  in foldl combine 0 items
+'''
+
+[[language]]
+name = "Lua"
+slug = "lua"
+filename = "sample.lua"
+exact = '''
+function calculate(values)
+  local total = 0
+  for _, value in ipairs(values) do
+    total = total + value
+  end
+  return total
+end
+'''
+near_a = '''
+function calculate(values)
+  local total = 0
+  for _, value in ipairs(values) do
+    total = total + value
+  end
+  return total
+end
+'''
+near_b = '''
+function calculate(items)
+  local result = 0
+  for _, item in ipairs(items) do
+    result = result + item
+  end
+  return result
+end
+'''
+
+[[language]]
+name = "SQL"
+slug = "sql"
+filename = "sample.sql"
+exact = '''
+WITH active_orders AS (
+  SELECT customer_id, amount FROM orders WHERE status = 'active'
+)
+SELECT customer_id, SUM(amount) AS total_amount
+FROM active_orders
+GROUP BY customer_id;
+'''
+near_a = '''
+WITH active_orders AS (
+  SELECT customer_id, amount FROM orders WHERE status = 'active'
+)
+SELECT customer_id, SUM(amount) AS total_amount
+FROM active_orders
+GROUP BY customer_id;
+'''
+near_b = '''
+WITH eligible_orders AS (
+  SELECT customer_id, amount FROM orders WHERE status = 'active'
+)
+SELECT customer_id, SUM(amount) AS total_amount
+FROM eligible_orders
+GROUP BY customer_id;
+'''
+
+[[language]]
+name = "HTML"
+slug = "html"
+filename = "sample.html"
+exact = '''
+<section class="summary">
+  <h2>Order summary</h2>
+  <p data-state="ready">The report is ready.</p>
+  <button type="button">Download report</button>
+</section>
+'''
+near_a = '''
+<section class="summary">
+  <h2>Order summary</h2>
+  <p data-state="ready">The report is ready.</p>
+  <button type="button">Download report</button>
+</section>
+'''
+near_b = '''
+<section class="overview">
+  <h2>Order summary</h2>
+  <p data-state="ready">The report is ready.</p>
+  <button type="button">Download report</button>
+</section>
+'''
+
+[[language]]
+name = "CSS"
+slug = "css"
+filename = "sample.css"
+exact = '''
+.summary {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  color: #223344;
+}
+'''
+near_a = '''
+.summary {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  color: #223344;
+}
+'''
+near_b = '''
+.overview {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  color: #223344;
+}
+'''
+
+[[language]]
+name = "SCSS"
+slug = "scss"
+filename = "sample.scss"
+exact = '''
+$accent: #336699;
+.summary {
+  border: 1px solid $accent;
+  padding: 1rem;
+  &:hover { color: $accent; }
+}
+'''
+near_a = '''
+$accent: #336699;
+.summary {
+  border: 1px solid $accent;
+  padding: 1rem;
+  &:hover { color: $accent; }
+}
+'''
+near_b = '''
+$highlight: #336699;
+.summary {
+  border: 1px solid $highlight;
+  padding: 1rem;
+  &:hover { color: $highlight; }
+}
+'''
+
+[[language]]
+name = "YAML"
+slug = "yaml"
+filename = "sample.yaml"
+exact = '''
+service:
+  name: catalog
+  enabled: true
+  retries: 3
+  endpoint: /api/catalog
+'''
+near_a = '''
+service:
+  name: catalog
+  enabled: true
+  retries: 3
+  endpoint: /api/catalog
+'''
+near_b = '''
+service:
+  name: inventory
+  enabled: true
+  retries: 3
+  endpoint: /api/catalog
+'''
+
+[[language]]
+name = "TOML"
+slug = "toml"
+filename = "sample.toml"
+exact = '''
+[service]
+name = "catalog"
+enabled = true
+retries = 3
+endpoint = "/api/catalog"
+'''
+near_a = '''
+[service]
+name = "catalog"
+enabled = true
+retries = 3
+endpoint = "/api/catalog"
+'''
+near_b = '''
+[service]
+name = "inventory"
+enabled = true
+retries = 3
+endpoint = "/api/catalog"
+'''
+
+[[language]]
+name = "Markdown"
+slug = "markdown"
+filename = "sample.md"
+exact = '''
+## Catalog deployment
+
+Run the validation command before deployment.
+Review the generated report for warnings.
+Publish the catalog service after approval.
+'''
+near_a = '''
+## Catalog deployment
+
+Run the validation command before deployment.
+Review the generated report for warnings.
+Publish the catalog service after approval.
+'''
+near_b = '''
+## Inventory deployment
+
+Run the validation command before deployment.
+Review the generated report for warnings.
+Publish the catalog service after approval.
+'''
+
+[[language]]
+name = "XML"
+slug = "xml"
+filename = "sample.xml"
+exact = '''
+<service name="catalog">
+  <enabled>true</enabled>
+  <retries>3</retries>
+  <endpoint>/api/catalog</endpoint>
+</service>
+'''
+near_a = '''
+<service name="catalog">
+  <enabled>true</enabled>
+  <retries>3</retries>
+  <endpoint>/api/catalog</endpoint>
+</service>
+'''
+near_b = '''
+<service name="inventory">
+  <enabled>true</enabled>
+  <retries>3</retries>
+  <endpoint>/api/catalog</endpoint>
+</service>
+'''
+
+[[language]]
+name = "Text"
+slug = "text"
+filename = "sample.txt"
+exact = '''
+Catalog deployment checklist
+Run the validation command before deployment.
+Review the generated report for warnings.
+Publish the catalog service after approval.
+'''
+near_a = '''
+Catalog deployment checklist
+Run the validation command before deployment.
+Review the generated report for warnings.
+Publish the catalog service after approval.
+'''
+near_b = '''
+Inventory deployment checklist
+Run the validation command before deployment.
+Review the generated report for warnings.
+Publish the catalog service after approval.
+'''
+
+[[language]]
+name = "Makefile"
+slug = "makefile"
+filename = "Makefile"
+exact = '''
+application: build validate
+	@echo "packaging application"
+	@mkdir -p dist/application
+	@cp $(BINARY) dist/application/
+	@echo "application ready"
+'''
+near_a = '''
+application: build validate
+	@echo "packaging application"
+	@mkdir -p dist/application
+	@cp $(BINARY) dist/application/
+	@echo "application ready"
+'''
+near_b = '''
+service: build validate
+	@echo "packaging service"
+	@mkdir -p dist/service
+	@cp $(BINARY) dist/service/
+	@echo "service ready"
+'''
