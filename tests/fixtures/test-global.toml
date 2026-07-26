@@ -1,0 +1,3 @@
+# Hermetic defaults for integration-test CLI processes. Project/CLI precedence
+# tests may override this file explicitly, while routine scans stay bounded.
+jobs = 2
