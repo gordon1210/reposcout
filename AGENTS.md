@@ -102,7 +102,7 @@ full-suite command.
 
 ```sh
 cargo build                 # debug build
-cargo build --release       # release build (refreshes the global symlink)
+cargo build --release       # release build (refreshes the reposcoutdev symlink)
 cargo test                  # full suite; serialized automatically by .cargo/config.toml
 cargo test <FILTER>         # targeted test; inherits the same safe default
 cargo clippy --all-targets -- -D warnings
@@ -552,8 +552,8 @@ Metric semantics worth knowing:
 4. `cargo test` (all green; the harness is serialized by repository configuration).
 5. `pnpm build:web && pnpm test:web`
 6. `pnpm build:landing`
-7. `cargo build --release`  (refreshes the global `reposcout` symlink)
-8. Sanity-run: `reposcout -f json .` and confirm the output looks right.
+7. `cargo build --release`  (refreshes the `reposcoutdev` symlink)
+8. Sanity-run: `reposcoutdev -f json .` and confirm the output looks right.
 
 ## Testing notes
 

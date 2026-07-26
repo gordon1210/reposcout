@@ -31,6 +31,11 @@ within their section.
   `jest-dom` 7. The landing page now owns its GitHub mark instead of relying on Lucide's removed
   brand icon export.
 
+### Fixed
+
+- Installed the pinned auditable-metadata and CycloneDX tools on release builders so the enabled
+  release hardening steps can run successfully.
+
 ### Security
 
 - Restricted the release workflow to read-only permissions by default and granted write,
