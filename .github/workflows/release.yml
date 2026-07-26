@@ -118,8 +118,11 @@ jobs:
           submodules: recursive
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-      - name: Install dist
-        run: cargo install cargo-dist --version 0.32.0 --locked
+      - name: Install release build tools
+        run: |
+          cargo install cargo-dist --version 0.32.0 --locked
+          cargo install cargo-auditable --version 0.7.5 --locked
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
