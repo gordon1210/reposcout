@@ -243,12 +243,7 @@ async fn enforce_request_policy(
     request: Request,
     next: Next,
 ) -> Response {
-    if request
-        .headers()
-        .get(header::HOST)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|host| !allowed_request_host(host, policy.loopback))
-    {
+    if !allowed_request_authority(&request, policy.loopback) {
         return StatusCode::MISDIRECTED_REQUEST.into_response();
     }
     if request
@@ -260,6 +255,20 @@ async fn enforce_request_policy(
         return StatusCode::FORBIDDEN.into_response();
     }
     next.run(request).await
+}
+
+fn allowed_request_authority(request: &Request, loopback: bool) -> bool {
+    match request.headers().get(header::HOST) {
+        Some(value) => value
+            .to_str()
+            .ok()
+            .is_some_and(|authority| allowed_request_host(authority, loopback)),
+        None => request
+            .uri()
+            .authority()
+            .map(Authority::as_str)
+            .is_some_and(|authority| allowed_request_host(authority, loopback)),
+    }
 }
 
 fn allowed_request_host(value: &str, loopback: bool) -> bool {
@@ -827,6 +836,28 @@ mod tests {
         assert!(!allowed_origin("https://attacker.example", true));
         assert!(allowed_request_host("192.0.2.10:7331", false));
         assert!(!allowed_request_host("daemon.example:7331", false));
+    }
+
+    #[test]
+    fn request_policy_requires_a_valid_host_or_uri_authority() {
+        let missing = Request::builder()
+            .uri("/api/health")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(!allowed_request_authority(&missing, true));
+
+        let local_header = Request::builder()
+            .uri("/api/health")
+            .header(header::HOST, "127.0.0.1:7331")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(allowed_request_authority(&local_header, true));
+
+        let local_authority = Request::builder()
+            .uri("http://localhost:7331/api/health")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(allowed_request_authority(&local_authority, true));
     }
 
     #[tokio::test]

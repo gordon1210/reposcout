@@ -239,4 +239,7 @@ See [Configuration and caching](configuration.md) for saved defaults and cache m
 
 Resource limits are clamped to non-disableable absolute ceilings. A scan that reaches one remains
 successful but marks its diagnostics as truncated and reports the omitted files/bytes or expired
-deadline; automation should check those fields before treating absent findings as evidence.
+deadline; automation should check those fields before treating absent findings as evidence. When
+traversal must stop at a safety bound, `files_omitted_by_limit` is the number already proven to be
+omitted and `files_omitted_count_incomplete: true` states that the exact remaining count was
+deliberately not computed.

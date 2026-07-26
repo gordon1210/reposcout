@@ -613,6 +613,7 @@ fn analyze_files(
         oversized_files: discovered.oversized_files,
         oversized_bytes: discovered.oversized_bytes,
         files_omitted_by_limit: discovered.files_omitted_by_limit,
+        files_omitted_count_incomplete: discovered.files_omitted_count_incomplete,
         bytes_omitted_by_limit: discovered.bytes_omitted_by_limit,
         scan_truncated: discovered.scan_truncated,
         duration_limit_reached: discovered.duration_limit_reached,

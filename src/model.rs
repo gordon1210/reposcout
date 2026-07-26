@@ -1095,9 +1095,12 @@ pub struct ScanDiagnostics {
     /// Aggregate bytes in recognized worktree files skipped as oversized.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub oversized_bytes: u64,
-    /// Files omitted after a file-count, aggregate-byte, or duration limit.
+    /// Known files omitted after a file-count, aggregate-byte, or duration limit.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub files_omitted_by_limit: usize,
+    /// Traversal stopped before the exact omitted-file count could be established.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub files_omitted_count_incomplete: bool,
     /// Aggregate known bytes omitted by resource limits.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub bytes_omitted_by_limit: u64,
@@ -1209,6 +1212,8 @@ pub struct ReviewDiagnostics {
     pub oversized_bytes: u64,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub files_omitted_by_limit: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub files_omitted_count_incomplete: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub scan_truncated: bool,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -1398,6 +1403,7 @@ mod tests {
             oversized_files: 2,
             oversized_bytes: 8_388_608,
             files_omitted_by_limit: 3,
+            files_omitted_count_incomplete: true,
             bytes_omitted_by_limit: 12_582_912,
             scan_truncated: true,
             duration_limit_reached: true,
@@ -1417,6 +1423,7 @@ mod tests {
         assert_eq!(json["oversized_files"], 2);
         assert_eq!(json["oversized_bytes"], 8_388_608u64);
         assert_eq!(json["files_omitted_by_limit"], 3);
+        assert_eq!(json["files_omitted_count_incomplete"], true);
         assert_eq!(json["scan_truncated"], true);
         assert_eq!(json["duration_limit_reached"], true);
         assert_eq!(json["type2_seed_pairs_skipped"], 42);

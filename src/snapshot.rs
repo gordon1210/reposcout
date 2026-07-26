@@ -18,6 +18,7 @@ pub(crate) struct SourceSnapshot {
     pub oversized_files: usize,
     pub oversized_bytes: u64,
     pub files_omitted_by_limit: usize,
+    pub files_omitted_count_incomplete: bool,
     pub scan_truncated: bool,
     pub duration_limit_reached: bool,
 }
@@ -31,6 +32,7 @@ impl SourceSnapshot {
             oversized_files: 0,
             oversized_bytes: 0,
             files_omitted_by_limit: 0,
+            files_omitted_count_incomplete: false,
             scan_truncated: false,
             duration_limit_reached: false,
         }
@@ -47,6 +49,7 @@ impl SourceSnapshot {
             oversized_files: discovered.oversized_files,
             oversized_bytes: discovered.oversized_bytes,
             files_omitted_by_limit: discovered.files_omitted_by_limit,
+            files_omitted_count_incomplete: discovered.files_omitted_count_incomplete,
             scan_truncated: discovered.scan_truncated,
             duration_limit_reached: discovered.duration_limit_reached,
             ..Self::default()
@@ -154,10 +157,13 @@ impl SourceSnapshot {
         let mut snapshot = Self::default();
         let mut observed_files = 0usize;
         let mut accepted_bytes = 0u64;
-        tree.walk(TreeWalkMode::PreOrder, |directory, entry| {
+        let mut stopped_at_limit = false;
+        let walk_result = tree.walk(TreeWalkMode::PreOrder, |directory, entry| {
             if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 snapshot.scan_truncated = true;
                 snapshot.duration_limit_reached = true;
+                snapshot.files_omitted_count_incomplete = true;
+                stopped_at_limit = true;
                 return TreeWalkResult::Abort;
             }
             if entry.kind() != Some(ObjectType::Blob) {
@@ -166,7 +172,9 @@ impl SourceSnapshot {
             observed_files = observed_files.saturating_add(1);
             if observed_files > cfg.max_files {
                 snapshot.files_omitted_by_limit = snapshot.files_omitted_by_limit.saturating_add(1);
+                snapshot.files_omitted_count_incomplete = true;
                 snapshot.scan_truncated = true;
+                stopped_at_limit = true;
                 return TreeWalkResult::Abort;
             }
             let name = match entry.name() {
@@ -206,7 +214,12 @@ impl SourceSnapshot {
                 Err(_) => snapshot.unreadable_files += 1,
             }
             TreeWalkResult::Ok
-        })?;
+        });
+        if let Err(error) = walk_result
+            && !stopped_at_limit
+        {
+            return Err(error.into());
+        }
         Ok(snapshot)
     }
 
@@ -222,15 +235,21 @@ impl SourceSnapshot {
         let mut snapshot = Self::default();
         let mut observed_files = 0usize;
         let mut accepted_bytes = 0u64;
-        for entry in index.iter() {
+        let entry_count = index.len();
+        for (position, entry) in index.iter().enumerate() {
             if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                snapshot.files_omitted_by_limit = snapshot
+                    .files_omitted_by_limit
+                    .saturating_add(entry_count.saturating_sub(position));
                 snapshot.scan_truncated = true;
                 snapshot.duration_limit_reached = true;
                 break;
             }
             observed_files = observed_files.saturating_add(1);
             if observed_files > cfg.max_files {
-                snapshot.files_omitted_by_limit = snapshot.files_omitted_by_limit.saturating_add(1);
+                snapshot.files_omitted_by_limit = snapshot
+                    .files_omitted_by_limit
+                    .saturating_add(entry_count.saturating_sub(position));
                 snapshot.scan_truncated = true;
                 break;
             }
@@ -508,6 +527,58 @@ mod tests {
         assert_eq!(snapshot.iter().count(), 0);
         assert_eq!(snapshot.oversized_files, 1);
         assert_eq!(snapshot.oversized_bytes, 128);
+        assert!(snapshot.scan_truncated);
+    }
+
+    #[test]
+    fn tree_snapshot_marks_file_limit_omissions_as_a_lower_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        fs::write(dir.path().join("a.rs"), "fn a() {}\n").unwrap();
+        fs::write(dir.path().join("b.rs"), "fn b() {}\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.rs")).unwrap();
+        index.add_path(Path::new("b.rs")).unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let signature = git2::Signature::now("RepoScout Test", "test@example.com").unwrap();
+        repo.commit(Some("HEAD"), &signature, &signature, "fixture", &tree, &[])
+            .unwrap();
+        let cfg = Config {
+            max_files: 1,
+            ..Config::default()
+        };
+
+        let snapshot =
+            SourceSnapshot::base(dir.path(), &cfg, &DiffScope::Working, None, &[], None).unwrap();
+
+        assert_eq!(snapshot.files_omitted_by_limit, 1);
+        assert!(snapshot.files_omitted_count_incomplete);
+        assert!(snapshot.scan_truncated);
+    }
+
+    #[test]
+    fn index_snapshot_counts_all_remaining_entries_at_the_file_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            fs::write(dir.path().join(name), format!("fn {}() {{}}\n", &name[..1])).unwrap();
+        }
+        let mut index = repo.index().unwrap();
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            index.add_path(Path::new(name)).unwrap();
+        }
+        index.write().unwrap();
+        let cfg = Config {
+            max_files: 1,
+            ..Config::default()
+        };
+
+        let snapshot =
+            SourceSnapshot::current(dir.path(), &cfg, &DiffScope::Staged, &[], None).unwrap();
+
+        assert_eq!(snapshot.files_omitted_by_limit, 2);
+        assert!(!snapshot.files_omitted_count_incomplete);
         assert!(snapshot.scan_truncated);
     }
 }
