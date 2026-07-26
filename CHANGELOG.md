@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-26
+
+### Fixed
+
+- Updated the web dashboard's `react-router` dependency from 8.2.0 to 8.3.0, incorporating
+  upstream routing fixes and dependency hardening.
+
 ### Changed
 
 - Reworked the repository documentation around a concise, badge-backed project README and a

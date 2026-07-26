@@ -327,7 +327,7 @@ fn update_reports_when_the_installed_release_is_current() {
                 "owner": "gordon1210",
                 "release_type": "github"
             },
-            "version": "0.1.0"
+            "version": "0.1.1"
         }))
         .unwrap(),
     )
@@ -336,11 +336,11 @@ fn update_reports_when_the_installed_release_is_current() {
     let fake_bin = tempfile::tempdir().unwrap();
     let curl_log = fake_bin.path().join("curl.log");
     let release = serde_json::json!({
-        "tag_name": "v0.1.0",
+        "tag_name": "v0.1.1",
         "prerelease": false,
         "assets": [{
             "name": "reposcout-installer.sh",
-            "browser_download_url": "https://github.com/gordon1210/reposcout/releases/download/v0.1.0/reposcout-installer.sh"
+            "browser_download_url": "https://github.com/gordon1210/reposcout/releases/download/v0.1.1/reposcout-installer.sh"
         }]
     })
     .to_string();
@@ -369,7 +369,7 @@ fn update_reports_when_the_installed_release_is_current() {
 
     assert_eq!(
         String::from_utf8(stdout).unwrap(),
-        "RepoScout 0.1.0 is already up to date.\n"
+        "RepoScout 0.1.1 is already up to date.\n"
     );
     let curl_args = std::fs::read_to_string(curl_log).unwrap();
     assert!(curl_args.contains("api.github.com/repos/gordon1210/reposcout/releases/latest"));
@@ -396,7 +396,7 @@ fn update_installs_a_newer_stable_release() {
                 "owner": "gordon1210",
                 "release_type": "github"
             },
-            "version": "0.1.0"
+            "version": "0.1.1"
         }))
         .unwrap(),
     )
@@ -438,7 +438,7 @@ fn update_installs_a_newer_stable_release() {
 
     assert_eq!(
         String::from_utf8(stdout).unwrap(),
-        "Updated RepoScout from 0.1.0 to 0.2.0.\n"
+        "Updated RepoScout from 0.1.1 to 0.2.0.\n"
     );
     let curl_args = std::fs::read_to_string(curl_log).unwrap();
     assert!(curl_args.contains("api.github.com/repos/gordon1210/reposcout/releases/latest"));
