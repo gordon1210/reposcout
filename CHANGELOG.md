@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-27
+
+### Fixed
+
+- Corrected the release pipeline so the configured `reposcout.cdx.xml` CycloneDX SBOM is generated
+  and published; release packaging now fails if the expected file is missing.
+
 ## [0.1.2] - 2026-07-27
 
 ### Added

@@ -122,7 +122,6 @@ jobs:
         run: |
           cargo install cargo-dist --version 0.32.0 --locked
           cargo install cargo-auditable --version 0.7.5 --locked
-          cargo install cargo-cyclonedx --version 0.5.9 --locked
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -178,6 +177,8 @@ jobs:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
+      - name: Install SBOM tool
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -189,6 +190,9 @@ jobs:
         shell: bash
         run: |
           dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
+          cargo cyclonedx --format xml
+          mv reposcout.cdx.xml target/distrib/reposcout.cdx.xml
+          test -s target/distrib/reposcout.cdx.xml
           echo "dist ran successfully"
 
           python3 .github/scripts/harden-cargo-dist-installer.py \
