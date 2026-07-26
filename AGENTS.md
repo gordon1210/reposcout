@@ -8,20 +8,21 @@ metrics, markers, imports, and git churn. See `README.md` for user-facing docs.
 
 ---
 
-## ⚠️ Keep the global binary up to date
+## ⚠️ Keep the development binary up to date
 
-A global `reposcout` command is installed as a **symlink** on this machine:
+A global `reposcoutdev` command is installed as a **symlink** on this machine:
 
 ```
-~/.local/bin/reposcout  ->  <repo>/target/release/reposcout
+~/.local/bin/reposcoutdev  ->  <repo>/target/release/reposcout
 ```
 
-`~/.local/bin` is on `PATH`, so `reposcout` runs from anywhere. Because it is a
-symlink to the **release** build, it reflects the latest binary as soon as you
-rebuild in release mode.
+`~/.local/bin` is on `PATH`, so `reposcoutdev` runs from anywhere. The `reposcout`
+command is reserved for an installed public release and must not point into this
+working tree. Because `reposcoutdev` is a symlink to the **release** build, it
+reflects the latest development binary as soon as you rebuild in release mode.
 
-**After making ANY code change, rebuild the release binary so the global command
-stays current:**
+**After making ANY code change, rebuild the release binary so the development
+command stays current:**
 
 ```sh
 cargo build --release
@@ -32,12 +33,12 @@ repo), recreate it:
 
 ```sh
 mkdir -p ~/.local/bin
-ln -sf "$(pwd)/target/release/reposcout" ~/.local/bin/reposcout
-reposcout --version   # verify
+ln -sf "$(pwd)/target/release/reposcout" ~/.local/bin/reposcoutdev
+reposcoutdev --version   # verify
 ```
 
-> Do **not** rely on the debug build (`target/debug`) for the global command — the
-> symlink points at `target/release`. A debug-only `cargo build` will not update it.
+> Do **not** rely on the debug build (`target/debug`) for the development command —
+> the symlink points at `target/release`. A debug-only `cargo build` will not update it.
 
 ---
 
