@@ -121,7 +121,7 @@ fn command_target(cli: &Cli) -> Option<&Path> {
             let CacheCommand::Clear(args) = &args.command;
             args.path.as_deref()
         }
-        Some(Command::Capabilities(_)) => None,
+        Some(Command::Capabilities(_) | Command::Update) => None,
     }
 }
 
@@ -138,7 +138,11 @@ fn command_output(cli: &Cli) -> Option<&Path> {
         Some(Command::Explain(args)) => args.common.output.as_deref(),
         Some(Command::Locate(args)) => args.common.output.as_deref(),
         Some(
-            Command::Capabilities(_) | Command::Cache(_) | Command::Config(_) | Command::Daemon(_),
+            Command::Capabilities(_)
+            | Command::Cache(_)
+            | Command::Config(_)
+            | Command::Daemon(_)
+            | Command::Update,
         ) => None,
     }
 }
@@ -169,6 +173,14 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
             command: Some(Command::Locate(args)),
             ..
         } => run_locate(args),
+        Cli {
+            command: Some(Command::Update),
+            ..
+        } => {
+            let rendered = reposcout::update::run()?;
+            write_stdout(&rendered)?;
+            Ok(ExitCode::SUCCESS)
+        }
         cli => run_scan(cli),
     }
 }
@@ -633,6 +645,7 @@ fn split(cli: Cli) -> (ScanArgs, Option<Enabled>) {
         Some(Command::Cache(_)) => unreachable!("cache is dispatched before scan splitting"),
         Some(Command::Config(_)) => unreachable!("config is dispatched before scan splitting"),
         Some(Command::Daemon(_)) => unreachable!("daemon is dispatched before scan splitting"),
+        Some(Command::Update) => unreachable!("update is dispatched before scan splitting"),
     }
 }
 

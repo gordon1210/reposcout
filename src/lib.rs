@@ -19,4 +19,5 @@ pub mod report;
 pub mod review;
 pub mod scan;
 mod snapshot;
+pub mod update;
 pub mod walk;

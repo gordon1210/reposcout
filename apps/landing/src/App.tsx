@@ -26,7 +26,8 @@ import { GraphShowcase } from "./GraphShowcase"
 import { useSectionParallax } from "./useSectionParallax"
 
 const githubUrl = "https://github.com/gordon1210/reposcout"
-const installCommand = "cargo install --git https://github.com/gordon1210/reposcout"
+const releasesUrl = `${githubUrl}/releases/latest`
+const installCommand = "curl -fsSL https://getreposcout.vercel.app/install.sh | sh"
 
 type Signal = {
   icon: LucideIcon
@@ -755,14 +756,14 @@ export function App() {
             <p>Fast to run. Small enough for context. Specific enough to act on.</p>
 
             <div className="final-install">
-              <Terminal size={18} />
+              <Terminal size={18} aria-hidden="true" />
               <code>{installCommand}</code>
               <CopyButton copied={copied} onCopy={() => void copyInstall()} />
             </div>
 
             <a className="final-github" href={githubUrl} target="_blank" rel="noreferrer">
               <Github size={18} />
-              Explore RepoScout on GitHub
+              Browse the source on GitHub
               <ArrowRight size={17} />
             </a>
           </div>
@@ -777,10 +778,12 @@ export function App() {
             <a href={githubUrl} target="_blank" rel="noreferrer">
               GitHub
             </a>
+            <a href={releasesUrl} target="_blank" rel="noreferrer">
+              Releases
+            </a>
             <a href={githubUrl + "#usage"} target="_blank" rel="noreferrer">
               Docs
             </a>
-            <span>Open source</span>
           </div>
         </div>
       </footer>

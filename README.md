@@ -117,6 +117,18 @@ explicit opt-ins via `--health-include <FORMAT>` or `health_includes`; use
 
 ## Install
 
+Install the latest stable GitHub release on macOS or Linux:
+
+```sh
+curl -fsSL https://getreposcout.vercel.app/install.sh | sh
+```
+
+The installer selects the correct prebuilt binary, verifies its checksum, and installs it under
+Cargo's binary directory. Installer-managed copies can update to the latest stable release with
+`reposcout update`; rerunning the install command remains a recovery option. Release archives and
+checksums are also available from
+[GitHub Releases](https://github.com/gordon1210/reposcout/releases).
+
 Build from source (requires a Rust toolchain and a C compiler for the vendored
 tree-sitter grammars and libgit2):
 
@@ -157,6 +169,7 @@ reposcout churn      [PATH]   # git churn / hotspots only
 reposcout metrics    [PATH]   # tokens + markers + imports
 reposcout explain    FILE     # full-repository context for one file
 reposcout locate     SYMBOL [PATH] # ranked/exact declaration lookup
+reposcout update              # install the latest stable GitHub release
 reposcout cache clear [PATH]  # clear analysis + Git-history caches for one scan root
 reposcout config     [PATH]   # inspect layered config sources and effective values
 reposcout capabilities         # machine-readable feature discovery
@@ -165,6 +178,10 @@ reposcout daemon     [PATH]   # watch PATH and serve live scan results
 
 > **Note:** because subcommands take their own options, global flags must come
 > *after* the subcommand, e.g. `reposcout tokens --encoding cl100k_base src/`.
+
+`update` is deliberately limited to copies installed by the release installer. It reads that
+installer's receipt, checks GitHub's latest stable release, and refuses source builds or executables
+whose location and version do not match the receipt.
 
 `locate` uses case-insensitive ranked matching by default (qualified exact, simple exact,
 prefix, then substring). `--exact` restricts it to a case-sensitive qualified or simple full-name
@@ -946,3 +963,8 @@ Integration tests live in `tests/` and run the compiled binary against the fixtu
 tree in `tests/fixtures/`. `tests/fixtures/dup_languages.toml` is the canonical
 31-format duplication corpus: each format has multi-line exact and Type-2 examples,
 tested both through the frozen detector APIs and an end-to-end `reposcout dup` scan.
+
+## License
+
+RepoScout is available under the [MIT License](LICENSE). Bundled and adapted third-party
+material remains under its original license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -57,6 +57,8 @@ pub enum Command {
     Explain(ExplainArgs),
     /// Locate declarations by symbol name across first-class languages
     Locate(LocateArgs),
+    /// Update an installer-managed copy from the latest stable GitHub release
+    Update,
     /// Show layered global/project configuration and effective values
     Config(ConfigArgs),
     /// Serve live scan results over HTTP and watch for repository changes

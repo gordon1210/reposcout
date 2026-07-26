@@ -235,6 +235,12 @@ Extend single-baseline comparison into bounded trend summaries: risk movement, d
 complexity regressions, and hotspots over selected Git points. Avoid persistent repository-local
 state by default, and cap history work so the feature cannot surprise an interactive caller.
 
+### Additional distribution channels
+
+The initial release channel is GitHub Releases. crates.io and Homebrew are deferred until real
+usage justifies the packaging, automation, and ongoing maintenance for those channels; do not
+advertise `cargo install` or `brew install` until the corresponding distribution is supported.
+
 ## Explicit non-goals
 
 ### MCP

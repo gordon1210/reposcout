@@ -21,6 +21,11 @@ within their section.
 
 ### Added
 
+- Added a GitHub Releases distribution pipeline for checksum-verified macOS and Linux archives, a
+  stable landing-page install URL, and `reposcout update` for installer-managed copies. The
+  built-in updater follows only the latest stable GitHub release, preserves the recorded install
+  location, and refuses source builds or stale/mismatched installer receipts.
+
 - The web dashboard's Files table and the CLI's human file rankings now show file-total and
   per-callable average cyclomatic complexity side by side. Files without callable-level data
   distinguish the unavailable average from a measured zero; dashboard columns remain sortable.

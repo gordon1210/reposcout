@@ -2,6 +2,11 @@
 name = "reposcout"
 version = "0.1.0"
 edition = "2024"
+description = "Fast repository scouting for tokens, complexity, duplication, risk, and Git churn"
+license = "MIT"
+repository = "https://github.com/gordon1210/reposcout"
+homepage = "https://getreposcout.vercel.app"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.103"
@@ -19,9 +24,11 @@ notify = "8"
 owo-colors = "4.3.0"
 rayon = "1.12.0"
 rustc-hash = "2.1.3"
+semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 streaming-iterator = "0.1.9"
+tempfile = "3.27.0"
 thiserror = "2.0.18"
 tiktoken-rs = "0.12.0"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
@@ -39,4 +46,8 @@ xxhash-rust = { version = "0.8.16", features = ["xxh3"] }
 [dev-dependencies]
 assert_cmd = "2.2.2"
 predicates = "3.1.4"
-tempfile = "3.27.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

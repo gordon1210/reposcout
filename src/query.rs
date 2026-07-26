@@ -28,6 +28,7 @@ pub fn capabilities() -> CapabilitiesReport {
             "metrics",
             "explain",
             "locate",
+            "update",
             "cache",
             "config",
             "capabilities",

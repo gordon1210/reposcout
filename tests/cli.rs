@@ -5,6 +5,8 @@
 //! as the individual analyzers evolve.
 
 use serde_json::Value;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 #[path = "support/command.rs"]
 mod test_command;
 use test_command::{reposcout_command, test_global_config};
@@ -280,6 +282,170 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     assert_eq!(report["type2_max_seed_pairs_per_pool"], 10_000_000);
     assert_eq!(report["type2_max_matches_per_pool"], 250_000);
     assert_eq!(report["type2_max_overlap_checks_per_pool"], 10_000_000);
+}
+
+#[test]
+fn update_is_exposed_as_a_builtin_command() {
+    let mut cmd = reposcout_command();
+    cmd.args(["update", "--help"]);
+    let output = cmd.assert().success().get_output().stdout.clone();
+    let help = String::from_utf8(output).unwrap();
+
+    assert!(help.contains("Usage: reposcout update"));
+    assert!(help.contains("latest stable GitHub release"));
+}
+
+#[test]
+fn update_refuses_an_executable_without_an_installer_receipt() {
+    let config_home = tempfile::tempdir().unwrap();
+    let mut cmd = reposcout_command();
+    cmd.env("XDG_CONFIG_HOME", config_home.path()).arg("update");
+    let stderr = cmd.assert().failure().get_output().stderr.clone();
+    let error = String::from_utf8(stderr).unwrap();
+
+    assert!(error.contains("release installer"));
+    assert!(error.contains("https://getreposcout.vercel.app/install.sh"));
+}
+
+#[cfg(unix)]
+#[test]
+fn update_reports_when_the_installed_release_is_current() {
+    let config_home = tempfile::tempdir().unwrap();
+    let receipt_dir = config_home.path().join("reposcout");
+    std::fs::create_dir_all(&receipt_dir).unwrap();
+    let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_reposcout"));
+    let install_prefix = binary.parent().unwrap();
+    std::fs::write(
+        receipt_dir.join("reposcout-receipt.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "binaries": ["reposcout"],
+            "install_prefix": install_prefix,
+            "provider": {"source": "cargo-dist", "version": "0.32.0"},
+            "source": {
+                "app_name": "reposcout",
+                "name": "reposcout",
+                "owner": "gordon1210",
+                "release_type": "github"
+            },
+            "version": "0.1.0"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let fake_bin = tempfile::tempdir().unwrap();
+    let curl_log = fake_bin.path().join("curl.log");
+    let release = serde_json::json!({
+        "tag_name": "v0.1.0",
+        "prerelease": false,
+        "assets": [{
+            "name": "reposcout-installer.sh",
+            "browser_download_url": "https://github.com/gordon1210/reposcout/releases/download/v0.1.0/reposcout-installer.sh"
+        }]
+    })
+    .to_string();
+    let fake_curl = fake_bin.path().join("curl");
+    std::fs::write(
+        &fake_curl,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\nprintf '%s' '{}'\n",
+            curl_log.display(),
+            release
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path = format!(
+        "{}:{}",
+        fake_bin.path().display(),
+        std::env::var("PATH").unwrap()
+    );
+    let mut cmd = reposcout_command();
+    cmd.env("XDG_CONFIG_HOME", config_home.path())
+        .env("PATH", path)
+        .arg("update");
+    let stdout = cmd.assert().success().get_output().stdout.clone();
+
+    assert_eq!(
+        String::from_utf8(stdout).unwrap(),
+        "RepoScout 0.1.0 is already up to date.\n"
+    );
+    let curl_args = std::fs::read_to_string(curl_log).unwrap();
+    assert!(curl_args.contains("api.github.com/repos/gordon1210/reposcout/releases/latest"));
+    assert!(!curl_args.contains("main"));
+}
+
+#[cfg(unix)]
+#[test]
+fn update_installs_a_newer_stable_release() {
+    let config_home = tempfile::tempdir().unwrap();
+    let receipt_dir = config_home.path().join("reposcout");
+    std::fs::create_dir_all(&receipt_dir).unwrap();
+    let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_reposcout"));
+    let install_prefix = binary.parent().unwrap();
+    std::fs::write(
+        receipt_dir.join("reposcout-receipt.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "binaries": ["reposcout"],
+            "install_prefix": install_prefix,
+            "provider": {"source": "cargo-dist", "version": "0.32.0"},
+            "source": {
+                "app_name": "reposcout",
+                "name": "reposcout",
+                "owner": "gordon1210",
+                "release_type": "github"
+            },
+            "version": "0.1.0"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let fake_bin = tempfile::tempdir().unwrap();
+    let curl_log = fake_bin.path().join("curl.log");
+    let release = serde_json::json!({
+        "tag_name": "v0.2.0",
+        "prerelease": false,
+        "assets": [{
+            "name": "reposcout-installer.sh",
+            "browser_download_url": "https://github.com/gordon1210/reposcout/releases/download/v0.2.0/reposcout-installer.sh"
+        }]
+    })
+    .to_string();
+    let fake_curl = fake_bin.path().join("curl");
+    std::fs::write(
+        &fake_curl,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\noutput=''\nprevious=''\nfor argument in \"$@\"; do\n  if [ \"$previous\" = '--output' ]; then output=\"$argument\"; fi\n  previous=\"$argument\"\ndone\nif [ -n \"$output\" ]; then\n  printf '#!/bin/sh\\nexit 0\\n' > \"$output\"\nelse\n  printf '%s' '{}'\nfi\n",
+            curl_log.display(),
+            release
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path = format!(
+        "{}:{}",
+        fake_bin.path().display(),
+        std::env::var("PATH").unwrap()
+    );
+    let mut cmd = reposcout_command();
+    cmd.env("XDG_CONFIG_HOME", config_home.path())
+        .env("PATH", path)
+        .arg("update");
+    let stdout = cmd.assert().success().get_output().stdout.clone();
+
+    assert_eq!(
+        String::from_utf8(stdout).unwrap(),
+        "Updated RepoScout from 0.1.0 to 0.2.0.\n"
+    );
+    let curl_args = std::fs::read_to_string(curl_log).unwrap();
+    assert!(curl_args.contains("api.github.com/repos/gordon1210/reposcout/releases/latest"));
+    assert!(curl_args.contains(
+        "github.com/gordon1210/reposcout/releases/download/v0.2.0/reposcout-installer.sh"
+    ));
+    assert!(!curl_args.contains("main"));
 }
 
 #[test]
