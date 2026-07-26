@@ -61,7 +61,7 @@ duplication.
 Install the latest stable GitHub release on macOS or Linux:
 
 ```sh
-curl -fsSL https://getreposcout.vercel.app/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh
 ```
 
 Update an installer-managed copy:
@@ -70,9 +70,11 @@ Update an installer-managed copy:
 reposcout update
 ```
 
-The installer chooses the correct prebuilt archive, verifies its checksum, and installs the binary
-under Cargo's binary directory. See [Getting started](docs/getting-started.md) for source builds,
-the agent skill, and default behavior.
+The installer chooses the correct prebuilt archive, requires successful checksum verification, and
+installs the binary under Cargo's binary directory. Built-in updates download and verify the
+immutable release archive directly; they never execute a downloaded installer script. See
+[Getting started](docs/getting-started.md) for source builds, release attestations, the agent
+skill, and default behavior.
 
 ## Quick start
 
@@ -104,8 +106,9 @@ detected automatically.
 reposcout -f json --summary --profile safe .
 ```
 
-The `safe` profile ignores repository configuration and applies conservative discovery, worker,
-history, context, and duplication limits.
+The `safe` profile ignores repository configuration and applies conservative file, byte, time,
+worker, history, context, and duplication limits. Partial scans identify every resource bound that
+was reached instead of presenting missing analysis as a clean result.
 
 ### Understand a change
 
@@ -134,8 +137,9 @@ reposcout daemon .
 pnpm dev:web
 ```
 
-The daemon binds to loopback by default and serves the latest successful report. See
-[Daemon and web dashboard](docs/daemon-and-web.md) for setup and the local API.
+The daemon binds to loopback by default, rejects browser-origin and DNS-rebinding requests that do
+not match its local trust boundary, and refuses non-loopback listeners unless the risk is explicitly
+accepted. See [Daemon and web dashboard](docs/daemon-and-web.md) for setup and the local API.
 
 ## Documentation
 

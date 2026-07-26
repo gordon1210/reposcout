@@ -5,8 +5,6 @@
 //! as the individual analyzers evolve.
 
 use serde_json::Value;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 #[path = "support/command.rs"]
 mod test_command;
 use test_command::{reposcout_command, test_global_config};
@@ -276,7 +274,7 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     );
     assert_eq!(
         report["daemon_profiles"],
-        serde_json::json!(["lite", "full"])
+        serde_json::json!(["lite", "full", "safe"])
     );
     assert_eq!(report["error_formats"], serde_json::json!(["text", "json"]));
     assert_eq!(report["type2_max_seed_pairs_per_pool"], 10_000_000);
@@ -305,147 +303,6 @@ fn update_refuses_an_executable_without_an_installer_receipt() {
 
     assert!(error.contains("release installer"));
     assert!(error.contains("https://getreposcout.vercel.app/install.sh"));
-}
-
-#[cfg(unix)]
-#[test]
-fn update_reports_when_the_installed_release_is_current() {
-    let config_home = tempfile::tempdir().unwrap();
-    let receipt_dir = config_home.path().join("reposcout");
-    std::fs::create_dir_all(&receipt_dir).unwrap();
-    let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_reposcout"));
-    let install_prefix = binary.parent().unwrap();
-    std::fs::write(
-        receipt_dir.join("reposcout-receipt.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "binaries": ["reposcout"],
-            "install_prefix": install_prefix,
-            "provider": {"source": "cargo-dist", "version": "0.32.0"},
-            "source": {
-                "app_name": "reposcout",
-                "name": "reposcout",
-                "owner": "gordon1210",
-                "release_type": "github"
-            },
-            "version": "0.1.1"
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
-    let fake_bin = tempfile::tempdir().unwrap();
-    let curl_log = fake_bin.path().join("curl.log");
-    let release = serde_json::json!({
-        "tag_name": "v0.1.1",
-        "prerelease": false,
-        "assets": [{
-            "name": "reposcout-installer.sh",
-            "browser_download_url": "https://github.com/gordon1210/reposcout/releases/download/v0.1.1/reposcout-installer.sh"
-        }]
-    })
-    .to_string();
-    let fake_curl = fake_bin.path().join("curl");
-    std::fs::write(
-        &fake_curl,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\nprintf '%s' '{}'\n",
-            curl_log.display(),
-            release
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    let path = format!(
-        "{}:{}",
-        fake_bin.path().display(),
-        std::env::var("PATH").unwrap()
-    );
-    let mut cmd = reposcout_command();
-    cmd.env("XDG_CONFIG_HOME", config_home.path())
-        .env("PATH", path)
-        .arg("update");
-    let stdout = cmd.assert().success().get_output().stdout.clone();
-
-    assert_eq!(
-        String::from_utf8(stdout).unwrap(),
-        "RepoScout 0.1.1 is already up to date.\n"
-    );
-    let curl_args = std::fs::read_to_string(curl_log).unwrap();
-    assert!(curl_args.contains("api.github.com/repos/gordon1210/reposcout/releases/latest"));
-    assert!(!curl_args.contains("main"));
-}
-
-#[cfg(unix)]
-#[test]
-fn update_installs_a_newer_stable_release() {
-    let config_home = tempfile::tempdir().unwrap();
-    let receipt_dir = config_home.path().join("reposcout");
-    std::fs::create_dir_all(&receipt_dir).unwrap();
-    let binary = std::path::PathBuf::from(env!("CARGO_BIN_EXE_reposcout"));
-    let install_prefix = binary.parent().unwrap();
-    std::fs::write(
-        receipt_dir.join("reposcout-receipt.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "binaries": ["reposcout"],
-            "install_prefix": install_prefix,
-            "provider": {"source": "cargo-dist", "version": "0.32.0"},
-            "source": {
-                "app_name": "reposcout",
-                "name": "reposcout",
-                "owner": "gordon1210",
-                "release_type": "github"
-            },
-            "version": "0.1.1"
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
-    let fake_bin = tempfile::tempdir().unwrap();
-    let curl_log = fake_bin.path().join("curl.log");
-    let release = serde_json::json!({
-        "tag_name": "v0.2.0",
-        "prerelease": false,
-        "assets": [{
-            "name": "reposcout-installer.sh",
-            "browser_download_url": "https://github.com/gordon1210/reposcout/releases/download/v0.2.0/reposcout-installer.sh"
-        }]
-    })
-    .to_string();
-    let fake_curl = fake_bin.path().join("curl");
-    std::fs::write(
-        &fake_curl,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\noutput=''\nprevious=''\nfor argument in \"$@\"; do\n  if [ \"$previous\" = '--output' ]; then output=\"$argument\"; fi\n  previous=\"$argument\"\ndone\nif [ -n \"$output\" ]; then\n  printf '#!/bin/sh\\nexit 0\\n' > \"$output\"\nelse\n  printf '%s' '{}'\nfi\n",
-            curl_log.display(),
-            release
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&fake_curl, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    let path = format!(
-        "{}:{}",
-        fake_bin.path().display(),
-        std::env::var("PATH").unwrap()
-    );
-    let mut cmd = reposcout_command();
-    cmd.env("XDG_CONFIG_HOME", config_home.path())
-        .env("PATH", path)
-        .arg("update");
-    let stdout = cmd.assert().success().get_output().stdout.clone();
-
-    assert_eq!(
-        String::from_utf8(stdout).unwrap(),
-        "Updated RepoScout from 0.1.1 to 0.2.0.\n"
-    );
-    let curl_args = std::fs::read_to_string(curl_log).unwrap();
-    assert!(curl_args.contains("api.github.com/repos/gordon1210/reposcout/releases/latest"));
-    assert!(curl_args.contains(
-        "github.com/gordon1210/reposcout/releases/download/v0.2.0/reposcout-installer.sh"
-    ));
-    assert!(!curl_args.contains("main"));
 }
 
 #[test]
@@ -1922,6 +1779,11 @@ fn safe_profile_ignores_repository_configuration_and_applies_guardrails() {
             "min_dup_tokens = 1\n",
             "min_dup_lines = 1\n",
             "churn_max_commits = 0\n",
+            "max_file_bytes = 999999999999\n",
+            "max_total_bytes = 999999999999\n",
+            "max_files = 999999999\n",
+            "max_git_blob_bytes = 999999999999\n",
+            "max_scan_seconds = 999999999\n",
             "[context]\n",
             "enabled = true\n",
             "budget = 999999\n",
@@ -1954,6 +1816,11 @@ fn safe_profile_ignores_repository_configuration_and_applies_guardrails() {
     assert_eq!(report["effective"]["min_dup_tokens"], 50);
     assert_eq!(report["effective"]["min_dup_lines"], 3);
     assert_eq!(report["effective"]["churn_max_commits"], 1000);
+    assert_eq!(report["effective"]["max_file_bytes"], 4 * 1024 * 1024);
+    assert_eq!(report["effective"]["max_total_bytes"], 128 * 1024 * 1024);
+    assert_eq!(report["effective"]["max_files"], 20_000);
+    assert_eq!(report["effective"]["max_git_blob_bytes"], 4 * 1024 * 1024);
+    assert_eq!(report["effective"]["max_scan_seconds"], 120);
     assert_eq!(report["effective"]["context_budget"], 32000);
     assert_eq!(report["effective"]["context_max_files"], 25);
     assert_eq!(report["effective"]["health_scope"], "source");
@@ -4189,6 +4056,27 @@ fn diagnostics_explain_unsupported_and_unreadable_files() {
     assert_eq!(diagnostics["analyzed_files"], 1);
     assert_eq!(diagnostics["unsupported_files"], 1);
     assert_eq!(diagnostics["unreadable_files"], 1);
+}
+
+#[test]
+fn diagnostics_explain_files_skipped_by_resource_limits() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("small.rs"), "fn okay() {}\n").unwrap();
+    std::fs::write(dir.path().join("large.rs"), "x".repeat(128)).unwrap();
+    let path = dir.path().to_str().unwrap().to_string();
+
+    let report = run_json(&["-f", "json", &path, "--max-file-bytes", "32"]);
+    let diagnostics = &report["diagnostics"];
+
+    assert_eq!(diagnostics["discovered_files"], 2);
+    assert_eq!(diagnostics["analyzed_files"], 1);
+    assert_eq!(diagnostics["oversized_files"], 1);
+    assert_eq!(diagnostics["oversized_bytes"], 128);
+    assert_eq!(diagnostics["scan_truncated"], true);
+    assert_eq!(
+        report["analysis_profile"]["resources"]["max_file_bytes"],
+        32
+    );
 }
 
 #[test]

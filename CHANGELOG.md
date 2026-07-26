@@ -10,6 +10,34 @@ within their section.
 
 - Added structured bug and feature issue forms plus a concise pull-request template for public
   contributions.
+- Added explicit worktree-file, aggregate-byte, file-count, Git-blob, and cooperative scan-time
+  limits. Safe scans enforce conservative non-overridable values; every profile is clamped to
+  absolute resource, worker, history, context, and duplication-input ceilings; configuration files
+  are size-bounded; and JSON, table, and Markdown diagnostics disclose oversized files, omitted
+  bytes/files, expired deadlines, and truncated results. Baselines without matching resource
+  metadata must be regenerated.
+- Added a daemon `safe` profile and `--no-project-config` trust control, non-loopback refusal unless
+  `--unsafe-no-auth` is explicit, loopback Host/Origin validation, CSRF-resistant rescans, a rescan
+  cooldown, and a concurrent SSE-client cap.
+- Added pinned CodeQL analysis for Rust and JavaScript/TypeScript, scheduled RustSec dependency
+  audits, auditable dependency metadata, CycloneDX release SBOMs, and GitHub build-provenance
+  attestations for release artifacts.
+
+### Security
+
+- Restricted the release workflow to read-only permissions by default and granted write,
+  attestation, and OIDC permissions only to tag publishing. Release and ordinary CI actions are
+  pinned to full commit SHAs, release-build jobs no longer receive GitHub tokens, cargo-dist is
+  installed without a downloaded shell pipeline, and PR checks now rerun for synchronized and
+  reopened pull requests.
+- Replaced the shell-based self-update path with direct platform-archive installation through an
+  embedded rustls client. Updates require a stable immutable GitHub Release, an exact release-asset
+  URL, a bounded archive, and successful SHA-256 verification against GitHub's asset digest; binary
+  and owner-only receipt replacement use same-directory staging and rollback.
+- Hardened the generated bootstrap installer to fail closed with `sha256sum`, `shasum`, or
+  `openssl`, and to store installer receipts with owner-only permissions.
+- Dependabot now reports grouped major dependency updates instead of ignoring them globally.
+- Updated `crossbeam-epoch` to 0.9.20 to resolve RUSTSEC-2026-0204.
 
 ## [0.1.1] - 2026-07-26
 

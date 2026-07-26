@@ -9,11 +9,17 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::overrides::{Override, OverrideBuilder};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 #[derive(Debug, Default)]
 pub(crate) struct SourceSnapshot {
     sources: BTreeMap<PathBuf, String>,
     pub unreadable_files: usize,
+    pub oversized_files: usize,
+    pub oversized_bytes: u64,
+    pub files_omitted_by_limit: usize,
+    pub scan_truncated: bool,
+    pub duration_limit_reached: bool,
 }
 
 impl SourceSnapshot {
@@ -22,21 +28,52 @@ impl SourceSnapshot {
         SourceSnapshot {
             sources: sources.into_iter().collect(),
             unreadable_files: 0,
+            oversized_files: 0,
+            oversized_bytes: 0,
+            files_omitted_by_limit: 0,
+            scan_truncated: false,
+            duration_limit_reached: false,
         }
     }
 
-    pub fn worktree(root: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<Self> {
-        let discovered = walk::discover_with_exclusions(root, cfg, exclusions)?;
-        let mut snapshot = Self::default();
-        for file in discovered.files {
+    pub fn worktree(
+        root: &Path,
+        cfg: &Config,
+        exclusions: &[PathBuf],
+        deadline: Option<Instant>,
+    ) -> Result<Self> {
+        let discovered = walk::discover_with_exclusions_until(root, cfg, exclusions, deadline)?;
+        let mut snapshot = Self {
+            oversized_files: discovered.oversized_files,
+            oversized_bytes: discovered.oversized_bytes,
+            files_omitted_by_limit: discovered.files_omitted_by_limit,
+            scan_truncated: discovered.scan_truncated,
+            duration_limit_reached: discovered.duration_limit_reached,
+            ..Self::default()
+        };
+        let file_count = discovered.files.len();
+        for (index, file) in discovered.files.into_iter().enumerate() {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                snapshot.files_omitted_by_limit = snapshot
+                    .files_omitted_by_limit
+                    .saturating_add(file_count.saturating_sub(index));
+                snapshot.scan_truncated = true;
+                snapshot.duration_limit_reached = true;
+                break;
+            }
             if lang::detect(&file.report_path).is_none() {
                 continue;
             }
-            match std::fs::read_to_string(&file.absolute_path) {
-                Ok(content) => {
+            match walk::read_text_bounded(&file.absolute_path, cfg.max_file_bytes) {
+                walk::BoundedText::Content(content) => {
                     snapshot.sources.insert(file.report_path, content);
                 }
-                Err(_) => snapshot.unreadable_files += 1,
+                walk::BoundedText::Oversized(bytes) => {
+                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                    snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(bytes);
+                    snapshot.scan_truncated = true;
+                }
+                walk::BoundedText::Unreadable => snapshot.unreadable_files += 1,
             }
         }
         Ok(snapshot)
@@ -48,6 +85,7 @@ impl SourceSnapshot {
         scope: &DiffScope,
         base_tree_id: Option<&str>,
         exclusions: &[PathBuf],
+        deadline: Option<Instant>,
     ) -> Result<Self> {
         let repo = Repository::discover(root)
             .map_err(|error| anyhow::anyhow!("deep review requires a git repository: {error}"))?;
@@ -72,7 +110,13 @@ impl SourceSnapshot {
                 }
             }
         };
-        Self::from_tree(&repo, &tree, &SnapshotFilter::new(root, cfg, exclusions)?)
+        Self::from_tree(
+            &repo,
+            &tree,
+            &SnapshotFilter::new(root, cfg, exclusions)?,
+            cfg,
+            deadline,
+        )
     }
 
     pub fn current(
@@ -80,11 +124,17 @@ impl SourceSnapshot {
         cfg: &Config,
         scope: &DiffScope,
         exclusions: &[PathBuf],
+        deadline: Option<Instant>,
     ) -> Result<Self> {
         if matches!(scope, DiffScope::Staged) {
-            Self::from_index(root, &SnapshotFilter::new(root, cfg, exclusions)?)
+            Self::from_index(
+                root,
+                &SnapshotFilter::new(root, cfg, exclusions)?,
+                cfg,
+                deadline,
+            )
         } else {
-            Self::worktree(root, cfg, exclusions)
+            Self::worktree(root, cfg, exclusions, deadline)
         }
     }
 
@@ -94,11 +144,30 @@ impl SourceSnapshot {
             .map(|(path, content)| (path.as_path(), content.as_str()))
     }
 
-    fn from_tree(repo: &Repository, tree: &Tree<'_>, filter: &SnapshotFilter) -> Result<Self> {
+    fn from_tree(
+        repo: &Repository,
+        tree: &Tree<'_>,
+        filter: &SnapshotFilter,
+        cfg: &Config,
+        deadline: Option<Instant>,
+    ) -> Result<Self> {
         let mut snapshot = Self::default();
+        let mut observed_files = 0usize;
+        let mut accepted_bytes = 0u64;
         tree.walk(TreeWalkMode::PreOrder, |directory, entry| {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                snapshot.scan_truncated = true;
+                snapshot.duration_limit_reached = true;
+                return TreeWalkResult::Abort;
+            }
             if entry.kind() != Some(ObjectType::Blob) {
                 return TreeWalkResult::Ok;
+            }
+            observed_files = observed_files.saturating_add(1);
+            if observed_files > cfg.max_files {
+                snapshot.files_omitted_by_limit = snapshot.files_omitted_by_limit.saturating_add(1);
+                snapshot.scan_truncated = true;
+                return TreeWalkResult::Abort;
             }
             let name = match entry.name() {
                 Ok(name) => name,
@@ -112,12 +181,28 @@ impl SourceSnapshot {
                 return TreeWalkResult::Ok;
             }
             match repo.find_blob(entry.id()) {
-                Ok(blob) => match std::str::from_utf8(blob.content()) {
-                    Ok(content) => {
-                        snapshot.sources.insert(path, content.to_string());
+                Ok(blob) if blob.size() as u64 > cfg.max_git_blob_bytes => {
+                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                    snapshot.oversized_bytes =
+                        snapshot.oversized_bytes.saturating_add(blob.size() as u64);
+                    snapshot.scan_truncated = true;
+                }
+                Ok(blob)
+                    if accepted_bytes.saturating_add(blob.size() as u64) > cfg.max_total_bytes =>
+                {
+                    snapshot.files_omitted_by_limit =
+                        snapshot.files_omitted_by_limit.saturating_add(1);
+                    snapshot.scan_truncated = true;
+                }
+                Ok(blob) => {
+                    accepted_bytes = accepted_bytes.saturating_add(blob.size() as u64);
+                    match std::str::from_utf8(blob.content()) {
+                        Ok(content) => {
+                            snapshot.sources.insert(path, content.to_string());
+                        }
+                        Err(_) => snapshot.unreadable_files += 1,
                     }
-                    Err(_) => snapshot.unreadable_files += 1,
-                },
+                }
                 Err(_) => snapshot.unreadable_files += 1,
             }
             TreeWalkResult::Ok
@@ -125,12 +210,30 @@ impl SourceSnapshot {
         Ok(snapshot)
     }
 
-    fn from_index(root: &Path, filter: &SnapshotFilter) -> Result<Self> {
+    fn from_index(
+        root: &Path,
+        filter: &SnapshotFilter,
+        cfg: &Config,
+        deadline: Option<Instant>,
+    ) -> Result<Self> {
         let repo = Repository::discover(root)
             .map_err(|error| anyhow::anyhow!("staged review requires a git repository: {error}"))?;
         let index = repo.index()?;
         let mut snapshot = Self::default();
+        let mut observed_files = 0usize;
+        let mut accepted_bytes = 0u64;
         for entry in index.iter() {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                snapshot.scan_truncated = true;
+                snapshot.duration_limit_reached = true;
+                break;
+            }
+            observed_files = observed_files.saturating_add(1);
+            if observed_files > cfg.max_files {
+                snapshot.files_omitted_by_limit = snapshot.files_omitted_by_limit.saturating_add(1);
+                snapshot.scan_truncated = true;
+                break;
+            }
             let Some(path) = git_path(&entry.path) else {
                 snapshot.unreadable_files += 1;
                 continue;
@@ -139,12 +242,28 @@ impl SourceSnapshot {
                 continue;
             }
             match repo.find_blob(entry.id) {
-                Ok(blob) => match std::str::from_utf8(blob.content()) {
-                    Ok(content) => {
-                        snapshot.sources.insert(path, content.to_string());
+                Ok(blob) if blob.size() as u64 > cfg.max_git_blob_bytes => {
+                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                    snapshot.oversized_bytes =
+                        snapshot.oversized_bytes.saturating_add(blob.size() as u64);
+                    snapshot.scan_truncated = true;
+                }
+                Ok(blob)
+                    if accepted_bytes.saturating_add(blob.size() as u64) > cfg.max_total_bytes =>
+                {
+                    snapshot.files_omitted_by_limit =
+                        snapshot.files_omitted_by_limit.saturating_add(1);
+                    snapshot.scan_truncated = true;
+                }
+                Ok(blob) => {
+                    accepted_bytes = accepted_bytes.saturating_add(blob.size() as u64);
+                    match std::str::from_utf8(blob.content()) {
+                        Ok(content) => {
+                            snapshot.sources.insert(path, content.to_string());
+                        }
+                        Err(_) => snapshot.unreadable_files += 1,
                     }
-                    Err(_) => snapshot.unreadable_files += 1,
-                },
+                }
                 Err(_) => snapshot.unreadable_files += 1,
             }
         }
@@ -360,8 +479,35 @@ mod tests {
             &DiffScope::Working,
             None,
             &[],
+            None,
         )
         .unwrap();
         assert_eq!(snapshot.iter().count(), 0);
+    }
+
+    #[test]
+    fn base_snapshot_skips_oversized_git_blobs() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        fs::write(dir.path().join("large.rs"), "x".repeat(128)).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("large.rs")).unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let signature = git2::Signature::now("RepoScout Test", "test@example.com").unwrap();
+        repo.commit(Some("HEAD"), &signature, &signature, "fixture", &tree, &[])
+            .unwrap();
+        let cfg = Config {
+            max_git_blob_bytes: 32,
+            ..Config::default()
+        };
+
+        let snapshot =
+            SourceSnapshot::base(dir.path(), &cfg, &DiffScope::Working, None, &[], None).unwrap();
+
+        assert_eq!(snapshot.iter().count(), 0);
+        assert_eq!(snapshot.oversized_files, 1);
+        assert_eq!(snapshot.oversized_bytes, 128);
+        assert!(snapshot.scan_truncated);
     }
 }

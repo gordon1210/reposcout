@@ -118,6 +118,27 @@ fn render_table(inspection: &ConfigInspection) -> String {
         "churn_max_commits",
         &config.churn_max_commits.to_string(),
     );
+    value(
+        &mut out,
+        "max_file_bytes",
+        &config.max_file_bytes.to_string(),
+    );
+    value(
+        &mut out,
+        "max_total_bytes",
+        &config.max_total_bytes.to_string(),
+    );
+    value(&mut out, "max_files", &config.max_files.to_string());
+    value(
+        &mut out,
+        "max_git_blob_bytes",
+        &config.max_git_blob_bytes.to_string(),
+    );
+    value(
+        &mut out,
+        "max_scan_seconds",
+        &config.max_scan_seconds.to_string(),
+    );
     value(&mut out, "context", &config.context.to_string());
     value(
         &mut out,

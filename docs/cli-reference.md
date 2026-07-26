@@ -53,6 +53,11 @@ table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 | `--hidden` | Include hidden files | off |
 | `--no-ignore` | Ignore `.gitignore`; `.reposcoutignore` still applies | off |
 | `-j, --jobs <N>` | Worker thread count | CPU count |
+| `--max-file-bytes <BYTES>` | Largest recognized worktree file accepted | 32 MiB |
+| `--max-total-bytes <BYTES>` | Aggregate recognized bytes accepted per discovery pass | 512 MiB |
+| `--max-files <N>` | Files observed before discovery stops | `100000` |
+| `--max-git-blob-bytes <BYTES>` | Largest Git blob accepted by deep review | 32 MiB |
+| `--max-scan-seconds <SECONDS>` | Cooperative wall-clock budget | `1800` |
 | `--no-cache` | Disable the incremental cache for this invocation | off |
 | `--top <N>` | Length of top-N projections | `10` |
 | `-q, --quiet` | Hide progress feedback | off |
@@ -231,3 +236,7 @@ Logs contain paths, arguments, configuration, timings, and backtraces, but never
 Review them before sharing.
 
 See [Configuration and caching](configuration.md) for saved defaults and cache maintenance.
+
+Resource limits are clamped to non-disableable absolute ceilings. A scan that reaches one remains
+successful but marks its diagnostics as truncated and reports the omitted files/bytes or expired
+deadline; automation should check those fields before treating absent findings as evidence.

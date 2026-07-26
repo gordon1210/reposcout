@@ -144,6 +144,17 @@ fn discovery_explanation(
     let walked = walk::discover_with_exclusions(root, cfg, exclusions)?;
     let selected = walked.files.iter().any(|file| file.report_path == path);
     if !selected {
+        if lang::detect(path).is_some()
+            && absolute
+                .metadata()
+                .is_ok_and(|metadata| metadata.len() > cfg.max_file_bytes)
+        {
+            return Ok(discovery(
+                "oversized",
+                "file exceeds the configured per-file analysis limit",
+                None,
+            ));
+        }
         let rule = exclusion_rule(absolute, root, path, cfg, exclusions)?;
         let reason = rule
             .as_ref()
@@ -158,12 +169,22 @@ fn discovery_explanation(
             None,
         ));
     }
-    if std::fs::read_to_string(absolute).is_err() {
-        return Ok(discovery(
-            "unreadable",
-            "file is not readable UTF-8 text",
-            None,
-        ));
+    match walk::read_text_bounded(absolute, cfg.max_file_bytes) {
+        walk::BoundedText::Content(_) => {}
+        walk::BoundedText::Oversized(_) => {
+            return Ok(discovery(
+                "oversized",
+                "file exceeds the configured per-file analysis limit",
+                None,
+            ));
+        }
+        walk::BoundedText::Unreadable => {
+            return Ok(discovery(
+                "unreadable",
+                "file is not readable UTF-8 text",
+                None,
+            ));
+        }
     }
     Ok(discovery(
         "analyzed",

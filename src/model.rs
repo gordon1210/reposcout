@@ -127,6 +127,9 @@ pub struct ScanProfile {
     pub health: Option<HealthProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub findings: Option<FindingProfile>,
+    /// Input and runtime bounds that can affect the analyzed file universe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<ResourceProfile>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,6 +171,16 @@ pub struct FindingProfile {
     pub markers: Vec<String>,
     pub risk_algorithm_version: u32,
     pub risk_threshold: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResourceProfile {
+    pub max_file_bytes: u64,
+    pub max_total_bytes: u64,
+    pub max_files: usize,
+    pub max_git_blob_bytes: u64,
+    pub max_scan_seconds: u64,
 }
 
 /// Per-directory aggregated metrics, produced by `--by-dir[=DEPTH]`.
@@ -1076,6 +1089,24 @@ pub struct ScanDiagnostics {
     pub unreadable_files: usize,
     /// Traversal errors skipped by the filesystem walker.
     pub walker_errors: usize,
+    /// Recognized worktree files skipped because they exceeded the per-file limit.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub oversized_files: usize,
+    /// Aggregate bytes in recognized worktree files skipped as oversized.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub oversized_bytes: u64,
+    /// Files omitted after a file-count, aggregate-byte, or duration limit.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub files_omitted_by_limit: usize,
+    /// Aggregate known bytes omitted by resource limits.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub bytes_omitted_by_limit: u64,
+    /// At least one input or runtime limit made the scan partial.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub scan_truncated: bool,
+    /// The cooperative wall-clock scan budget elapsed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub duration_limit_reached: bool,
     /// The Type-2 detector stopped at a safety limit, so near-duplicate
     /// findings are useful but incomplete.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -1172,6 +1203,16 @@ pub struct ReviewCounts {
 pub struct ReviewDiagnostics {
     pub binary_files: usize,
     pub unreadable_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub oversized_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub oversized_bytes: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub files_omitted_by_limit: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub scan_truncated: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub duration_limit_reached: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1354,6 +1395,12 @@ mod tests {
         assert!(!legacy.type2_analysis_partial);
 
         let diagnostics = ScanDiagnostics {
+            oversized_files: 2,
+            oversized_bytes: 8_388_608,
+            files_omitted_by_limit: 3,
+            bytes_omitted_by_limit: 12_582_912,
+            scan_truncated: true,
+            duration_limit_reached: true,
             type2_analysis_partial: true,
             type2_pools_truncated: 1,
             type2_candidate_buckets_skipped: 12,
@@ -1367,6 +1414,11 @@ mod tests {
         let json = serde_json::to_value(diagnostics).expect("scan diagnostics JSON");
 
         assert_eq!(json["type2_analysis_partial"], true);
+        assert_eq!(json["oversized_files"], 2);
+        assert_eq!(json["oversized_bytes"], 8_388_608u64);
+        assert_eq!(json["files_omitted_by_limit"], 3);
+        assert_eq!(json["scan_truncated"], true);
+        assert_eq!(json["duration_limit_reached"], true);
         assert_eq!(json["type2_seed_pairs_skipped"], 42);
         assert_eq!(json["type2_match_limit_reached"], true);
         assert_eq!(json["type2_suppression_limit_reached"], true);

@@ -26,4 +26,14 @@ You should receive an acknowledgement within seven days. Confirmed vulnerabiliti
 handled through a private GitHub security advisory until a fix and coordinated disclosure are
 ready.
 
+## Release integrity
+
+Release installers require successful SHA-256 verification before extracting a platform archive.
+`reposcout update` independently downloads and verifies the immutable platform archive without
+executing a downloaded installer script. GitHub build-provenance attestations can be verified with:
+
+```sh
+gh attestation verify PATH_TO_ARCHIVE --repo gordon1210/reposcout
+```
+
 [private-reporting]: https://github.com/gordon1210/reposcout/security/advisories

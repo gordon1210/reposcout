@@ -58,7 +58,10 @@ export function useDaemon(): DaemonState {
   }, [refresh])
 
   const rescan = useCallback(async () => {
-    const response = await fetch("/api/rescan", { method: "POST" })
+    const response = await fetch("/api/rescan", {
+      method: "POST",
+      headers: { "X-RepoScout-Request": "rescan" },
+    })
     if (!response.ok) {
       const message = `Rescan request failed (${response.status})`
       setError(message)

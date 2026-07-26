@@ -13,8 +13,10 @@ reposcout daemon .
 
 The default address is `http://127.0.0.1:7331`.
 
-> The service has no authentication. Keep the loopback default unless every client on the chosen
-> network may read source-derived repository metrics.
+The service is intentionally unauthenticated local tooling. It validates `Host` and `Origin`
+headers against the loopback trust boundary, and non-loopback binding is refused unless
+`--unsafe-no-auth` explicitly accepts exposure of source-derived repository metrics. Keep the
+loopback default for normal use.
 
 ## Start the dashboard
 
@@ -40,10 +42,14 @@ pnpm dev:landing
 | `--host <ADDRESS>` | HTTP bind address | `127.0.0.1` |
 | `--port <PORT>` | HTTP port | `7331` |
 | `--debounce-ms <MS>` | Filesystem-event coalescing delay | `300` |
-| `--profile <full\|lite>` | Analyzer set | `full` |
+| `--profile <full\|lite\|safe>` | Analyzer and trust profile | `full` |
+| `--no-project-config` | Ignore repository-owned configuration | off |
+| `--unsafe-no-auth` | Permit an unauthenticated non-loopback listener | off |
 
 The `lite` profile omits whole-corpus duplication and Git churn. The report's
 `analysis_profile` records those unavailable metrics so the dashboard can label them accurately.
+The `safe` profile also ignores project configuration and applies the same conservative
+file/byte/time, worker, history, context, discovery, and health limits as a safe CLI scan.
 
 ## HTTP API
 
@@ -53,9 +59,13 @@ The `lite` profile omits whole-corpus duplication and Git churn. The report's
 | `GET /api/snapshot` | Daemon state plus the latest successful report |
 | `GET /api/graph?revision=N` | Build or reuse graph data for one completed revision |
 | `GET /api/events` | SSE scan lifecycle events |
-| `POST /api/rescan` | Queue a manual scan; repeated requests are coalesced |
+| `POST /api/rescan` | Queue a manual scan; requires `X-RepoScout-Request: rescan` |
 
 SSE events are `scan_started`, `scan_completed`, and `scan_failed`.
+
+The custom rescan header prevents a cross-origin browser page from issuing a simple request.
+Rescans have a one-second cooldown in addition to single-flight coalescing, and the daemon accepts
+at most 32 concurrent SSE clients.
 
 ## Runtime behavior
 
@@ -64,8 +74,8 @@ collapse into one pending refresh, and clients continue reading the last success
 new scan runs.
 
 Incremental caches remove repeated per-file work and reuse immutable Git commit events. A cold
-whole-corpus duplication or large Git-history pass may still take time; the daemon reports state
-and start time instead of imposing an arbitrary timeout.
+whole-corpus duplication or large Git-history pass may still take time; daemon scans apply the
+configured cooperative deadline and expose any truncation in the report diagnostics.
 
 Graph analysis is separately single-flight. Ordinary watched scans do not pay graph extraction
 cost. Opening the Graph view requests one revision-keyed graph build, which is then reused.
