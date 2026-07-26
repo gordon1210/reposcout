@@ -6,7 +6,7 @@ within their section.
 
 ## [Unreleased]
 
-## [0.1.2] - 2026-07-26
+## [0.1.2] - 2026-07-27
 
 ### Added
 
@@ -23,6 +23,13 @@ within their section.
   cooldown, and a concurrent SSE-client cap.
 - Added scheduled RustSec dependency audits, auditable dependency metadata, CycloneDX release
   SBOMs, and GitHub build-provenance attestations for release artifacts.
+
+### Changed
+
+- Updated the release checkout action, Rust dependencies, and frontend runtime and tooling,
+  including `sha2` 0.11, React 19.2.8, `lucide-react` 1.27, Node.js types 26, TypeScript 7, and
+  `jest-dom` 7. The landing page now owns its GitHub mark instead of relying on Lucide's removed
+  brand icon export.
 
 ### Security
 
