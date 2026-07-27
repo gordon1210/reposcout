@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 
+import { daemonAuthHeaders, daemonEventsUrl } from "@/lib/daemon-auth"
 import type { DaemonSnapshot } from "@/lib/types"
 
 export type ConnectionState = "connecting" | "live" | "offline"
@@ -13,7 +14,10 @@ interface DaemonState {
 }
 
 async function fetchSnapshot(signal?: AbortSignal): Promise<DaemonSnapshot> {
-  const response = await fetch("/api/snapshot", { signal })
+  const response = await fetch("/api/snapshot", {
+    signal,
+    headers: daemonAuthHeaders(),
+  })
   if (!response.ok) {
     throw new Error(`Snapshot request failed (${response.status})`)
   }
@@ -43,7 +47,7 @@ export function useDaemon(): DaemonState {
     const controller = new AbortController()
     void refresh(controller.signal)
 
-    const source = new EventSource("/api/events")
+    const source = new EventSource(daemonEventsUrl("/api/events"))
     source.onopen = () => setConnection("live")
     source.onerror = () => setConnection("offline")
     const handleScanEvent = () => void refresh()
@@ -60,7 +64,7 @@ export function useDaemon(): DaemonState {
   const rescan = useCallback(async () => {
     const response = await fetch("/api/rescan", {
       method: "POST",
-      headers: { "X-RepoScout-Request": "rescan" },
+      headers: daemonAuthHeaders({ "X-RepoScout-Request": "rescan" }),
     })
     if (!response.ok) {
       const message = `Rescan request failed (${response.status})`

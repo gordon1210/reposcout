@@ -3,13 +3,12 @@
 
 use crate::config::Config;
 use crate::debug_log;
+use crate::fs_budget::{self, ReadOutcome};
 use crate::lang;
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 use std::collections::HashSet;
-use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -86,34 +85,13 @@ pub(crate) enum BoundedText {
 }
 
 pub(crate) fn read_text_bounded(path: &Path, max_bytes: u64) -> BoundedText {
-    let mut file = match fs::File::open(path) {
-        Ok(file) => file,
-        Err(_) => return BoundedText::Unreadable,
-    };
-    let metadata_bytes = match file.metadata() {
-        Ok(metadata) => metadata.len(),
-        Err(_) => return BoundedText::Unreadable,
-    };
-    if metadata_bytes > max_bytes {
-        return BoundedText::Oversized(metadata_bytes);
-    }
-
-    let capacity = usize::try_from(metadata_bytes.min(max_bytes)).unwrap_or(usize::MAX);
-    let mut bytes = Vec::with_capacity(capacity);
-    if file
-        .by_ref()
-        .take(max_bytes.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
-        return BoundedText::Unreadable;
-    }
-    if bytes.len() as u64 > max_bytes {
-        return BoundedText::Oversized((bytes.len() as u64).max(metadata_bytes));
-    }
-    match String::from_utf8(bytes) {
-        Ok(content) => BoundedText::Content(content),
-        Err(_) => BoundedText::Unreadable,
+    match fs_budget::read_text_limited(path, max_bytes) {
+        ReadOutcome::Content(content) => BoundedText::Content(content),
+        ReadOutcome::Oversized(bytes) => BoundedText::Oversized(bytes),
+        ReadOutcome::NotRegularFile
+        | ReadOutcome::Unreadable
+        | ReadOutcome::BudgetExceeded
+        | ReadOutcome::DeadlineExceeded => BoundedText::Unreadable,
     }
 }
 
@@ -162,16 +140,21 @@ pub(crate) fn discover_with_exclusions_until(
         .as_deref()
         .or_else(|| target.is_dir().then_some(&target));
 
+    let load_repo_ignores = cfg.load_repository_ignores && cfg.respect_gitignore;
     let mut builder = WalkBuilder::new(&target);
     builder
         .hidden(!cfg.include_hidden)
-        .git_ignore(cfg.respect_gitignore)
-        .git_global(cfg.respect_gitignore)
-        .git_exclude(cfg.respect_gitignore)
-        .ignore(cfg.respect_gitignore)
-        .parents(cfg.respect_gitignore)
+        .git_ignore(load_repo_ignores)
+        .git_global(load_repo_ignores)
+        .git_exclude(load_repo_ignores)
+        .ignore(load_repo_ignores)
+        .parents(load_repo_ignores)
         .follow_links(false);
-    builder.add_custom_ignore_filename(".reposcoutignore");
+    // `.reposcoutignore` is repository-owned and only loaded when ignore policy
+    // is enabled. Safe scans deliberately skip all repository ignore files.
+    if cfg.load_repository_ignores {
+        builder.add_custom_ignore_filename(".reposcoutignore");
+    }
 
     let mut exclude_globs: Vec<String> = Vec::new();
     if cfg.exclude_lockfiles {
@@ -237,8 +220,8 @@ pub(crate) fn discover_with_exclusions_until(
                 None => fallback_report_path(&absolute_path),
             };
             if lang::detect(&report_path).is_some() {
-                match absolute_path.metadata() {
-                    Ok(metadata) => {
+                match std::fs::symlink_metadata(&absolute_path) {
+                    Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
                         let bytes = metadata.len();
                         if bytes > cfg.max_file_bytes {
                             oversized_files = oversized_files.saturating_add(1);
@@ -253,6 +236,11 @@ pub(crate) fn discover_with_exclusions_until(
                             continue;
                         }
                         accepted_bytes = accepted_bytes.saturating_add(bytes);
+                    }
+                    Ok(_) => {
+                        // Symlinks and non-regular files are never analyzed.
+                        walker_errors = walker_errors.saturating_add(1);
+                        continue;
                     }
                     Err(_) => {
                         walker_errors = walker_errors.saturating_add(1);

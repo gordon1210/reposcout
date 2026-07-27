@@ -1,6 +1,6 @@
 [package]
 name = "reposcout"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "Fast repository scouting for tokens, complexity, duplication, risk, and Git churn"
 license = "MIT"
@@ -46,6 +46,8 @@ tree-sitter-rust = "0.24.2"
 tree-sitter-typescript = "0.23.2"
 xz2 = { version = "0.1.7", features = ["static"] }
 xxhash-rust = { version = "0.8.16", features = ["xxh3"] }
+getrandom = "0.3"
+libc = "0.2.189"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"

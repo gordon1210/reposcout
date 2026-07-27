@@ -100,14 +100,15 @@ struct PlanningAnalysis {
     cache_stats: cache::CacheStats,
 }
 
-pub(crate) struct ScanArtifacts {
+pub struct ScanArtifacts {
     pub report: ScanReport,
     pub symbol_outlines: BTreeMap<PathBuf, Vec<SymbolOutline>>,
     pub graph_facts: BTreeMap<PathBuf, crate::graph::SourceFacts>,
+    pub resolver_configs: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ArtifactRequirements {
+pub struct ArtifactRequirements {
     pub symbol_outlines: bool,
     pub graph_facts: bool,
 }
@@ -205,7 +206,7 @@ pub fn run_with_exclusions(
     .map(|artifacts| artifacts.report)
 }
 
-pub(crate) fn run_with_artifacts(
+pub fn run_with_artifacts(
     target: &Path,
     cfg: &Config,
     exclusions: &[PathBuf],
@@ -672,6 +673,8 @@ fn analyze_cross_file_metrics(
             cfg,
             progress,
             "analyzing git history",
+            prepared.deadline,
+            &mut file_analysis.diagnostics,
         );
     }
 
@@ -848,6 +851,8 @@ fn analyze_planning_universe(
             cfg,
             progress,
             "analyzing planning-universe history",
+            prepared.deadline,
+            &mut analysis.diagnostics,
         );
     }
     progress.stage("saving planning-universe cache");
@@ -908,6 +913,8 @@ fn attach_churn(
     cfg: &Config,
     progress: &ScanProgress,
     stage: &str,
+    deadline: Option<Instant>,
+    diagnostics: &mut ScanDiagnostics,
 ) {
     if !cfg.enabled.churn {
         return;
@@ -917,11 +924,32 @@ fn attach_churn(
         .iter()
         .map(|file| file.report.path.clone())
         .collect::<Vec<_>>();
-    let churn = git::collect_with_cache(root, &paths, cfg.churn_max_commits, cfg.use_cache);
+    let collection = git::collect_with_diagnostics(
+        root,
+        &paths,
+        &git::ChurnLimits {
+            max_commits: cfg.churn_max_commits,
+            max_deltas_per_commit: cfg.max_churn_deltas_per_commit,
+            max_total_deltas: cfg.max_churn_total_deltas,
+            max_output_bytes: cfg.max_churn_output_bytes,
+            max_path_bytes: cfg.max_git_path_bytes,
+            max_cache_bytes: cfg.max_churn_cache_bytes,
+            deadline,
+            skip_libgit2_fallback: cfg.execution_profile == "safe",
+        },
+        cfg.use_cache,
+    );
     for file in analyzed {
-        if let Some(value) = churn.get(&file.report.path) {
+        if let Some(value) = collection.churn.get(&file.report.path) {
             file.report.churn = Some(value.clone());
         }
+    }
+    if collection.partial {
+        diagnostics.churn_analysis_partial = true;
+        diagnostics.churn_deltas_omitted = diagnostics
+            .churn_deltas_omitted
+            .saturating_add(collection.deltas_omitted);
+        diagnostics.scan_truncated = true;
     }
 }
 
@@ -983,6 +1011,42 @@ fn assemble_report(
     };
 
     let context_assembly_started = cfg.context.then(Instant::now);
+    let graph_limits = crate::graph::GraphReadLimits {
+        deadline: prepared.deadline,
+        ..crate::graph::GraphReadLimits::from_config(cfg)
+    };
+    let needs_graph_inputs = cfg.graph
+        || cfg.context
+        || cfg.impact
+        || !analyzed.graph_facts.is_empty()
+        || planning
+            .as_ref()
+            .is_some_and(|planning| !planning.graph_facts.is_empty());
+    let resolver_configs = if needs_graph_inputs {
+        let paths = planning.as_ref().map_or_else(
+            || {
+                analyzed
+                    .files
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>()
+            },
+            |planning| {
+                let mut paths = planning
+                    .files
+                    .iter()
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>();
+                paths.extend(prepared.all_report_paths.iter().cloned());
+                paths.sort();
+                paths.dedup();
+                paths
+            },
+        );
+        crate::graph::collect_resolver_configs(&prepared.root, &paths, &graph_limits)
+    } else {
+        BTreeMap::new()
+    };
     let scoped_graph_analysis = if cfg.graph || (cfg.context && planning.is_none()) {
         progress.stage(if cfg.graph {
             "building dependency graph"
@@ -993,6 +1057,8 @@ fn assemble_report(
             &analyzed.files,
             &prepared.root,
             &analyzed.graph_facts,
+            Some(&resolver_configs),
+            graph_limits.clone(),
             &cfg.graph_focus,
             cfg.graph_direction,
             cfg.graph_depth,
@@ -1022,6 +1088,8 @@ fn assemble_report(
             &prepared.root,
             &virtual_paths,
             &planning.graph_facts,
+            Some(&resolver_configs),
+            graph_limits.clone(),
         ))
     } else {
         None
@@ -1150,6 +1218,7 @@ fn assemble_report(
         },
         symbol_outlines,
         graph_facts,
+        resolver_configs,
     })
 }
 
@@ -1228,6 +1297,13 @@ fn scan_profile(cfg: &Config, diff_base: Option<String>) -> ScanProfile {
             max_files: cfg.max_files,
             max_git_blob_bytes: cfg.max_git_blob_bytes,
             max_scan_seconds: cfg.max_scan_seconds,
+            max_churn_deltas_per_commit: cfg.max_churn_deltas_per_commit,
+            max_churn_total_deltas: cfg.max_churn_total_deltas,
+            max_churn_output_bytes: cfg.max_churn_output_bytes,
+            max_git_path_bytes: cfg.max_git_path_bytes,
+            max_churn_cache_bytes: cfg.max_churn_cache_bytes,
+            load_repository_ignores: Some(cfg.load_repository_ignores),
+            max_ignore_file_bytes: cfg.max_ignore_file_bytes,
         }),
     }
 }

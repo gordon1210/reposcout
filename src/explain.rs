@@ -72,7 +72,14 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
     let risk = file_report.as_ref().and_then(|file| {
         (testing.classification == "source").then(|| risk::explain(file, !testing.tested))
     });
-    let graph = graph::explain_with_facts(&report.files, &root, &path, &artifacts.graph_facts);
+    let graph = graph::explain_with_facts(
+        &report.files,
+        &root,
+        &path,
+        &artifacts.graph_facts,
+        Some(&artifacts.resolver_configs),
+        graph::GraphReadLimits::from_config(cfg),
+    );
     let findings = report
         .finding_catalog
         .findings
@@ -233,23 +240,25 @@ fn exclusion_rule(
         }
     }
 
-    if let Some(rule) = local_ignore_rule(absolute, root, cfg.respect_gitignore) {
-        return Ok(Some(rule));
-    }
-    if cfg.respect_gitignore {
-        if let Some(rule) = info_exclude_rule(absolute, root)? {
+    if cfg.load_repository_ignores {
+        if let Some(rule) = local_ignore_rule(absolute, root, cfg.respect_gitignore, cfg) {
             return Ok(Some(rule));
         }
-        let (global, _) = Gitignore::global();
-        if let ignore::Match::Ignore(glob) = global.matched(absolute, false) {
-            return Ok(Some(rule(
-                "gitignore",
-                &glob
-                    .from()
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|| "global gitignore".to_string()),
-                glob.original(),
-            )));
+        if cfg.respect_gitignore {
+            if let Some(rule) = info_exclude_rule(absolute, root, cfg)? {
+                return Ok(Some(rule));
+            }
+            let (global, _) = Gitignore::global();
+            if let ignore::Match::Ignore(glob) = global.matched(absolute, false) {
+                return Ok(Some(rule(
+                    "gitignore",
+                    &glob
+                        .from()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "global gitignore".to_string()),
+                    glob.original(),
+                )));
+            }
         }
     }
     Ok(None)
@@ -276,6 +285,7 @@ fn local_ignore_rule(
     absolute: &Path,
     root: &Path,
     respect_gitignore: bool,
+    cfg: &Config,
 ) -> Option<ExclusionRule> {
     let parent = absolute.parent()?;
     let relative_parent = parent.strip_prefix(root).ok()?;
@@ -289,6 +299,11 @@ fn local_ignore_rule(
         }
     }
 
+    let limits = crate::fs_budget::IgnoreLimits {
+        max_file_bytes: cfg.max_ignore_file_bytes,
+        max_lines: cfg.max_ignore_lines,
+        max_line_bytes: cfg.max_ignore_line_bytes,
+    };
     for directory in directories {
         let names: &[&str] = if respect_gitignore {
             &[".gitignore", ".ignore", ".reposcoutignore"]
@@ -297,10 +312,19 @@ fn local_ignore_rule(
         };
         for name in names {
             let source = directory.join(name);
-            if !source.is_file() {
+            if !crate::fs_budget::is_regular_file(&source) {
                 continue;
             }
-            let (matcher, _) = Gitignore::new(&source);
+            let Ok(content) = crate::fs_budget::read_ignore_file(&source, limits) else {
+                continue;
+            };
+            let mut builder = GitignoreBuilder::new(&directory);
+            for line in content.lines() {
+                let _ = builder.add_line(Some(source.clone()), line);
+            }
+            let Ok(matcher) = builder.build() else {
+                continue;
+            };
             match matcher.matched_path_or_any_parents(absolute, false) {
                 ignore::Match::Ignore(glob) => {
                     matched = Some(rule(
@@ -321,9 +345,14 @@ fn local_ignore_rule(
     matched
 }
 
-fn info_exclude_rule(absolute: &Path, root: &Path) -> Result<Option<ExclusionRule>> {
+fn info_exclude_rule(absolute: &Path, root: &Path, cfg: &Config) -> Result<Option<ExclusionRule>> {
     let source = root.join(".git/info/exclude");
-    let Ok(content) = std::fs::read_to_string(&source) else {
+    let limits = crate::fs_budget::IgnoreLimits {
+        max_file_bytes: cfg.max_ignore_file_bytes,
+        max_lines: cfg.max_ignore_lines,
+        max_line_bytes: cfg.max_ignore_line_bytes,
+    };
+    let Ok(content) = crate::fs_budget::read_ignore_file(&source, limits) else {
         return Ok(None);
     };
     let mut builder = GitignoreBuilder::new(root);

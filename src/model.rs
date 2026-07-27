@@ -181,6 +181,21 @@ pub struct ResourceProfile {
     pub max_files: usize,
     pub max_git_blob_bytes: u64,
     pub max_scan_seconds: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub max_churn_deltas_per_commit: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub max_churn_total_deltas: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub max_churn_output_bytes: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub max_git_path_bytes: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub max_churn_cache_bytes: u64,
+    /// Present when the resource profile records ignore-loading policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_repository_ignores: Option<bool>,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub max_ignore_file_bytes: u64,
 }
 
 /// Per-directory aggregated metrics, produced by `--by-dir[=DEPTH]`.
@@ -1136,6 +1151,13 @@ pub struct ScanDiagnostics {
     /// stopped early.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub type2_matches_skipped_during_suppression: usize,
+    /// Churn collection stopped early because a delta, output-byte, path, or
+    /// cache limit was reached.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub churn_analysis_partial: bool,
+    /// Tree deltas omitted after applying churn safety limits.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub churn_deltas_omitted: usize,
 }
 
 /// The likely internal blast radius of a diff-scoped change set.

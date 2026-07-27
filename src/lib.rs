@@ -7,6 +7,7 @@ pub mod debug_log;
 pub mod dup;
 pub mod explain;
 pub mod findings;
+pub mod fs_budget;
 pub mod git;
 pub mod graph;
 pub mod lang;

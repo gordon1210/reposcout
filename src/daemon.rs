@@ -18,6 +18,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::ffi::OsStr;
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,6 +34,8 @@ pub struct DaemonOptions {
     pub debounce: Duration,
     pub profile: &'static str,
     pub unsafe_no_auth: bool,
+    /// Permit non-loopback binding over plain HTTP (requires reverse-proxy TLS).
+    pub allow_insecure_remote: bool,
 }
 
 const RESCAN_COOLDOWN: Duration = Duration::from_secs(1);
@@ -57,6 +60,12 @@ pub struct DaemonSnapshot {
     pub scan_finished_at: Option<String>,
     pub error: Option<String>,
     pub report: Option<ScanReport>,
+    #[serde(skip)]
+    pub graph_facts: std::collections::BTreeMap<PathBuf, crate::graph::SourceFacts>,
+    #[serde(skip)]
+    pub resolver_configs: std::collections::BTreeMap<String, String>,
+    #[serde(skip)]
+    pub graph_limits: crate::graph::GraphReadLimits,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -98,9 +107,10 @@ struct AppState {
     sse_slots: Arc<Semaphore>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct RequestPolicy {
     loopback: bool,
+    auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -136,11 +146,18 @@ pub fn run(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
 }
 
 async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
-    if !options.host.is_loopback() && !options.unsafe_no_auth {
+    // Non-loopback remains explicit: plain HTTP is not safe on shared networks.
+    if !options.host.is_loopback() && !options.allow_insecure_remote {
         return Err(anyhow!(
-            "refusing unauthenticated non-loopback daemon binding; keep the loopback default or pass --unsafe-no-auth explicitly"
+            "refusing non-loopback daemon binding over plain HTTP; keep the loopback default or pass --allow-insecure-remote explicitly"
         ));
     }
+    if !options.host.is_loopback() && options.unsafe_no_auth {
+        return Err(anyhow!(
+            "refusing unauthenticated non-loopback daemon binding; omit --unsafe-no-auth or bind to loopback"
+        ));
+    }
+
     let target = target
         .canonicalize()
         .with_context(|| format!("failed to resolve daemon target {}", target.display()))?;
@@ -156,6 +173,9 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
         scan_finished_at: None,
         error: None,
         report: None,
+        graph_facts: std::collections::BTreeMap::new(),
+        resolver_configs: std::collections::BTreeMap::new(),
+        graph_limits: crate::graph::GraphReadLimits::from_config(&cfg),
     }));
     let state = AppState {
         snapshot: Arc::clone(&snapshot),
@@ -197,13 +217,35 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
         .try_send(())
         .map_err(|_| anyhow!("failed to queue initial scan"))?;
 
+    // Bind first so a failing port claim cannot overwrite another instance's token.
     let address = SocketAddr::new(options.host, options.port);
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .with_context(|| format!("failed to bind daemon to {address}"))?;
-    println!("reposcout daemon listening on http://{address}");
 
-    let server = axum::serve(listener, router(state, options.host))
+    let auth_token = if options.unsafe_no_auth {
+        None
+    } else {
+        Some(issue_daemon_token(options.port)?)
+    };
+
+    println!("reposcout daemon listening on http://{address}");
+    if let Some(_token) = &auth_token {
+        let path = daemon_token_path(options.port)?;
+        println!("daemon auth token file: {}", path.display());
+        println!(
+            "daemon auth: Authorization: Bearer <token from file> (SSE may use ?token= over loopback only)"
+        );
+    } else {
+        println!("daemon auth: disabled via --unsafe-no-auth");
+    }
+    if options.allow_insecure_remote && !options.host.is_loopback() {
+        println!(
+            "warning: non-loopback plain HTTP is enabled; place a TLS reverse proxy in front of this listener"
+        );
+    }
+
+    let server = axum::serve(listener, router(state, options.host, auth_token.clone()))
         .with_graceful_shutdown(wait_for_shutdown(shutdown_tx.subscribe()));
 
     let shutdown_on_signal = shutdown_tx.clone();
@@ -222,7 +264,7 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
     server_result
 }
 
-fn router(state: AppState, host: IpAddr) -> Router {
+fn router(state: AppState, host: IpAddr, auth_token: Option<String>) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
@@ -233,6 +275,7 @@ fn router(state: AppState, host: IpAddr) -> Router {
         .layer(middleware::from_fn_with_state(
             RequestPolicy {
                 loopback: host.is_loopback(),
+                auth_token,
             },
             enforce_request_policy,
         ))
@@ -254,7 +297,169 @@ async fn enforce_request_policy(
     {
         return StatusCode::FORBIDDEN.into_response();
     }
+    if let Some(expected) = policy.auth_token.as_deref()
+        && !request_has_valid_token(&request, expected, policy.loopback)
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ApiError {
+                error: "missing or invalid daemon authentication token".to_string(),
+            }),
+        )
+            .into_response();
+    }
     next.run(request).await
+}
+
+fn request_has_valid_token(request: &Request, expected: &str, loopback: bool) -> bool {
+    if let Some(value) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+    {
+        let bearer = value
+            .strip_prefix("Bearer ")
+            .or_else(|| value.strip_prefix("bearer "));
+        if bearer == Some(expected) {
+            return true;
+        }
+    }
+    if request
+        .headers()
+        .get("x-reposcout-token")
+        .and_then(|value| value.to_str().ok())
+        == Some(expected)
+    {
+        return true;
+    }
+    // EventSource cannot set Authorization headers. Accept `?token=` only for the
+    // SSE endpoint on loopback so the secret never authenticates other APIs or
+    // remote listeners (proxy logs, history, Referer).
+    if loopback && request.uri().path() == "/api/events" {
+        return request.uri().query().and_then(|query| {
+            query.split('&').find_map(|pair| {
+                let (key, value) = pair.split_once('=')?;
+                (key == "token").then_some(value)
+            })
+        }) == Some(expected);
+    }
+    false
+}
+
+/// Public path used by local tooling (e.g. the Vite proxy) to load the token.
+pub fn daemon_token_path(port: u16) -> Result<PathBuf> {
+    let dirs = directories::ProjectDirs::from("", "", "reposcout").ok_or_else(|| {
+        anyhow!("the platform does not expose a runtime directory for the daemon token file")
+    })?;
+    let base = dirs.runtime_dir().unwrap_or_else(|| dirs.cache_dir());
+    Ok(base.join(format!("daemon-{port}.token")))
+}
+
+fn issue_daemon_token(port: u16) -> Result<String> {
+    let token = generate_token()?;
+    let path = daemon_token_path(port)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create daemon token directory {}",
+                parent.display()
+            )
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+                .with_context(|| format!("failed to set permissions on {}", parent.display()))?;
+        }
+    }
+    write_token_file_atomic(&path, &token)?;
+    Ok(token)
+}
+
+fn write_token_file_atomic(path: &Path, token: &str) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("daemon token path has no parent"))?;
+    let temporary = parent.join(format!(
+        ".daemon-token.{}.{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+
+    // Create the temporary file without following a final symlink component.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&temporary)
+            .with_context(|| format!("failed to create {}", temporary.display()))?;
+        writeln!(file, "{token}")?;
+        file.sync_all()?;
+        // Replace destination only if it is not a symlink.
+        if let Ok(metadata) = std::fs::symlink_metadata(path)
+            && metadata.file_type().is_symlink()
+        {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(anyhow!(
+                "refusing to overwrite a symlink daemon token at {}",
+                path.display()
+            ));
+        }
+        if path.exists() {
+            std::fs::remove_file(path)
+                .with_context(|| format!("failed to replace {}", path.display()))?;
+        }
+        std::fs::rename(&temporary, path)
+            .with_context(|| format!("failed to install daemon token at {}", path.display()))?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("failed to set permissions on {}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows rename does not replace an existing destination. After a
+        // successful bind no other instance can own this port, so remove-then-
+        // rename is an acceptable replacement for a missing atomic ReplaceFile.
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(anyhow!(
+                    "refusing to replace symbolic link {}",
+                    path.display()
+                ));
+            }
+            Ok(metadata) if metadata.is_file() => {
+                std::fs::remove_file(path).with_context(|| {
+                    format!("failed to remove stale token file {}", path.display())
+                })?;
+            }
+            Ok(_) => {
+                return Err(anyhow!(
+                    "token path is not a regular file: {}",
+                    path.display()
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        std::fs::write(&temporary, format!("{token}\n"))
+            .with_context(|| format!("failed to create {}", temporary.display()))?;
+        std::fs::rename(&temporary, path)
+            .with_context(|| format!("failed to install daemon token at {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn generate_token() -> Result<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| anyhow!("failed to draw daemon token entropy: {error}"))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn allowed_request_authority(request: &Request, loopback: bool) -> bool {
@@ -310,7 +515,7 @@ async fn repository_graph(
     Query(request): Query<GraphRequest>,
     State(state): State<AppState>,
 ) -> std::result::Result<Json<DaemonGraphResponse>, (StatusCode, Json<ApiError>)> {
-    let (revision, root, files) = {
+    let (revision, root, files, inputs, limits) = {
         let snapshot = state.snapshot.read().await;
         if let Some(expected) = request.revision
             && expected != snapshot.revision
@@ -329,7 +534,16 @@ async fn repository_graph(
                 "no completed report is available".to_string(),
             )
         })?;
-        (snapshot.revision, report.root.clone(), report.files.clone())
+        (
+            snapshot.revision,
+            report.root.clone(),
+            report.files.clone(),
+            crate::graph::GraphInputs {
+                source_facts: snapshot.graph_facts.clone(),
+                resolver_configs: snapshot.resolver_configs.clone(),
+            },
+            snapshot.graph_limits.clone(),
+        )
     };
 
     let mut cache = state.graph_cache.lock().await;
@@ -342,14 +556,17 @@ async fn repository_graph(
         }));
     }
 
-    let graph = tokio::task::spawn_blocking(move || crate::graph::build(&files, &root))
-        .await
-        .map_err(|error| {
-            api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("graph analysis task failed: {error}"),
-            )
-        })?;
+    let graph = tokio::task::spawn_blocking(move || {
+        // Build only from revision-scoped source facts and resolver configs.
+        crate::graph::build_with_inputs(&files, &root, limits, &inputs)
+    })
+    .await
+    .map_err(|error| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("graph analysis task failed: {error}"),
+        )
+    })?;
     *cache = Some(CachedGraph {
         revision,
         graph: graph.clone(),
@@ -484,21 +701,36 @@ async fn scan_once(
     let scan_target = target.to_path_buf();
     let scan_cfg = cfg.clone();
     let scan_exclusions = exclusions.to_vec();
+    let graph_limits = crate::graph::GraphReadLimits::from_config(cfg);
     let result = tokio::task::spawn_blocking(move || {
-        scan::run_with_exclusions(&scan_target, &scan_cfg, &scan_exclusions)
+        // Always extract graph source facts so /api/graph can rebuild topology
+        // from the completed revision without re-reading live source files.
+        scan::run_with_artifacts(
+            &scan_target,
+            &scan_cfg,
+            &scan_exclusions,
+            scan::ArtifactRequirements {
+                symbol_outlines: false,
+                graph_facts: true,
+            },
+        )
     })
     .await;
     let finished_at = chrono::Utc::now().to_rfc3339();
 
     match result {
-        Ok(Ok(report)) => {
+        Ok(Ok(artifacts)) => {
             let revision = {
                 let mut current = snapshot.write().await;
                 current.revision += 1;
                 current.status = DaemonStatus::Ready;
                 current.scan_finished_at = Some(finished_at.clone());
                 current.error = None;
-                current.report = Some(report);
+                current.report = Some(artifacts.report);
+                current.graph_facts = artifacts.graph_facts;
+                current.resolver_configs = artifacts.resolver_configs;
+                current.graph_limits = graph_limits;
+                // Graph cache entries are keyed by revision, so older graphs are ignored.
                 current.revision
             };
             emit(
@@ -656,6 +888,9 @@ mod tests {
             scan_finished_at: None,
             error: None,
             report: None,
+            graph_facts: Default::default(),
+            resolver_configs: Default::default(),
+            graph_limits: crate::graph::GraphReadLimits::default(),
         };
         let json = serde_json::to_value(snapshot).unwrap();
         assert_eq!(json["status"], "scanning");
@@ -679,6 +914,9 @@ mod tests {
                 scan_finished_at: None,
                 error: None,
                 report: None,
+                graph_facts: Default::default(),
+                resolver_configs: Default::default(),
+                graph_limits: crate::graph::GraphReadLimits::default(),
             })),
             graph_cache: Arc::new(Mutex::new(None)),
             events,
@@ -709,6 +947,9 @@ mod tests {
                 scan_finished_at: None,
                 error: None,
                 report: None,
+                graph_facts: Default::default(),
+                resolver_configs: Default::default(),
+                graph_limits: crate::graph::GraphReadLimits::default(),
             })),
             graph_cache: Arc::new(Mutex::new(None)),
             events,
@@ -772,6 +1013,9 @@ mod tests {
                 scan_finished_at: None,
                 error: None,
                 report: Some(report),
+                graph_facts: std::collections::BTreeMap::new(),
+                resolver_configs: Default::default(),
+                graph_limits: crate::graph::GraphReadLimits::default(),
             })),
             graph_cache: Arc::new(Mutex::new(None)),
             events,
@@ -860,22 +1104,36 @@ mod tests {
         assert!(allowed_request_authority(&local_authority, true));
     }
 
-    #[tokio::test]
-    async fn remote_binding_requires_explicit_unsafe_override() {
-        let error = serve(
-            PathBuf::from("."),
-            Config::default(),
-            DaemonOptions {
-                host: "0.0.0.0".parse().unwrap(),
-                port: 7331,
-                debounce: Duration::from_millis(300),
-                profile: "full",
-                unsafe_no_auth: false,
-            },
-        )
-        .await
-        .unwrap_err();
+    #[test]
+    fn bearer_and_query_tokens_authenticate_requests() {
+        let request = Request::builder()
+            .uri("/api/health")
+            .header(header::HOST, "127.0.0.1:7331")
+            .header(header::AUTHORIZATION, "Bearer secret-token")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(request_has_valid_token(&request, "secret-token", true));
+        assert!(!request_has_valid_token(&request, "other", true));
 
-        assert!(error.to_string().contains("--unsafe-no-auth"));
+        let query = Request::builder()
+            .uri("/api/events?token=secret-token")
+            .header(header::HOST, "127.0.0.1:7331")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(request_has_valid_token(&query, "secret-token", true));
+        assert!(
+            !request_has_valid_token(&query, "secret-token", false),
+            "query tokens must not authenticate non-loopback listeners"
+        );
+
+        let rescan = Request::builder()
+            .uri("/api/rescan?token=secret-token")
+            .header(header::HOST, "127.0.0.1:7331")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert!(
+            !request_has_valid_token(&rescan, "secret-token", true),
+            "query tokens must not authenticate non-SSE endpoints"
+        );
     }
 }

@@ -1,9 +1,12 @@
 //! Incremental cache: per-file results keyed by content hash, invalidated when
 //! the tool version, schema, or per-file analysis profile changes. Stored under
 //! the user's OS cache directory, keyed by the canonical scan root, so scanning
-//! a repository never writes into it.
+//! a repository never writes into it. When the platform does not expose an
+//! application cache directory, caching is disabled rather than falling back
+//! into the scanned repository.
 
 use crate::config::Config;
+use crate::fs_budget::{self, DEFAULT_MAX_CACHE_FILE_BYTES, ReadOutcome};
 use crate::lang::{HealthInclude, HealthScope};
 use crate::model::{FileReport, SCHEMA_VERSION, SymbolOutline};
 use anyhow::{Context, Result};
@@ -191,6 +194,10 @@ impl Cache {
     pub fn open(root: &Path, enabled: bool, profile: AnalysisProfile) -> Self {
         let key = profile.cache_key();
         let path = cache_path(root);
+        // Without an OS cache directory there is no safe place to persist
+        // analysis results; never fall back into the scanned repository.
+        let enabled = enabled && path.is_some();
+        let path = path.unwrap_or_else(|| PathBuf::from("reposcout-cache-disabled.json"));
         let loaded = if enabled {
             load(&path, &key).unwrap_or_default()
         } else {
@@ -268,10 +275,13 @@ impl Cache {
             version: self.key.clone(),
             entries,
         };
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
+        let bytes = serde_json::to_vec(&data)?;
+        if bytes.len() as u64 > DEFAULT_MAX_CACHE_FILE_BYTES {
+            // Refuse to persist an oversized cache rather than writing a partial
+            // or unbounded artifact that later scans would load in full.
+            return Ok(());
         }
-        std::fs::write(&self.path, serde_json::to_vec(&data)?)?;
+        fs_budget::write_atomic_bytes(&self.path, &bytes)?;
         Ok(())
     }
 
@@ -298,10 +308,13 @@ impl Cache {
 /// full repository scan; standalone paths retain their own scan identity.
 pub fn clear_for_target(target: &Path) -> Result<CacheClearResult> {
     let root = scan_root(target)?;
-    let mut checked = vec![CacheLocation {
-        kind: CacheKind::Analysis,
-        path: cache_path(&root),
-    }];
+    let mut checked = Vec::new();
+    if let Some(path) = cache_path(&root) {
+        checked.push(CacheLocation {
+            kind: CacheKind::Analysis,
+            path,
+        });
+    }
     if let Some(path) = crate::git::churn_cache_directory(&root) {
         checked.push(CacheLocation {
             kind: CacheKind::GitHistory,
@@ -316,9 +329,7 @@ pub fn clear_for_target(target: &Path) -> Result<CacheClearResult> {
 }
 
 /// Clear every cache stored in RepoScout's OS-managed application cache
-/// directory. Repository-local fallback caches, used only when the platform
-/// does not expose an application cache directory, remain addressable through
-/// [`clear_for_target`].
+/// directory.
 pub fn clear_all() -> Result<CacheClearResult> {
     let path = cache_directory().context(
         "the platform does not expose a RepoScout cache directory; clear a specific PATH instead",
@@ -377,7 +388,13 @@ fn remove_path(path: &Path) -> Result<bool> {
 }
 
 fn load(path: &Path, key: &str) -> Option<HashMap<String, Entry>> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = match fs_budget::read_bytes_limited(path, DEFAULT_MAX_CACHE_FILE_BYTES) {
+        Ok(bytes) => bytes,
+        Err(ReadOutcome::NotRegularFile | ReadOutcome::Oversized(_) | ReadOutcome::Unreadable) => {
+            return None;
+        }
+        Err(_) => return None,
+    };
     let data: CacheData = serde_json::from_slice(&bytes).ok()?;
     if data.version == key {
         Some(data.entries)
@@ -388,15 +405,13 @@ fn load(path: &Path, key: &str) -> Option<HashMap<String, Entry>> {
 
 /// Where the on-disk cache for `root` lives. Kept in the user's OS cache
 /// directory (keyed by the canonical root path) so scanning never pollutes the
-/// repository being analyzed. Falls back to `<root>/.reposcout/cache.json` only
-/// when no OS cache directory can be determined.
-fn cache_path(root: &Path) -> PathBuf {
+/// repository being analyzed. Returns `None` when the platform does not expose
+/// an application cache directory.
+fn cache_path(root: &Path) -> Option<PathBuf> {
     let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    if let Some(directory) = cache_directory() {
-        let id = xxh3_64(canonical.to_string_lossy().as_bytes());
-        return directory.join(format!("{id:016x}.json"));
-    }
-    canonical.join(".reposcout").join("cache.json")
+    let directory = cache_directory()?;
+    let id = xxh3_64(canonical.to_string_lossy().as_bytes());
+    Some(directory.join(format!("{id:016x}.json")))
 }
 
 fn cache_directory() -> Option<PathBuf> {
@@ -753,6 +768,25 @@ mod tests {
         assert!(unrelated.exists());
 
         assert!(clear_locations(&locations).unwrap().is_empty());
+    }
+
+    #[test]
+    fn analysis_cache_never_falls_back_into_the_repository() {
+        // The public path helper is private; assert via open() when the OS cache
+        // directory is available that the cache path is outside the scan root.
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache::open(
+            dir.path(),
+            true,
+            AnalysisProfile::from_config(&Config::default()),
+        );
+        if cache.stats().enabled {
+            assert!(
+                !cache.path.starts_with(dir.path()),
+                "enabled analysis cache must not live under the scanned repository"
+            );
+            assert!(!cache.path.ends_with(".reposcout/cache.json"));
+        }
     }
 
     #[test]

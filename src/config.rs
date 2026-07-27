@@ -24,6 +24,14 @@ pub const ABSOLUTE_MAX_GIT_BLOB_BYTES: u64 = 256 * 1024 * 1024;
 pub const ABSOLUTE_MAX_SCAN_SECONDS: u64 = 7_200;
 pub const ABSOLUTE_MAX_CONTEXT_TOKENS: usize = 5_000_000;
 pub const ABSOLUTE_MAX_CONTEXT_FILES: usize = 10_000;
+pub const ABSOLUTE_MAX_CHURN_DELTAS_PER_COMMIT: usize = 250_000;
+pub const ABSOLUTE_MAX_CHURN_TOTAL_DELTAS: usize = 2_000_000;
+pub const ABSOLUTE_MAX_CHURN_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
+pub const ABSOLUTE_MAX_GIT_PATH_BYTES: usize = 16_384;
+pub const ABSOLUTE_MAX_CHURN_CACHE_BYTES: u64 = 256 * 1024 * 1024;
+pub const ABSOLUTE_MAX_IGNORE_FILE_BYTES: u64 = 4 * 1024 * 1024;
+pub const ABSOLUTE_MAX_IGNORE_LINES: usize = 200_000;
+pub const ABSOLUTE_MAX_IGNORE_LINE_BYTES: usize = 32_768;
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 fn is_false(value: &bool) -> bool {
@@ -105,6 +113,16 @@ pub struct Config {
     pub duplication_report_snippets: bool,
     /// Cap on commits walked for churn (0 selects the absolute ceiling).
     pub churn_max_commits: usize,
+    /// Maximum tree deltas retained from one commit during churn collection.
+    pub max_churn_deltas_per_commit: usize,
+    /// Maximum tree deltas retained across the entire churn walk.
+    pub max_churn_total_deltas: usize,
+    /// Maximum native Git churn output bytes accepted for one collection.
+    pub max_churn_output_bytes: u64,
+    /// Maximum path length accepted from Git history events.
+    pub max_git_path_bytes: usize,
+    /// Maximum serialized churn-cache file size accepted on load or save.
+    pub max_churn_cache_bytes: u64,
     /// Largest recognized worktree file accepted for analysis.
     pub max_file_bytes: u64,
     /// Aggregate recognized worktree bytes accepted for one discovery pass.
@@ -115,6 +133,15 @@ pub struct Config {
     pub max_git_blob_bytes: u64,
     /// Cooperative wall-clock budget for one scan.
     pub max_scan_seconds: u64,
+    /// Whether repository-owned ignore files (`.gitignore`, `.ignore`,
+    /// `.reposcoutignore`, and `.git/info/exclude`) are loaded.
+    pub load_repository_ignores: bool,
+    /// Maximum bytes accepted from one repository-owned ignore file.
+    pub max_ignore_file_bytes: u64,
+    /// Maximum non-empty pattern lines accepted from one ignore file.
+    pub max_ignore_lines: usize,
+    /// Maximum bytes accepted from one ignore pattern line.
+    pub max_ignore_line_bytes: usize,
     /// Build an explainable, token-budgeted reading plan.
     pub context: bool,
     /// Maximum aggregate tokens in the reading plan.
@@ -184,11 +211,20 @@ impl Default for Config {
             duplication_format_scope: DuplicationFormatScope::Exact,
             duplication_report_snippets: false,
             churn_max_commits: 5000,
+            max_churn_deltas_per_commit: 50_000,
+            max_churn_total_deltas: 500_000,
+            max_churn_output_bytes: 64 * 1024 * 1024,
+            max_git_path_bytes: 4_096,
+            max_churn_cache_bytes: 64 * 1024 * 1024,
             max_file_bytes: 32 * 1024 * 1024,
             max_total_bytes: 512 * 1024 * 1024,
             max_files: 100_000,
             max_git_blob_bytes: 32 * 1024 * 1024,
             max_scan_seconds: 1_800,
+            load_repository_ignores: true,
+            max_ignore_file_bytes: 1024 * 1024,
+            max_ignore_lines: 50_000,
+            max_ignore_line_bytes: 8_192,
             context: false,
             context_budget: 32_000,
             context_max_files: 25,
@@ -237,11 +273,20 @@ struct FileConfig {
     duplication_format_scope: Option<DuplicationFormatScope>,
     duplication_report_snippets: Option<bool>,
     churn_max_commits: Option<usize>,
+    max_churn_deltas_per_commit: Option<usize>,
+    max_churn_total_deltas: Option<usize>,
+    max_churn_output_bytes: Option<u64>,
+    max_git_path_bytes: Option<usize>,
+    max_churn_cache_bytes: Option<u64>,
     max_file_bytes: Option<u64>,
     max_total_bytes: Option<u64>,
     max_files: Option<usize>,
     max_git_blob_bytes: Option<u64>,
     max_scan_seconds: Option<u64>,
+    load_repository_ignores: Option<bool>,
+    max_ignore_file_bytes: Option<u64>,
+    max_ignore_lines: Option<usize>,
+    max_ignore_line_bytes: Option<usize>,
     context: Option<ContextFileConfig>,
 }
 
@@ -298,11 +343,20 @@ pub struct ConfigValues {
     pub duplication_format_scope: DuplicationFormatScope,
     pub duplication_report_snippets: bool,
     pub churn_max_commits: usize,
+    pub max_churn_deltas_per_commit: usize,
+    pub max_churn_total_deltas: usize,
+    pub max_churn_output_bytes: u64,
+    pub max_git_path_bytes: usize,
+    pub max_churn_cache_bytes: u64,
     pub max_file_bytes: u64,
     pub max_total_bytes: u64,
     pub max_files: usize,
     pub max_git_blob_bytes: u64,
     pub max_scan_seconds: u64,
+    pub load_repository_ignores: bool,
+    pub max_ignore_file_bytes: u64,
+    pub max_ignore_lines: usize,
+    pub max_ignore_line_bytes: usize,
     pub context: bool,
     pub context_budget: usize,
     pub context_max_files: usize,
@@ -333,11 +387,20 @@ impl From<&Config> for ConfigValues {
             duplication_format_scope: config.duplication_format_scope,
             duplication_report_snippets: config.duplication_report_snippets,
             churn_max_commits: config.churn_max_commits,
+            max_churn_deltas_per_commit: config.max_churn_deltas_per_commit,
+            max_churn_total_deltas: config.max_churn_total_deltas,
+            max_churn_output_bytes: config.max_churn_output_bytes,
+            max_git_path_bytes: config.max_git_path_bytes,
+            max_churn_cache_bytes: config.max_churn_cache_bytes,
             max_file_bytes: config.max_file_bytes,
             max_total_bytes: config.max_total_bytes,
             max_files: config.max_files,
             max_git_blob_bytes: config.max_git_blob_bytes,
             max_scan_seconds: config.max_scan_seconds,
+            load_repository_ignores: config.load_repository_ignores,
+            max_ignore_file_bytes: config.max_ignore_file_bytes,
+            max_ignore_lines: config.max_ignore_lines,
+            max_ignore_line_bytes: config.max_ignore_line_bytes,
             context: config.context,
             context_budget: config.context_budget,
             context_max_files: config.context_max_files,
@@ -455,6 +518,21 @@ impl Config {
         if let Some(v) = fc.churn_max_commits {
             self.churn_max_commits = v;
         }
+        if let Some(v) = fc.max_churn_deltas_per_commit {
+            self.max_churn_deltas_per_commit = v;
+        }
+        if let Some(v) = fc.max_churn_total_deltas {
+            self.max_churn_total_deltas = v;
+        }
+        if let Some(v) = fc.max_churn_output_bytes {
+            self.max_churn_output_bytes = v;
+        }
+        if let Some(v) = fc.max_git_path_bytes {
+            self.max_git_path_bytes = v;
+        }
+        if let Some(v) = fc.max_churn_cache_bytes {
+            self.max_churn_cache_bytes = v;
+        }
         if let Some(v) = fc.max_file_bytes {
             self.max_file_bytes = v;
         }
@@ -463,6 +541,18 @@ impl Config {
         }
         if let Some(v) = fc.max_files {
             self.max_files = v;
+        }
+        if let Some(v) = fc.load_repository_ignores {
+            self.load_repository_ignores = v;
+        }
+        if let Some(v) = fc.max_ignore_file_bytes {
+            self.max_ignore_file_bytes = v;
+        }
+        if let Some(v) = fc.max_ignore_lines {
+            self.max_ignore_lines = v;
+        }
+        if let Some(v) = fc.max_ignore_line_bytes {
+            self.max_ignore_line_bytes = v;
         }
         if let Some(v) = fc.max_git_blob_bytes {
             self.max_git_blob_bytes = v;
@@ -511,6 +601,28 @@ impl Config {
             .max_git_blob_bytes
             .clamp(1, ABSOLUTE_MAX_GIT_BLOB_BYTES);
         self.max_scan_seconds = self.max_scan_seconds.clamp(1, ABSOLUTE_MAX_SCAN_SECONDS);
+        self.max_churn_deltas_per_commit = self
+            .max_churn_deltas_per_commit
+            .clamp(1, ABSOLUTE_MAX_CHURN_DELTAS_PER_COMMIT);
+        self.max_churn_total_deltas = self
+            .max_churn_total_deltas
+            .clamp(1, ABSOLUTE_MAX_CHURN_TOTAL_DELTAS);
+        self.max_churn_output_bytes = self
+            .max_churn_output_bytes
+            .clamp(1, ABSOLUTE_MAX_CHURN_OUTPUT_BYTES);
+        self.max_git_path_bytes = self
+            .max_git_path_bytes
+            .clamp(1, ABSOLUTE_MAX_GIT_PATH_BYTES);
+        self.max_churn_cache_bytes = self
+            .max_churn_cache_bytes
+            .clamp(1, ABSOLUTE_MAX_CHURN_CACHE_BYTES);
+        self.max_ignore_file_bytes = self
+            .max_ignore_file_bytes
+            .clamp(1, ABSOLUTE_MAX_IGNORE_FILE_BYTES);
+        self.max_ignore_lines = self.max_ignore_lines.clamp(1, ABSOLUTE_MAX_IGNORE_LINES);
+        self.max_ignore_line_bytes = self
+            .max_ignore_line_bytes
+            .clamp(1, ABSOLUTE_MAX_IGNORE_LINE_BYTES);
         self.context_budget = self.context_budget.min(ABSOLUTE_MAX_CONTEXT_TOKENS);
         self.context_max_files = self.context_max_files.min(ABSOLUTE_MAX_CONTEXT_FILES);
     }
@@ -683,7 +795,16 @@ impl FileConfig {
         key!(duplication_format_scope);
         key!(duplication_report_snippets);
         key!(churn_max_commits);
+        key!(max_churn_deltas_per_commit);
+        key!(max_churn_total_deltas);
+        key!(max_churn_output_bytes);
+        key!(max_git_path_bytes);
+        key!(max_churn_cache_bytes);
         key!(max_file_bytes);
+        key!(load_repository_ignores);
+        key!(max_ignore_file_bytes);
+        key!(max_ignore_lines);
+        key!(max_ignore_line_bytes);
         key!(max_total_bytes);
         key!(max_files);
         key!(max_git_blob_bytes);

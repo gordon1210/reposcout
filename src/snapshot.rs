@@ -1,6 +1,7 @@
 //! Source snapshots used by changed-line review.
 
 use crate::config::Config;
+use crate::fs_budget::{self, IgnoreLimits};
 use crate::git::DiffScope;
 use crate::{lang, walk};
 use anyhow::Result;
@@ -188,30 +189,41 @@ impl SourceSnapshot {
             if !filter.allows(&path) {
                 return TreeWalkResult::Ok;
             }
-            match repo.find_blob(entry.id()) {
-                Ok(blob) if blob.size() as u64 > cfg.max_git_blob_bytes => {
-                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
-                    snapshot.oversized_bytes =
-                        snapshot.oversized_bytes.saturating_add(blob.size() as u64);
-                    snapshot.scan_truncated = true;
-                }
-                Ok(blob)
-                    if accepted_bytes.saturating_add(blob.size() as u64) > cfg.max_total_bytes =>
-                {
-                    snapshot.files_omitted_by_limit =
-                        snapshot.files_omitted_by_limit.saturating_add(1);
-                    snapshot.scan_truncated = true;
-                }
-                Ok(blob) => {
-                    accepted_bytes = accepted_bytes.saturating_add(blob.size() as u64);
-                    match std::str::from_utf8(blob.content()) {
-                        Ok(content) => {
-                            snapshot.sources.insert(path, content.to_string());
-                        }
-                        Err(_) => snapshot.unreadable_files += 1,
+            let size_hint = blob_size_hint(repo, entry.id());
+            if let Some(size) = size_hint
+                && size > cfg.max_git_blob_bytes
+            {
+                snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(size);
+                snapshot.scan_truncated = true;
+                return TreeWalkResult::Ok;
+            }
+            if let Some(size) = size_hint
+                && accepted_bytes.saturating_add(size) > cfg.max_total_bytes
+            {
+                snapshot.files_omitted_by_limit = snapshot.files_omitted_by_limit.saturating_add(1);
+                snapshot.scan_truncated = true;
+                return TreeWalkResult::Ok;
+            }
+            match load_blob_text(repo, entry.id(), cfg.max_git_blob_bytes) {
+                Ok(Some(content)) => {
+                    let size = content.len() as u64;
+                    if accepted_bytes.saturating_add(size) > cfg.max_total_bytes {
+                        snapshot.files_omitted_by_limit =
+                            snapshot.files_omitted_by_limit.saturating_add(1);
+                        snapshot.scan_truncated = true;
+                    } else {
+                        accepted_bytes = accepted_bytes.saturating_add(size);
+                        snapshot.sources.insert(path, content);
                     }
                 }
-                Err(_) => snapshot.unreadable_files += 1,
+                Ok(None) => {
+                    let size = size_hint.unwrap_or(0);
+                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                    snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(size);
+                    snapshot.scan_truncated = true;
+                }
+                Err(()) => snapshot.unreadable_files += 1,
             }
             TreeWalkResult::Ok
         });
@@ -260,30 +272,41 @@ impl SourceSnapshot {
             if !filter.allows(&path) {
                 continue;
             }
-            match repo.find_blob(entry.id) {
-                Ok(blob) if blob.size() as u64 > cfg.max_git_blob_bytes => {
-                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
-                    snapshot.oversized_bytes =
-                        snapshot.oversized_bytes.saturating_add(blob.size() as u64);
-                    snapshot.scan_truncated = true;
-                }
-                Ok(blob)
-                    if accepted_bytes.saturating_add(blob.size() as u64) > cfg.max_total_bytes =>
-                {
-                    snapshot.files_omitted_by_limit =
-                        snapshot.files_omitted_by_limit.saturating_add(1);
-                    snapshot.scan_truncated = true;
-                }
-                Ok(blob) => {
-                    accepted_bytes = accepted_bytes.saturating_add(blob.size() as u64);
-                    match std::str::from_utf8(blob.content()) {
-                        Ok(content) => {
-                            snapshot.sources.insert(path, content.to_string());
-                        }
-                        Err(_) => snapshot.unreadable_files += 1,
+            let size_hint = blob_size_hint(&repo, entry.id);
+            if let Some(size) = size_hint
+                && size > cfg.max_git_blob_bytes
+            {
+                snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(size);
+                snapshot.scan_truncated = true;
+                continue;
+            }
+            if let Some(size) = size_hint
+                && accepted_bytes.saturating_add(size) > cfg.max_total_bytes
+            {
+                snapshot.files_omitted_by_limit = snapshot.files_omitted_by_limit.saturating_add(1);
+                snapshot.scan_truncated = true;
+                continue;
+            }
+            match load_blob_text(&repo, entry.id, cfg.max_git_blob_bytes) {
+                Ok(Some(content)) => {
+                    let size = content.len() as u64;
+                    if accepted_bytes.saturating_add(size) > cfg.max_total_bytes {
+                        snapshot.files_omitted_by_limit =
+                            snapshot.files_omitted_by_limit.saturating_add(1);
+                        snapshot.scan_truncated = true;
+                    } else {
+                        accepted_bytes = accepted_bytes.saturating_add(size);
+                        snapshot.sources.insert(path, content);
                     }
                 }
-                Err(_) => snapshot.unreadable_files += 1,
+                Ok(None) => {
+                    let size = size_hint.unwrap_or(0);
+                    snapshot.oversized_files = snapshot.oversized_files.saturating_add(1);
+                    snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(size);
+                    snapshot.scan_truncated = true;
+                }
+                Err(()) => snapshot.unreadable_files += 1,
             }
         }
         Ok(snapshot)
@@ -326,12 +349,22 @@ impl SnapshotFilter {
         }
         let overrides = overrides.build()?;
 
-        let mut ignore_files = collect_ignore_files(root, cfg.respect_gitignore);
+        let load_repo_ignores = cfg.load_repository_ignores && cfg.respect_gitignore;
+        let ignore_limits = IgnoreLimits {
+            max_file_bytes: cfg.max_ignore_file_bytes,
+            max_lines: cfg.max_ignore_lines,
+            max_line_bytes: cfg.max_ignore_line_bytes,
+        };
+        let mut ignore_files = if cfg.load_repository_ignores {
+            collect_ignore_files(root, cfg.respect_gitignore)
+        } else {
+            Vec::new()
+        };
         ignore_files.sort();
         let mut info_builder = GitignoreBuilder::new(root);
-        if cfg.respect_gitignore {
+        if load_repo_ignores {
             let info_exclude = root.join(".git/info/exclude");
-            if let Ok(content) = std::fs::read_to_string(info_exclude) {
+            if let Ok(content) = fs_budget::read_ignore_file(&info_exclude, ignore_limits) {
                 for line in content.lines() {
                     let _ = info_builder.add_line(Some(root.join(".git/info/exclude")), line);
                 }
@@ -340,9 +373,13 @@ impl SnapshotFilter {
         let info_ignores = info_builder.build()?;
         let ignores = ignore_files
             .into_iter()
-            .map(|path| Gitignore::new(path).0)
+            .filter_map(|path| load_bounded_ignore(&path, ignore_limits))
             .collect();
-        let global_ignores = if cfg.respect_gitignore {
+        let global_ignores = if load_repo_ignores {
+            // Global user ignore files are not repository-owned, but they are
+            // still size-unbounded inside the ignore crate. Prefer empty when
+            // repository ignore policy is disabled for consistency with safe
+            // scans; when enabled, keep historical global-ignore behavior.
             GitignoreBuilder::new(root).build_global().0
         } else {
             Gitignore::empty()
@@ -440,7 +477,48 @@ fn collect_ignore_files(root: &Path, respect_gitignore: bool) -> Vec<PathBuf> {
                 || (respect_gitignore && matches!(name, ".gitignore" | ".ignore")))
             .then(|| entry.into_path())
         })
+        .filter(|path| fs_budget::is_regular_file(path))
         .collect()
+}
+
+fn load_bounded_ignore(path: &Path, limits: IgnoreLimits) -> Option<Gitignore> {
+    let content = fs_budget::read_ignore_file(path, limits).ok()?;
+    let mut builder = GitignoreBuilder::new(
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(".")),
+    );
+    for line in content.lines() {
+        let _ = builder.add_line(Some(path.to_path_buf()), line);
+    }
+    builder.build().ok()
+}
+
+/// Prefer ODB headers so blob size limits apply before content materialization.
+fn blob_size_hint(repo: &Repository, id: git2::Oid) -> Option<u64> {
+    let odb = repo.odb().ok()?;
+    let (size, kind) = odb.read_header(id).ok()?;
+    if kind == ObjectType::Blob {
+        Some(size as u64)
+    } else {
+        None
+    }
+}
+
+fn load_blob_text(repo: &Repository, id: git2::Oid, max_bytes: u64) -> Result<Option<String>, ()> {
+    if let Some(size) = blob_size_hint(repo, id)
+        && size > max_bytes
+    {
+        return Ok(None);
+    }
+    let blob = repo.find_blob(id).map_err(|_| ())?;
+    if blob.size() as u64 > max_bytes {
+        return Ok(None);
+    }
+    match std::str::from_utf8(blob.content()) {
+        Ok(content) => Ok(Some(content.to_string())),
+        Err(_) => Err(()),
+    }
 }
 
 fn has_hidden_component(path: &Path) -> bool {
