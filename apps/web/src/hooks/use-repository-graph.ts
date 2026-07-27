@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 
+import { daemonAuthHeaders } from "@/lib/daemon-auth"
 import type { DaemonGraphResponse, DependencyGraph } from "@/lib/types"
 
 interface RepositoryGraphState {
@@ -10,7 +11,10 @@ interface RepositoryGraphState {
 }
 
 async function fetchGraph(revision: number, signal: AbortSignal): Promise<DaemonGraphResponse> {
-  const response = await fetch(`/api/graph?revision=${revision}`, { signal })
+  const response = await fetch(`/api/graph?revision=${revision}`, {
+    signal,
+    headers: daemonAuthHeaders(),
+  })
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null
     throw new Error(body?.error ?? `Graph request failed (${response.status})`)

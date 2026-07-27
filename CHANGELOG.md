@@ -6,6 +6,44 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-28
+
+### Security
+
+- Removed the repository-local analysis-cache fallback. When the OS provides no application
+  cache directory, caching is disabled instead of writing `<repo>/.reposcout/cache.json`.
+  Cache load/save paths reject symlinks, bound file size, and use atomic owner-only writes.
+- Graph, context, and impact construction use a shared `ReadBudget` (with `O_NOFOLLOW` on Unix).
+  Invalid UTF-8 reads still charge the budget. Scans capture both source facts and resolver
+  config contents; the daemon rebuilds `/api/graph` only from those revision-scoped inputs.
+- Git churn honors the scan deadline, enforces delta/output/path/cache limits, includes those
+  limits in cache identity (`CACHE_VERSION` 2), loads views under the configured cache-byte
+  bound, and uses a watchdog to SIGKILL a stuck native `git diff-tree` child.
+- Safe profile no longer loads repository-owned ignore files. Snapshot/explain ignore loading
+  uses the bounded symlink-safe reader. Discovery still uses the `ignore` crate for hierarchical
+  rules when repository ignores are enabled (full profile only).
+- The daemon binds before writing a port-scoped owner-only token file (`daemon-<port>.token`),
+  draws entropy from the OS CSPRNG (`getrandom`), refuses non-loopback plain HTTP unless
+  `--allow-insecure-remote` is set, and refuses unauthenticated non-loopback. Query-string
+  tokens authenticate only loopback `/api/events` (SSE). The Vite proxy injects the token from
+  that file server-side (no `VITE_*` browser exposure), including Windows `%LOCALAPPDATA%`.
+  Windows token replacement removes a stale regular file before rename; Unix cache writes create
+  temp files with mode `0600` and fail closed on permission errors. The dashboard migrates
+  valid 64-character hexadecimal `?token=` values into a fragment/`sessionStorage` via
+  `history.replaceState`; unrelated fragments cannot replace the token. The Vite proxy rejects
+  symlinked, non-regular, oversized, and malformed token files.
+- Safe-profile churn skips the unbounded libgit2 fallback and rename-similarity path when native
+  Git fails or renames need resolution, applies path/per-commit/total delta limits once to the
+  final event, and re-checks path limits on cache hits. History fingerprint reads of
+  `.git/shallow` and `.git/info/grafts` are size-bounded; oversized metadata disables the churn
+  cache for that run.
+
+### Changed
+
+- Safe profile documents `repository-ignores=disabled` instead of requiring gitignore loading.
+- Added resource settings for churn delta/output budgets and ignore-file size/line limits.
+- Added daemon `--allow-insecure-remote` for explicit non-loopback plain-HTTP operation.
+
 ## [0.1.4] - 2026-07-27
 
 ### Fixed

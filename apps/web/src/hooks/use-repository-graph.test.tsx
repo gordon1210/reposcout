@@ -30,7 +30,10 @@ describe("useRepositoryGraph", () => {
     const { result } = renderHook(() => useRepositoryGraph(9))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(fetch).toHaveBeenCalledWith("/api/graph?revision=9", { signal: expect.any(AbortSignal) })
+    expect(fetch).toHaveBeenCalledWith("/api/graph?revision=9", {
+      signal: expect.any(AbortSignal),
+      headers: expect.any(Headers),
+    })
     expect(result.current.graph?.files[0].path).toBe("src/app.ts")
     expect(result.current.error).toBeNull()
   })

@@ -120,6 +120,26 @@ fn render_table(inspection: &ConfigInspection) -> String {
     );
     value(
         &mut out,
+        "max_churn_deltas_per_commit",
+        &config.max_churn_deltas_per_commit.to_string(),
+    );
+    value(
+        &mut out,
+        "max_churn_total_deltas",
+        &config.max_churn_total_deltas.to_string(),
+    );
+    value(
+        &mut out,
+        "max_churn_output_bytes",
+        &config.max_churn_output_bytes.to_string(),
+    );
+    value(
+        &mut out,
+        "load_repository_ignores",
+        &config.load_repository_ignores.to_string(),
+    );
+    value(
+        &mut out,
         "max_file_bytes",
         &config.max_file_bytes.to_string(),
     );

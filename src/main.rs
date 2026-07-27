@@ -320,6 +320,7 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
                 DaemonProfile::Safe => "safe",
             },
             unsafe_no_auth: args.unsafe_no_auth,
+            allow_insecure_remote: args.allow_insecure_remote,
         },
     )?;
     Ok(ExitCode::SUCCESS)
@@ -814,6 +815,11 @@ fn enforce_absolute_limits(cfg: &mut Config) {
 fn enforce_safe_limits(cfg: &mut Config) {
     const SAFE_MAX_JOBS: usize = 2;
     const SAFE_MAX_CHURN_COMMITS: usize = 1_000;
+    const SAFE_MAX_CHURN_DELTAS_PER_COMMIT: usize = 10_000;
+    const SAFE_MAX_CHURN_TOTAL_DELTAS: usize = 50_000;
+    const SAFE_MAX_CHURN_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
+    const SAFE_MAX_GIT_PATH_BYTES: usize = 4_096;
+    const SAFE_MAX_CHURN_CACHE_BYTES: u64 = 8 * 1024 * 1024;
     const SAFE_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
     const SAFE_MAX_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
     const SAFE_MAX_FILES: usize = 20_000;
@@ -822,10 +828,16 @@ fn enforce_safe_limits(cfg: &mut Config) {
     const SAFE_MAX_CONTEXT_TOKENS: usize = 32_000;
     const SAFE_MAX_CONTEXT_FILES: usize = 25;
     const SAFE_MAX_TOP: usize = 25;
+    const SAFE_MAX_IGNORE_FILE_BYTES: u64 = 256 * 1024;
+    const SAFE_MAX_IGNORE_LINES: usize = 10_000;
+    const SAFE_MAX_IGNORE_LINE_BYTES: usize = 4_096;
 
     cfg.jobs = cfg.jobs.clamp(1, SAFE_MAX_JOBS);
     cfg.include_hidden = false;
-    cfg.respect_gitignore = true;
+    // Safe scans do not load repository-owned ignore files. Resource caps
+    // already bound discovery, and untrusted ignore content is outside those caps.
+    cfg.respect_gitignore = false;
+    cfg.load_repository_ignores = false;
     cfg.exclude_lockfiles = true;
     cfg.top = cfg.top.min(SAFE_MAX_TOP);
     cfg.min_dup_tokens = cfg.min_dup_tokens.max(50);
@@ -838,18 +850,28 @@ fn enforce_safe_limits(cfg: &mut Config) {
     if cfg.churn_max_commits == 0 || cfg.churn_max_commits > SAFE_MAX_CHURN_COMMITS {
         cfg.churn_max_commits = SAFE_MAX_CHURN_COMMITS;
     }
+    cfg.max_churn_deltas_per_commit = cfg
+        .max_churn_deltas_per_commit
+        .min(SAFE_MAX_CHURN_DELTAS_PER_COMMIT);
+    cfg.max_churn_total_deltas = cfg.max_churn_total_deltas.min(SAFE_MAX_CHURN_TOTAL_DELTAS);
+    cfg.max_churn_output_bytes = cfg.max_churn_output_bytes.min(SAFE_MAX_CHURN_OUTPUT_BYTES);
+    cfg.max_git_path_bytes = cfg.max_git_path_bytes.min(SAFE_MAX_GIT_PATH_BYTES);
+    cfg.max_churn_cache_bytes = cfg.max_churn_cache_bytes.min(SAFE_MAX_CHURN_CACHE_BYTES);
     cfg.max_file_bytes = cfg.max_file_bytes.min(SAFE_MAX_FILE_BYTES);
     cfg.max_total_bytes = cfg.max_total_bytes.min(SAFE_MAX_TOTAL_BYTES);
     cfg.max_files = cfg.max_files.min(SAFE_MAX_FILES);
     cfg.max_git_blob_bytes = cfg.max_git_blob_bytes.min(SAFE_MAX_GIT_BLOB_BYTES);
     cfg.max_scan_seconds = cfg.max_scan_seconds.min(SAFE_MAX_SCAN_SECONDS);
+    cfg.max_ignore_file_bytes = cfg.max_ignore_file_bytes.min(SAFE_MAX_IGNORE_FILE_BYTES);
+    cfg.max_ignore_lines = cfg.max_ignore_lines.min(SAFE_MAX_IGNORE_LINES);
+    cfg.max_ignore_line_bytes = cfg.max_ignore_line_bytes.min(SAFE_MAX_IGNORE_LINE_BYTES);
     cfg.context_budget = cfg.context_budget.min(SAFE_MAX_CONTEXT_TOKENS);
     cfg.context_max_files = cfg.context_max_files.min(SAFE_MAX_CONTEXT_FILES);
     cfg.safety_limits = vec![
         format!("jobs<={SAFE_MAX_JOBS}"),
         format!("top<={SAFE_MAX_TOP}"),
         "project-config=ignored".to_string(),
-        "gitignore=required".to_string(),
+        "repository-ignores=disabled".to_string(),
         "hidden-files=excluded".to_string(),
         "lockfiles=excluded".to_string(),
         "dup-min-tokens>=50".to_string(),
@@ -860,6 +882,9 @@ fn enforce_safe_limits(cfg: &mut Config) {
         "dup-format-scope=exact".to_string(),
         "dup-snippets=disabled".to_string(),
         format!("churn-commits<={SAFE_MAX_CHURN_COMMITS}"),
+        format!("churn-deltas-per-commit<={SAFE_MAX_CHURN_DELTAS_PER_COMMIT}"),
+        format!("churn-total-deltas<={SAFE_MAX_CHURN_TOTAL_DELTAS}"),
+        format!("churn-output-bytes<={SAFE_MAX_CHURN_OUTPUT_BYTES}"),
         format!("file-bytes<={SAFE_MAX_FILE_BYTES}"),
         format!("total-bytes<={SAFE_MAX_TOTAL_BYTES}"),
         format!("files<={SAFE_MAX_FILES}"),

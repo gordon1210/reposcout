@@ -1,0 +1,412 @@
+//! Bounded, symlink-safe readers for repository-controlled inputs.
+//!
+//! Scan discovery, graph resolvers, ignore loaders, and caches share these
+//! helpers so secondary analysis paths cannot bypass resource limits.
+
+use std::fs::{self, File};
+use std::io::Read;
+use std::path::Path;
+use std::time::Instant;
+
+/// Default maximum size for a single ignore rule file.
+pub const DEFAULT_MAX_IGNORE_FILE_BYTES: u64 = 1024 * 1024;
+/// Default maximum number of non-empty pattern lines per ignore file.
+pub const DEFAULT_MAX_IGNORE_LINES: usize = 50_000;
+/// Default maximum length of one ignore pattern line.
+pub const DEFAULT_MAX_IGNORE_LINE_BYTES: usize = 8_192;
+/// Hard ceiling for analysis-cache files loaded from disk.
+pub const DEFAULT_MAX_CACHE_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Cooperative budget shared by repository file reads.
+#[derive(Debug, Clone)]
+pub struct ReadBudget {
+    pub max_file_bytes: u64,
+    pub remaining_total_bytes: u64,
+    pub remaining_files: usize,
+    pub deadline: Option<Instant>,
+}
+
+impl ReadBudget {
+    pub fn new(
+        max_file_bytes: u64,
+        max_total_bytes: u64,
+        max_files: usize,
+        deadline: Option<Instant>,
+    ) -> Self {
+        Self {
+            max_file_bytes: max_file_bytes.max(1),
+            remaining_total_bytes: max_total_bytes.max(1),
+            remaining_files: max_files.max(1),
+            deadline,
+        }
+    }
+
+    pub fn from_limits(max_file_bytes: u64, max_total_bytes: u64, max_files: usize) -> Self {
+        Self::new(max_file_bytes, max_total_bytes, max_files, None)
+    }
+
+    pub fn exhausted(&self) -> bool {
+        self.remaining_files == 0
+            || self.remaining_total_bytes == 0
+            || self
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
+    fn consume(&mut self, bytes: u64) {
+        self.remaining_files = self.remaining_files.saturating_sub(1);
+        self.remaining_total_bytes = self.remaining_total_bytes.saturating_sub(bytes);
+    }
+}
+
+/// Outcome of a bounded repository read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadOutcome {
+    Content(String),
+    Oversized(u64),
+    BudgetExceeded,
+    DeadlineExceeded,
+    NotRegularFile,
+    Unreadable,
+}
+
+/// Limits applied when loading ignore rule files.
+#[derive(Debug, Clone, Copy)]
+pub struct IgnoreLimits {
+    pub max_file_bytes: u64,
+    pub max_lines: usize,
+    pub max_line_bytes: usize,
+}
+
+impl Default for IgnoreLimits {
+    fn default() -> Self {
+        Self {
+            max_file_bytes: DEFAULT_MAX_IGNORE_FILE_BYTES,
+            max_lines: DEFAULT_MAX_IGNORE_LINES,
+            max_line_bytes: DEFAULT_MAX_IGNORE_LINE_BYTES,
+        }
+    }
+}
+
+/// True only for non-symlink regular files.
+pub fn is_regular_file(path: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata.is_file() && !metadata.file_type().is_symlink(),
+        Err(_) => false,
+    }
+}
+
+/// Read a regular file with a shared budget, rejecting symlinks and caps.
+pub fn read_text(path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
+    if budget
+        .deadline
+        .is_some_and(|deadline| Instant::now() >= deadline)
+    {
+        return ReadOutcome::DeadlineExceeded;
+    }
+    if budget.remaining_files == 0 || budget.remaining_total_bytes == 0 {
+        return ReadOutcome::BudgetExceeded;
+    }
+
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return ReadOutcome::Unreadable,
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return ReadOutcome::NotRegularFile;
+    }
+
+    let file_bytes = metadata.len();
+    if file_bytes > budget.max_file_bytes {
+        return ReadOutcome::Oversized(file_bytes);
+    }
+    if file_bytes > budget.remaining_total_bytes {
+        return ReadOutcome::BudgetExceeded;
+    }
+
+    match read_regular_file_bytes(path, file_bytes, budget.max_file_bytes) {
+        Ok(bytes) => {
+            // Charge the budget for every successful byte read, including invalid
+            // UTF-8. Otherwise hostile non-UTF-8 blobs can bypass total/file caps.
+            let len = bytes.len() as u64;
+            budget.consume(len);
+            match String::from_utf8(bytes) {
+                Ok(content) => ReadOutcome::Content(content),
+                Err(_) => ReadOutcome::Unreadable,
+            }
+        }
+        Err(ReadOutcome::Oversized(size)) => ReadOutcome::Oversized(size),
+        Err(other) => other,
+    }
+}
+
+/// Read a regular file with a single-file size cap (no shared total budget).
+pub fn read_text_limited(path: &Path, max_file_bytes: u64) -> ReadOutcome {
+    let mut budget = ReadBudget::from_limits(max_file_bytes, max_file_bytes, 1);
+    read_text(path, &mut budget)
+}
+
+/// Read raw bytes from a regular file with a size ceiling.
+pub fn read_bytes_limited(path: &Path, max_file_bytes: u64) -> Result<Vec<u8>, ReadOutcome> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return Err(ReadOutcome::Unreadable),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(ReadOutcome::NotRegularFile);
+    }
+    let file_bytes = metadata.len();
+    if file_bytes > max_file_bytes {
+        return Err(ReadOutcome::Oversized(file_bytes));
+    }
+    read_regular_file_bytes(path, file_bytes, max_file_bytes)
+}
+
+/// Load an ignore file, enforce size/line limits, and reject symlinks.
+pub fn read_ignore_file(path: &Path, limits: IgnoreLimits) -> Result<String, ReadOutcome> {
+    let content = match read_text_limited(path, limits.max_file_bytes) {
+        ReadOutcome::Content(content) => content,
+        other => return Err(other),
+    };
+
+    let mut kept = String::with_capacity(content.len().min(limits.max_file_bytes as usize));
+    let mut patterns = 0usize;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.len() > limits.max_line_bytes {
+            return Err(ReadOutcome::Oversized(trimmed.len() as u64));
+        }
+        patterns = patterns.saturating_add(1);
+        if patterns > limits.max_lines {
+            return Err(ReadOutcome::BudgetExceeded);
+        }
+        kept.push_str(line);
+        kept.push('\n');
+    }
+    Ok(kept)
+}
+
+fn read_regular_file_bytes(
+    path: &Path,
+    metadata_bytes: u64,
+    max_file_bytes: u64,
+) -> Result<Vec<u8>, ReadOutcome> {
+    let mut file = match open_nofollow(path) {
+        Ok(file) => file,
+        Err(ReadOutcome::NotRegularFile) => return Err(ReadOutcome::NotRegularFile),
+        Err(_) => return Err(ReadOutcome::Unreadable),
+    };
+    // Re-check after open: reject if the opened handle is larger than expected.
+    if let Ok(opened) = file.metadata()
+        && opened.len() > max_file_bytes
+    {
+        return Err(ReadOutcome::Oversized(opened.len()));
+    }
+
+    let capacity = usize::try_from(metadata_bytes.min(max_file_bytes)).unwrap_or(usize::MAX);
+    let mut bytes = Vec::with_capacity(capacity);
+    if file
+        .by_ref()
+        .take(max_file_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return Err(ReadOutcome::Unreadable);
+    }
+    if bytes.len() as u64 > max_file_bytes {
+        return Err(ReadOutcome::Oversized(
+            (bytes.len() as u64).max(metadata_bytes),
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Open a path without following the final path component when the platform
+/// supports `O_NOFOLLOW`.
+fn open_nofollow(path: &Path) -> Result<File, ReadOutcome> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+        {
+            Ok(file) => {
+                // Defend against racey replacement: require a regular file handle.
+                if file.metadata().map(|meta| meta.is_file()).unwrap_or(false) {
+                    Ok(file)
+                } else {
+                    Err(ReadOutcome::NotRegularFile)
+                }
+            }
+            Err(error) if error.raw_os_error() == Some(libc::ELOOP) => {
+                Err(ReadOutcome::NotRegularFile)
+            }
+            Err(_) => Err(ReadOutcome::Unreadable),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows lacks a portable O_NOFOLLOW equivalent in std; keep the
+        // symlink_metadata pre-check and refuse non-regular opened files.
+        if !is_regular_file(path) {
+            return Err(ReadOutcome::NotRegularFile);
+        }
+        match File::open(path) {
+            Ok(file) => Ok(file),
+            Err(_) => Err(ReadOutcome::Unreadable),
+        }
+    }
+}
+
+/// Atomically replace `path` with `bytes` inside the same directory.
+///
+/// Rejects an existing symlink target and uses owner-only permissions where the
+/// platform supports them. Permission failures are propagated so callers cannot
+/// silently leave a world-readable cache artifact behind.
+pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "cache path has no parent directory",
+        ));
+    };
+    fs::create_dir_all(parent)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+    }
+
+    if let Ok(metadata) = fs::symlink_metadata(path)
+        && metadata.file_type().is_symlink()
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "refusing to overwrite a symlink cache path",
+        ));
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("cache.json");
+    let temporary = parent.join(format!(".{file_name}.{}.tmp", std::process::id()));
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&temporary, bytes)?;
+    }
+    if let Err(error) = fs::rename(&temporary, path) {
+        if path.exists() {
+            // Another process may have created a regular file; replace only if
+            // it is not a symlink.
+            if let Ok(metadata) = fs::symlink_metadata(path)
+                && metadata.file_type().is_symlink()
+            {
+                let _ = fs::remove_file(&temporary);
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "refusing to overwrite a symlink cache path",
+                ));
+            }
+            fs::remove_file(path)?;
+            fs::rename(&temporary, path)?;
+        } else {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn rejects_symlinks_and_oversized_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        let link = dir.path().join("link.txt");
+        fs::write(&target, "hello").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            assert!(!is_regular_file(&link));
+            assert_eq!(read_text_limited(&link, 1024), ReadOutcome::NotRegularFile);
+        }
+
+        let big = dir.path().join("big.txt");
+        let mut file = File::create(&big).unwrap();
+        file.write_all(&[b'a'; 64]).unwrap();
+        assert_eq!(read_text_limited(&big, 32), ReadOutcome::Oversized(64));
+    }
+
+    #[test]
+    fn shared_budget_tracks_total_bytes_and_file_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        fs::write(&a, "12345").unwrap();
+        fs::write(&b, "12345").unwrap();
+        let mut budget = ReadBudget::from_limits(100, 6, 10);
+        assert!(matches!(
+            read_text(&a, &mut budget),
+            ReadOutcome::Content(_)
+        ));
+        assert_eq!(read_text(&b, &mut budget), ReadOutcome::BudgetExceeded);
+    }
+
+    #[test]
+    fn invalid_utf8_still_consumes_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("binary.bin");
+        fs::write(&path, [0xff, 0xfe, 0xfd, 0xfc, 0xfb]).unwrap();
+        let mut budget = ReadBudget::from_limits(100, 10, 10);
+        assert_eq!(read_text(&path, &mut budget), ReadOutcome::Unreadable);
+        assert_eq!(budget.remaining_total_bytes, 5);
+        assert_eq!(budget.remaining_files, 9);
+    }
+
+    #[test]
+    fn ignore_loader_rejects_too_many_patterns() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".gitignore");
+        let mut body = String::new();
+        for index in 0..10 {
+            body.push_str(&format!("pattern-{index}\n"));
+        }
+        fs::write(&path, body).unwrap();
+        let limits = IgnoreLimits {
+            max_file_bytes: 1024,
+            max_lines: 5,
+            max_line_bytes: 128,
+        };
+        assert_eq!(
+            read_ignore_file(&path, limits).unwrap_err(),
+            ReadOutcome::BudgetExceeded
+        );
+    }
+}

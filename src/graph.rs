@@ -9,12 +9,13 @@
 //!
 //! This module is self-contained and used by opt-in graph, impact, explain, and
 //! context features. It consumes cached per-file source facts when a scan has
-//! already parsed the source, while public library entry points retain a
-//! filesystem fallback.
+//! already parsed the source. Any residual filesystem access is budgeted,
+//! symlink-safe, and optional for sources when facts are supplied.
 
 mod symbols;
 
 use crate::cli::GraphDirection;
+use crate::fs_budget::{self, ReadBudget, ReadOutcome};
 use crate::lang::{FirstClass, detect};
 use crate::metrics::testcov;
 use crate::model::{
@@ -28,6 +29,60 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
+
+/// Resource and trust policy for graph construction.
+#[derive(Debug, Clone)]
+pub struct GraphReadLimits {
+    pub max_file_bytes: u64,
+    pub max_total_bytes: u64,
+    pub max_files: usize,
+    /// When true, source files are never re-read from the filesystem; missing
+    /// facts mark a node unreadable instead.
+    pub facts_only_sources: bool,
+    /// Cooperative deadline shared with repository config reads.
+    pub deadline: Option<std::time::Instant>,
+}
+
+impl Default for GraphReadLimits {
+    fn default() -> Self {
+        Self {
+            max_file_bytes: 32 * 1024 * 1024,
+            max_total_bytes: 512 * 1024 * 1024,
+            max_files: 100_000,
+            facts_only_sources: false,
+            deadline: None,
+        }
+    }
+}
+
+impl GraphReadLimits {
+    pub fn from_config(cfg: &crate::config::Config) -> Self {
+        Self {
+            max_file_bytes: cfg.max_file_bytes,
+            max_total_bytes: cfg.max_total_bytes,
+            max_files: cfg.max_files,
+            facts_only_sources: false,
+            deadline: None,
+        }
+    }
+
+    fn budget(&self) -> ReadBudget {
+        ReadBudget::new(
+            self.max_file_bytes,
+            self.max_total_bytes,
+            self.max_files,
+            self.deadline,
+        )
+    }
+}
+
+/// Revision-scoped inputs for graph construction.
+#[derive(Debug, Clone, Default)]
+pub struct GraphInputs {
+    pub source_facts: BTreeMap<PathBuf, SourceFacts>,
+    /// Relative repository paths to immutable resolver config contents.
+    pub resolver_configs: BTreeMap<String, String>,
+}
 
 struct Topology {
     graph_files: Vec<String>,
@@ -80,16 +135,179 @@ struct GraphQuery<'a> {
 
 /// Build structural topology from the already-scanned file list.
 pub fn build(files: &[crate::model::FileReport], root: &Path) -> DepGraph {
-    analyze(files, root).report
+    build_with_limits(files, root, GraphReadLimits::default(), None)
 }
 
-/// Build the public graph report and reusable per-file signals in one pass.
-pub(crate) fn analyze(files: &[crate::model::FileReport], root: &Path) -> GraphAnalysis {
-    analyze_with_query(files, root, &[], GraphDirection::Both, 1)
+/// Build structural topology with explicit read limits and optional source facts.
+pub fn build_with_limits(
+    files: &[crate::model::FileReport],
+    root: &Path,
+    limits: GraphReadLimits,
+    facts: Option<&BTreeMap<PathBuf, SourceFacts>>,
+) -> DepGraph {
+    analyze_with_limits(
+        files,
+        root,
+        limits,
+        facts,
+        None,
+        &[],
+        GraphDirection::Both,
+        1,
+    )
+    .report
+}
+
+/// Build topology from fully revisioned graph inputs (sources + resolver configs).
+pub fn build_with_inputs(
+    files: &[crate::model::FileReport],
+    root: &Path,
+    limits: GraphReadLimits,
+    inputs: &GraphInputs,
+) -> DepGraph {
+    analyze_with_limits(
+        files,
+        root,
+        GraphReadLimits {
+            facts_only_sources: true,
+            ..limits
+        },
+        Some(&inputs.source_facts),
+        Some(&inputs.resolver_configs),
+        &[],
+        GraphDirection::Both,
+        1,
+    )
+    .report
+}
+
+/// Collect bounded resolver configuration files for the given first-class paths.
+///
+/// For TypeScript/JavaScript, relative `extends` and project `references` are
+/// followed recursively so snapshot-mode graph builds see the same configs as a
+/// live walk under the same byte budget.
+pub fn collect_resolver_configs(
+    root: &Path,
+    files: &[PathBuf],
+    limits: &GraphReadLimits,
+) -> BTreeMap<String, String> {
+    let graph_files = files
+        .iter()
+        .filter_map(|path| {
+            detect(path).and_then(|info| {
+                info.first_class
+                    .map(|_| path.to_string_lossy().replace('\\', "/"))
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut budget = limits.budget();
+    let mut configs = BTreeMap::new();
+    let mut pending = candidate_resolver_config_paths(root, &graph_files)
+        .into_iter()
+        .collect::<VecDeque<_>>();
+    let mut seen = HashSet::new();
+    while let Some(relative) = pending.pop_front() {
+        if !seen.insert(relative.clone()) {
+            continue;
+        }
+        let Some(content) = read_repo_text(root, &relative, &mut budget) else {
+            continue;
+        };
+        // Follow local extends/references for TS/JS configs and any JSON fragment
+        // pulled in through those links (e.g. configs/base.json).
+        if looks_like_ts_config(&relative, &content) {
+            for related in ts_config_related_paths(root, &relative, &content) {
+                if !seen.contains(&related) {
+                    pending.push_back(related);
+                }
+            }
+        }
+        configs.insert(relative, content);
+    }
+    configs
+}
+
+fn looks_like_ts_config(relative: &str, content: &str) -> bool {
+    let name = Path::new(relative)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(relative);
+    if name == "package.json" || name == "composer.json" {
+        return false;
+    }
+    name == "tsconfig.json"
+        || name == "jsconfig.json"
+        || (name.starts_with("tsconfig.") && name.ends_with(".json"))
+        || (name.starts_with("jsconfig.") && name.ends_with(".json"))
+        || (relative.ends_with(".json")
+            && (content.contains("\"compilerOptions\"")
+                || content.contains("\"extends\"")
+                || content.contains("\"references\"")))
+}
+
+/// Local relative targets of `extends` / `references` for a TS/JS config.
+fn ts_config_related_paths(root: &Path, relative: &str, content: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<Value>(&sanitize_jsonc(content)) else {
+        return Vec::new();
+    };
+    let directory = path_parent(relative);
+    let mut related = Vec::new();
+    match value.get("extends") {
+        Some(Value::String(extended)) => {
+            if let Some(path) = resolve_related_config_path(root, &directory, extended) {
+                related.push(path);
+            }
+        }
+        Some(Value::Array(items)) => {
+            for item in items {
+                if let Some(extended) = item.as_str()
+                    && let Some(path) = resolve_related_config_path(root, &directory, extended)
+                {
+                    related.push(path);
+                }
+            }
+        }
+        _ => {}
+    }
+    if let Some(references) = value.get("references").and_then(Value::as_array) {
+        for reference in references {
+            if let Some(path) = reference.get("path").and_then(Value::as_str)
+                && let Some(resolved) = resolve_related_config_path(root, &directory, path)
+            {
+                related.push(resolved);
+            }
+        }
+    }
+    related.sort();
+    related.dedup();
+    related
+}
+
+fn resolve_related_config_path(root: &Path, directory: &str, reference: &str) -> Option<String> {
+    if !reference.starts_with('.') {
+        return None;
+    }
+    let mut candidate = join_graph_path(directory, reference);
+    let absolute = root.join(&candidate);
+    let metadata = std::fs::symlink_metadata(&absolute).ok();
+    if metadata
+        .as_ref()
+        .is_some_and(|meta| meta.is_dir() && !meta.file_type().is_symlink())
+    {
+        candidate = join_graph_path(&candidate, "tsconfig.json");
+    } else if !metadata
+        .as_ref()
+        .is_some_and(|meta| meta.is_file() && !meta.file_type().is_symlink())
+        && Path::new(&candidate).extension().is_none()
+    {
+        candidate.push_str(".json");
+    }
+    repo_is_regular_file(root, &candidate).then_some(candidate)
 }
 
 /// Build a complete topology once, then project a deterministic bounded graph
 /// around optional file or directory focus paths.
+#[cfg(test)]
 pub(crate) fn analyze_with_query(
     files: &[crate::model::FileReport],
     root: &Path,
@@ -97,15 +315,51 @@ pub(crate) fn analyze_with_query(
     direction: GraphDirection,
     depth: usize,
 ) -> GraphAnalysis {
-    let paths: Vec<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
-    let virtual_paths = HashSet::new();
-    build_from_paths_with_query(&paths, root, &virtual_paths, None, focus, direction, depth)
+    analyze_with_limits(
+        files,
+        root,
+        GraphReadLimits::default(),
+        None,
+        None,
+        focus,
+        direction,
+        depth,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn analyze_with_query_facts(
     files: &[crate::model::FileReport],
     root: &Path,
     facts: &BTreeMap<PathBuf, SourceFacts>,
+    resolver_configs: Option<&BTreeMap<String, String>>,
+    limits: GraphReadLimits,
+    focus: &[PathBuf],
+    direction: GraphDirection,
+    depth: usize,
+) -> GraphAnalysis {
+    analyze_with_limits(
+        files,
+        root,
+        GraphReadLimits {
+            facts_only_sources: true,
+            ..limits
+        },
+        Some(facts),
+        resolver_configs,
+        focus,
+        direction,
+        depth,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn analyze_with_limits(
+    files: &[crate::model::FileReport],
+    root: &Path,
+    limits: GraphReadLimits,
+    facts: Option<&BTreeMap<PathBuf, SourceFacts>>,
+    resolver_configs: Option<&BTreeMap<String, String>>,
     focus: &[PathBuf],
     direction: GraphDirection,
     depth: usize,
@@ -118,7 +372,9 @@ pub(crate) fn analyze_with_query_facts(
         &paths,
         root,
         &HashSet::new(),
-        Some(facts),
+        facts,
+        resolver_configs,
+        limits,
         focus,
         direction,
         depth,
@@ -140,6 +396,8 @@ pub(crate) fn analyze_paths(
         root,
         virtual_paths,
         None,
+        None,
+        GraphReadLimits::default(),
         &[],
         GraphDirection::Both,
         1,
@@ -151,12 +409,19 @@ pub(crate) fn analyze_paths_with_facts(
     root: &Path,
     virtual_paths: &HashSet<String>,
     facts: &BTreeMap<PathBuf, SourceFacts>,
+    resolver_configs: Option<&BTreeMap<String, String>>,
+    limits: GraphReadLimits,
 ) -> GraphAnalysis {
     build_from_paths_with_query(
         paths,
         root,
         virtual_paths,
         Some(facts),
+        resolver_configs,
+        GraphReadLimits {
+            facts_only_sources: true,
+            ..limits
+        },
         &[],
         GraphDirection::Both,
         1,
@@ -182,6 +447,8 @@ pub(crate) fn explain_with_facts(
     root: &Path,
     path: &Path,
     facts: &BTreeMap<PathBuf, SourceFacts>,
+    resolver_configs: Option<&BTreeMap<String, String>>,
+    limits: GraphReadLimits,
 ) -> FileGraphContext {
     let paths = files
         .iter()
@@ -192,6 +459,11 @@ pub(crate) fn explain_with_facts(
         root,
         &HashSet::new(),
         Some(facts),
+        resolver_configs,
+        GraphReadLimits {
+            facts_only_sources: true,
+            ..limits
+        },
         &[],
         GraphDirection::Both,
         1,
@@ -276,21 +548,27 @@ fn build_from_paths(
         root,
         virtual_paths,
         None,
+        None,
+        GraphReadLimits::default(),
         &[],
         GraphDirection::Both,
         1,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_from_paths_with_query(
     paths: &[PathBuf],
     root: &Path,
     virtual_paths: &HashSet<String>,
     source_facts: Option<&BTreeMap<PathBuf, SourceFacts>>,
+    resolver_configs: Option<&BTreeMap<String, String>>,
+    limits: GraphReadLimits,
     focus: &[PathBuf],
     direction: GraphDirection,
     depth: usize,
 ) -> GraphAnalysis {
+    let mut budget = limits.budget();
     // Step 1: select every first-class file.
     let mut graph_files: Vec<String> = Vec::new();
     let mut lang_set: HashSet<String> = HashSet::new();
@@ -314,11 +592,16 @@ fn build_from_paths_with_query(
         .map(|(i, p)| (p.clone(), i))
         .collect();
     let n = graph_files.len();
-    let js_resolver = JsResolver::discover(root, &graph_files);
+    let mut access = ConfigAccess {
+        root,
+        budget: &mut budget,
+        snapshot: resolver_configs,
+    };
+    let js_resolver = JsResolver::discover(&graph_files, &mut access);
     let python_resolver = PythonResolver::discover(&graph_files);
-    let php_resolver = PhpResolver::discover(root, &graph_files);
-    let rust_resolver = RustResolver::discover(root, &graph_files);
-    let go_resolver = GoResolver::discover(root, &graph_files);
+    let php_resolver = PhpResolver::discover(&graph_files, &mut access);
+    let rust_resolver = RustResolver::discover(&graph_files, &mut access);
+    let go_resolver = GoResolver::discover(&graph_files, &mut access);
 
     // Step 2: extract imports and build edges (no self-edges in edge_set).
     let mut edge_set: HashSet<(usize, usize)> = HashSet::new();
@@ -340,15 +623,20 @@ fn build_from_paths_with_query(
             .cloned()
         {
             facts
+        } else if limits.facts_only_sources {
+            if !virtual_paths.contains(rel_path) {
+                unreadable_nodes.insert(i);
+            }
+            continue;
         } else {
             let abs = if root.is_file() {
                 root.to_path_buf()
             } else {
                 root.join(rel_path.as_str())
             };
-            let content = match std::fs::read_to_string(&abs) {
-                Ok(content) => content,
-                Err(_) => {
+            let content = match fs_budget::read_text(&abs, &mut budget) {
+                ReadOutcome::Content(content) => content,
+                _ => {
                     if !virtual_paths.contains(rel_path) {
                         unreadable_nodes.insert(i);
                     }
@@ -975,8 +1263,8 @@ fn impact_from_topology(topology: &Topology, changed: &HashSet<PathBuf>) -> Impa
 // Import specifier extractors
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub(crate) struct SourceFacts {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SourceFacts {
     specifiers: Vec<ImportSpecifier>,
     parse_errors: usize,
     symbols: symbols::SourceFacts,
@@ -1505,8 +1793,8 @@ struct RustPackage {
 }
 
 impl RustResolver {
-    fn discover(root: &Path, graph_files: &[String]) -> Self {
-        if root.is_file() {
+    fn discover(graph_files: &[String], access: &mut ConfigAccess<'_>) -> Self {
+        if access.root.is_file() {
             return Self::from_files(graph_files, Vec::new());
         }
 
@@ -1522,7 +1810,7 @@ impl RustResolver {
             let mut directory = path_parent(path);
             loop {
                 let relative = join_graph_path(&directory, "Cargo.toml");
-                if root.join(&relative).is_file() {
+                if access.exists(&relative) {
                     candidates.insert(relative);
                 }
                 if directory.is_empty() {
@@ -1536,7 +1824,7 @@ impl RustResolver {
         let mut config_files = Vec::new();
         let mut config_errors = 0usize;
         for relative in candidates {
-            match read_cargo_package(root, &relative) {
+            match read_cargo_package(access, &relative) {
                 Some(Ok(package)) => {
                     config_files.push(relative);
                     if let Some(package) = package {
@@ -1763,8 +2051,85 @@ impl RustResolver {
     }
 }
 
-fn read_cargo_package(root: &Path, relative: &str) -> Option<Result<Option<RustPackage>, ()>> {
-    let content = std::fs::read_to_string(root.join(relative)).ok()?;
+struct ConfigAccess<'a> {
+    root: &'a Path,
+    budget: &'a mut ReadBudget,
+    snapshot: Option<&'a BTreeMap<String, String>>,
+}
+
+impl ConfigAccess<'_> {
+    fn exists(&self, relative: &str) -> bool {
+        if let Some(snapshot) = self.snapshot {
+            return snapshot.contains_key(relative);
+        }
+        fs_budget::is_regular_file(&self.root.join(relative))
+    }
+
+    fn read(&mut self, relative: &str) -> Option<String> {
+        if let Some(snapshot) = self.snapshot {
+            return snapshot.get(relative).cloned();
+        }
+        match fs_budget::read_text(&self.root.join(relative), self.budget) {
+            ReadOutcome::Content(content) => Some(content),
+            _ => None,
+        }
+    }
+}
+
+fn repo_is_regular_file(root: &Path, relative: &str) -> bool {
+    fs_budget::is_regular_file(&root.join(relative))
+}
+
+fn read_repo_text(root: &Path, relative: &str, budget: &mut ReadBudget) -> Option<String> {
+    match fs_budget::read_text(&root.join(relative), budget) {
+        ReadOutcome::Content(content) => Some(content),
+        _ => None,
+    }
+}
+
+fn candidate_resolver_config_paths(root: &Path, graph_files: &[String]) -> BTreeSet<String> {
+    let mut candidates = BTreeSet::new();
+    if root.is_file() {
+        return candidates;
+    }
+    for path in graph_files {
+        let fc = detect(Path::new(path)).and_then(|info| info.first_class);
+        let mut directory = path_parent(path);
+        loop {
+            match fc {
+                Some(FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx) => {
+                    for name in ["tsconfig.json", "jsconfig.json", "package.json"] {
+                        candidates.insert(join_graph_path(&directory, name));
+                    }
+                }
+                Some(FirstClass::Rust) => {
+                    candidates.insert(join_graph_path(&directory, "Cargo.toml"));
+                }
+                Some(FirstClass::Go) => {
+                    candidates.insert(join_graph_path(&directory, "go.mod"));
+                }
+                Some(FirstClass::Php) => {
+                    candidates.insert(join_graph_path(&directory, "composer.json"));
+                }
+                _ => {}
+            }
+            if directory.is_empty() {
+                break;
+            }
+            directory = path_parent(&directory);
+        }
+    }
+    candidates
+        .into_iter()
+        .filter(|relative| repo_is_regular_file(root, relative))
+        .collect()
+}
+
+fn read_cargo_package(
+    access: &mut ConfigAccess<'_>,
+    relative: &str,
+) -> Option<Result<Option<RustPackage>, ()>> {
+    let content = access.read(relative)?;
     let value = match toml::from_str::<toml::Value>(&content) {
         Ok(value) => value,
         Err(_) => return Some(Err(())),
@@ -1871,7 +2236,7 @@ struct GoModule {
 }
 
 impl GoResolver {
-    fn discover(root: &Path, graph_files: &[String]) -> Self {
+    fn discover(graph_files: &[String], access: &mut ConfigAccess<'_>) -> Self {
         let go_files = graph_files
             .iter()
             .filter(|path| {
@@ -1897,7 +2262,7 @@ impl GoResolver {
                 (directory, paths.remove(0))
             })
             .collect();
-        if root.is_file() {
+        if access.root.is_file() {
             return Self {
                 packages,
                 ..Self::default()
@@ -1909,7 +2274,7 @@ impl GoResolver {
             let mut directory = path_parent(path);
             loop {
                 let relative = join_graph_path(&directory, "go.mod");
-                if root.join(&relative).is_file() {
+                if access.exists(&relative) {
                     candidates.insert(relative);
                 }
                 if directory.is_empty() {
@@ -1925,7 +2290,7 @@ impl GoResolver {
         };
         let mut prefixes = HashSet::new();
         for relative in candidates {
-            match read_go_module(root, &relative) {
+            match read_go_module(access, &relative) {
                 Some(Ok(prefix)) => {
                     resolver.config_files.push(relative.clone());
                     if prefixes.insert(prefix.clone()) {
@@ -1990,8 +2355,8 @@ impl GoResolver {
     }
 }
 
-fn read_go_module(root: &Path, relative: &str) -> Option<Result<String, ()>> {
-    let content = std::fs::read_to_string(root.join(relative)).ok()?;
+fn read_go_module(access: &mut ConfigAccess<'_>, relative: &str) -> Option<Result<String, ()>> {
+    let content = access.read(relative)?;
     let module = content.lines().find_map(|line| {
         let mut parts = line.split_whitespace();
         (parts.next() == Some("module"))
@@ -2053,8 +2418,8 @@ enum PhpMappingKind {
 }
 
 impl PhpResolver {
-    fn discover(root: &Path, graph_files: &[String]) -> Self {
-        if root.is_file() {
+    fn discover(graph_files: &[String], access: &mut ConfigAccess<'_>) -> Self {
+        if access.root.is_file() {
             return Self::default();
         }
 
@@ -2066,7 +2431,7 @@ impl PhpResolver {
             let mut directory = path_parent(path);
             loop {
                 let relative = join_graph_path(&directory, "composer.json");
-                if root.join(&relative).is_file() {
+                if access.exists(&relative) {
                     candidates.insert(relative);
                 }
                 if directory.is_empty() {
@@ -2078,7 +2443,7 @@ impl PhpResolver {
 
         let mut resolver = Self::default();
         for relative in candidates {
-            match read_composer_config(root, &relative) {
+            match read_composer_config(access, &relative) {
                 Some(Ok(mappings)) if !mappings.is_empty() => {
                     resolver.config_files.push(relative);
                     resolver.mappings.extend(mappings);
@@ -2231,8 +2596,11 @@ fn is_composer_autoloader(path: &str) -> bool {
     normalized == "vendor/autoload.php" || normalized.ends_with("/vendor/autoload.php")
 }
 
-fn read_composer_config(root: &Path, relative: &str) -> Option<Result<Vec<PhpMapping>, ()>> {
-    let content = std::fs::read_to_string(root.join(relative)).ok()?;
+fn read_composer_config(
+    access: &mut ConfigAccess<'_>,
+    relative: &str,
+) -> Option<Result<Vec<PhpMapping>, ()>> {
+    let content = access.read(relative)?;
     let value: Value = match serde_json::from_str(&content) {
         Ok(value) => value,
         Err(_) => return Some(Err(())),
@@ -2379,8 +2747,8 @@ struct PackageMapping {
 }
 
 impl JsResolver {
-    fn discover(root: &Path, graph_files: &[String]) -> Self {
-        if root.is_file() {
+    fn discover(graph_files: &[String], access: &mut ConfigAccess<'_>) -> Self {
+        if access.root.is_file() {
             return Self::default();
         }
         let mut candidates = BTreeSet::new();
@@ -2400,7 +2768,7 @@ impl JsResolver {
                     } else {
                         format!("{directory}/{name}")
                     };
-                    if root.join(&relative).is_file() {
+                    if access.exists(&relative) {
                         candidates.insert(relative);
                     }
                 }
@@ -2409,7 +2777,7 @@ impl JsResolver {
                 } else {
                     format!("{directory}/package.json")
                 };
-                if root.join(&package).is_file() {
+                if access.exists(&package) {
                     package_candidates.insert(package);
                 }
                 if directory.is_empty() {
@@ -2425,7 +2793,7 @@ impl JsResolver {
             if !seen.insert(relative.clone()) {
                 continue;
             }
-            match read_ts_config(root, &relative) {
+            match read_ts_config(access, &relative) {
                 Some(Ok(parsed)) => {
                     candidates.extend(parsed.related);
                     let config = parsed.config;
@@ -2458,7 +2826,7 @@ impl JsResolver {
             }
         }
         for relative in package_candidates {
-            match read_package_config(root, &relative) {
+            match read_package_config(access, &relative) {
                 Some(Ok(package)) => {
                     if package.name.is_some() || package.has_exports || package.has_imports {
                         resolver.config_files.push(relative);
@@ -2677,8 +3045,11 @@ fn resolve_package_mappings(
     None
 }
 
-fn read_ts_config(root: &Path, relative: &str) -> Option<Result<ParsedTsConfig, ()>> {
-    let content = std::fs::read_to_string(root.join(relative)).ok()?;
+fn read_ts_config(
+    access: &mut ConfigAccess<'_>,
+    relative: &str,
+) -> Option<Result<ParsedTsConfig, ()>> {
+    let content = access.read(relative)?;
     let value: Value = match serde_json::from_str(&sanitize_jsonc(&content)) {
         Ok(value) => value,
         Err(_) => return Some(Err(())),
@@ -2695,10 +3066,10 @@ fn read_ts_config(root: &Path, relative: &str) -> Option<Result<ParsedTsConfig, 
         .into_iter()
         .flatten()
         .filter_map(|reference| reference.get("path").and_then(Value::as_str))
-        .filter_map(|reference| resolve_config_reference(root, &directory, reference))
+        .filter_map(|reference| resolve_config_reference(access, &directory, reference))
         .collect::<Vec<_>>();
     if let Some(extended) = value.get("extends").and_then(Value::as_str)
-        && let Some(extended) = resolve_config_reference(root, &directory, extended)
+        && let Some(extended) = resolve_config_reference(access, &directory, extended)
     {
         related.push(extended);
     }
@@ -2739,8 +3110,11 @@ fn read_ts_config(root: &Path, relative: &str) -> Option<Result<ParsedTsConfig, 
     }))
 }
 
-fn read_package_config(root: &Path, relative: &str) -> Option<Result<PackageConfig, ()>> {
-    let content = std::fs::read_to_string(root.join(relative)).ok()?;
+fn read_package_config(
+    access: &mut ConfigAccess<'_>,
+    relative: &str,
+) -> Option<Result<PackageConfig, ()>> {
+    let content = access.read(relative)?;
     let value: Value = match serde_json::from_str(&content) {
         Ok(value) => value,
         Err(_) => return Some(Err(())),
@@ -2838,18 +3212,47 @@ fn sorted_package_mappings(mut mappings: Vec<PackageMapping>) -> Vec<PackageMapp
     mappings
 }
 
-fn resolve_config_reference(root: &Path, directory: &str, reference: &str) -> Option<String> {
+fn resolve_config_reference(
+    access: &ConfigAccess<'_>,
+    directory: &str,
+    reference: &str,
+) -> Option<String> {
     if !reference.starts_with('.') {
         return None;
     }
     let mut candidate = join_graph_path(directory, reference);
-    let absolute = root.join(&candidate);
-    if absolute.is_dir() {
+    if access.snapshot.is_some() {
+        // Snapshot mode: only preloaded paths exist. Prefer exact key, then .json.
+        if access.exists(&candidate) {
+            return Some(candidate);
+        }
+        if Path::new(&candidate).extension().is_none() {
+            candidate.push_str(".json");
+            if access.exists(&candidate) {
+                return Some(candidate);
+            }
+            let dir_ts = join_graph_path(candidate.trim_end_matches(".json"), "tsconfig.json");
+            if access.exists(&dir_ts) {
+                return Some(dir_ts);
+            }
+        }
+        return None;
+    }
+    let absolute = access.root.join(&candidate);
+    let metadata = std::fs::symlink_metadata(&absolute).ok();
+    if metadata
+        .as_ref()
+        .is_some_and(|meta| meta.is_dir() && !meta.file_type().is_symlink())
+    {
         candidate = join_graph_path(&candidate, "tsconfig.json");
-    } else if !absolute.is_file() && Path::new(&candidate).extension().is_none() {
+    } else if !metadata
+        .as_ref()
+        .is_some_and(|meta| meta.is_file() && !meta.file_type().is_symlink())
+        && Path::new(&candidate).extension().is_none()
+    {
         candidate.push_str(".json");
     }
-    root.join(&candidate).is_file().then_some(candidate)
+    access.exists(&candidate).then_some(candidate)
 }
 
 fn sanitize_jsonc(content: &str) -> String {
@@ -3561,6 +3964,93 @@ var ignored = "example.com/project/not-an-import"
     }
 
     #[test]
+    fn collect_resolver_configs_follows_tsconfig_extends_and_references() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("configs")).unwrap();
+        std::fs::create_dir_all(dir.path().join("packages/shared")).unwrap();
+        std::fs::write(
+            dir.path().join("tsconfig.json"),
+            r#"{
+  "extends": "./configs/base.json",
+  "references": [{ "path": "./packages/shared" }],
+  "compilerOptions": { "baseUrl": "." }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("configs/base.json"),
+            r#"{ "compilerOptions": { "strict": true }, "extends": "./strict.json" }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("configs/strict.json"),
+            r#"{ "compilerOptions": { "noImplicitAny": true } }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("packages/shared/tsconfig.json"),
+            r#"{ "compilerOptions": { "composite": true } }"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("index.ts"), "export const value = 1;\n").unwrap();
+
+        let configs = collect_resolver_configs(
+            dir.path(),
+            &[PathBuf::from("index.ts")],
+            &GraphReadLimits::default(),
+        );
+        assert!(configs.contains_key("tsconfig.json"));
+        assert!(configs.contains_key("configs/base.json"));
+        assert!(configs.contains_key("configs/strict.json"));
+        assert!(configs.contains_key("packages/shared/tsconfig.json"));
+    }
+
+    #[test]
+    fn oversized_package_json_is_not_loaded_by_the_resolver() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("index.ts"), "export const value = 1;\n").unwrap();
+        // Larger than the graph budget; must not be fully loaded.
+        std::fs::write(dir.path().join("package.json"), vec![b'x'; 256 * 1024]).unwrap();
+        let files = [file_report("index.ts")];
+        let limits = GraphReadLimits {
+            max_file_bytes: 1024,
+            max_total_bytes: 2048,
+            max_files: 10,
+            facts_only_sources: false,
+            deadline: None,
+        };
+        let report = build_with_limits(&files, dir.path(), limits, None);
+        assert_eq!(report.nodes, 1);
+        assert!(
+            report
+                .config_files
+                .iter()
+                .all(|path| path != "package.json"),
+            "oversized package.json must not contribute resolver config"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_resolver_config_is_rejected() {
+        let dir = tempdir().unwrap();
+        let external = dir.path().join("outside-package.json");
+        std::fs::write(&external, r#"{"name":"evil"}"#).unwrap();
+        std::os::unix::fs::symlink(&external, dir.path().join("package.json")).unwrap();
+        std::fs::write(dir.path().join("index.ts"), "export const value = 1;\n").unwrap();
+        let files = [file_report("index.ts")];
+        let report = build_with_limits(&files, dir.path(), GraphReadLimits::default(), None);
+        assert!(
+            report
+                .config_files
+                .iter()
+                .all(|path| path != "package.json"),
+            "symlink package.json must not be followed"
+        );
+    }
+
+    #[test]
     fn cached_source_facts_produce_the_same_graph_without_rereading_sources() {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -3589,9 +4079,17 @@ var ignored = "example.com/project/not-an-import"
             std::fs::remove_file(dir.path().join(path)).unwrap();
         }
 
-        let actual =
-            analyze_with_query_facts(&files, dir.path(), &facts, &[], GraphDirection::Both, 1)
-                .report;
+        let actual = analyze_with_query_facts(
+            &files,
+            dir.path(),
+            &facts,
+            None,
+            GraphReadLimits::default(),
+            &[],
+            GraphDirection::Both,
+            1,
+        )
+        .report;
 
         assert_eq!(
             serde_json::to_value(actual).unwrap(),

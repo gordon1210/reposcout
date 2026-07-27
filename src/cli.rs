@@ -146,9 +146,13 @@ pub struct DaemonArgs {
     #[arg(long)]
     pub no_project_config: bool,
 
-    /// Permit an unauthenticated non-loopback listener
+    /// Disable the per-start bearer token (explicitly unauthenticated mode)
     #[arg(long)]
     pub unsafe_no_auth: bool,
+
+    /// Allow non-loopback binding over plain HTTP (use only behind a TLS proxy)
+    #[arg(long)]
+    pub allow_insecure_remote: bool,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -639,6 +643,7 @@ mod tests {
         assert_eq!(daemon.path, PathBuf::from("."));
         assert!(!daemon.no_project_config);
         assert!(!daemon.unsafe_no_auth);
+        assert!(!daemon.allow_insecure_remote);
 
         let cli = Cli::try_parse_from([
             "reposcout",
@@ -654,6 +659,7 @@ mod tests {
             "lite",
             "--no-project-config",
             "--unsafe-no-auth",
+            "--allow-insecure-remote",
         ])
         .unwrap();
         let Command::Daemon(daemon) = cli.command.unwrap() else {
@@ -666,6 +672,7 @@ mod tests {
         assert_eq!(daemon.path, PathBuf::from("src"));
         assert!(daemon.no_project_config);
         assert!(daemon.unsafe_no_auth);
+        assert!(daemon.allow_insecure_remote);
 
         let cli = Cli::try_parse_from(["reposcout", "daemon", "--profile", "safe"]).unwrap();
         let Command::Daemon(daemon) = cli.command.unwrap() else {

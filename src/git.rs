@@ -31,9 +31,57 @@ pub(crate) fn churn_cache_directory(root: &Path) -> Option<PathBuf> {
     churn_cache::cache_directory(root)
 }
 
+/// Resource limits for Git churn collection.
+#[derive(Debug, Clone)]
+pub struct ChurnLimits {
+    pub max_commits: usize,
+    pub max_deltas_per_commit: usize,
+    pub max_total_deltas: usize,
+    pub max_output_bytes: u64,
+    pub max_path_bytes: usize,
+    pub max_cache_bytes: u64,
+    pub deadline: Option<std::time::Instant>,
+    /// When true, a native-Git failure does not fall back to libgit2 materialization
+    /// of unbounded commit diffs (safe profile).
+    pub skip_libgit2_fallback: bool,
+}
+
+impl Default for ChurnLimits {
+    fn default() -> Self {
+        Self {
+            max_commits: 5_000,
+            max_deltas_per_commit: 50_000,
+            max_total_deltas: 500_000,
+            max_output_bytes: 64 * 1024 * 1024,
+            max_path_bytes: 4_096,
+            max_cache_bytes: 64 * 1024 * 1024,
+            deadline: None,
+            skip_libgit2_fallback: false,
+        }
+    }
+}
+
+impl ChurnLimits {
+    pub fn with_max_commits(max_commits: usize) -> Self {
+        Self {
+            max_commits,
+            ..Self::default()
+        }
+    }
+}
+
+/// Result of a churn walk, including partial-limit diagnostics.
+#[derive(Debug, Default)]
+pub struct ChurnCollection {
+    pub churn: HashMap<PathBuf, Churn>,
+    pub partial: bool,
+    pub deltas_omitted: usize,
+}
+
 pub fn collect(root: &Path, files: &[PathBuf], max_commits: usize) -> HashMap<PathBuf, Churn> {
-    let mut cache = ChurnCache::for_repo(root, false);
-    collect_impl(root, files, max_commits, &mut cache).0
+    let limits = ChurnLimits::with_max_commits(max_commits);
+    let mut cache = ChurnCache::for_repo(root, false, limits.max_cache_bytes);
+    collect_impl(root, files, &limits, &mut cache).churn
 }
 
 /// Collect churn while reusing immutable commit events and exact result views
@@ -42,11 +90,21 @@ pub fn collect(root: &Path, files: &[PathBuf], max_commits: usize) -> HashMap<Pa
 pub fn collect_with_cache(
     root: &Path,
     files: &[PathBuf],
-    max_commits: usize,
+    limits: &ChurnLimits,
     use_cache: bool,
 ) -> HashMap<PathBuf, Churn> {
-    let mut cache = ChurnCache::for_repo(root, use_cache);
-    collect_impl(root, files, max_commits, &mut cache).0
+    let mut cache = ChurnCache::for_repo(root, use_cache, limits.max_cache_bytes);
+    collect_impl(root, files, limits, &mut cache).churn
+}
+
+pub(crate) fn collect_with_diagnostics(
+    root: &Path,
+    files: &[PathBuf],
+    limits: &ChurnLimits,
+    use_cache: bool,
+) -> ChurnCollection {
+    let mut cache = ChurnCache::for_repo(root, use_cache, limits.max_cache_bytes);
+    collect_impl(root, files, limits, &mut cache)
 }
 
 #[derive(Default)]
@@ -66,52 +124,67 @@ struct CollectStats {
     native_fallbacks: usize,
     event_hits: usize,
     view_hits: usize,
+    partial: bool,
+    deltas_omitted: usize,
+    total_deltas: usize,
 }
 
 fn collect_impl(
     root: &Path,
     files: &[PathBuf],
-    max_commits: usize,
+    limits: &ChurnLimits,
     cache: &mut ChurnCache,
-) -> (HashMap<PathBuf, Churn>, CollectStats) {
-    collect_impl_with_native(root, files, max_commits, cache, &NativeGit::default())
+) -> ChurnCollection {
+    collect_impl_with_native(root, files, limits, cache, &NativeGit::default()).0
 }
 
 fn collect_impl_with_native(
     root: &Path,
     files: &[PathBuf],
-    max_commits: usize,
+    limits: &ChurnLimits,
     cache: &mut ChurnCache,
     native_git: &NativeGit,
-) -> (HashMap<PathBuf, Churn>, CollectStats) {
+) -> (ChurnCollection, CollectStats) {
     let mut stats = CollectStats::default();
     let repo = match Repository::discover(root) {
         Ok(repo) => repo,
-        Err(_) => return (HashMap::new(), stats),
+        Err(_) => return (ChurnCollection::default(), stats),
     };
 
     let wanted: HashSet<PathBuf> = files.iter().cloned().collect();
     if wanted.is_empty() {
-        return (HashMap::new(), stats);
+        return (ChurnCollection::default(), stats);
     }
 
     let head = match repo.head().and_then(|head| head.peel_to_commit()) {
         Ok(head) => head,
-        Err(_) => return (HashMap::new(), stats),
+        Err(_) => return (ChurnCollection::default(), stats),
     };
-    let history_state = history_state(&repo);
+    let history = history_fingerprint(&repo);
+    // Oversized .git/shallow or grafts can blow past resource caps; do not load
+    // or persist cache entries for that run.
+    let use_event_cache = history.cacheable;
     let view_identity = ViewIdentity::new(
         head.id().to_string(),
-        history_state.clone(),
-        max_commits,
+        history.state.clone(),
+        limits,
         wanted.iter().cloned(),
     );
-    if let Some(churn) = cache.get_view(&view_identity) {
+    if use_event_cache && let Some(churn) = cache.get_view(&view_identity) {
         stats.view_hits += 1;
         cache.save();
-        return (churn, stats);
+        return (
+            ChurnCollection {
+                churn,
+                partial: false,
+                deltas_omitted: 0,
+            },
+            stats,
+        );
     }
-    cache.load_events(&history_state);
+    if use_event_cache {
+        cache.load_events(&history.state);
+    }
 
     let mut acc: HashMap<PathBuf, Acc> = HashMap::new();
     let mut aliases: HashMap<PathBuf, HashSet<PathBuf>> = wanted
@@ -121,10 +194,10 @@ fn collect_impl_with_native(
         .collect();
     let mut revwalk = match repo.revwalk() {
         Ok(revwalk) => revwalk,
-        Err(_) => return (HashMap::new(), stats),
+        Err(_) => return (ChurnCollection::default(), stats),
     };
     if revwalk.push(head.id()).is_err() {
-        return (HashMap::new(), stats);
+        return (ChurnCollection::default(), stats);
     }
     // Rename aliases must be discovered from children before their parents,
     // even when commit timestamps are skewed or identical.
@@ -134,7 +207,15 @@ fn collect_impl_with_native(
     let mut complete = true;
     let mut oids = Vec::new();
     for oid in revwalk {
-        if max_commits > 0 && walked >= max_commits {
+        if limits
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            complete = false;
+            stats.partial = true;
+            break;
+        }
+        if limits.max_commits > 0 && walked >= limits.max_commits {
             break;
         }
         let oid = match oid {
@@ -157,58 +238,114 @@ fn collect_impl_with_native(
     let mut streamed_events = if uncached.is_empty() {
         HashMap::new()
     } else {
-        match native_git.collect_events(&repo, &uncached) {
-            Ok(events) => {
+        match native_git.collect_events(&repo, &uncached, limits) {
+            Ok((events, stream_stats)) => {
                 stats.native_batches += usize::from(!events.is_empty());
                 stats.native_events += events.len();
+                stats.partial |= stream_stats.partial;
+                stats.deltas_omitted = stats
+                    .deltas_omitted
+                    .saturating_add(stream_stats.deltas_omitted);
+                if stream_stats.partial {
+                    complete = false;
+                }
                 events
             }
             Err(_) => {
                 stats.native_fallbacks += 1;
+                if limits.skip_libgit2_fallback {
+                    stats.partial = true;
+                    complete = false;
+                }
                 HashMap::new()
             }
         }
     };
 
     for oid in oids {
+        if limits
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            complete = false;
+            stats.partial = true;
+            break;
+        }
+        if stats.total_deltas >= limits.max_total_deltas {
+            complete = false;
+            stats.partial = true;
+            break;
+        }
         let oid_string = oid.to_string();
         let mut event = if let Some(event) = cache.event(&oid_string).cloned() {
             stats.event_hits += 1;
             event
         } else if let Some(event) = streamed_events.remove(&oid_string) {
-            cache.put_event(event.clone());
             event
+        } else if limits.skip_libgit2_fallback {
+            // Avoid materializing unbounded libgit2 diffs under the safe profile.
+            complete = false;
+            stats.partial = true;
+            continue;
         } else {
-            let Some(event) = analyze_commit(&repo, oid, &aliases, &mut stats) else {
+            let Some(event) = analyze_commit(&repo, oid, &aliases, limits, &mut stats) else {
                 complete = false;
                 continue;
             };
-            cache.put_event(event.clone());
             event
         };
 
-        if !event.renames_resolved
-            && event_needs_rename_resolution(&event.deltas, &aliases)
-            && let Some(resolved) = resolve_commit_renames(&repo, oid, &mut stats)
-        {
-            cache.put_event(resolved.clone());
-            event = resolved;
+        // Rename similarity via libgit2 materializes a full tree-diff and is
+        // unbounded. Never run it under the safe profile or after we already
+        // truncated; surface incomplete rename tracking as partial instead.
+        let needs_rename =
+            !event.renames_resolved && event_needs_rename_resolution(&event.deltas, &aliases);
+        if needs_rename {
+            if limits.skip_libgit2_fallback || stats.partial {
+                complete = false;
+                stats.partial = true;
+            } else if let Some(resolved) = resolve_commit_renames(&repo, oid, limits, &mut stats) {
+                event = resolved;
+            }
+        }
+
+        // Apply all resource limits once to the final event (including cache hits
+        // and any rename-resolved payload) before accounting or caching.
+        if !enforce_event_limits(&mut event, limits, &mut stats) {
+            complete = false;
+        }
+        // Only cache events that survived within the active limits.
+        if use_event_cache && !stats.partial {
+            cache.put_event(event.clone());
         }
         apply_event(&event, &mut aliases, &mut acc);
+        if stats.partial && stats.total_deltas >= limits.max_total_deltas {
+            break;
+        }
     }
 
     let churn = finish_churn(acc);
-    if complete {
+    if use_event_cache && complete && !stats.partial {
         cache.put_view(view_identity, &churn);
     }
-    cache.save();
-    (churn, stats)
+    if use_event_cache {
+        cache.save();
+    }
+    (
+        ChurnCollection {
+            churn,
+            partial: stats.partial || !complete,
+            deltas_omitted: stats.deltas_omitted,
+        },
+        stats,
+    )
 }
 
 fn analyze_commit(
     repo: &Repository,
     oid: git2::Oid,
     aliases: &HashMap<PathBuf, HashSet<PathBuf>>,
+    limits: &ChurnLimits,
     stats: &mut CollectStats,
 ) -> Option<CommitEvent> {
     let commit = repo.find_commit(oid).ok()?;
@@ -225,14 +362,17 @@ fn analyze_commit(
         .diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut opts))
         .ok()?;
     stats.tree_diffs += 1;
-    let mut deltas = cached_deltas(&diff);
+    let mut deltas = cached_deltas(&diff, limits, stats);
     let mut renames_resolved = false;
-    if event_needs_rename_resolution(&deltas, aliases) {
+    if !stats.partial
+        && event_needs_rename_resolution(&deltas, aliases)
+        && deltas.len() <= limits.max_deltas_per_commit
+    {
         stats.rename_probes += 1;
         let mut find = DiffFindOptions::new();
         find.renames(true);
         if diff.find_similar(Some(&mut find)).is_ok() {
-            deltas = cached_deltas(&diff);
+            deltas = cached_deltas(&diff, limits, stats);
             renames_resolved = true;
         }
     }
@@ -243,6 +383,7 @@ fn analyze_commit(
 fn resolve_commit_renames(
     repo: &Repository,
     oid: git2::Oid,
+    limits: &ChurnLimits,
     stats: &mut CollectStats,
 ) -> Option<CommitEvent> {
     let commit = repo.find_commit(oid).ok()?;
@@ -262,7 +403,12 @@ fn resolve_commit_renames(
     let mut find = DiffFindOptions::new();
     find.renames(true);
     diff.find_similar(Some(&mut find)).ok()?;
-    Some(commit_event(&commit, oid, cached_deltas(&diff), true))
+    Some(commit_event(
+        &commit,
+        oid,
+        cached_deltas(&diff, limits, stats),
+        true,
+    ))
 }
 
 fn commit_event(
@@ -280,19 +426,89 @@ fn commit_event(
     }
 }
 
-fn cached_deltas(diff: &Diff<'_>) -> Vec<CachedDelta> {
-    diff.deltas()
-        .map(|delta| CachedDelta {
+fn cached_deltas(
+    diff: &Diff<'_>,
+    limits: &ChurnLimits,
+    stats: &mut CollectStats,
+) -> Vec<CachedDelta> {
+    let mut deltas = Vec::new();
+    for delta in diff.deltas() {
+        if deltas.len() >= limits.max_deltas_per_commit {
+            stats.partial = true;
+            stats.deltas_omitted = stats.deltas_omitted.saturating_add(1);
+            continue;
+        }
+        let old_path = delta.old_file().path().map(Path::to_path_buf);
+        let new_path = delta.new_file().path().map(Path::to_path_buf);
+        if path_too_long(old_path.as_deref(), limits.max_path_bytes)
+            || path_too_long(new_path.as_deref(), limits.max_path_bytes)
+        {
+            stats.partial = true;
+            stats.deltas_omitted = stats.deltas_omitted.saturating_add(1);
+            continue;
+        }
+        deltas.push(CachedDelta {
             kind: match delta.status() {
                 Delta::Added => DeltaKind::Added,
                 Delta::Deleted => DeltaKind::Deleted,
                 Delta::Renamed => DeltaKind::Renamed,
                 _ => DeltaKind::Other,
             },
-            old_path: delta.old_file().path().map(Path::to_path_buf),
-            new_path: delta.new_file().path().map(Path::to_path_buf),
-        })
-        .collect()
+            old_path,
+            new_path,
+        });
+    }
+    deltas
+}
+
+fn path_too_long(path: Option<&Path>, max_path_bytes: usize) -> bool {
+    path.is_some_and(|path| path.as_os_str().len() > max_path_bytes)
+}
+
+/// Apply path, per-commit, and global delta limits to one final commit event.
+/// Returns false when the event was truncated (scan is incomplete).
+fn enforce_event_limits(
+    event: &mut CommitEvent,
+    limits: &ChurnLimits,
+    stats: &mut CollectStats,
+) -> bool {
+    let mut complete = true;
+
+    let before_paths = event.deltas.len();
+    event.deltas.retain(|delta| {
+        !path_too_long(delta.old_path.as_deref(), limits.max_path_bytes)
+            && !path_too_long(delta.new_path.as_deref(), limits.max_path_bytes)
+    });
+    let removed_paths = before_paths.saturating_sub(event.deltas.len());
+    if removed_paths > 0 {
+        stats.deltas_omitted = stats.deltas_omitted.saturating_add(removed_paths);
+        stats.partial = true;
+        complete = false;
+    }
+
+    if event.deltas.len() > limits.max_deltas_per_commit {
+        stats.deltas_omitted = stats.deltas_omitted.saturating_add(
+            event
+                .deltas
+                .len()
+                .saturating_sub(limits.max_deltas_per_commit),
+        );
+        event.deltas.truncate(limits.max_deltas_per_commit);
+        stats.partial = true;
+        complete = false;
+    }
+
+    if stats.total_deltas.saturating_add(event.deltas.len()) > limits.max_total_deltas {
+        let allowed = limits.max_total_deltas.saturating_sub(stats.total_deltas);
+        stats.deltas_omitted = stats
+            .deltas_omitted
+            .saturating_add(event.deltas.len().saturating_sub(allowed));
+        event.deltas.truncate(allowed);
+        stats.partial = true;
+        complete = false;
+    }
+    stats.total_deltas = stats.total_deltas.saturating_add(event.deltas.len());
+    complete
 }
 
 fn event_needs_rename_resolution(
@@ -374,14 +590,55 @@ fn finish_churn(acc: HashMap<PathBuf, Acc>) -> HashMap<PathBuf, Churn> {
         .collect()
 }
 
-fn history_state(repo: &Repository) -> String {
-    let shallow = std::fs::read(repo.path().join("shallow")).unwrap_or_default();
-    let grafts = std::fs::read(repo.path().join("info/grafts")).unwrap_or_default();
-    let mut state = Vec::with_capacity(shallow.len() + grafts.len() + 1);
-    state.extend_from_slice(&shallow);
+struct HistoryFingerprint {
+    state: String,
+    /// False when shallow/grafts metadata was oversized or not a regular file.
+    cacheable: bool,
+}
+
+/// Bound for Git metadata files that feed the churn history fingerprint.
+const MAX_HISTORY_META_BYTES: u64 = 1024 * 1024;
+
+fn history_fingerprint(repo: &Repository) -> HistoryFingerprint {
+    let shallow = read_git_meta_bounded(&repo.path().join("shallow"));
+    let grafts = read_git_meta_bounded(&repo.path().join("info/grafts"));
+    let cacheable = shallow.is_some() && grafts.is_some();
+    let mut state = Vec::with_capacity(
+        shallow.as_ref().map(|bytes| bytes.len()).unwrap_or(0)
+            + grafts.as_ref().map(|bytes| bytes.len()).unwrap_or(0)
+            + 16,
+    );
+    match &shallow {
+        Some(bytes) => state.extend_from_slice(bytes),
+        None => state.extend_from_slice(b"shallow-omitted"),
+    }
     state.push(0);
-    state.extend_from_slice(&grafts);
-    format!("history:{:016x}", xxh3_64(&state))
+    match &grafts {
+        Some(bytes) => state.extend_from_slice(bytes),
+        None => state.extend_from_slice(b"grafts-omitted"),
+    }
+    HistoryFingerprint {
+        state: format!("history:{:016x}", xxh3_64(&state)),
+        cacheable,
+    }
+}
+
+/// Read a Git metadata file with a hard size bound. Missing files yield empty
+/// content; oversized or non-regular files yield `None`.
+fn read_git_meta_bounded(path: &Path) -> Option<Vec<u8>> {
+    match crate::fs_budget::read_bytes_limited(path, MAX_HISTORY_META_BYTES) {
+        Ok(bytes) => Some(bytes),
+        Err(crate::fs_budget::ReadOutcome::Unreadable) => {
+            if path.exists() {
+                None
+            } else {
+                Some(Vec::new())
+            }
+        }
+        Err(crate::fs_budget::ReadOutcome::NotRegularFile)
+        | Err(crate::fs_budget::ReadOutcome::Oversized(_)) => None,
+        Err(_) => None,
+    }
 }
 
 fn seconds_to_rfc3339(seconds: i64) -> Option<String> {
@@ -602,7 +859,7 @@ mod tests {
     use super::churn_cache::ChurnCache;
     use super::native_churn::NativeGit;
     use super::{
-        DiffScope, changed_files_with_base, collect, collect_impl, collect_impl_with_native,
+        ChurnLimits, DiffScope, changed_files_with_base, collect, collect_impl_with_native,
         diff_base_tree_id,
     };
     use git2::Repository;
@@ -686,20 +943,28 @@ mod tests {
         commit_all(&repo, "rename old to new");
         let wanted = [PathBuf::from("new.rs"), PathBuf::from("other.rs")];
 
-        let mut native_cache = ChurnCache::for_repo(dir.path(), false);
-        let (native, native_stats) = collect_impl(dir.path(), &wanted, 0, &mut native_cache);
-        let mut fallback_cache = ChurnCache::for_repo(dir.path(), false);
-        let (fallback, fallback_stats) = collect_impl_with_native(
+        let mut native_cache =
+            ChurnCache::for_repo(dir.path(), false, ChurnLimits::default().max_cache_bytes);
+        let (native_result, native_stats) = collect_impl_with_native(
             dir.path(),
             &wanted,
-            0,
+            &ChurnLimits::with_max_commits(0),
+            &mut native_cache,
+            &NativeGit::default(),
+        );
+        let mut fallback_cache =
+            ChurnCache::for_repo(dir.path(), false, ChurnLimits::default().max_cache_bytes);
+        let (fallback_result, fallback_stats) = collect_impl_with_native(
+            dir.path(),
+            &wanted,
+            &ChurnLimits::with_max_commits(0),
             &mut fallback_cache,
             &NativeGit::with_executable(dir.path().join("missing-git")),
         );
 
         assert_eq!(
-            serde_json::to_value(native).unwrap(),
-            serde_json::to_value(fallback).unwrap()
+            serde_json::to_value(native_result.churn).unwrap(),
+            serde_json::to_value(fallback_result.churn).unwrap()
         );
         assert_eq!(native_stats.native_batches, 1);
         assert_eq!(native_stats.native_events, 2);
@@ -720,17 +985,18 @@ mod tests {
         fs::write(&source, "fn value() -> i32 { 3 }\n").unwrap();
         commit_all(&repo, "modify twice");
 
-        let mut cache = ChurnCache::for_repo(dir.path(), false);
+        let mut cache =
+            ChurnCache::for_repo(dir.path(), false, ChurnLimits::default().max_cache_bytes);
         let missing_git = dir.path().join("missing-git");
-        let (churn, stats) = collect_impl_with_native(
+        let (churn_result, stats) = collect_impl_with_native(
             dir.path(),
             &[PathBuf::from("lib.rs")],
-            0,
+            &ChurnLimits::with_max_commits(0),
             &mut cache,
             &NativeGit::with_executable(missing_git),
         );
 
-        assert_eq!(churn[Path::new("lib.rs")].commits, 3);
+        assert_eq!(churn_result.churn[Path::new("lib.rs")].commits, 3);
         assert_eq!(stats.tree_diffs, 3);
         assert_eq!(stats.rename_probes, 0);
         assert_eq!(stats.native_fallbacks, 1);
@@ -752,8 +1018,14 @@ mod tests {
         let wanted = [PathBuf::from("new.rs")];
 
         let mut cold_cache = ChurnCache::for_test(cache_dir.path());
-        let (cold, cold_stats) = collect_impl(dir.path(), &wanted, 0, &mut cold_cache);
-        assert_eq!(cold[Path::new("new.rs")].commits, 3);
+        let (cold_result, cold_stats) = collect_impl_with_native(
+            dir.path(),
+            &wanted,
+            &ChurnLimits::with_max_commits(0),
+            &mut cold_cache,
+            &NativeGit::default(),
+        );
+        assert_eq!(cold_result.churn[Path::new("new.rs")].commits, 3);
         assert_eq!(cold_stats.tree_diffs, 2);
         assert_eq!(cold_stats.rename_probes, 1);
         assert_eq!(cold_stats.native_batches, 1);
@@ -763,16 +1035,28 @@ mod tests {
         assert_eq!(cold_stats.view_hits, 0);
 
         let mut warm_cache = ChurnCache::for_test(cache_dir.path());
-        let (warm, warm_stats) = collect_impl(dir.path(), &wanted, 0, &mut warm_cache);
-        assert_eq!(warm[Path::new("new.rs")].commits, 3);
+        let (warm_result, warm_stats) = collect_impl_with_native(
+            dir.path(),
+            &wanted,
+            &ChurnLimits::with_max_commits(0),
+            &mut warm_cache,
+            &NativeGit::default(),
+        );
+        assert_eq!(warm_result.churn[Path::new("new.rs")].commits, 3);
         assert_eq!(warm_stats.tree_diffs, 0);
         assert_eq!(warm_stats.view_hits, 1);
 
         fs::write(&new, "fn value() -> i32 { 3 }\n").unwrap();
         commit_all(&repo, "modify new");
         let mut advanced_cache = ChurnCache::for_test(cache_dir.path());
-        let (advanced, advanced_stats) = collect_impl(dir.path(), &wanted, 0, &mut advanced_cache);
-        assert_eq!(advanced[Path::new("new.rs")].commits, 4);
+        let (advanced_result, advanced_stats) = collect_impl_with_native(
+            dir.path(),
+            &wanted,
+            &ChurnLimits::with_max_commits(0),
+            &mut advanced_cache,
+            &NativeGit::default(),
+        );
+        assert_eq!(advanced_result.churn[Path::new("new.rs")].commits, 4);
         assert_eq!(advanced_stats.tree_diffs, 0);
         assert_eq!(advanced_stats.native_batches, 1);
         assert_eq!(advanced_stats.native_events, 1);
@@ -781,8 +1065,14 @@ mod tests {
         assert_eq!(advanced_stats.view_hits, 0);
 
         let mut capped_cache = ChurnCache::for_test(cache_dir.path());
-        let (capped, capped_stats) = collect_impl(dir.path(), &wanted, 2, &mut capped_cache);
-        assert_eq!(capped[Path::new("new.rs")].commits, 2);
+        let (capped_result, capped_stats) = collect_impl_with_native(
+            dir.path(),
+            &wanted,
+            &ChurnLimits::with_max_commits(2),
+            &mut capped_cache,
+            &NativeGit::default(),
+        );
+        assert_eq!(capped_result.churn[Path::new("new.rs")].commits, 2);
         assert_eq!(capped_stats.tree_diffs, 0);
         assert_eq!(capped_stats.event_hits, 2);
         assert_eq!(capped_stats.view_hits, 0);

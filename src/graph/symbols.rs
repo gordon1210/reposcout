@@ -17,7 +17,7 @@ pub(super) struct Collector {
     relations: Vec<UnresolvedRelation>,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct SourceFacts {
     declarations: Vec<Declaration>,
     relations: Vec<UnresolvedRelation>,
@@ -31,7 +31,7 @@ pub(super) struct SymbolTopology {
     pub unresolved_by_path: HashMap<String, usize>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Declaration {
     id: String,
     name: String,
@@ -44,13 +44,13 @@ struct Declaration {
     scope: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum RelationSource {
     Declaration(String),
     Reference(String),
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct UnresolvedRelation {
     source: RelationSource,
     target: String,

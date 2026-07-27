@@ -1,13 +1,14 @@
+use crate::fs_budget::{self, DEFAULT_MAX_CACHE_FILE_BYTES, ReadOutcome};
 use crate::model::Churn;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::fs;
 use std::path::{Path, PathBuf};
 use xxhash_rust::xxh3::xxh3_64;
 
-const CACHE_VERSION: &str = "1";
+/// Bumped when event/view cache identity or semantics change.
+const CACHE_VERSION: &str = "2";
 const MAX_VIEWS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,13 +43,24 @@ pub(super) struct ViewIdentity {
     pub history_state: String,
     pub max_commits: usize,
     pub wanted_paths: Vec<String>,
+    /// Resource limits that affect which deltas are retained.
+    #[serde(default)]
+    pub max_deltas_per_commit: usize,
+    #[serde(default)]
+    pub max_total_deltas: usize,
+    #[serde(default)]
+    pub max_output_bytes: u64,
+    #[serde(default)]
+    pub max_path_bytes: usize,
+    #[serde(default)]
+    pub max_cache_bytes: u64,
 }
 
 impl ViewIdentity {
     pub fn new(
         head: String,
         history_state: String,
-        max_commits: usize,
+        limits: &super::ChurnLimits,
         wanted: impl Iterator<Item = PathBuf>,
     ) -> Self {
         let mut wanted_paths = wanted.map(|path| encode_path(&path)).collect::<Vec<_>>();
@@ -57,8 +69,13 @@ impl ViewIdentity {
         ViewIdentity {
             head,
             history_state,
-            max_commits,
+            max_commits: limits.max_commits,
             wanted_paths,
+            max_deltas_per_commit: limits.max_deltas_per_commit,
+            max_total_deltas: limits.max_total_deltas,
+            max_output_bytes: limits.max_output_bytes,
+            max_path_bytes: limits.max_path_bytes,
+            max_cache_bytes: limits.max_cache_bytes,
         }
     }
 }
@@ -98,22 +115,25 @@ pub(super) struct ChurnCache {
     events_dirty: bool,
     views: Vec<ViewEntry>,
     views_dirty: bool,
+    max_cache_bytes: u64,
 }
 
 impl ChurnCache {
-    pub fn for_repo(root: &Path, enabled: bool) -> Self {
+    pub fn for_repo(root: &Path, enabled: bool, max_cache_bytes: u64) -> Self {
         let Some(base) = cache_directory(root) else {
             return Self::disabled();
         };
-        Self::at(base, enabled)
+        Self::at(base, enabled, max_cache_bytes.max(1))
     }
 
-    fn at(base: PathBuf, enabled: bool) -> Self {
+    fn at(base: PathBuf, enabled: bool, max_cache_bytes: u64) -> Self {
         if !enabled {
             return Self::disabled();
         }
         let views_path = base.join("views.json");
-        let views = load_json::<ViewsData>(&views_path)
+        // Load views with the configured bound so Safe mode never materializes a
+        // larger on-disk artifact than the active profile permits.
+        let views = load_json::<ViewsData>(&views_path, max_cache_bytes)
             .filter(|data| data.version == CACHE_VERSION)
             .map(|data| data.views)
             .unwrap_or_default();
@@ -126,12 +146,13 @@ impl ChurnCache {
             events_dirty: false,
             views,
             views_dirty: false,
+            max_cache_bytes,
         }
     }
 
     #[cfg(test)]
     pub fn for_test(base: &Path) -> Self {
-        Self::at(base.to_path_buf(), true)
+        Self::at(base.to_path_buf(), true, DEFAULT_MAX_CACHE_FILE_BYTES)
     }
 
     fn disabled() -> Self {
@@ -144,6 +165,7 @@ impl ChurnCache {
             events_dirty: false,
             views: Vec::new(),
             views_dirty: false,
+            max_cache_bytes: DEFAULT_MAX_CACHE_FILE_BYTES,
         }
     }
 
@@ -189,7 +211,7 @@ impl ChurnCache {
             return;
         }
         self.history_state = history_state.to_string();
-        let events = load_json::<EventsData>(&self.events_path)
+        let events = load_json::<EventsData>(&self.events_path, self.max_cache_bytes)
             .filter(|data| {
                 data.version == CACHE_VERSION && data.history_state == self.history_state
             })
@@ -233,7 +255,7 @@ impl ChurnCache {
                 history_state: self.history_state.clone(),
                 events,
             };
-            if save_json(&self.events_path, &data).is_ok() {
+            if save_json(&self.events_path, &data, self.max_cache_bytes).is_ok() {
                 self.events_dirty = false;
             }
         }
@@ -242,7 +264,7 @@ impl ChurnCache {
                 version: CACHE_VERSION.to_string(),
                 views: self.views.clone(),
             };
-            if save_json(&self.views_path, &data).is_ok() {
+            if save_json(&self.views_path, &data, self.max_cache_bytes).is_ok() {
                 self.views_dirty = false;
             }
         }
@@ -257,32 +279,26 @@ pub(super) fn cache_directory(root: &Path) -> Option<PathBuf> {
     Some(dirs.cache_dir().join("churn").join(format!("{id:016x}")))
 }
 
-fn load_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+fn load_json<T: for<'de> Deserialize<'de>>(path: &Path, max_bytes: u64) -> Option<T> {
+    let bytes = match fs_budget::read_bytes_limited(path, max_bytes) {
+        Ok(bytes) => bytes,
+        Err(ReadOutcome::NotRegularFile | ReadOutcome::Oversized(_) | ReadOutcome::Unreadable) => {
+            return None;
+        }
+        Err(_) => return None,
+    };
+    serde_json::from_slice(&bytes).ok()
 }
 
-fn save_json(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    fs::create_dir_all(parent)?;
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("cache.json");
-    let temporary = parent.join(format!(".{file_name}.{}.tmp", std::process::id()));
+fn save_json(path: &Path, value: &impl Serialize, max_bytes: u64) -> std::io::Result<()> {
     let encoded = serde_json::to_vec(value).map_err(std::io::Error::other)?;
-    fs::write(&temporary, encoded)?;
-    if let Err(error) = fs::rename(&temporary, path) {
-        if path.exists() {
-            fs::remove_file(path)?;
-            fs::rename(&temporary, path)?;
-        } else {
-            let _ = fs::remove_file(&temporary);
-            return Err(error);
-        }
+    if encoded.len() as u64 > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "churn cache payload exceeds configured size limit",
+        ));
     }
-    Ok(())
+    fs_budget::write_atomic_bytes(path, &encoded)
 }
 
 pub(super) fn encode_path(path: &Path) -> String {

@@ -1811,7 +1811,8 @@ fn safe_profile_ignores_repository_configuration_and_applies_guardrails() {
     assert_eq!(report["effective"]["jobs"], 2);
     assert_eq!(report["effective"]["use_cache"], true);
     assert_eq!(report["effective"]["include_hidden"], false);
-    assert_eq!(report["effective"]["respect_gitignore"], true);
+    assert_eq!(report["effective"]["respect_gitignore"], false);
+    assert_eq!(report["effective"]["load_repository_ignores"], false);
     assert_eq!(report["effective"]["exclude_lockfiles"], true);
     assert_eq!(report["effective"]["min_dup_tokens"], 50);
     assert_eq!(report["effective"]["min_dup_lines"], 3);
