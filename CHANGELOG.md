@@ -6,6 +6,14 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-27
+
+### Fixed
+
+- Statically linked liblzma so the released macOS and Linux binaries do not require a separate
+  Homebrew or system xz installation. Release builds now reject non-portable macOS dependencies
+  and dynamic Linux liblzma linkage.
+
 ## [0.1.3] - 2026-07-27
 
 ### Fixed

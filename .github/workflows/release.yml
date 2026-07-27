@@ -137,6 +137,31 @@ jobs:
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
+      - name: Verify binary portability
+        shell: bash
+        run: |
+          binary="target/${{ join(matrix.targets, '') }}/dist/reposcout"
+          test -x "$binary"
+
+          case "${{ runner.os }}" in
+            macOS)
+              while read -r dependency _; do
+                case "$dependency" in
+                  /usr/lib/*|/System/Library/*) ;;
+                  *)
+                    echo "unexpected non-system dependency: $dependency" >&2
+                    exit 1
+                    ;;
+                esac
+              done < <(otool -L "$binary" | tail -n +2)
+              ;;
+            Linux)
+              if objdump -p "$binary" | grep -Eq 'NEEDED[[:space:]]+liblzma'; then
+                echo "unexpected dynamic liblzma dependency" >&2
+                exit 1
+              fi
+              ;;
+          esac
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up
