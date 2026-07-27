@@ -6,7 +6,7 @@ within their section.
 
 ## [Unreleased]
 
-## [0.1.5] - 2026-07-27
+## [0.1.5] - 2026-07-28
 
 ### Security
 
@@ -29,7 +29,9 @@ within their section.
   that file server-side (no `VITE_*` browser exposure), including Windows `%LOCALAPPDATA%`.
   Windows token replacement removes a stale regular file before rename; Unix cache writes create
   temp files with mode `0600` and fail closed on permission errors. The dashboard migrates
-  `?token=` into a fragment/`sessionStorage` via `history.replaceState`.
+  valid 64-character hexadecimal `?token=` values into a fragment/`sessionStorage` via
+  `history.replaceState`; unrelated fragments cannot replace the token. The Vite proxy rejects
+  symlinked, non-regular, oversized, and malformed token files.
 - Safe-profile churn skips the unbounded libgit2 fallback and rename-similarity path when native
   Git fails or renames need resolution, applies path/per-commit/total delta limits once to the
   final event, and re-checks path limits on cache hits. History fingerprint reads of

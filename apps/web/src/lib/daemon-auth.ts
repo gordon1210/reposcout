@@ -13,23 +13,21 @@
  */
 
 const SESSION_KEY = "reposcout_daemon_token"
+const DAEMON_TOKEN_PATTERN = /^[0-9a-f]{64}$/
 
 function readFragmentToken(): string | null {
   if (typeof window === "undefined") return null
   const raw = window.location.hash.replace(/^#/, "")
-  if (!raw) return null
-  // Support `#token=...` and bare `#<token>`.
-  if (raw.includes("=")) {
-    return new URLSearchParams(raw).get("token")
-  }
-  return raw.length > 0 ? raw : null
+  if (!raw.includes("=")) return null
+  const token = new URLSearchParams(raw).get("token")
+  return token && DAEMON_TOKEN_PATTERN.test(token) ? token : null
 }
 
 function migrateQueryToken(): string | null {
   if (typeof window === "undefined") return null
   const url = new URL(window.location.href)
   const fromQuery = url.searchParams.get("token")
-  if (!fromQuery) return null
+  if (!fromQuery || !DAEMON_TOKEN_PATTERN.test(fromQuery)) return null
 
   try {
     sessionStorage.setItem(SESSION_KEY, fromQuery)

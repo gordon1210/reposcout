@@ -7,6 +7,8 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vitest/config"
 
 const DAEMON_PORT = Number(process.env.REPOSCOUT_DAEMON_PORT ?? "7331")
+const DAEMON_TOKEN_PATTERN = /^[0-9a-f]{64}$/
+const MAX_DAEMON_TOKEN_FILE_BYTES = 128
 
 function daemonTokenCandidates(port: number): string[] {
   const explicit = process.env.REPOSCOUT_DAEMON_TOKEN_FILE
@@ -31,11 +33,25 @@ function daemonTokenCandidates(port: number): string[] {
 
 function readDaemonToken(port: number): string | undefined {
   for (const candidate of daemonTokenCandidates(port)) {
+    let file: number | undefined
     try {
-      const raw = fs.readFileSync(candidate, "utf8").trim()
-      if (raw) return raw
+      const metadata = fs.lstatSync(candidate)
+      if (!metadata.isFile() || metadata.size > MAX_DAEMON_TOKEN_FILE_BYTES) continue
+
+      const unixFlags = fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK
+      const flags = fs.constants.O_RDONLY | (process.platform === "win32" ? 0 : unixFlags)
+      file = fs.openSync(candidate, flags)
+      const openedMetadata = fs.fstatSync(file)
+      if (!openedMetadata.isFile() || openedMetadata.size > MAX_DAEMON_TOKEN_FILE_BYTES) continue
+
+      const contents = Buffer.alloc(MAX_DAEMON_TOKEN_FILE_BYTES)
+      const bytesRead = fs.readSync(file, contents, 0, contents.length, 0)
+      const raw = contents.subarray(0, bytesRead).toString("utf8").trim()
+      if (DAEMON_TOKEN_PATTERN.test(raw)) return raw
     } catch {
       // try next candidate
+    } finally {
+      if (file !== undefined) fs.closeSync(file)
     }
   }
   return undefined
