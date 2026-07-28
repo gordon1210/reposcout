@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-28
+
 ### Changed
 
 - Release artifacts and built-in updates now support Apple Silicon macOS and x86-64 GNU/Linux;
