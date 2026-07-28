@@ -229,6 +229,364 @@ overrides for paths or languages, only after real usage demonstrates repeated co
 Any expansion must retain inspectable effective values and unambiguous precedence; hidden merging
 would make automation less trustworthy.
 
+### External diagnostics as context-planning evidence
+
+**Status:** Design-ready, medium-risk, post-0.1 opportunity. Implementation remains evidence-gated:
+build and test failures must prove that path-only focus and diff-seeded context repeatedly leave
+agents without the right reading set. The design is complete enough to implement without relying
+on prior conversation or a separate product decision.
+
+#### Problem and desired outcome
+
+RepoScout currently plans context from explicit paths, changed files, repository structure, tests,
+graph relationships, risk, churn, and complexity. A compiler, test runner, linter, or security
+scanner often has stronger task-specific evidence: one or more concrete source locations that
+failed. Agents must currently parse that output themselves, translate locations into repository
+paths, and separately ask RepoScout for related files.
+
+The desired outcome is an opt-in, one-shot CLI input that turns external diagnostics into
+high-confidence seeds for the existing context planner. RepoScout should normalize the bounded
+input, resolve locations against the scanned repository, select the failing files plus their
+matching tests or sources and graph neighborhood, and explain every selection. It must not run the
+external tool, embed unbounded logs, create a second context implementation, or treat third-party
+findings as RepoScout health findings.
+
+Success is observable when:
+
+- a diagnostic with a valid repository location reliably selects that file ahead of generic
+  context candidates;
+- a source diagnostic brings in matching tests, and a test diagnostic brings in the matching
+  production source when the existing filename/test heuristics can establish one;
+- supported-language dependencies and direct/transitive dependents are ranked through the same
+  graph facts and provenance used by ordinary context planning;
+- unresolved, out-of-scope, malformed, and truncated input is explicit in machine and human
+  output rather than disappearing;
+- the resulting plan remains deterministic and within the existing token, file, outline, scan,
+  and graph bounds; and
+- ordinary scans without diagnostic input have no behavior or performance change.
+
+#### User-facing contract
+
+Add two scan options rather than a standalone `diagnose` subcommand:
+
+```text
+--task-diagnostics <PATH|->
+--task-diagnostics-format <auto|sarif|rustc-json|text>
+```
+
+`--task-diagnostics` accepts exactly one regular file or `-` for stdin and implies `--context`,
+just as `--focus` does. `--task-diagnostics-format` defaults to `auto` and requires
+`--task-diagnostics`. Keeping the input on the scan command is deliberate: reformatting a build
+log alone is not RepoScout's job; connecting failure evidence to cached repository facts is.
+
+Examples of the intended interface:
+
+```sh
+# Structured Rust compiler output.
+cargo check --message-format=json |
+  reposcout --task-diagnostics - --task-diagnostics-format rustc-json \
+    --context --summary -f json .
+
+# A multi-tool SARIF result file.
+reposcout --task-diagnostics results.sarif --context --summary -f json .
+
+# A bounded best-effort parser for ordinary build/test output.
+cargo test 2>&1 |
+  reposcout --task-diagnostics - --task-diagnostics-format text \
+    --context --summary -f json .
+
+# Diagnostics can complement, but do not replace, diff evidence.
+cargo check --message-format=json |
+  reposcout --task-diagnostics - --working --context --impact --summary -f json .
+```
+
+Version one is CLI-only. It does not add diagnostic upload, persistence, or watch behavior to the
+daemon; does not change `explain`, `locate`, or the web application; and does not allow project
+configuration to name a diagnostic file. A task-specific input path is caller-owned authority and
+must be supplied explicitly for each invocation.
+
+#### Supported input formats
+
+The parser produces one normalized in-memory contract regardless of input:
+
+```text
+TaskDiagnostic
+  id                 deterministic report-local identifier
+  path               normalized repository-relative path when resolved
+  original_path      bounded input path, retained only when unresolved
+  line/column        optional one-based start position
+  end_line/end_column optional one-based end position
+  severity           error | warning | note | info | unknown
+  code               optional bounded rule or compiler code
+  tool               optional bounded producer name
+  message            normalized single-line message
+  confidence         high | partial
+```
+
+The stable report contract should use normal serde defaults and omission rules so this remains an
+additive `SCHEMA_VERSION = 1.0` change. `id` values are assigned after deterministic sorting and
+deduplication; they are stable within equivalent input but are not cross-report fingerprints.
+Messages, tool names, codes, and original paths must have independent length limits. ANSI and
+terminal control characters are removed or escaped before human rendering, and the original
+multi-line rendered diagnostic is never copied into the report.
+
+Supported formats:
+
+1. **SARIF 2.1.0 (`sarif`, high confidence).** Read every bounded
+   `runs[].results[]` location from
+   `physicalLocation.artifactLocation.uri` and `region`, retain `ruleId`, map SARIF levels to the
+   normalized severity, and use the run tool driver name as `tool`. Accept repository-relative
+   paths and local `file:` URIs; reject network URI schemes. Multiple physical locations are
+   separate diagnostic records.
+2. **Rust compiler/Cargo JSON (`rustc-json`, high confidence).** Read NDJSON records whose
+   `reason` is `compiler-message`, retain the compiler level, code, and message, and create one
+   diagnostic for each primary span. A message without a primary span contributes to parse
+   accounting but cannot seed context. Do not retain Cargo artifact/build-script records or the
+   compiler's rendered multi-line text.
+3. **Conservative text extraction (`text`, partial confidence).** Recognize bounded occurrences
+   of `path:line:column`, `path:line`, Rust-style `--> path:line:column`,
+   `path(line,column): ...`, and Python-style `File "path", line N`. Attach severity, code, and a
+   nearby message only when a small fixed window establishes them; otherwise use `unknown` and the
+   matched line. Text parsing is location extraction, not an attempt to understand every compiler
+   or test framework.
+
+`auto` inspects a bounded prefix without consuming stdin twice. A SARIF object with `version` and
+`runs` selects `sarif`; NDJSON with a valid `compiler-message` record selects `rustc-json`; all
+other non-JSON input selects `text`. Input beginning with JSON syntax but not matching a supported
+structured contract is an unsupported-format error rather than a silent text fallback.
+
+#### Path resolution and trust boundary
+
+Diagnostic content is untrusted even when the repository is trusted. Resolution must reuse the
+context planner's normalized path identity and the full planning file universe; it must not create
+another filesystem walk. Resolve each location in this order:
+
+1. strip a local `file:` URI, percent-decode it, normalize separators, and reject NUL/control
+   characters or a path longer than the configured hard path bound;
+2. for an absolute path, accept it only when it resolves lexically and canonically inside the
+   repository root;
+3. for a relative path, try an exact repository-relative match, then an exact target-relative
+   match; and
+4. otherwise record the location as unresolved. Do not guess by basename or choose among suffix
+   matches.
+
+Only diagnostics inside the requested scan target become seeds. Valid repository paths outside a
+subpath target are counted as `out_of_scope`; the input does not silently widen the primary scan.
+Existing diff-scoped context behavior remains the sole exception: its already-defined full-tree
+planning universe may select unchanged related files elsewhere in the repository. Symlinks do not
+authorize paths outside the root, missing/generated paths remain unresolved, and an unresolved
+path never becomes a graph seed.
+
+The diagnostic input file itself may live outside the repository because it is explicit
+caller-owned input. RepoScout opens it read-only, performs no network access, invokes no shell or
+build command, and never persists its contents in the analysis cache.
+
+#### Resource limits and partial results
+
+Use compile-time absolute bounds rather than project-configurable values for the first version:
+
+| Limit | Normal profiles | `safe` profile |
+|---|---:|---:|
+| Input bytes read | 8 MiB | 1 MiB |
+| Parsed diagnostic records | 1,000 | 250 |
+| Serialized diagnostic details | 100 | 50 |
+| Normalized message | 512 Unicode scalar values | 512 |
+| Tool or rule code | 128 Unicode scalar values | 128 |
+
+Read files and stdin incrementally up to one byte beyond the effective input limit so truncation
+is detectable without buffering an unbounded stream. Stop parsing after the record limit, retain
+the useful prefix, and set explicit `input_truncated`, `records_truncated`, omitted-record, byte,
+parse-error, unresolved, and out-of-scope counters. A partial input is a successful scan when at
+least one supported record was parsed; the context evidence is useful but must advertise partial
+coverage. If a selected structured format yields only malformed records, return a structured CLI
+error rather than an apparently clean plan.
+
+These limits belong in `capabilities -f json` and the `safe` profile's disclosed safety limits.
+They do not need a configuration surface until real use demonstrates that the fixed normal bound
+is insufficient.
+
+#### Context-planner integration
+
+Parsing and path resolution happen before context planning, after the repository root and target
+are known. Pass normalized resolved diagnostics through the existing context module seam together
+with focus/change seeds; do not let the parser read analyzed source or build graph facts itself.
+
+Required direct-seed ranking invariants, before independent graph/risk/support evidence is added:
+
+- all else equal, explicit `--focus` remains the strongest caller intent;
+- all else equal, a resolved error diagnostic ranks ahead of an ordinary changed-file seed;
+- all else equal, a changed-file seed ranks ahead of warning/note/info diagnostics when no
+  explicit focus also applies;
+- every resolved diagnostic is still a seed, overrides generated/minified skip hints, and receives
+  an `outline_only` entry when its source cannot fit the token budget but an existing bounded
+  declaration outline is available;
+- additional diagnostics on the same file add only a capped boost so repeated errors cannot crowd
+  out the rest of the plan;
+- severity and structured-vs-text confidence break ties before the existing token/path ordering;
+  and
+- no diagnostic may bypass `context_budget`, `context_max_files`, outline limits, graph depth, or
+  scan resource limits.
+
+Implement these invariants with a context strategy-version bump and deterministic tests; exact
+numeric weights remain an internal strategy detail. The union of focus, change, and diagnostic
+paths seeds the existing dependency/dependent traversal. Reasons must name the actual seed type:
+`compiler diagnostic at 42:17`, `matching test for diagnostic source`, `matching source for
+diagnostic test`, `direct dependency of diagnostic`, or `dependent of diagnostic`.
+
+Extend `ContextEvidence` additively with an optional list of report-local task-diagnostic IDs.
+Direct diagnostic files use role `diagnostic`, distance `0`, and the parser confidence. Related
+files retain the existing `matching-test`, `dependency`, and `dependent` roles and reference the
+diagnostic IDs that caused the relationship. Add `matching-source` for the reverse test-to-source
+case. The path/test matching and graph resolver provenance must come from existing shared facts;
+do not add a diagnostic-only import resolver or test matcher.
+
+Version one does not attempt precise line-to-enclosing-symbol resolution. Selected first-class
+files receive the same bounded declaration outlines they receive today, while the exact diagnostic
+line remains available in task evidence. A later symbol-level enhancement requires independent
+evidence and must reuse parser ranges rather than introducing a second symbol index.
+
+#### Report behavior and compatibility
+
+Add `task_evidence` beneath `context`, not at the top level: the existing top-level `diagnostics`
+means scan coverage and must keep that meaning. The new block contains:
+
+```text
+format
+bytes_read
+parsed_records
+deduplicated_records
+resolved_records
+unresolved_records
+out_of_scope_records
+parse_errors
+input_truncated
+records_truncated
+omitted_records
+diagnostics[]          bounded normalized details
+```
+
+`--summary` retains this block because explicitly requested context blocks already survive compact
+projection. `--baseline-ready` continues to remove context and therefore removes task evidence.
+External diagnostics do not alter summary metrics, risk, the finding catalog, regression gates,
+baseline compatibility, or SARIF results; they are routing evidence, not findings rediscovered by
+RepoScout. They also do not require an `ANALYZER_VERSION` bump because no cached `FileReport` fact
+changes. The context strategy version must change because selection order changes when the option
+is present.
+
+Table and Markdown reports show one compact line with format, parsed/resolved/unresolved counts,
+and truncation state, followed by the normal context plan with diagnostic reasons. JSON and NDJSON
+carry the full bounded block. DOT/Mermaid output remains graph-only. Debug logs may record input
+format, byte/record counts, duration, and truncation, but never diagnostic messages or original
+log lines.
+
+`capabilities -f json` must advertise the option, supported formats, normal/safe byte and record
+limits, and that task diagnostics imply context. Documentation must distinguish task diagnostics
+from top-level scan diagnostics and show at least one SARIF, rustc JSON, and text example.
+
+#### Failure behavior
+
+- Missing, unreadable, or non-regular input is a normal structured CLI error and no scan starts.
+- `-` may be used only once and is rejected when stdin is a terminal with no piped data, avoiding
+  an accidental indefinite wait.
+- An empty valid input succeeds with zero parsed records and an explicit empty-evidence summary;
+  this represents a tool run with no diagnostics.
+- An explicitly selected structured format with malformed content fails if it produces no valid
+  record. Mixed valid/malformed records succeed with `parse_errors > 0`.
+- Unknown JSON in `auto` mode fails with an unsupported-format error and suggests
+  `--task-diagnostics-format text` only when the caller intentionally wants heuristic parsing.
+- All renderer paths escape repository-controlled paths, messages, tool names, and rule codes
+  using their existing terminal/Markdown/SARIF-safe primitives.
+- A scan or planning limit may still make the repository analysis partial independently of the
+  diagnostic input. Both coverage domains remain visible: top-level `diagnostics` describes scan
+  coverage; `context.task_evidence` describes external-input coverage.
+
+#### Explicit non-goals
+
+- Running, discovering, or recommending build/test/lint commands.
+- A `doctor`, `check --run`, task runner, shell, process supervisor, or CI service.
+- Replacing `rg`, compiler-native JSON, SARIF producers, language servers, or test-framework
+  reporters.
+- Persisting diagnostic logs or normalized task evidence in RepoScout's cache.
+- Adding raw source snippets, complete stack traces, compiler-rendered output, or full logs to
+  reports.
+- Treating external diagnostics as RepoScout findings, changing health scores, or making
+  `--fail-on` gates depend on third-party results.
+- Diagnostic-seeded standalone `--impact` semantics in version one. When a diff scope is present,
+  the existing impact block remains diff-seeded; diagnostics only enrich the context plan.
+- Daemon ingestion, web upload, live log following, editor integration, or format-specific plugin
+  infrastructure.
+- Exact semantic blame, reference lookup, or enclosing-symbol resolution from a line number.
+
+#### Validation and acceptance scenarios
+
+Automated validation must cover:
+
+- fixture parsers for SARIF, rustc/Cargo NDJSON, every supported text location form, empty input,
+  mixed malformed records, ANSI/control characters, oversized fields, and invalid JSON;
+- deterministic sorting, deduplication, severity mapping, multi-location results, primary Rust
+  spans, and auto-detection without rereading stdin;
+- absolute, repository-relative, target-relative, percent-encoded, ambiguous, traversal,
+  symlink-escape, missing, out-of-root, and out-of-scope paths;
+- byte and record limits for file and stdin input, including a useful partial result and accurate
+  omitted/truncation counters;
+- direct diagnostic ranking, capped repeated-diagnostic weight, generated-file override,
+  matching-test and matching-source selection, graph neighbors with resolver provenance, and
+  outline-only behavior under a tiny token budget;
+- coexistence with explicit focus and `--working`/`--since`, including the ranking invariants and
+  preservation of existing diff-seeded impact semantics;
+- serde compatibility with reports lacking the additive fields, unchanged baseline/profile
+  behavior, compact summary retention, and all applicable renderers;
+- arbitrary bounded text never panicking or allocating beyond the declared input/field limits;
+  and
+- a process-level test proving that task-diagnostic parsing invokes no external command and writes
+  no task evidence to the repository or analysis cache.
+
+Acceptance scenarios:
+
+- **Given** one high-confidence Rust error inside a source file, **when** diagnostic context is
+  requested, **then** the source is selected with its location, its matching test is ranked, and
+  supported graph neighbors cite the same diagnostic ID.
+- **Given** a failing test location, **when** the filename heuristic identifies one production
+  source, **then** both appear with distinct `diagnostic` and `matching-source` evidence.
+- **Given** duplicate text stack frames and hundreds of repeated errors in one file, **when** the
+  record limit is not reached, **then** records deduplicate deterministically and the file's score
+  receives only the capped repeated-error boost.
+- **Given** a path outside the repository or scan target, **when** input is parsed, **then** it is
+  counted as unresolved or out of scope and never influences graph or context selection.
+- **Given** more input than the effective safe limit, **when** at least one earlier diagnostic is
+  valid, **then** the scan succeeds with a useful bounded plan and explicit partial-input state.
+- **Given** no task-diagnostic option, **when** any existing invocation runs, **then** serialized
+  output, ranking, cache behavior, performance, and exit semantics remain unchanged.
+
+#### Delivery, rollback, and risks
+
+Implement in vertical slices: normalized model and bounded reader; SARIF parser; rustc JSON parser;
+text parser; path resolution; context integration; renderers/capabilities/docs. Keep each parser
+behind one shared normalization interface and reuse existing `serde_json`, regex, path, context,
+graph, and test-matching facilities before adding dependencies. No data migration or cache cleanup
+is required.
+
+The feature is additive and opt-in, so rollback is removal of the CLI options and additive report
+fields before a release, or a follow-up release that stops advertising them. Once released, keep
+deserializing the additive fields even if ingestion is temporarily disabled.
+
+Principal risks and mitigations:
+
+| Risk | Mitigation |
+|---|---|
+| Untrusted logs cause memory/time exhaustion | Streaming reads, absolute byte/record/field bounds, safe-profile clamps, no raw rendered payload |
+| Paths disclose or escape outside the repository | Strict root/target resolution, no basename guessing, reject network URIs and external canonical paths |
+| Heuristic text creates false relevance | `partial` confidence, conservative patterns, deterministic unresolved accounting, structured formats preferred |
+| Repeated diagnostics dominate the plan | Deduplicate records and cap per-file score contribution |
+| Third-party findings are mistaken for RepoScout findings | Keep them under `context.task_evidence`; exclude them from findings, gates, baselines, health, and SARIF output |
+| Parser proliferation turns RepoScout into a log framework | Ship only SARIF, rustc JSON, and conservative text; require evidence before adding another format |
+| Sensitive log messages leak into debug/cache output | Never cache evidence or log messages; bound and escape only the normalized message in the explicit report |
+| Context behavior silently changes for existing users | Opt-in activation, strategy-version bump, unchanged no-input golden tests and benchmarks |
+
+This opportunity is **ready for independent review and implementation planning** once usage
+evidence justifies prioritizing it. There are no blocking product questions in the version-one
+contract above.
+
 ### Historical decision signals
 
 Extend single-baseline comparison into bounded trend summaries: risk movement, duplicate debt,
