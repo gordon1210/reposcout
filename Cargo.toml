@@ -5,7 +5,6 @@ edition = "2024"
 description = "Fast repository scouting for tokens, complexity, duplication, risk, and Git churn"
 license = "MIT"
 repository = "https://github.com/gordon1210/reposcout"
-homepage = "https://getreposcout.vercel.app"
 readme = "README.md"
 
 [dependencies]

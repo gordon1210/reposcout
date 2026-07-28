@@ -302,7 +302,9 @@ fn update_refuses_an_executable_without_an_installer_receipt() {
     let error = String::from_utf8(stderr).unwrap();
 
     assert!(error.contains("release installer"));
-    assert!(error.contains("https://getreposcout.vercel.app/install.sh"));
+    assert!(error.contains(
+        "https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh"
+    ));
 }
 
 #[test]

@@ -10,7 +10,8 @@ consolidated view of repository size, complexity, duplication, health, structure
 Install the latest stable GitHub release on Apple Silicon macOS or x86-64 Linux:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh | sh
 ```
 
 The installer selects the matching prebuilt archive and refuses to install it unless SHA-256
@@ -36,14 +37,6 @@ Published artifacts also carry GitHub build-provenance attestations:
 ```sh
 gh attestation verify reposcout-aarch64-apple-darwin.tar.xz \
   --repo gordon1210/reposcout
-```
-
-The short install URL is a convenience HTTPS redirect. To remove the landing host from the
-bootstrap trust path, download the same immutable release installer directly from GitHub:
-
-```sh
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh | sh
 ```
 
 ## Build from source

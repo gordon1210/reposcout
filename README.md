@@ -61,7 +61,8 @@ duplication.
 Install the latest stable GitHub release on Apple Silicon macOS or x86-64 Linux:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh | sh
 ```
 
 Update an installer-managed copy:

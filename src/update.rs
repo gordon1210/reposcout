@@ -16,7 +16,8 @@ use std::io::{self, ErrorKind, Read};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
-pub const INSTALL_URL: &str = "https://getreposcout.vercel.app/install.sh";
+pub const INSTALL_URL: &str =
+    "https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh";
 const LATEST_RELEASE_API: &str =
     "https://api.github.com/repos/gordon1210/reposcout/releases/latest";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;

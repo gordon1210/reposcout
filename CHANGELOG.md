@@ -10,6 +10,8 @@ within their section.
 
 - Release artifacts and built-in updates now support Apple Silicon macOS and x86-64 GNU/Linux;
   Intel macOS release builds have been retired.
+- Installation instructions, the retained landing-page source, and unmanaged-update guidance now
+  download the installer directly from GitHub Releases after retiring the hosted landing page.
 
 ## [0.1.6] - 2026-07-28
 

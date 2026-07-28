@@ -30,7 +30,7 @@ const docsUrl = `${githubUrl}/blob/main/docs/README.md`
 const cliExamplesUrl = `${githubUrl}/blob/main/docs/cli-reference.md#common-examples`
 const securityUrl = `${githubUrl}/security/policy`
 const installCommand =
-  "curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh"
+  "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh | sh"
 
 function GitHubMark({ size }: { size: number }) {
   return (
