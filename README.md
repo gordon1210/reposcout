@@ -76,6 +76,17 @@ immutable release archive directly; they never execute a downloaded installer sc
 [Getting started](docs/getting-started.md) for source builds, release attestations, the agent
 skill, and default behavior.
 
+## Install the agent skill
+
+Install the companion RepoScout skill for supported coding agents through
+[skills.sh](https://www.skills.sh/gordon1210/reposcout/reposcout):
+
+```sh
+npx skills add gordon1210/reposcout --skill reposcout
+```
+
+The `reposcout` binary must already be available on `PATH`.
+
 ## Quick start
 
 ```sh
