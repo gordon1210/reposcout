@@ -17,6 +17,10 @@ name: Release
 permissions:
   "contents": "read"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
 # Various formats will be parsed into a VERSION and an optional PACKAGE_NAME, where
@@ -60,8 +64,18 @@ jobs:
           submodules: recursive
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-      - name: Install dist
-        run: cargo install cargo-dist --version 0.32.0 --locked
+      - name: Install verified dist
+        run: |
+          installer="$RUNNER_TEMP/cargo-dist-installer.sh"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-installer.sh \
+            -o "$installer"
+          printf '%s  %s\n' \
+            b657cf8c04a8b7bc28f39d220f7e6dd11bbd2bdb072c552262bd9ccf597261b5 \
+            "$installer" | shasum -a 256 --check -
+          CARGO_DIST_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
+            sh "$installer" --quiet
+          dist --version
       - name: Cache dist
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -118,10 +132,30 @@ jobs:
           submodules: recursive
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-      - name: Install release build tools
+      - name: Install verified release build tools
         run: |
-          cargo install cargo-dist --version 0.32.0 --locked
-          cargo install cargo-auditable --version 0.7.5 --locked
+          dist_installer="$RUNNER_TEMP/cargo-dist-installer.sh"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-installer.sh \
+            -o "$dist_installer"
+          printf '%s  %s\n' \
+            b657cf8c04a8b7bc28f39d220f7e6dd11bbd2bdb072c552262bd9ccf597261b5 \
+            "$dist_installer" | shasum -a 256 --check -
+          CARGO_DIST_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
+            sh "$dist_installer" --quiet
+
+          auditable_installer="$RUNNER_TEMP/cargo-auditable-installer.sh"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.5/cargo-auditable-installer.sh \
+            -o "$auditable_installer"
+          printf '%s  %s\n' \
+            ffaafe99087affa66e3202ebb78fb0aeea6c6ff4019f941c82040502442f770a \
+            "$auditable_installer" | shasum -a 256 --check -
+          CARGO_AUDITABLE_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
+            sh "$auditable_installer" --quiet
+
+          dist --version
+          cargo auditable --help >/dev/null
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -208,8 +242,18 @@ jobs:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
-      - name: Install SBOM tool
-        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
+      - name: Install verified SBOM tool
+        run: |
+          installer="$RUNNER_TEMP/cargo-cyclonedx-installer.sh"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-0.5.9/cargo-cyclonedx-installer.sh \
+            -o "$installer"
+          printf '%s  %s\n' \
+            051086226aec893866f20e60b19265f7ca5f488a2e282c6be748ee663ab0a124 \
+            "$installer" | shasum -a 256 --check -
+          CARGO_CYCLONEDX_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
+            sh "$installer" --quiet
+          cargo cyclonedx --version
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

@@ -6,6 +6,11 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Release artifacts and built-in updates now support Apple Silicon macOS and x86-64 GNU/Linux;
+  Intel macOS release builds have been retired.
+
 ## [0.1.6] - 2026-07-28
 
 ### Fixed

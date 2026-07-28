@@ -96,8 +96,7 @@ Release packaging uses cargo-dist and the configuration in
 [`dist-workspace.toml`](../dist-workspace.toml). A signed semantic-version tag triggers
 `.github/workflows/release.yml`, which builds:
 
-- Apple Silicon macOS;
-- Intel macOS; and
+- Apple Silicon macOS; and
 - x86-64 GNU/Linux.
 
 Archives contain the binary, README, changelog, MIT license, and third-party notices. The workflow
@@ -110,7 +109,9 @@ release includes a CycloneDX software bill of materials.
 The release workflow is intentionally hand-hardened and `allow-dirty = ["ci"]` prevents
 cargo-dist from overwriting its least-privilege permissions, immutable action pins, installer
 verification patch, and attestation step. Review and refresh those customizations deliberately
-when upgrading cargo-dist.
+when upgrading cargo-dist. Superseded pull-request runs are cancelled, and release tools are
+installed from pinned, checksum-verified upstream installer scripts rather than compiled afresh
+on every runner.
 
 The initial distribution channel is GitHub Releases. crates.io and Homebrew are deliberately
 deferred.

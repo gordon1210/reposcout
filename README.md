@@ -16,7 +16,7 @@ a **consolidated status** of the code in seconds. It is built for two audiences:
   <a href="https://github.com/gordon1210/reposcout/actions/workflows/release.yml"><img alt="Release" src="https://github.com/gordon1210/reposcout/actions/workflows/release.yml/badge.svg"></a>
   <a href="https://github.com/gordon1210/reposcout/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/gordon1210/reposcout?display_name=tag&sort=semver"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
-  <img alt="Platforms: macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue">
+  <img alt="Platforms: Apple Silicon macOS and x86-64 Linux" src="https://img.shields.io/badge/platform-Apple%20Silicon%20macOS%20%7C%20x86--64%20Linux-blue">
 </p>
 
 ## See the repository before reading it
@@ -58,7 +58,7 @@ duplication.
 
 ## Install
 
-Install the latest stable GitHub release on macOS or Linux:
+Install the latest stable GitHub release on Apple Silicon macOS or x86-64 Linux:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://getreposcout.vercel.app/install.sh | sh

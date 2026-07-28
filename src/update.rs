@@ -233,7 +233,6 @@ fn release_asset(release: &GithubRelease) -> Result<&GithubAsset> {
 fn archive_name_for_target(os: &str, arch: &str) -> Result<&'static str> {
     match (os, arch) {
         ("macos", "aarch64") => Ok("reposcout-aarch64-apple-darwin.tar.xz"),
-        ("macos", "x86_64") => Ok("reposcout-x86_64-apple-darwin.tar.xz"),
         ("linux", "x86_64") => Ok("reposcout-x86_64-unknown-linux-gnu.tar.xz"),
         _ => bail!("built-in RepoScout updates are not available for {os}/{arch}"),
     }
@@ -329,7 +328,9 @@ fn install_release(
     _latest_version: &Version,
     _executable: &Path,
 ) -> Result<()> {
-    bail!("built-in RepoScout updates are currently supported only on macOS and Linux")
+    bail!(
+        "built-in RepoScout updates are currently supported only on Apple Silicon macOS and x86-64 Linux"
+    )
 }
 
 fn download_archive(client: &Client, asset: &GithubAsset) -> Result<Vec<u8>> {
@@ -571,6 +572,7 @@ mod tests {
             archive_name_for_target("linux", "x86_64").unwrap(),
             "reposcout-x86_64-unknown-linux-gnu.tar.xz"
         );
+        assert!(archive_name_for_target("macos", "x86_64").is_err());
         assert!(archive_name_for_target("linux", "aarch64").is_err());
     }
 
