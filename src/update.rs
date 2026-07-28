@@ -22,7 +22,7 @@ const LATEST_RELEASE_API: &str =
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_BINARY_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
-const MAX_XZ_MEMORY_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_XZ_MEMORY_BYTES: u64 = 96 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 256;
 const MAX_TAR_STREAM_BYTES: u64 = MAX_UNPACKED_BYTES + ((MAX_ARCHIVE_ENTRIES as u64 + 1) * 1024);
 
@@ -543,8 +543,8 @@ mod tests {
         }
     }
 
-    fn archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let writer = XzEncoder::new(Vec::new(), 6);
+    fn archive_with_preset(entries: &[(&str, &[u8])], preset: u32) -> Vec<u8> {
+        let writer = XzEncoder::new(Vec::new(), preset);
         let mut builder = tar::Builder::new(writer);
         for (path, body) in entries {
             let mut header = tar::Header::new_gnu();
@@ -555,6 +555,10 @@ mod tests {
         }
         let writer = builder.into_inner().unwrap();
         writer.finish().unwrap()
+    }
+
+    fn archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        archive_with_preset(entries, 6)
     }
 
     #[test]
@@ -614,6 +618,13 @@ mod tests {
 
         let duplicate = archive(&[("first/reposcout", b"one"), ("second/reposcout", b"two")]);
         assert!(extract_release_binary(&duplicate, &mut tempfile::tempfile().unwrap()).is_err());
+    }
+
+    #[test]
+    fn extracts_release_archives_with_a_64_mib_xz_dictionary() {
+        let bytes = archive_with_preset(&[("reposcout-v0.2.0/reposcout", b"new binary")], 9);
+
+        extract_release_binary(&bytes, &mut tempfile::tempfile().unwrap()).unwrap();
     }
 
     #[test]

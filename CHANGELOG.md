@@ -6,6 +6,15 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-28
+
+### Fixed
+
+- Fixed `reposcout update` failing on cargo-dist archives whose 64 MiB XZ dictionary exceeded the
+  updater's exact 64 MiB decoder-memory limit. Release archives are now recompressed with a
+  smaller dictionary and verified against the legacy limit, while the updater retains a bounded
+  96 MiB allowance for existing archives.
+
 ## [0.1.5] - 2026-07-28
 
 ### Security
