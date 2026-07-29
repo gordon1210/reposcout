@@ -175,6 +175,8 @@ different monorepo packages do not cross-match.
 
 Rust inline `#[test]` and `#[cfg(test)]` blocks can satisfy the heuristic. PHPUnit
 `SomethingTest.php` and common `.test`, `.spec`, `test_`, and `_test` conventions are recognized.
+For Rust binary crates, `tests/cli.rs` conventionally matches the package `src/main.rs`
+entrypoint.
 
 Serialized `untested_*` names are retained for schema compatibility and mean only “no matching test
 was found.”
@@ -186,6 +188,9 @@ was found.”
 - whether the repository appears to fit a context budget;
 - whether cleanup value looks low, medium, or high; and
 - why.
+
+Its source-duplication signal excludes separate test files and direct Rust `#[cfg(test)]` regions.
+Raw duplication metrics and findings still cover the complete configured health corpus.
 
 Evidence qualifiers prevent disabled analysis from becoming a synthetic clean result:
 

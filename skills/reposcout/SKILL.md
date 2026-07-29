@@ -100,6 +100,8 @@ Interpret the response in this order:
    investigate.
 4. When full analysis is enabled, inspect `summary.duplication`, `summary.top_duplicates`, and
    `summary.top_hotspots` as prioritization signals rather than automatic refactoring decisions.
+   Raw duplication covers the configured health corpus, including tests; the cleanup assessment
+   separately uses production code and excludes direct Rust `#[cfg(test)]` regions.
 
 Request a bounded reading plan when the task needs source inspection:
 

@@ -28,7 +28,8 @@ The most useful first-pass fields are:
 | Was Type-2 analysis complete? | `diagnostics.type2_analysis_partial` |
 
 The serialized `untested_*` fields mean “no conventional matching test file or inline Rust test
-was found.” They are a test-presence heuristic, not measured coverage.
+was found.” Rust `tests/cli.rs` also conventionally matches `src/main.rs`; these are
+test-presence heuristics, not measured coverage.
 
 ## Discover capabilities
 

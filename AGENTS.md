@@ -164,7 +164,8 @@ src/
     imports.rs       Import / dependency extraction (ROOT module names only).
     symbols.rs       Per-file symbol counts plus compact declaration headers from the AST.
     classify.rs      "Don't-read" skip-hint heuristics (generated/minified/vendored).
-    testcov.rs       Test-vs-source classification + filename/PHPUnit/inline-test matching.
+    testcov.rs       Test-vs-source classification + filename/PHPUnit/Rust CLI/inline-test
+                     matching and direct `cfg(test)` region detection.
     risk.rs          Shared composite risk calculation and explain factors.
   dup/
     mod.rs           Prepared-corpus orchestration, format pools, rolling-hash helpers,
@@ -436,8 +437,9 @@ Metric semantics worth knowing:
   `test_presence` = test-vs-source split + matching-test estimate (`metrics/testcov.rs`;
   source/test keys retain package prefixes and nested logical directories so same-named
   files in separate packages do not cross-match;
-  Rust inline `#[test]`/`#[cfg(test)]` counts a file as tested via per-file
-  `has_inline_tests`). The serialized `untested_*` names are retained for compatibility;
+  Rust `tests/cli.rs` conventionally matches the package `src/main.rs`, while inline
+  `#[test]`/`#[cfg(test)]` counts a file as tested via per-file `has_inline_tests`). The
+  serialized `untested_*` names are retained for compatibility;
   they mean "no matching test file or inline Rust test", not measured coverage.
   `top_risks` = source files ranked by a composite score
   (0.40·size + 0.40·complexity + 0.20·churn, with stable saturation anchors of 1,000 SLOC,
@@ -445,8 +447,9 @@ Metric semantics worth knowing:
   `reasons`. `assessment` = the one-glance verdict (`fits_context`, `token_budget`,
   `cleanup_worth` ∈ {low,medium,high}, `reasons`); computed last in `aggregate()` from the
   other signals (`DEFAULT_CONTEXT_BUDGET = 200_000`). Its duplication signal uses only
-  non-test code files and triggers above 15%; raw duplication summaries cover the effective
-  health corpus. Repository-wide totals and `languages` remain complete inventory. Additive
+  non-test code files, excluding direct Rust `#[cfg(test)]` regions, and triggers above 15%;
+  raw duplication summaries cover the effective health corpus. Repository-wide totals and
+  `languages` remain complete inventory. Additive
   `source` totals and `top_source_token_files` drive concise human reports, whose language table
   collapses non-source formats into one content rollup.
   Top-level `diagnostics` records discovered/analyzed/unsupported/unreadable files, walker errors,

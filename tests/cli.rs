@@ -2140,6 +2140,106 @@ fn test_presence_does_not_cross_package_boundaries() {
 }
 
 #[test]
+fn rust_cli_integration_tests_cover_the_binary_entrypoint() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::create_dir_all(dir.path().join("tests")).unwrap();
+    std::fs::write(
+        dir.path().join("src/main.rs"),
+        "fn main() { println!(\"ready\"); }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("tests/cli.rs"),
+        "#[test]\nfn reports_help() { assert!(true); }\n",
+    )
+    .unwrap();
+
+    let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
+    assert_eq!(report["summary"]["test_presence"]["source_files"], 1);
+    assert_eq!(
+        report["summary"]["test_presence"]["untested_source_files"],
+        0
+    );
+
+    let mut explain = reposcout_command();
+    explain.args([
+        "explain",
+        dir.path().join("src/main.rs").to_str().unwrap(),
+        "-f",
+        "json",
+        "--no-cache",
+        "--quiet",
+    ]);
+    let explained: Value =
+        serde_json::from_slice(&explain.assert().success().get_output().stdout).unwrap();
+    assert_eq!(explained["testing"]["tested"], true);
+    assert!(
+        explained["testing"]["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path == "tests/cli.rs")
+    );
+}
+
+#[test]
+fn inline_rust_tests_do_not_inflate_source_duplication_assessment() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(
+        dir.path().join("reposcout.toml"),
+        "min_dup_tokens = 8\nmin_dup_lines = 3\nnear_dup_min_similarity = 1.0\n",
+    )
+    .unwrap();
+    let tests = r#"
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn accepts_known_values() {
+        let values = [2, 3, 5, 7, 11, 13];
+        let total = values.iter().sum::<i32>();
+        assert_eq!(total, 41);
+        assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+}
+"#;
+    std::fs::write(
+        dir.path().join("src/first.rs"),
+        format!("pub const FIRST_PRIME: u64 = 104729;\n{tests}"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("src/second.rs"),
+        format!(
+            "pub fn second_signal(input: &str) -> usize {{ input.bytes().filter(|byte| *byte == b'z').count() }}\n{tests}"
+        ),
+    )
+    .unwrap();
+
+    let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
+    assert!(
+        report["summary"]["duplication"]["duplicated_pct"]
+            .as_f64()
+            .unwrap()
+            > 15.0,
+        "fixture must retain raw duplication evidence"
+    );
+    assert!(
+        report["summary"]["assessment"]["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|reason| !reason
+                .as_str()
+                .unwrap()
+                .starts_with("high source duplication")),
+        "test-only clones must not influence the production cleanup verdict"
+    );
+}
+
+#[test]
 fn tiny_single_file_scan_is_not_labeled_high_risk() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("tiny.rs");

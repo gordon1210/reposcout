@@ -16,6 +16,10 @@ within their section.
 
 ### Changed
 
+- Production cleanup assessment now excludes separate test files and direct Rust `#[cfg(test)]`
+  regions from its duplication signal while retaining them in raw duplication metrics. Rust
+  `tests/cli.rs` integration suites also match the package `src/main.rs` entrypoint in test
+  presence, focused context, change summaries, and file explanations.
 - Graph diagnostics now retain source-path attribution for parser, unresolved-import, unreadable,
   and resolver-configuration gaps so change reports can distinguish relevant evidence gaps from
   distant potential blind spots.

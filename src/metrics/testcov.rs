@@ -1,6 +1,7 @@
 //! Test-presence heuristics: classify files as tests vs source code and
 //! compute stem keys for matching test files to the source files they cover.
 
+use crate::model::LineRange;
 use tree_sitter::{Node, Tree};
 
 /// Return whether a parsed Rust file contains an inline test attribute.
@@ -22,13 +23,70 @@ pub fn has_inline_rust_tests(content: &str, tree: &Tree) -> bool {
     false
 }
 
+/// Return 1-based inclusive line ranges that only compile for Rust test builds.
+///
+/// Direct `#[cfg(test)]` items and test functions are included. Compound
+/// conditions are conservatively retained because they may also compile in a
+/// production configuration.
+pub fn inline_rust_test_regions(content: &str, tree: &Tree) -> Vec<LineRange> {
+    let mut ranges = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "attribute"
+            && is_test_only_attribute(node, content)
+            && let Some(item) = attributed_item(node)
+        {
+            ranges.push(LineRange {
+                start: node.start_position().row + 1,
+                end: item.end_position().row + 1,
+            });
+        }
+        for index in (0..node.named_child_count()).rev() {
+            if let Some(child) = node.named_child(index as u32) {
+                stack.push(child);
+            }
+        }
+    }
+    merge_line_ranges(ranges)
+}
+
+fn attributed_item(node: Node<'_>) -> Option<Node<'_>> {
+    let parent = node.parent()?;
+    if parent.kind() != "attribute_item" {
+        return Some(parent);
+    }
+    let mut sibling = parent.next_named_sibling()?;
+    while sibling.kind() == "attribute_item" {
+        sibling = sibling.next_named_sibling()?;
+    }
+    Some(sibling)
+}
+
+fn is_test_only_attribute(node: Node<'_>, content: &str) -> bool {
+    let Some(name) = attribute_name(node, content) else {
+        return false;
+    };
+    if name == "test" || name.ends_with("::test") {
+        return true;
+    }
+    if name != "cfg" {
+        return false;
+    }
+
+    let Some(arguments) = node.child_by_field_name("arguments") else {
+        return false;
+    };
+    let Ok(predicate) = arguments.utf8_text(content.as_bytes()) else {
+        return false;
+    };
+    predicate
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .eq("(test)".chars())
+}
+
 fn is_test_attribute(node: Node<'_>, content: &str) -> bool {
-    let mut cursor = node.walk();
-    let Some(name) = node
-        .named_children(&mut cursor)
-        .find(|child| child.kind() != "token_tree")
-        .and_then(|child| child.utf8_text(content.as_bytes()).ok())
-    else {
+    let Some(name) = attribute_name(node, content) else {
         return false;
     };
 
@@ -41,6 +99,13 @@ fn is_test_attribute(node: Node<'_>, content: &str) -> bool {
 
     node.child_by_field_name("arguments")
         .is_some_and(|arguments| subtree_enables_test(arguments, content, true))
+}
+
+fn attribute_name<'a>(node: Node<'_>, content: &'a str) -> Option<&'a str> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind() != "token_tree")
+        .and_then(|child| child.utf8_text(content.as_bytes()).ok())
 }
 
 fn subtree_enables_test(node: Node<'_>, content: &str, positive: bool) -> bool {
@@ -75,6 +140,21 @@ fn subtree_enables_test(node: Node<'_>, content: &str, positive: bool) -> bool {
         }
     }
     false
+}
+
+fn merge_line_ranges(mut ranges: Vec<LineRange>) -> Vec<LineRange> {
+    ranges.sort_by_key(|range| (range.start, range.end));
+    let mut merged: Vec<LineRange> = Vec::new();
+    for range in ranges {
+        if let Some(previous) = merged.last_mut()
+            && range.start <= previous.end.saturating_add(1)
+        {
+            previous.end = previous.end.max(range.end);
+        } else {
+            merged.push(range);
+        }
+    }
+    merged
 }
 
 /// Returns `true` if `rel_path` looks like a test file.
@@ -143,15 +223,19 @@ pub fn source_stem(rel_path: &str) -> String {
 /// by stripping well-known affixes:
 /// leading `test_`, trailing `_test`, trailing `.test`, trailing `.spec`,
 /// trailing `_spec`.
+/// A Rust `tests/cli.rs` integration suite additionally maps to the package
+/// `src/main.rs` key.
 ///
 /// The raw stem is always the first element; duplicates are removed while
 /// preserving order.
 pub fn test_stem_keys(rel_path: &str) -> Vec<String> {
-    let phpunit_test = rel_path
-        .replace('\\', "/")
-        .rsplit('/')
-        .next()
-        .is_some_and(is_phpunit_filename);
+    let normalized = rel_path.replace('\\', "/");
+    let filename = normalized.rsplit('/').next().unwrap_or(&normalized);
+    let rust_cli_test = filename.eq_ignore_ascii_case("cli.rs")
+        && normalized
+            .split('/')
+            .any(|component| matches!(component.to_ascii_lowercase().as_str(), "tests" | "test"));
+    let phpunit_test = is_phpunit_filename(filename);
     let mut components = stem_components(rel_path);
     strip_layout_components(&mut components, true);
     let raw = components.pop().unwrap_or_default();
@@ -175,6 +259,9 @@ pub fn test_stem_keys(rel_path: &str) -> Vec<String> {
     }
     if phpunit_test && let Some(s) = raw.strip_suffix("test") {
         stems.push(s.to_string());
+    }
+    if rust_cli_test {
+        stems.push("main".to_string());
     }
 
     let prefix = components.join("/");
@@ -371,6 +458,28 @@ fn also_non_test_build() {}
     }
 
     #[test]
+    fn rust_test_regions_only_include_test_only_items() {
+        let source = r#"
+pub fn production() {}
+
+#[cfg(any(test, unix))]
+fn also_production() {}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn works() {}
+}
+"#;
+        let tree = parse::parse(FirstClass::Rust, source).unwrap();
+        let ranges = inline_rust_test_regions(source, &tree);
+
+        assert_eq!(ranges.len(), 1, "{ranges:?}");
+        assert_eq!(ranges[0].start, 7);
+        assert_eq!(ranges[0].end, 11);
+    }
+
+    #[test]
     fn normalises_backslashes() {
         assert!(is_test_file("src\\tests\\helper.rs"));
         assert!(is_test_file("foo_test.py"));
@@ -443,6 +552,16 @@ fn also_non_test_build() {}
     }
 
     // ── test_stem_keys ────────────────────────────────────────────────────────
+
+    #[test]
+    fn rust_cli_integration_tests_match_the_package_entrypoint() {
+        assert!(test_stem_keys("tests/cli.rs").contains(&source_stem("src/main.rs")));
+        assert!(
+            test_stem_keys("crates/worker/tests/cli.rs")
+                .contains(&source_stem("crates/worker/src/main.rs"))
+        );
+        assert!(!test_stem_keys("src/cli.rs").contains(&source_stem("src/main.rs")));
+    }
 
     #[test]
     fn keys_for_test_prefix() {
