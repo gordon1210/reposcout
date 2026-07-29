@@ -48,7 +48,7 @@ into the repository it scans.
 - **Explainable context:** bounded reading plans that rank focus paths, changes, tests,
   dependencies, dependents, risk, and repository instructions.
 - **Change intelligence:** Git diff scopes, changed-line/deep review, finding baselines, impact
-  analysis, DOT/Mermaid exports, and SARIF.
+  analysis, bounded change summaries, DOT/Mermaid exports, and SARIF.
 - **Live local dashboard:** an optional daemon and React interface for repository health,
   findings, files, and mixed-language architecture.
 
@@ -103,8 +103,8 @@ reposcout locate HttpClient . --exact -f json
 # Build a reading plan under hard limits
 reposcout -f json --summary --context-budget 24000 --context-max-files 15 .
 
-# Review the current working-tree change
-reposcout --working --review .
+# Get a bounded decision report for the current working-tree change
+reposcout --working --change-summary -f json .
 ```
 
 `PATH` may be a repository root, subdirectory, or single file. The surrounding Git root is
@@ -125,11 +125,16 @@ was reached instead of presenting missing analysis as a clean result.
 ### Understand a change
 
 ```sh
-reposcout -f json --summary --since main --context --impact .
+reposcout --since main --change-summary -f json .
+# Request the detailed context and impact blocks when needed
+reposcout -f json --summary --since main --context --impact --profile agent .
 reposcout -f sarif --since main --review=deep --fail-on-review .
 ```
 
-Metrics remain change-scoped while context and impact consult unchanged tests and topology.
+The concise report defaults to the `agent` profile, accounts for every changed path while
+serializing only bounded details, separates task-local graph coverage from repository-wide blind
+spots, and omits general health rankings. Metrics remain change-scoped while context and impact
+consult unchanged tests and topology.
 
 ### Inspect architecture
 

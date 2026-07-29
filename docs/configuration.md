@@ -98,6 +98,9 @@ explicitly requests them:
 reposcout -f json --summary --profile agent .
 ```
 
+`--change-summary` selects this profile when the caller does not pass `--profile`; explicit
+`--profile full` and `--profile safe` remain authoritative.
+
 ### `safe`
 
 Starts from the agent profile and additionally:
@@ -107,7 +110,7 @@ Starts from the agent profile and additionally:
 - caps discovery at 20,000 files and deep-review Git blobs at 4 MiB;
 - applies a 120-second cooperative scan deadline;
 - caps workers, top lists, Git history, context, and duplication work;
-- requires normal ignore handling;
+- does not load repository-owned ignore files;
 - excludes hidden files and lockfiles; and
 - forces source-only health analysis without content includes.
 

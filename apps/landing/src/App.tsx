@@ -683,7 +683,7 @@ export function App() {
             <div className="command-stack" aria-label="RepoScout change-aware command examples">
               <div>
                 <span>01</span>
-                <code>reposcout --working --context --impact .</code>
+                <code>reposcout --working --change-summary -f json .</code>
                 <GitBranch size={18} />
               </div>
               <div>

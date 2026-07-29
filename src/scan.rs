@@ -1159,6 +1159,38 @@ fn assemble_report(
     } else {
         None
     };
+    let change_summary = if cfg.change_summary {
+        let scope = match cfg.diff_scope.as_ref() {
+            Some(git::DiffScope::Since(_)) => "since",
+            Some(git::DiffScope::Staged) => "staged",
+            Some(git::DiffScope::Working) => "working",
+            None => "full",
+        };
+        let graph_diagnostics = planning_graph_analysis
+            .as_ref()
+            .map(crate::graph::diagnostic_facts)
+            .unwrap_or_default();
+        Some(crate::change_summary::build(
+            crate::change_summary::Inputs {
+                scope,
+                changed: &prepared.impact_changed_files,
+                context: context.as_ref(),
+                files: planning
+                    .as_ref()
+                    .map_or(analyzed.files.as_slice(), |planning| {
+                        planning.files.as_slice()
+                    }),
+                impact: impact.as_ref(),
+                graph_diagnostics: &graph_diagnostics,
+                scan_diagnostics: &analyzed.diagnostics,
+                discovery_diagnostics: planning
+                    .as_ref()
+                    .map_or(&analyzed.diagnostics, |planning| &planning.diagnostics),
+            },
+        ))
+    } else {
+        None
+    };
 
     let symbol_outlines = analyzed.symbol_outlines;
     let graph_facts = analyzed.graph_facts;
@@ -1214,6 +1246,7 @@ fn assemble_report(
             context,
             diagnostics: analyzed.diagnostics,
             impact,
+            change_summary,
             review,
         },
         symbol_outlines,

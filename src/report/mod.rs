@@ -1,5 +1,6 @@
 //! Output rendering. Dispatches to table (human), JSON (agent), or markdown.
 
+mod change_summary;
 pub mod config;
 pub mod explain;
 pub mod graph;
@@ -30,6 +31,7 @@ pub enum Format {
 pub struct RenderOptions {
     pub summary_only: bool,
     pub baseline_ready: bool,
+    pub change_summary: bool,
     pub duplication_details: bool,
 }
 
@@ -63,6 +65,17 @@ pub fn render_with_options(
         Format::Json | Format::Ndjson | Format::Sarif | Format::Dot | Format::Mermaid
     ) {
         validate_machine_paths(report)?;
+    }
+    if options.change_summary {
+        return match format {
+            Format::Table => change_summary::table(report),
+            Format::Json => change_summary::json(report),
+            Format::Markdown => change_summary::markdown(report),
+            Format::Ndjson => change_summary::ndjson(report),
+            Format::Sarif | Format::Dot | Format::Mermaid => Err(anyhow::anyhow!(
+                "change-summary output supports table, JSON, Markdown, or NDJSON"
+            )),
+        };
     }
     match format {
         Format::Table => Ok(table::render(report, color, options.duplication_details)),

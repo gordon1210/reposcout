@@ -5,7 +5,9 @@
 //! becoming a second implementation of repository analysis.
 
 use crate::config::Config;
-use crate::model::{CapabilitiesReport, SCHEMA_VERSION, SymbolMatch, SymbolQueryReport};
+use crate::model::{
+    CapabilitiesReport, ChangeSummaryCapability, SCHEMA_VERSION, SymbolMatch, SymbolQueryReport,
+};
 use crate::scan;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
@@ -83,6 +85,24 @@ pub fn capabilities() -> CapabilitiesReport {
         error_formats: ["text", "json"].into_iter().map(str::to_string).collect(),
         max_graph_depth: MAX_GRAPH_DEPTH,
         max_symbol_results: MAX_SYMBOL_RESULTS,
+        change_summary: ChangeSummaryCapability {
+            flag: "--change-summary".to_string(),
+            requires_one_of: ["--since", "--staged", "--working"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            implies: ["summary", "context", "impact"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            formats: ["table", "json", "markdown", "ndjson"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            max_path_entries: crate::change_summary::MAX_PATH_ENTRIES,
+            max_gap_entries: crate::change_summary::MAX_GAP_ENTRIES,
+            max_validations: crate::change_summary::MAX_VALIDATIONS,
+        },
         type2_max_seed_pairs_per_pool: crate::dup::fuzzy::MAX_SEED_PAIRS_PER_POOL,
         type2_max_matches_per_pool: crate::dup::fuzzy::MAX_MATCHES_PER_POOL,
         type2_max_overlap_checks_per_pool: crate::dup::fuzzy::MAX_OVERLAP_CHECKS_PER_POOL,

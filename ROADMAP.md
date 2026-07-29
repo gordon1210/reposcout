@@ -182,20 +182,20 @@ does not silently require or generate SCIP data. A future opt-in consumer should
 index, report its provenance/version and stale/missing coverage, and fall back to the current
 heuristic topology rather than replacing it.
 
-## Next implementation priority
+## Recently delivered
 
 ### Change-focused, token-efficient decision reports
 
-**Status:** Approved product direction, design-ready, and the highest implementation priority.
-Complete this before starting another post-0.1 opportunity. The change is medium risk because it
-adds a public CLI/report contract and refines confidence semantics, but it is additive,
-local-only, and reversible.
+**Status:** Implemented and awaiting release. The public CLI/report contract, scope-aware
+confidence, bounded renderers, capability discovery, tests, bundled agent skill, and user-facing
+documentation are complete. The change is additive and retains the existing detailed
+summary/context/impact workflow.
 
 #### Problem and evidence
 
 RepoScout is intended to answer a scouting question with the smallest trustworthy payload:
 identify what matters, explain what may be missing, and let the caller request deeper evidence
-only when needed. The current change-analysis path does not yet meet that standard.
+only when needed. Before this work, the change-analysis path did not yet meet that standard.
 
 Post-release field feedback from a real 17-file port and Docker Compose change found that
 RepoScout was easy to use, found the complete changed-file set, provided a useful reading plan,
@@ -205,7 +205,7 @@ impact confidence because the full repository contained 49 parse errors and two 
 imports without explaining how many gaps intersected the changed files or known impact
 neighborhood. The caller therefore had to treat every graph gap as equally relevant.
 
-The behavior follows from two existing contracts:
+The previous behavior followed from two existing contracts:
 
 - `--summary` is currently a serialization-size projection. It removes the heavy `files`,
   `duplicates`, and finding-catalog arrays, but deliberately retains the full aggregate
@@ -337,6 +337,9 @@ change_summary
     confidence                  high | partial
     distance?
     resolver?
+  reading_order_total
+  reading_order_shown
+  reading_order_omitted
   impact
     direct_total
     transitive_total
@@ -601,8 +604,9 @@ promised, while the underlying diagnostic attribution can remain as an internal 
 | More confidence labels create confusion | Define each dimension narrowly, include stable reason codes, and render one short executive explanation |
 | Compatibility pressure prevents improving `--summary` | Leave existing behavior intact and make the new projection an explicit contract |
 
-This opportunity is **ready for independent review and implementation planning**. The product
-direction and version-one boundaries are settled; there are no blocking product questions.
+This opportunity is **implemented and awaiting release**. Future changes should preserve the
+version-one boundaries, progressive-disclosure contract, and conservative confidence semantics
+documented above.
 
 ## Post-0.1 evidence-gated opportunities
 

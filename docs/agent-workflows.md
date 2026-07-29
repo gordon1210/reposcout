@@ -39,7 +39,8 @@ reposcout capabilities -f json
 ```
 
 This command performs no repository scan. It advertises commands, output/error formats, profiles,
-language coverage, health scopes, symbol kinds, and hard graph/duplication bounds.
+language coverage, health scopes, symbol kinds, and hard graph, duplication, and change-summary
+bounds.
 
 ## Find declarations
 
@@ -94,17 +95,41 @@ invented seeds.
 ## Plan from a change
 
 ```sh
-reposcout -f json --summary --working --context --impact .
-reposcout -f json --summary --since main --context --impact src/
+reposcout --working --change-summary -f json .
+reposcout --since main --change-summary -f json src/
 ```
 
-The primary scan remains diff-scoped. Context and impact are deliberate exceptions: they consult
-a separately cached full-tree planning/topology universe so unchanged tests, dependencies, and
-dependents can inform the answer without widening `summary`, `files`, or findings.
+`--change-summary` requires exactly one diff scope, defaults to the `agent` profile, and implies
+compact rendering, context planning, and impact analysis. The primary scan remains diff-scoped;
+the shared full-tree planning/topology universe supplies unchanged tests, dependencies, and
+dependents without adding general health rankings to the result.
+
+Read the dedicated projection in this order:
+
+1. `coverage.observed_scope_confidence` — whether eligible changed files and the known impact
+   neighborhood have clean graph evidence;
+2. `coverage.discovery_completeness` — whether repository-wide parse, resolution, configuration,
+   unreadable-file, or scan-limit gaps could hide more relationships;
+3. `reading_order`, `tests`, and `impact` — bounded paths for the next inspection decision; and
+4. every `omitted` counter plus `validations` — explicit truncation and evidence-backed follow-up
+   categories that RepoScout did not execute.
+
+The report has a hard aggregate budget of 100 serialized path entries, at most 25 detailed graph
+gaps, and at most 10 validation entries. `reposcout capabilities -f json` advertises these limits.
+Matching tests are naming/convention evidence, not measured coverage. Validation entries never
+claim that a command ran.
+
+Use the detailed workflow when declaration outlines, complete context data, or the ordinary
+change-scoped aggregate is needed:
+
+```sh
+reposcout -f json --summary --profile agent \
+  --working --context --impact .
+```
 
 Each context evidence record exposes:
 
-- its role (`changed`, `test`, `dependency`, `dependent`, and so on);
+- its role (`changed`, `matching-test`, `dependency`, `dependent`, `nearby`);
 - graph distance;
 - resolver provenance when applicable; and
 - `high` or `partial` confidence.
@@ -218,7 +243,7 @@ compact summary scout
     ↓
 locate / explain / focused context
     ↓
-diff impact or review when a change exists
+bounded change summary, detailed impact, or review when a change exists
     ↓
 open only the selected source and tests
 ```

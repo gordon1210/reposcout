@@ -360,6 +360,16 @@ Metric semantics worth knowing:
   report metadata plus `summary` rather than requiring the omitted arrays. It cannot provide
   finding-level comparison. `--baseline-ready` is the finding-complete compact artifact: it
   also removes heavy arrays/opt-in analysis blocks but retains `finding_catalog`.
+- **`--change-summary` is the bounded change-decision mode.** It requires exactly one of
+  `--since`, `--staged`, or `--working`, defaults to the `agent` profile unless explicitly
+  overridden, and implies context plus impact analysis. Its JSON/NDJSON contract identifies
+  itself with `report_kind: "change-summary"` and retains only interpretation metadata,
+  diagnostics, and the additive `change_summary` projection—never the ordinary aggregate,
+  per-file facts, finding catalog, or raw context/impact blocks. Keep the aggregate 100-path,
+  25-gap, and 10-validation limits synchronized with capability discovery and the bundled skill.
+  Confidence must keep clean observed-scope evidence separate from repository-wide discovery
+  blind spots; matching tests and validation entries are recommendations, never measured
+  coverage or claims that a command ran.
 - **Canonical findings are one shared contract.** `findings::build` projects every complexity
   violation, precisely located marker, duplicate family, and risk score >= 0.7 into the
   versioned top-level `finding_catalog`; it is not capped by `top`. Path-sensitive fingerprints
