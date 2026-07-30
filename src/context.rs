@@ -117,6 +117,28 @@ pub(crate) fn build_for_target(
         }
     }
     let dependents = dependent_reach(graph, &seed_files);
+    let direct_dependents = dependents
+        .values()
+        .filter(|reach| reach.distance == 1)
+        .count();
+    let transitive_dependents = dependents
+        .values()
+        .filter(|reach| reach.distance > 1)
+        .count();
+    let graph_eligible_seed_files = seed_files
+        .iter()
+        .filter(|path| {
+            lang::detect(Path::new(path)).is_some_and(|language| language.is_first_class())
+        })
+        .count();
+    let graph_covered_seed_files = graph
+        .map(|graph| {
+            seed_files
+                .iter()
+                .filter(|path| graph.files.contains_key(path.as_str()))
+                .count()
+        })
+        .unwrap_or(0);
 
     let focus_source_stems = files
         .iter()
@@ -142,6 +164,7 @@ pub(crate) fn build_for_target(
         .collect::<HashMap<_, _>>();
 
     let mut skipped_files = 0usize;
+    let mut matching_tests = 0usize;
     let mut candidates = Vec::new();
     for file in files {
         let path = path_key(&file.path);
@@ -159,6 +182,9 @@ pub(crate) fn build_for_target(
             && testcov::test_stem_keys(&path)
                 .iter()
                 .any(|key| focus_source_stems.contains(key));
+        if matching_test {
+            matching_tests = matching_tests.saturating_add(1);
+        }
         let is_code = lang::detect(&file.path).is_some_and(|info| info.is_code());
         let support = support_role(&path);
         let risk = risk_by_path.get(path.as_str()).copied();
@@ -343,6 +369,7 @@ pub(crate) fn build_for_target(
     let mut outline_only = Vec::new();
     let mut omitted = Vec::new();
     let mut omitted_files = 0usize;
+    let mut omitted_tokens = 0usize;
 
     for candidate in candidates {
         let reason = if selected.len() >= cfg.context_max_files {
@@ -356,6 +383,7 @@ pub(crate) fn build_for_target(
         };
         if let Some(reason) = reason {
             omitted_files += 1;
+            omitted_tokens = omitted_tokens.saturating_add(candidate.tokens);
             if seed_files.contains(&candidate.path_key) {
                 outline_only.push((
                     ContextFile {
@@ -436,7 +464,14 @@ pub(crate) fn build_for_target(
         selected_tokens,
         candidate_files,
         omitted_files,
+        omitted_tokens,
         skipped_files,
+        seed_files: seed_files.len(),
+        graph_eligible_seed_files,
+        graph_covered_seed_files,
+        direct_dependents,
+        transitive_dependents,
+        matching_tests,
         focus,
         unmatched_focus,
         change_scope: changes.map(|changes| changes.scope.clone()),

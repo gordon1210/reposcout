@@ -8,6 +8,10 @@ within their section.
 
 ### Added
 
+- Added a versioned, bounded `work_scope` block to ordinary, summary, change-summary, and NDJSON
+  reports. It exposes raw repository/diff/focus inventory, seeds, context-budget usage and
+  omissions, known dependents/tests, observed graph components, and confidence gaps without
+  triggering additional analysis or making agent-routing decisions.
 - Added repeatable `--health-exclude <GLOB>` and `health_excludes` configuration for retaining
   files in inventory and navigation while excluding repository-relative paths from complexity,
   markers, duplication, risk, test-presence, and cleanup signals. Health selection is now

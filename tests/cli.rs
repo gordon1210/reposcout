@@ -64,6 +64,16 @@ fn full_scan_reports_core_metrics() {
     assert_eq!(v["encoding"], "o200k_base");
     assert!(v.get("report_kind").is_none());
     assert!(v.get("change_summary").is_none());
+    assert_eq!(v["work_scope"]["strategy_version"], 1);
+    assert_eq!(v["work_scope"]["basis"], serde_json::json!(["repository"]));
+    assert_eq!(
+        v["work_scope"]["inventory"]["source_files"],
+        v["summary"]["source"]["files"]
+    );
+    assert_eq!(
+        v["work_scope"]["inventory"]["source_tokens"],
+        v["summary"]["source"]["tokens"]
+    );
 
     let files = v["summary"]["files"].as_u64().unwrap();
     assert!(files >= 5, "expected >=5 fixture files, got {files}");
@@ -360,6 +370,9 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     assert_eq!(report["change_summary"]["max_path_entries"], 100);
     assert_eq!(report["change_summary"]["max_gap_entries"], 25);
     assert_eq!(report["change_summary"]["max_validations"], 10);
+    assert_eq!(report["work_scope"]["strategy_version"], 1);
+    assert_eq!(report["work_scope"]["max_path_entries"], 25);
+    assert_eq!(report["work_scope"]["max_components"], 10);
 }
 
 #[test]
@@ -1162,6 +1175,19 @@ fn working_context_uses_full_tree_without_widening_scoped_report_metrics() {
     assert_eq!(report["summary"]["files"], 1);
     assert_eq!(report["files"].as_array().unwrap().len(), 1);
     assert_eq!(report["files"][0]["path"], "src/changed.ts");
+    assert_eq!(report["work_scope"]["basis"], serde_json::json!(["diff"]));
+    assert_eq!(report["work_scope"]["inventory"]["source_files"], 1);
+    assert_eq!(
+        report["work_scope"]["confidence"]["primary"]["diff_scoped"],
+        true
+    );
+    assert_eq!(
+        report["work_scope"]["confidence"]["planning_universe"]["analyzed_files"],
+        6
+    );
+    assert_eq!(report["work_scope"]["impact"]["direct_dependents"], 2);
+    assert_eq!(report["work_scope"]["impact"]["transitive_dependents"], 1);
+    assert_eq!(report["work_scope"]["impact"]["matching_tests"], 1);
     assert_eq!(context["change_scope"], "working");
     assert_eq!(
         context["changed_files"],
@@ -1439,6 +1465,7 @@ fn table_output_has_headers() {
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("reposcout"), "missing title");
     assert!(text.contains("Overview"), "missing Overview section");
+    assert!(text.contains("Work scope"), "missing work-scope section");
     assert!(
         text.contains("Function complexity"),
         "missing function rule"
@@ -1535,6 +1562,7 @@ fn markdown_output_has_headings() {
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("# reposcout"), "missing H1");
     assert!(text.contains("## Overview"), "missing Overview heading");
+    assert!(text.contains("## Work scope"), "missing work-scope heading");
     assert!(
         text.contains("## Function complexity"),
         "missing function rule heading"
@@ -2587,9 +2615,11 @@ fn baseline_ready_output_is_compact_and_finding_complete() {
     assert!(report.get("duplicates").is_none());
     assert!(report.get("graph").is_none());
     assert!(report.get("context").is_none());
+    assert!(report.get("work_scope").is_none());
 
     let summary = run_json(&["-f", "json", "--summary", &fixture()]);
     assert!(summary.get("finding_catalog").is_none());
+    assert!(summary["work_scope"].is_object());
 }
 
 #[test]
@@ -3100,6 +3130,10 @@ fn review_filters_complexity_findings_to_changed_function_bodies() {
         dir.path().to_str().unwrap(),
     ]);
 
+    assert_eq!(report["work_scope"]["basis"], serde_json::json!(["diff"]));
+    assert_eq!(report["work_scope"]["seeds"]["changes"]["total"], 1);
+    assert!(report["work_scope"].get("context").is_none());
+    assert!(report["work_scope"].get("impact").is_none());
     assert_eq!(report["review"]["mode"], "lines");
     let findings = report["review"]["findings"].as_array().unwrap();
     assert_eq!(findings.len(), 1, "review findings were: {findings:?}");
@@ -4190,6 +4224,10 @@ fn ndjson_output_has_summary_and_file_lines() {
         "summary line must carry a requested context plan"
     );
     assert!(
+        first["work_scope"].is_object(),
+        "summary line must carry work-scope evidence"
+    );
+    assert!(
         first["graph"]["files"].is_array(),
         "full NDJSON summary must carry deterministic graph files"
     );
@@ -4634,6 +4672,27 @@ fn change_summary_is_a_bounded_agent_profile_decision_report() {
 
     assert_eq!(report["report_kind"], "change-summary");
     assert_eq!(report["execution"]["profile"], "agent");
+    assert_eq!(report["work_scope"]["basis"], serde_json::json!(["diff"]));
+    assert_eq!(report["work_scope"]["diff_scope"], "working");
+    assert_eq!(report["work_scope"]["seeds"]["changes"]["total"], 2);
+    assert!(
+        report["work_scope"]["context"]["selected_files"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(report["work_scope"]["impact"]["seed_files"], 2);
+    assert_eq!(
+        report["work_scope"]["impact"]["graph_eligible_seed_files"],
+        1
+    );
+    assert_eq!(
+        report["work_scope"]["impact"]["graph_covered_seed_files"],
+        1
+    );
+    assert_eq!(report["work_scope"]["impact"]["matching_tests"], 1);
+    assert_eq!(report["work_scope"]["impact"]["matching_tests_known"], true);
+    assert_eq!(report["work_scope"]["structure"]["graph_files"], 4);
     assert_eq!(report["change_summary"]["scope"], "working");
     assert_eq!(report["change_summary"]["executive"]["changed_files"], 2);
     assert_eq!(
@@ -5070,6 +5129,7 @@ fn change_summary_supports_human_and_machine_formats() {
     assert_eq!(rendered.lines().count(), 1);
     let record: Value = serde_json::from_str(rendered.trim()).unwrap();
     assert_eq!(record["report_kind"], "change-summary");
+    assert!(record["work_scope"].is_object());
 
     let output_path = dir.path().join("change-summary.ndjson");
     let mut ndjson_file = reposcout_command();
@@ -5260,6 +5320,14 @@ fn change_summary_exposes_safe_profile_resource_truncation() {
 
     assert_eq!(report["diagnostics"]["scan_truncated"], true);
     assert_eq!(report["diagnostics"]["oversized_files"], 1);
+    assert_eq!(
+        report["work_scope"]["confidence"]["primary"]["oversized_files"],
+        1
+    );
+    assert_eq!(
+        report["work_scope"]["confidence"]["primary"]["truncated"],
+        true
+    );
     assert!(
         summary["executive"]["reasons"]
             .as_array()

@@ -29,6 +29,7 @@ RepoScout combines signals that usually require several tools:
 | **Where is the risk?** | Per-callable complexity, maintainability, churn, test presence, and composite risk |
 | **What can be skipped?** | Generated, minified, vendored, and oversized-file hints |
 | **Is cleanup worthwhile?** | Exact and Type-2 duplication, markers, hotspots, and an evidence-qualified assessment |
+| **How broad is the work?** | Raw seed, context-budget, dependent, test, graph-component, and confidence counts |
 | **What should be read next?** | A deterministic context plan under hard token and file budgets |
 | **What could this change affect?** | Diff-scoped review, dependency/type graphs, and direct/transitive impact |
 
@@ -44,7 +45,7 @@ into the repository it scans.
 - **Structured duplication:** format-aware exact and consistent-rename Type-2 clones with precise
   locations and union-based coverage.
 - **Agent-ready queries:** compact summary mode, capability discovery, declaration lookup,
-  structured errors, and guardrailed execution profiles.
+  raw work-scope evidence, structured errors, and guardrailed execution profiles.
 - **Explainable context:** bounded reading plans that rank focus paths, changes, tests,
   dependencies, dependents, risk, and repository instructions.
 - **Change intelligence:** Git diff scopes, changed-line/deep review, finding baselines, impact
@@ -110,6 +111,10 @@ reposcout --working --change-summary -f json .
 
 `PATH` may be a repository root, subdirectory, or single file. The surrounding Git root is
 detected automatically.
+
+Machine-readable scans include a bounded `work_scope` block with raw measurements of the observed
+repository, focus, or diff scope. RepoScout leaves decisions about reading, splitting, or
+delegating work to the caller and never enables another analyzer just to populate this block.
 
 ## Common workflows
 

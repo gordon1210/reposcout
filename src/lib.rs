@@ -23,3 +23,4 @@ pub mod scan;
 mod snapshot;
 pub mod update;
 pub mod walk;
+mod work_scope;

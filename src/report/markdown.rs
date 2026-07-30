@@ -31,6 +31,9 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
     let _ = writeln!(out);
 
     render_overview(&mut out, report);
+    if let Some(work_scope) = &report.work_scope {
+        super::work_scope::markdown(&mut out, work_scope);
+    }
 
     render_complexity(&mut out, report);
 
@@ -338,44 +341,7 @@ fn render_context(out: &mut String, report: &ScanReport) {
     };
     let _ = writeln!(out, "## Agent context plan");
     let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "- Tokens: **{} / {}** selected",
-        thousands(context.selected_tokens),
-        thousands(context.budget_tokens)
-    );
-    let _ = writeln!(
-        out,
-        "- Files: **{}** selected from {} candidates; {} omitted, {} skipped",
-        context.files.len(),
-        context.candidate_files,
-        context.omitted_files,
-        context.skipped_files
-    );
-    let _ = writeln!(
-        out,
-        "- Planning: **{} ms**; {} outline symbols / {} bytes retained; {} symbols omitted by outline bounds",
-        context.planning_ms,
-        context.outline_symbols,
-        context.outline_bytes,
-        context.outline_omitted_symbols
-    );
-    if !context.focus.is_empty() {
-        let focus = context
-            .focus
-            .iter()
-            .map(|path| markdown_code_span(&path.display().to_string()))
-            .collect::<Vec<_>>();
-        let _ = writeln!(out, "- Focus: {}", focus.join(", "));
-    }
-    if !context.unmatched_focus.is_empty() {
-        let focus = context
-            .unmatched_focus
-            .iter()
-            .map(|path| markdown_code_span(&path.display().to_string()))
-            .collect::<Vec<_>>();
-        let _ = writeln!(out, "- Unmatched focus: {}", focus.join(", "));
-    }
+    let _ = writeln!(out, "- Planning time: **{} ms**", context.planning_ms);
     if !context.graph_languages.is_empty() {
         let _ = writeln!(
             out,
@@ -390,37 +356,6 @@ fn render_context(out: &mut String, report: &ScanReport) {
             context.graph_parse_errors,
             context.graph_config_errors
         );
-    }
-    if let Some(diagnostics) = &context.planning_diagnostics {
-        let _ = writeln!(
-            out,
-            "- Planning coverage: {} / {} analyzed; {} unsupported, {} unreadable, {} walker errors",
-            diagnostics.analyzed_files,
-            diagnostics.discovered_files,
-            diagnostics.unsupported_files,
-            diagnostics.unreadable_files,
-            diagnostics.walker_errors
-        );
-    }
-    if let Some(scope) = &context.change_scope {
-        let mut paths = context
-            .changed_files
-            .iter()
-            .take(10)
-            .map(|path| markdown_code_span(&path.display().to_string()))
-            .collect::<Vec<_>>();
-        if context.changed_files.len() > paths.len() {
-            paths.push(format!(
-                "+{} more",
-                context.changed_files.len() - paths.len()
-            ));
-        }
-        let paths = if paths.is_empty() {
-            "no changed paths".to_string()
-        } else {
-            paths.join(", ")
-        };
-        let _ = writeln!(out, "- Change seed: {} — {}", markdown_text(scope), paths);
     }
     let _ = writeln!(out);
     if !context.files.is_empty() {

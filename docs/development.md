@@ -82,7 +82,7 @@ Important module boundaries:
 | Duplication | `src/dup/` |
 | Git history and diffs | `src/git.rs` |
 | Graph, impact, and symbols | `src/graph.rs`, `src/graph/` |
-| Context and task queries | `src/context.rs`, `src/query.rs`, `src/explain.rs` |
+| Context and task queries | `src/context.rs`, `src/work_scope.rs`, `src/query.rs`, `src/explain.rs` |
 | Output formats | `src/report/` |
 | Dashboard and landing page | `apps/web/`, `apps/landing/` |
 | Dashboard composition | `apps/web/src/components/dashboard.tsx`, `dashboard-report.tsx` |

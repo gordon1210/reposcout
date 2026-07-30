@@ -7,6 +7,7 @@
 use crate::config::Config;
 use crate::model::{
     CapabilitiesReport, ChangeSummaryCapability, SCHEMA_VERSION, SymbolMatch, SymbolQueryReport,
+    WorkScopeCapability,
 };
 use crate::scan;
 use anyhow::{Result, anyhow};
@@ -103,6 +104,11 @@ pub fn capabilities() -> CapabilitiesReport {
             max_path_entries: crate::change_summary::MAX_PATH_ENTRIES,
             max_gap_entries: crate::change_summary::MAX_GAP_ENTRIES,
             max_validations: crate::change_summary::MAX_VALIDATIONS,
+        },
+        work_scope: WorkScopeCapability {
+            strategy_version: crate::work_scope::STRATEGY_VERSION,
+            max_path_entries: crate::work_scope::MAX_PATH_ENTRIES,
+            max_components: crate::work_scope::MAX_COMPONENTS,
         },
         type2_max_seed_pairs_per_pool: crate::dup::fuzzy::MAX_SEED_PAIRS_PER_POOL,
         type2_max_matches_per_pool: crate::dup::fuzzy::MAX_MATCHES_PER_POOL,
