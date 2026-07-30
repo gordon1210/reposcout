@@ -96,7 +96,7 @@ full-suite command.
 
 - A C compiler is required (vendored `libgit2` and the tree-sitter grammars build
   via `cc`). `cmake` is **not** needed.
-- Frontend packages use the root pnpm workspace (`pnpm@11.13.1`).
+- Frontend packages use the root pnpm workspace (`pnpm@11.18.0`).
 
 ## Common commands
 
@@ -108,6 +108,8 @@ cargo test <FILTER>         # targeted test; inherits the same safe default
 cargo clippy --all-targets -- -D warnings
 cargo fmt                   # format (run before committing)
 cargo run -- -f json .      # run against this repo
+pnpm lint:frontend          # shared ESLint config + both frontend apps
+pnpm lint:fix:frontend      # apply ESLint and Prettier fixes across frontend packages
 pnpm build:web              # type-check + production dashboard build
 pnpm test:web               # dashboard Vitest suite
 pnpm build:landing          # type-check + production landing-page build
@@ -120,6 +122,8 @@ CHANGELOG.md          User-visible changes in reverse chronological order.
 apps/
   web/                React dashboard for the live daemon.
   landing/            Bespoke public RepoScout landing page.
+packages/
+  eslint-config/      Shared flat ESLint configuration for both frontend apps.
 src/
   main.rs            CLI entry: scan/query/explain dispatch, profiles, gates, output/errors,
                      and debug-session lifecycle.
@@ -164,7 +168,8 @@ src/
     imports.rs       Import / dependency extraction (ROOT module names only).
     symbols.rs       Per-file symbol counts plus compact declaration headers from the AST.
     classify.rs      "Don't-read" skip-hint heuristics (generated/minified/vendored).
-    testcov.rs       Test-vs-source classification + filename/PHPUnit/inline-test matching.
+    testcov.rs       Test-vs-source classification + filename/PHPUnit/Rust CLI/inline-test
+                     matching and direct `cfg(test)` region detection.
     risk.rs          Shared composite risk calculation and explain factors.
   dup/
     mod.rs           Prepared-corpus orchestration, format pools, rolling-hash helpers,
@@ -188,6 +193,16 @@ tests/
                      Exact and Type-2 samples for all 31 detected formats.
   fixtures/sample/   Small multi-language fixture tree.
 ```
+
+`apps/web/src/components/ui/` contains imported shadcn primitives. It is globally ignored by
+ESLint and must not be edited by hand.
+
+Frontend production code is linted with a cyclomatic-complexity ceiling of 20 and a 900-line
+module ceiling. Tests keep correctness and formatting checks but are exempt from size,
+complexity, strict assertion, and development-only React rules. The dashboard keeps its runtime
+shell in `dashboard.tsx` and report rendering in `dashboard-report.tsx`; the repository graph is
+split across controller, workspace view, canvas renderers, layout decoration, detail panels, and
+pure graph helpers under `apps/web/src/components/repository-graph-*` and `apps/web/src/lib/graph-*`.
 
 ## Architecture & the frozen contract
 
@@ -360,6 +375,16 @@ Metric semantics worth knowing:
   report metadata plus `summary` rather than requiring the omitted arrays. It cannot provide
   finding-level comparison. `--baseline-ready` is the finding-complete compact artifact: it
   also removes heavy arrays/opt-in analysis blocks but retains `finding_catalog`.
+- **`--change-summary` is the bounded change-decision mode.** It requires exactly one of
+  `--since`, `--staged`, or `--working`, defaults to the `agent` profile unless explicitly
+  overridden, and implies context plus impact analysis. Its JSON/NDJSON contract identifies
+  itself with `report_kind: "change-summary"` and retains only interpretation metadata,
+  diagnostics, and the additive `change_summary` projection—never the ordinary aggregate,
+  per-file facts, finding catalog, or raw context/impact blocks. Keep the aggregate 100-path,
+  25-gap, and 10-validation limits synchronized with capability discovery and the bundled skill.
+  Confidence must keep clean observed-scope evidence separate from repository-wide discovery
+  blind spots; matching tests and validation entries are recommendations, never measured
+  coverage or claims that a command ran.
 - **Canonical findings are one shared contract.** `findings::build` projects every complexity
   violation, precisely located marker, duplicate family, and risk score >= 0.7 into the
   versioned top-level `finding_catalog`; it is not capped by `top`. Path-sensitive fingerprints
@@ -426,8 +451,9 @@ Metric semantics worth knowing:
   `test_presence` = test-vs-source split + matching-test estimate (`metrics/testcov.rs`;
   source/test keys retain package prefixes and nested logical directories so same-named
   files in separate packages do not cross-match;
-  Rust inline `#[test]`/`#[cfg(test)]` counts a file as tested via per-file
-  `has_inline_tests`). The serialized `untested_*` names are retained for compatibility;
+  Rust `tests/cli.rs` conventionally matches the package `src/main.rs`, while inline
+  `#[test]`/`#[cfg(test)]` counts a file as tested via per-file `has_inline_tests`). The
+  serialized `untested_*` names are retained for compatibility;
   they mean "no matching test file or inline Rust test", not measured coverage.
   `top_risks` = source files ranked by a composite score
   (0.40·size + 0.40·complexity + 0.20·churn, with stable saturation anchors of 1,000 SLOC,
@@ -435,8 +461,9 @@ Metric semantics worth knowing:
   `reasons`. `assessment` = the one-glance verdict (`fits_context`, `token_budget`,
   `cleanup_worth` ∈ {low,medium,high}, `reasons`); computed last in `aggregate()` from the
   other signals (`DEFAULT_CONTEXT_BUDGET = 200_000`). Its duplication signal uses only
-  non-test code files and triggers above 15%; raw duplication summaries cover the effective
-  health corpus. Repository-wide totals and `languages` remain complete inventory. Additive
+  non-test code files, excluding direct Rust `#[cfg(test)]` regions, and triggers above 15%;
+  raw duplication summaries cover the effective health corpus. Repository-wide totals and
+  `languages` remain complete inventory. Additive
   `source` totals and `top_source_token_files` drive concise human reports, whose language table
   collapses non-source formats into one content rollup.
   Top-level `diagnostics` records discovered/analyzed/unsupported/unreadable files, walker errors,
@@ -550,10 +577,11 @@ Metric semantics worth knowing:
 2. `cargo fmt --check`
 3. `cargo clippy --all-targets -- -D warnings`
 4. `cargo test` (all green; the harness is serialized by repository configuration).
-5. `pnpm build:web && pnpm test:web`
-6. `pnpm build:landing`
-7. `cargo build --release`  (refreshes the `reposcoutdev` symlink)
-8. Sanity-run: `reposcoutdev -f json .` and confirm the output looks right.
+5. `pnpm lint:frontend`
+6. `pnpm build:web && pnpm test:web`
+7. `pnpm build:landing`
+8. `cargo build --release`  (refreshes the `reposcoutdev` symlink)
+9. Sanity-run: `reposcoutdev -f json .` and confirm the output looks right.
 
 ## Testing notes
 

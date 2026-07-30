@@ -8,7 +8,7 @@ RepoScout is a Rust 2024 CLI with a pnpm frontend workspace.
 
 - Rust via `rustup`
 - a C compiler for vendored libgit2 and tree-sitter grammars
-- pnpm `11.13.1` for frontend work
+- pnpm `11.18.0` for frontend work
 
 `cmake` is not required.
 
@@ -30,12 +30,20 @@ Bare `cargo test` is the intended full-suite command.
 
 ```sh
 pnpm install
+pnpm lint:frontend
+pnpm lint:fix:frontend
 pnpm build:web
 pnpm test:web
 pnpm build:landing
 ```
 
 Live development commands are documented in [Daemon and web dashboard](daemon-and-web.md).
+The shared config lives in `packages/eslint-config`; each app keeps only a small local adapter.
+Imported shadcn primitives under `apps/web/src/components/ui/` are intentionally excluded from
+linting and must not be edited by hand.
+Production modules are capped at cyclomatic complexity 20 and 900 non-blank, non-comment lines.
+Tests retain correctness and formatting checks while opting out of size, complexity, strict
+assertion, and development-only React rules.
 
 ## Tests and fixtures
 
@@ -77,6 +85,10 @@ Important module boundaries:
 | Context and task queries | `src/context.rs`, `src/query.rs`, `src/explain.rs` |
 | Output formats | `src/report/` |
 | Dashboard and landing page | `apps/web/`, `apps/landing/` |
+| Dashboard composition | `apps/web/src/components/dashboard.tsx`, `dashboard-report.tsx` |
+| Graph controller and views | `apps/web/src/components/repository-graph*.ts(x)` |
+| Graph domain projections | `apps/web/src/lib/graph-*.ts` |
+| Shared frontend lint rules | `packages/eslint-config/` |
 
 Read [`AGENTS.md`](../AGENTS.md) before changing code. It documents frozen interfaces, schema/cache
 versioning rules, metric semantics, resource guardrails, and repository-specific validation.

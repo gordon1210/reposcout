@@ -72,6 +72,14 @@ pub fn render_capabilities(
                 "Error formats: {}\n",
                 report.error_formats.join(", ")
             ));
+            out.push_str(&format!(
+                "Change summary: {} (formats: {}; paths <= {}, gaps <= {}, validations <= {})\n",
+                report.change_summary.flag,
+                report.change_summary.formats.join(", "),
+                report.change_summary.max_path_entries,
+                report.change_summary.max_gap_entries,
+                report.change_summary.max_validations
+            ));
             Ok(out)
         }
     }

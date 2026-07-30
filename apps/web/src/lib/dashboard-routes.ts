@@ -20,7 +20,9 @@ const tabLabels: Record<DashboardTab, string> = {
   graph: "Graph",
 }
 
-export function parseDashboardTab(value: string | undefined): DashboardTab | null {
+export function parseDashboardTab(
+  value: string | undefined
+): DashboardTab | null {
   return DASHBOARD_TABS.find((tab) => tab === value) ?? null
 }
 

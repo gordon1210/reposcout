@@ -59,6 +59,38 @@ Summary JSON remains valid aggregate baseline input.
 Use `--baseline-ready` when the artifact exists specifically for later comparison. It stays
 compact but retains the complete `finding_catalog`, enabling finding-level comparison.
 
+## Change-summary projection
+
+For one Git diff scope, `--change-summary` emits a separate bounded contract instead of a shortened
+ordinary scan report:
+
+```sh
+reposcout --working --change-summary -f json .
+```
+
+The compact JSON/NDJSON record identifies itself with `report_kind: "change-summary"` and retains
+only report identity, interpretation metadata, primary diagnostics, and `change_summary`. It omits
+the ordinary `summary`, `files`, `duplicates`, `finding_catalog`, raw `context`, and raw `impact`
+blocks. The projection includes:
+
+- all changed-file counts and bounded path details;
+- merged reading-order roles, known impact, and convention-matched tests, each with explicit
+  totals or omitted-detail counters;
+- separate observed-scope, repository-discovery, and test-mapping confidence;
+- relevant versus outside-known-scope graph gaps with explicit omitted counts; and
+- evidence-backed validation categories that were suggested but not executed.
+
+JSON is deliberately compact rather than pretty-printed. Table and Markdown render the same
+decision data for humans. SARIF remains a findings format, while DOT and Mermaid remain graph-only
+formats, so those three reject `--change-summary` as a structured usage error.
+
+Stable executive reason codes are `no-graph-eligible-changes`, `no-graph-covered-changes`,
+`changed-graph-coverage-incomplete`, `relevant-graph-gaps`, `repository-graph-gaps`,
+`scan-truncated`, `test-mapping-heuristic`, and `no-matching-tests`. Gap scopes are `changed`,
+`known-impact`, `selected-context`, and `outside-known-scope`. Validation kinds are `mapped-test`,
+`project-configuration`, `inspect-non-graph-change`, and `specialist-review`; their text is
+guidance, not evidence that validation ran.
+
 ## Stable JSON contract
 
 Scan reports carry `schema_version: "1.0"`. The top-level contract is organized around:
@@ -83,6 +115,7 @@ Optional blocks appear only when requested:
 | `baseline` | `--baseline` |
 | `graph` | `--graph` or graph-focus flags |
 | `impact` | `--impact` with a diff scope |
+| `change_summary` | `--change-summary` with exactly one diff scope |
 | `review` | `--review` with a diff scope |
 
 New fields are additive and use deserialization defaults. Breaking JSON changes require a schema
@@ -154,7 +187,8 @@ The summary record also carries identity/profile metadata, diagnostics, and requ
 blocks. Review findings use `kind: "review_finding"`. `--summary` emits only the first record.
 
 `reposcout explain FILE -f ndjson` emits one contextual record. Symbol lookup emits a query header
-followed by one record per match.
+followed by one record per match. `--change-summary -f ndjson` emits one bounded record carrying
+`report_kind: "change-summary"`.
 
 ## DOT and Mermaid
 
@@ -179,7 +213,7 @@ RepoScout writes one JSON object to stderr.
 | Exit code | Meaning |
 |---:|---|
 | `0` | Success, including a broken downstream stdout pipe |
-| `1` | Usage, configuration, I/O, or runtime error |
-| `2` | A requested gate or regression condition was met |
+| `1` | Configuration, I/O, runtime, or post-parse validation error |
+| `2` | Parser/change-summary usage error, requested gate, or regression condition |
 
 See [CLI reference](cli-reference.md#ci-gates) for metric, review, and baseline gates.

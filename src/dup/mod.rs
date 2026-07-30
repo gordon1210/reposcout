@@ -9,7 +9,9 @@ pub mod fuzzy;
 mod tokenize;
 
 use crate::lang;
-use crate::model::{CloneGroup, CloneInstance, DuplicateFinding, DuplicateFragment, Duplication};
+use crate::model::{
+    CloneGroup, CloneInstance, DuplicateFinding, DuplicateFragment, Duplication, LineRange,
+};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -513,6 +515,39 @@ impl DuplicateCoverage {
 
     pub fn covered_lines(&self, path: &Path) -> usize {
         self.lines_by_path.get(path).map_or(0, IntervalSet::len)
+    }
+
+    pub(crate) fn covered_lines_excluding(&self, path: &Path, excluded: &[LineRange]) -> usize {
+        let Some(covered) = self.lines_by_path.get(path) else {
+            return 0;
+        };
+        let mut excluded_set = IntervalSet::default();
+        for range in excluded {
+            if range.start > 0 && range.start <= range.end {
+                excluded_set.insert(range.start - 1..range.end);
+            }
+        }
+
+        let mut overlap = 0usize;
+        let mut covered_index = 0usize;
+        let mut excluded_index = 0usize;
+        while covered_index < covered.intervals.len()
+            && excluded_index < excluded_set.intervals.len()
+        {
+            let covered_range = &covered.intervals[covered_index];
+            let excluded_range = &excluded_set.intervals[excluded_index];
+            let start = covered_range.start.max(excluded_range.start);
+            let end = covered_range.end.min(excluded_range.end);
+            if start < end {
+                overlap = overlap.saturating_add(end - start);
+            }
+            if covered_range.end <= excluded_range.end {
+                covered_index += 1;
+            } else {
+                excluded_index += 1;
+            }
+        }
+        covered.len().saturating_sub(overlap)
     }
 
     pub fn covered_tokens(&self, path: &Path) -> usize {
@@ -1060,6 +1095,16 @@ mod tests {
         assert_eq!(coverage.covered_lines(Path::new("a.rs")), 5);
         assert_eq!(coverage.covered_lines(Path::new("b.rs")), 3);
         assert_eq!(coverage.total_lines(), 8);
+        assert_eq!(
+            coverage.covered_lines_excluding(
+                Path::new("a.rs"),
+                &[
+                    LineRange { start: 3, end: 4 },
+                    LineRange { start: 4, end: 5 },
+                ],
+            ),
+            2
+        );
         assert_eq!(coverage.covered_tokens(Path::new("a.rs")), 7);
         assert_eq!(coverage.covered_tokens(Path::new("b.rs")), 5);
         assert_eq!(coverage.total_tokens(), 12);

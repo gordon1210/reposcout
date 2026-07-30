@@ -1,4 +1,5 @@
 pub mod cache;
+mod change_summary;
 pub mod cli;
 pub mod config;
 pub mod context;

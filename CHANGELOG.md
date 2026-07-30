@@ -6,6 +6,29 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-30
+
+### Added
+
+- Added `--change-summary`, a bounded change-focused report for working-tree, staged, or
+  reference-based diffs. It defaults to the lightweight agent profile, reuses context and impact
+  analysis, separates observed-scope confidence from repository-wide discovery gaps, recommends
+  only evidence-backed validation categories, and supports compact JSON/NDJSON plus table and
+  Markdown output under capability-advertised path/detail limits.
+
+### Changed
+
+- Production cleanup assessment now excludes separate test files and direct Rust `#[cfg(test)]`
+  regions from its duplication signal while retaining them in raw duplication metrics. Rust
+  `tests/cli.rs` integration suites also match the package `src/main.rs` entrypoint in test
+  presence, focused context, change summaries, and file explanations.
+- Graph diagnostics now retain source-path attribution for parser, unresolved-import, unreadable,
+  and resolver-configuration gaps so change reports can distinguish relevant evidence gaps from
+  distant potential blind spots.
+- Updated the bundled RepoScout agent skill to prefer the concise change-report workflow while
+  retaining the detailed context/impact command as a compatibility fallback. Existing skill
+  installations can be refreshed with `npx skills update reposcout`.
+
 ## [0.1.7] - 2026-07-28
 
 ### Changed

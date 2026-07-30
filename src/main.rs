@@ -17,6 +17,21 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
+#[derive(Debug)]
+struct UsageError(String);
+
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for UsageError {}
+
+fn usage_error(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(UsageError(message.into()))
+}
+
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
@@ -70,17 +85,20 @@ fn main() -> ExitCode {
         }
         Err(e) => {
             let message = format!("{e:#}");
+            let usage = e.downcast_ref::<UsageError>().is_some();
+            let category = if usage { "usage" } else { "runtime" };
+            let code = if usage { 2 } else { 1 };
             debug_log::event(
                 "runtime_error",
                 || serde_json::json!({ "message": &message }),
             );
             debug_session.finish("error");
             if error_format == ErrorFormat::Json {
-                print_json_error("runtime", &message, 1);
+                print_json_error(category, &message, code);
             } else {
                 eprintln!("reposcout: error: {message}");
             }
-            ExitCode::FAILURE
+            exit_code(code)
         }
     }
 }
@@ -328,10 +346,37 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
 
 fn run_scan(cli: Cli) -> Result<ExitCode> {
     let (args, sub_enabled) = split(cli);
+    if args.change_summary && args.since.is_none() && !args.staged && !args.working {
+        return Err(usage_error(
+            "--change-summary requires exactly one of --since, --staged, or --working",
+        ));
+    }
+    if args.change_summary && sub_enabled.is_some() {
+        return Err(usage_error(
+            "--change-summary is available only on the default scan command",
+        ));
+    }
+    if args.change_summary && args.baseline_ready {
+        return Err(usage_error(
+            "--change-summary cannot be combined with --baseline-ready",
+        ));
+    }
+    let requested_format = choose_format(args.common.format, args.common.output.as_deref());
+    if args.change_summary
+        && matches!(
+            requested_format,
+            Format::Sarif | Format::Dot | Format::Mermaid
+        )
+    {
+        return Err(usage_error(
+            "--change-summary supports table, JSON, Markdown, or NDJSON output",
+        ));
+    }
     let cli_requested_context = args.context
         || args.context_budget.is_some()
         || args.context_max_files.is_some()
-        || !args.focus.is_empty();
+        || !args.focus.is_empty()
+        || args.change_summary;
     if args
         .graph_depth
         .is_some_and(|depth| depth > reposcout::query::MAX_GRAPH_DEPTH)
@@ -346,7 +391,11 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         return Err(anyhow!("--only cannot be used with an analyzer subcommand"));
     }
 
-    let profile = args.common.profile;
+    let profile = args.common.profile.unwrap_or(if args.change_summary {
+        ExecutionProfile::Agent
+    } else {
+        ExecutionProfile::Full
+    });
     let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
         Config::load_without_project(&args.path)?
     } else {
@@ -397,7 +446,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
     let format = if args.baseline_ready {
         Format::Json
     } else {
-        choose_format(args.common.format, args.common.output.as_deref())
+        requested_format
     };
     let color = matches!(format, Format::Table)
         && args.common.output.is_none()
@@ -408,6 +457,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
             "format": format!("{format:?}").to_lowercase(),
             "summary_only": args.summary,
             "baseline_ready": args.baseline_ready,
+            "change_summary": args.change_summary,
         })
     });
     let rendered = report::render_with_options(
@@ -417,6 +467,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         report::RenderOptions {
             summary_only: args.summary,
             baseline_ready: args.baseline_ready,
+            change_summary: args.change_summary,
             duplication_details: args.duplication_details,
         },
     )?;
@@ -487,7 +538,7 @@ fn run_explain(args: ExplainArgs) -> Result<ExitCode> {
         return Err(anyhow!("explain does not support graph-only output"));
     }
 
-    let profile = args.common.profile;
+    let profile = args.common.profile.unwrap_or(ExecutionProfile::Full);
     let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
         Config::load_without_project(&args.file)?
     } else {
@@ -526,7 +577,7 @@ fn run_locate(args: LocateArgs) -> Result<ExitCode> {
         ));
     }
 
-    let profile = args.common.profile;
+    let profile = args.common.profile.unwrap_or(ExecutionProfile::Full);
     let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
         Config::load_without_project(&args.path)?
     } else {
@@ -709,6 +760,7 @@ fn apply_overrides(cfg: &mut Config, args: &ScanArgs) {
         cfg.graph_direction = direction;
     }
     if args.context
+        || args.change_summary
         || args.context_budget.is_some()
         || args.context_max_files.is_some()
         || !args.focus.is_empty()
@@ -725,7 +777,8 @@ fn apply_overrides(cfg: &mut Config, args: &ScanArgs) {
         cfg.context_max_files = max_files;
     }
     cfg.context_focus = args.focus.clone();
-    cfg.impact = args.impact;
+    cfg.impact = args.impact || args.change_summary;
+    cfg.change_summary = args.change_summary;
     cfg.review = args.review;
 }
 

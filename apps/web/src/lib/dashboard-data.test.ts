@@ -11,7 +11,7 @@ import { makeFile, makeReport } from "@/test/fixtures"
 describe("dashboard data", () => {
   it("ranks every file by token count for client-side pagination", () => {
     const files = Array.from({ length: 105 }, (_, index) =>
-      makeFile(`src/file-${index}.rs`, index),
+      makeFile(`src/file-${index}.rs`, index)
     )
     const ranked = rankedFiles(makeReport({ files }))
 
@@ -28,7 +28,9 @@ describe("dashboard data", () => {
     ]
 
     expect(averageFileCyclomatic(file)).toBe(4.5)
-    expect(averageFileCyclomatic(makeFile("src/no-callables.rs"))).toBeUndefined()
+    expect(
+      averageFileCyclomatic(makeFile("src/no-callables.rs"))
+    ).toBeUndefined()
   })
 
   it("orders findings by severity then stable location", () => {
@@ -50,10 +52,9 @@ describe("dashboard data", () => {
       },
     ]
 
-    expect(rankedFindings(report).map((finding) => finding.fingerprint)).toEqual([
-      "error",
-      "warning",
-    ])
+    expect(
+      rankedFindings(report).map((finding) => finding.fingerprint)
+    ).toEqual(["error", "warning"])
   })
 
   it("sums all configured marker counts", () => {

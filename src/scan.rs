@@ -24,12 +24,14 @@ use std::time::{Duration, Instant};
 struct AnalyzedFile {
     report: FileReport,
     content: String,
+    test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
     graph_facts: Option<crate::graph::SourceFacts>,
 }
 
 struct SourceAnalysis {
     report: FileReport,
+    test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
     graph_facts: Option<crate::graph::SourceFacts>,
 }
@@ -75,6 +77,7 @@ struct PreparedScan {
 
 struct AnalyzedScan {
     files: Vec<FileReport>,
+    test_regions: BTreeMap<PathBuf, Vec<LineRange>>,
     symbol_outlines: BTreeMap<PathBuf, Vec<SymbolOutline>>,
     graph_facts: BTreeMap<PathBuf, crate::graph::SourceFacts>,
     duplication: Duplication,
@@ -781,6 +784,12 @@ fn analyze_cross_file_metrics(
                 .map(|facts| (analysis.report.path.clone(), facts))
         })
         .collect();
+    let test_regions = file_analysis
+        .analyzed
+        .iter()
+        .filter(|analysis| !analysis.test_regions.is_empty())
+        .map(|analysis| (analysis.report.path.clone(), analysis.test_regions.clone()))
+        .collect();
     let mut files: Vec<FileReport> = file_analysis
         .analyzed
         .into_iter()
@@ -798,6 +807,7 @@ fn analyze_cross_file_metrics(
 
     AnalyzedScan {
         files,
+        test_regions,
         symbol_outlines,
         graph_facts,
         duplication,
@@ -895,6 +905,7 @@ fn analyze_planning_universe(
         &files,
         &Duplication::default(),
         &DuplicateCoverage::default(),
+        &BTreeMap::new(),
         cfg,
     );
     Ok(Some(PlanningAnalysis {
@@ -966,6 +977,7 @@ fn assemble_report(
         &analyzed.files,
         &analyzed.duplication,
         &analyzed.duplicate_coverage,
+        &analyzed.test_regions,
         cfg,
     );
     let finding_catalog =
@@ -1159,6 +1171,38 @@ fn assemble_report(
     } else {
         None
     };
+    let change_summary = if cfg.change_summary {
+        let scope = match cfg.diff_scope.as_ref() {
+            Some(git::DiffScope::Since(_)) => "since",
+            Some(git::DiffScope::Staged) => "staged",
+            Some(git::DiffScope::Working) => "working",
+            None => "full",
+        };
+        let graph_diagnostics = planning_graph_analysis
+            .as_ref()
+            .map(crate::graph::diagnostic_facts)
+            .unwrap_or_default();
+        Some(crate::change_summary::build(
+            crate::change_summary::Inputs {
+                scope,
+                changed: &prepared.impact_changed_files,
+                context: context.as_ref(),
+                files: planning
+                    .as_ref()
+                    .map_or(analyzed.files.as_slice(), |planning| {
+                        planning.files.as_slice()
+                    }),
+                impact: impact.as_ref(),
+                graph_diagnostics: &graph_diagnostics,
+                scan_diagnostics: &analyzed.diagnostics,
+                discovery_diagnostics: planning
+                    .as_ref()
+                    .map_or(&analyzed.diagnostics, |planning| &planning.diagnostics),
+            },
+        ))
+    } else {
+        None
+    };
 
     let symbol_outlines = analyzed.symbol_outlines;
     let graph_facts = analyzed.graph_facts;
@@ -1214,6 +1258,7 @@ fn assemble_report(
             context,
             diagnostics: analyzed.diagnostics,
             impact,
+            change_summary,
             review,
         },
         symbol_outlines,
@@ -1624,6 +1669,7 @@ fn analyze_file(
                 &rel_str,
                 hash,
                 &cached.report,
+                &cached.test_regions,
                 cached.symbol_outlines.as_deref(),
                 cached.graph_facts.as_ref(),
             );
@@ -1631,6 +1677,7 @@ fn analyze_file(
         return AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
             report: cached.report,
             content,
+            test_regions: cached.test_regions,
             symbol_outlines: cached.symbol_outlines,
             graph_facts: cached.graph_facts,
         }));
@@ -1643,12 +1690,14 @@ fn analyze_file(
         &rel_str,
         hash,
         &analysis.report,
+        &analysis.test_regions,
         analysis.symbol_outlines.as_deref(),
         analysis.graph_facts.as_ref(),
     );
     AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
         report: analysis.report,
         content,
+        test_regions: analysis.test_regions,
         symbol_outlines: analysis.symbol_outlines,
         graph_facts: analysis.graph_facts,
     }))
@@ -1751,11 +1800,18 @@ fn analyze_source_details(
 
     let skip = classify::skip_hint(&rel_str, content);
 
+    let rust_tree = tree.as_ref().or(inline_test_tree.as_ref());
     let has_inline_tests = matches!(
-        (info.first_class, tree.as_ref().or(inline_test_tree.as_ref())),
+        (info.first_class, rust_tree),
         (Some(lang::FirstClass::Rust), Some(tree))
             if testcov::has_inline_rust_tests(content, tree)
     );
+    let test_regions = match (info.first_class, rust_tree) {
+        (Some(lang::FirstClass::Rust), Some(tree)) => {
+            testcov::inline_rust_test_regions(content, tree)
+        }
+        _ => Vec::new(),
+    };
 
     let comment_ratio = if line_stats.loc > 0 {
         line_stats.comment_lines as f64 / line_stats.loc as f64
@@ -1784,6 +1840,7 @@ fn analyze_source_details(
             skip_hint: skip,
             has_inline_tests,
         },
+        test_regions,
         symbol_outlines,
         graph_facts,
     })
@@ -1842,6 +1899,7 @@ fn aggregate(
     files: &[FileReport],
     dup: &Duplication,
     duplicate_coverage: &DuplicateCoverage,
+    test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     cfg: &Config,
 ) -> (Summary, Vec<RiskEntry>) {
     let mut s = Summary::default();
@@ -1852,7 +1910,7 @@ fn aggregate(
     let (test_presence, top_risks, all_risk_entries) = test_and_risk_summary(files, cfg);
     s.test_presence = test_presence;
     s.top_risks = top_risks;
-    let source_duplication = source_duplication_pct(files, duplicate_coverage);
+    let source_duplication = source_duplication_pct(files, duplicate_coverage, test_regions);
     s.assessment = build_assessment(&s, source_duplication, cfg.enabled);
     (s, all_risk_entries)
 }
@@ -2199,15 +2257,33 @@ fn has_matching_test(file: &FileReport, test_stem_set: &HashSet<String>) -> bool
     test_stem_set.contains(&testcov::source_stem(path.as_ref()))
 }
 
-fn source_duplication_pct(files: &[FileReport], coverage: &DuplicateCoverage) -> f64 {
+fn source_duplication_pct(
+    files: &[FileReport],
+    coverage: &DuplicateCoverage,
+    test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
+) -> f64 {
     let source_files = files.iter().filter(|file| {
         lang::detect(&file.path).is_some_and(|info| info.is_code())
             && !testcov::is_test_file(file.path.to_string_lossy().as_ref())
     });
     let (duplicated_lines, lines) = source_files.fold((0usize, 0usize), |totals, file| {
+        let regions = test_regions
+            .get(&file.path)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let test_lines = regions
+            .iter()
+            .map(|range| {
+                range
+                    .end
+                    .min(file.loc)
+                    .saturating_sub(range.start.saturating_sub(1))
+            })
+            .sum::<usize>()
+            .min(file.loc);
         (
-            totals.0 + coverage.covered_lines(&file.path),
-            totals.1 + file.loc,
+            totals.0 + coverage.covered_lines_excluding(&file.path, regions),
+            totals.1 + file.loc.saturating_sub(test_lines),
         )
     });
     percentage(duplicated_lines, lines)
@@ -2781,7 +2857,14 @@ mod tests {
         };
         let coverage = DuplicateCoverage::from_duplication(&duplication);
 
-        assert_eq!(source_duplication_pct(&[source, test], &coverage), 20.0);
+        assert_eq!(
+            source_duplication_pct(
+                &[source, test],
+                &coverage,
+                &std::collections::BTreeMap::new()
+            ),
+            20.0
+        );
     }
 
     #[test]

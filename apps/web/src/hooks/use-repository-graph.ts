@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { daemonAuthHeaders } from "@/lib/daemon-auth"
+import { isDaemonGraphResponse } from "@/lib/api-validation"
 import type { DaemonGraphResponse, DependencyGraph } from "@/lib/types"
 
 interface RepositoryGraphState {
@@ -10,16 +11,30 @@ interface RepositoryGraphState {
   retry: () => void
 }
 
-async function fetchGraph(revision: number, signal: AbortSignal): Promise<DaemonGraphResponse> {
+async function fetchGraph(
+  revision: number,
+  signal: AbortSignal
+): Promise<DaemonGraphResponse> {
   const response = await fetch(`/api/graph?revision=${revision}`, {
     signal,
     headers: daemonAuthHeaders(),
   })
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Graph request failed (${response.status})`)
+    const body: unknown = await response.json().catch(() => null)
+    const message =
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "string"
+        ? body.error
+        : `Graph request failed (${response.status})`
+    throw new Error(message)
   }
-  return (await response.json()) as DaemonGraphResponse
+  const body: unknown = await response.json()
+  if (!isDaemonGraphResponse(body)) {
+    throw new Error("Graph response had an invalid shape")
+  }
+  return body
 }
 
 export function useRepositoryGraph(revision: number): RepositoryGraphState {
@@ -37,13 +52,20 @@ export function useRepositoryGraph(revision: number): RepositoryGraphState {
     void fetchGraph(revision, controller.signal)
       .then((response) => {
         if (response.revision !== revision) {
-          throw new Error("The repository changed while its graph was being built. Try again.")
+          throw new Error(
+            "The repository changed while its graph was being built. Try again."
+          )
         }
         setGraph(response.graph)
       })
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return
-        setError(reason instanceof Error ? reason.message : "Failed to build repository graph")
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Failed to build repository graph"
+        )
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

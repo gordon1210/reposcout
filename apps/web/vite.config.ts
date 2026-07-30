@@ -19,7 +19,9 @@ function daemonTokenCandidates(port: number): string[] {
   const localAppData = process.env.LOCALAPPDATA
   return [
     explicit,
-    xdgRuntime ? path.join(xdgRuntime, "reposcout", `daemon-${port}.token`) : null,
+    xdgRuntime
+      ? path.join(xdgRuntime, "reposcout", `daemon-${port}.token`)
+      : null,
     // macOS directories::ProjectDirs cache fallback (runtime_dir is None).
     path.join(home, "Library", "Caches", "reposcout", `daemon-${port}.token`),
     xdgCache
@@ -36,13 +38,19 @@ function readDaemonToken(port: number): string | undefined {
     let file: number | undefined
     try {
       const metadata = fs.lstatSync(candidate)
-      if (!metadata.isFile() || metadata.size > MAX_DAEMON_TOKEN_FILE_BYTES) continue
+      if (!metadata.isFile() || metadata.size > MAX_DAEMON_TOKEN_FILE_BYTES)
+        continue
 
       const unixFlags = fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK
-      const flags = fs.constants.O_RDONLY | (process.platform === "win32" ? 0 : unixFlags)
+      const flags =
+        fs.constants.O_RDONLY | (process.platform === "win32" ? 0 : unixFlags)
       file = fs.openSync(candidate, flags)
       const openedMetadata = fs.fstatSync(file)
-      if (!openedMetadata.isFile() || openedMetadata.size > MAX_DAEMON_TOKEN_FILE_BYTES) continue
+      if (
+        !openedMetadata.isFile() ||
+        openedMetadata.size > MAX_DAEMON_TOKEN_FILE_BYTES
+      )
+        continue
 
       const contents = Buffer.alloc(MAX_DAEMON_TOKEN_FILE_BYTES)
       const bytesRead = fs.readSync(file, contents, 0, contents.length, 0)

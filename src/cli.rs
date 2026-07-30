@@ -174,8 +174,8 @@ pub struct CommonArgs {
 
     /// Built-in execution profile: full analysis, cheap agent scouting, or
     /// bounded scouting that ignores repository-owned configuration
-    #[arg(long, value_enum, default_value_t = ExecutionProfile::Full)]
-    pub profile: ExecutionProfile,
+    #[arg(long, value_enum)]
+    pub profile: Option<ExecutionProfile>,
 
     /// Ignore the nearest repository-owned reposcout configuration
     #[arg(long)]
@@ -336,6 +336,11 @@ pub struct ScanArgs {
     /// duplicate arrays). Ideal for agents scouting a path cheaply.
     #[arg(long)]
     pub summary: bool,
+
+    /// Emit a bounded, change-focused decision report. Requires exactly one
+    /// diff scope, defaults to the agent profile, and implies context/impact.
+    #[arg(long = "change-summary", conflicts_with = "no_context")]
+    pub change_summary: bool,
 
     /// Emit compact JSON suitable for complete aggregate and finding-level
     /// baseline comparisons.

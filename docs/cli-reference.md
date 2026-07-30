@@ -104,6 +104,7 @@ graph tool.
 | `--since <REF>` | Scan files changed since a Git ref | — |
 | `--staged` | Scan staged changes | off |
 | `--working` | Scan uncommitted working-tree changes | off |
+| `--change-summary` | Emit a bounded change decision and imply context/impact | off |
 | `--impact` | Report direct and transitive internal dependents for a diff scope | off |
 | `--review[=lines\|deep]` | Filter current findings or compare both Git snapshots | off |
 | `--fail-on-review` | Exit `2` for actionable review findings | off |
@@ -113,6 +114,9 @@ graph tool.
 | `--fail-on <EXPR>` | Exit `2` when any metric expression is true | — |
 
 Only one of `--since`, `--staged`, and `--working` may define the diff scope.
+`--change-summary` requires one of them. It defaults to the `agent` profile unless `--profile
+full` or `--profile safe` is explicit, and supports table, JSON, Markdown, and NDJSON only.
+Capability discovery reports its fixed path, gap, and validation limits.
 
 ## Common examples
 
@@ -148,7 +152,10 @@ reposcout -f json --summary --context-budget 24000 --context-max-files 15 .
 reposcout -f json --summary --focus src/service.ts .
 
 # Keep metrics change-scoped while consulting full-tree planning/topology
-reposcout -f json --working --context --impact .
+reposcout --working --change-summary -f json .
+
+# Request the detailed context and impact blocks
+reposcout -f json --working --context --impact --profile agent .
 
 # Deep two-snapshot review
 reposcout -f sarif --since main --review=deep --fail-on-review .

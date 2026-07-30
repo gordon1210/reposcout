@@ -1,6 +1,6 @@
 # RepoScout research and roadmap
 
-_Research refreshed: 2026-07-17_
+_Research refreshed: 2026-07-29_
 
 RepoScout's north star is a fast, local-first repository intelligence layer for humans and
 agents: one command should reveal what matters, what can be skipped, what fits in a context
@@ -181,6 +181,432 @@ is external, potentially expensive, and not universal across repositories. RepoS
 does not silently require or generate SCIP data. A future opt-in consumer should accept a supplied
 index, report its provenance/version and stale/missing coverage, and fall back to the current
 heuristic topology rather than replacing it.
+
+## Recently delivered
+
+### Change-focused, token-efficient decision reports
+
+**Status:** Implemented and awaiting release. The public CLI/report contract, scope-aware
+confidence, bounded renderers, capability discovery, tests, bundled agent skill, and user-facing
+documentation are complete. The change is additive and retains the existing detailed
+summary/context/impact workflow.
+
+#### Problem and evidence
+
+RepoScout is intended to answer a scouting question with the smallest trustworthy payload:
+identify what matters, explain what may be missing, and let the caller request deeper evidence
+only when needed. Before this work, the change-analysis path did not yet meet that standard.
+
+Post-release field feedback from a real 17-file port and Docker Compose change found that
+RepoScout was easy to use, found the complete changed-file set, provided a useful reading plan,
+and honestly reported graph uncertainty. It nevertheless mixed general complexity, risk, and
+repository-health signals into a narrowly scoped change investigation. The report also reduced
+impact confidence because the full repository contained 49 parse errors and two unresolved
+imports without explaining how many gaps intersected the changed files or known impact
+neighborhood. The caller therefore had to treat every graph gap as equally relevant.
+
+The previous behavior followed from two existing contracts:
+
+- `--summary` is currently a serialization-size projection. It removes the heavy `files`,
+  `duplicates`, and finding-catalog arrays, but deliberately retains the full aggregate
+  `summary`, including general rankings.
+- Impact uses a full-tree topology and conservatively reduces one global `confidence` value for
+  any unsupported changed file, unresolved import, unreadable graph file, parse error, or
+  resolver-configuration error anywhere in that topology.
+
+The conservative behavior is honest, but not decision-efficient. A parse error in a changed file,
+one in a known dependent, and one in a distant unrelated-looking file all have different practical
+meaning. The distant error can still conceal an undiscovered relationship, so it must not be
+silently ignored; it should be presented as a potential repository-wide blind spot rather than as
+an unexplained task-local failure.
+
+#### Desired outcome
+
+Add one explicit change-report path that is fast by default, bounded in serialized size, and
+organized around the caller's next decision. It should answer, in order:
+
+1. What changed inside the requested target?
+2. Which changed files are eligible for first-class graph analysis?
+3. Which dependencies, dependents, and matching tests are already known?
+4. Which files should be read first?
+5. Which coverage gaps directly affect the observed change neighborhood?
+6. Which repository-wide gaps could still hide additional relationships?
+7. Which evidence-backed validations should the caller consider next?
+
+The ordinary scan and existing `--summary`, `--context`, `--impact`, `--review`, graph, baseline,
+and full-report contracts remain available. Concision must be a projection over shared facts, not
+a second scanner or a reason to remove detailed analysis.
+
+#### Product principles
+
+- **Progressive disclosure:** the change report is the smallest decision payload; existing
+  options remain the path to context outlines, full impact lists, findings, graph topology,
+  health rankings, and per-file facts.
+- **Relevant precision:** distinguish observed change-scope coverage from whole-repository
+  discovery completeness instead of collapsing both into one unexplained label.
+- **Conservative honesty:** off-scope parse and resolution gaps remain visible because they may
+  conceal an edge into the known change neighborhood.
+- **Bounded output:** path lists, gap details, validation hints, and reasons have deterministic
+  limits plus omitted counts. Payload growth must not be linear in an arbitrarily large
+  repository.
+- **No duplicated analysis:** reuse diff discovery, cached file facts, the context planner,
+  test matching, graph topology, and impact traversal. The feature may project or aggregate
+  those facts but must not build parallel implementations.
+- **No hidden verification:** validation entries are recommendations with evidence, never claims
+  that a command ran or a behavior passed.
+- **No semantic pretense:** a diff identifies a change scope, not the human intent behind it.
+  Version one is change-focused; it does not claim to understand an arbitrary natural-language
+  task.
+
+#### User-facing CLI contract
+
+Add one scan option:
+
+```text
+--change-summary
+```
+
+It requires exactly one existing diff scope: `--since <REF>`, `--staged`, or `--working`.
+It implies compact rendering, context planning, and impact analysis because all three are part of
+the promised decision report. When no explicit `--profile` is supplied, it uses the existing
+`agent` profile; `--profile full` and `--profile safe` remain explicit overrides, and the effective
+choice stays visible in execution metadata. It does not silently enable duplication or churn.
+
+Examples:
+
+```bash
+# Fast, bounded review of uncommitted work.
+reposcout --working --change-summary -f json .
+
+# Compare a branch with main while applying untrusted-repository guardrails.
+reposcout --since main --change-summary --profile safe -f json .
+
+# Request the existing detailed change-analysis blocks instead of the bounded projection.
+reposcout --working --context --impact --summary --profile agent -f json .
+
+# Request health findings and deep snapshot comparison explicitly.
+reposcout --since main --review=deep --profile full -f json .
+```
+
+The flag supports table, Markdown, JSON, and NDJSON. SARIF remains a findings interchange format,
+while DOT and Mermaid remain graph formats; combining any of those three formats with
+`--change-summary` fails with one structured usage error. Existing output-file exclusion and
+overwrite behavior applies unchanged.
+
+The new flag is a rendering/query contract, not a persistent configuration key in version one.
+A repository must not force every caller into a change-only projection. Capability discovery
+advertises the option, implied analyses, supported formats, and hard payload limits.
+
+#### Additive report model
+
+Add an optional top-level `change_summary` block to `ScanReport`, guarded with serde defaults and
+omitted when the flag is absent. Normal full JSON may serialize the block when explicitly
+requested. The bounded `--change-summary` JSON projection identifies itself with
+`report_kind: "change-summary"` and retains only the report envelope, analysis/execution metadata
+needed to interpret the result, primary scan diagnostics, and this block; it omits the general
+aggregate `summary`, file arrays, duplicate arrays, finding catalog, raw context plan, and raw
+impact block. Consumers therefore select the dedicated projection model by `report_kind` instead
+of trying to deserialize it as a complete `ScanReport`.
+
+The logical contract is:
+
+```text
+report_kind                     change-summary
+change_summary
+  strategy_version
+  scope                         since | staged | working
+  executive
+    changed_files
+    graph_eligible_changed_files
+    known_direct_dependents
+    known_transitive_dependents
+    matching_tests
+    confidence                  high | partial | none
+    reasons[]                   stable reason codes
+  changed
+    total
+    shown
+    omitted
+    files[]
+      path
+      graph_eligible
+      graph_covered
+  reading_order[]
+    path
+    roles[]                     changed | dependency | dependent | matching-test | nearby
+    confidence                  high | partial
+    distance?
+    resolver?
+  reading_order_total
+  reading_order_shown
+  reading_order_omitted
+  impact
+    direct_total
+    transitive_total
+    shown
+    omitted
+    files[]
+      path
+      distance
+      confidence
+      resolver?
+  tests
+    total
+    shown
+    omitted
+    files[]
+      path
+      matched_sources[]
+      confidence                partial unless syntax-proven evidence is introduced later
+  coverage
+    observed_scope_confidence   high | partial | none | not-applicable
+    discovery_completeness      high | partial | none
+    test_mapping_confidence     partial | none | not-applicable
+    graph_eligible_changed
+    graph_covered_changed
+    non_graph_changed
+    relevant_gaps
+      unreadable_files
+      parse_errors
+      unresolved_imports
+      config_errors
+    outside_known_scope_gaps
+      unreadable_files
+      parse_errors
+      unresolved_imports
+      config_errors
+    gaps[]
+      path
+      scope                     changed | known-impact | selected-context | outside-known-scope
+      unreadable
+      parse_errors
+      unresolved_imports
+      config_errors
+    gaps_omitted
+  validations[]
+    kind
+    target?
+    reason
+    confidence
+  validations_omitted
+```
+
+This is a logical shape, not permission to duplicate the same path without bounds across every
+list. Implementations should use small reusable bounded-list structs when that makes omission
+semantics more consistent. Stable reason and validation `kind` values must be documented and
+covered by contract tests.
+
+Context declaration outlines are intentionally absent from the change summary. They remain
+available through the existing detailed context report and are often the largest useful part of
+that block. The concise reading order carries only the evidence required to decide which file to
+open.
+
+#### Coverage and confidence semantics
+
+Keep the existing `ImpactAnalysis` fields unchanged for compatibility. Build the more precise
+coverage block from the same `Topology` and impact traversal.
+
+Classify changed paths before computing confidence:
+
+- **Graph-eligible changed files** are existing or deleted paths detected as one of RepoScout's
+  first-class languages.
+- **Graph-covered changed files** are eligible paths represented by a topology node or a supported
+  virtual deleted node.
+- **Non-graph changes** are recognized content/build formats, unsupported formats, and other paths
+  for which RepoScout does not promise import-graph coverage. Report them as intentionally
+  non-graph rather than silently treating them as parser failures.
+
+Define the **known impact scope** as graph-covered changed nodes plus every direct or transitive
+dependent reached by the reverse traversal. Define the **selected context scope** as the additional
+dependencies, matching tests, and nearby files retained by the bounded context plan.
+
+Diagnostics are then partitioned:
+
+- **Relevant gaps** originate in a changed node, known impact node, selected context node, or
+  resolver configuration that governs one of those nodes.
+- **Outside-known-scope gaps** originate elsewhere in the full topology. They remain potential
+  blind spots because a parse or resolution failure may have hidden an edge into the change.
+- An unresolved import is attributed to its importer. Parse and unreadable diagnostics already
+  have node identity internally and must retain it through projection. Resolver configuration
+  diagnostics must gain bounded source-path attribution instead of remaining only one global
+  count.
+
+Confidence dimensions have deliberately different meanings:
+
+- `observed_scope_confidence` is `high` only when every graph-eligible changed file is covered and
+  relevant graph diagnostics are clean; `partial` when some relevant evidence is missing; `none`
+  when graph-eligible changes exist but none are covered; and `not-applicable` when no changed path
+  is graph-eligible.
+- `discovery_completeness` is `high` only when the full topology has no unreadable, parse,
+  unresolved-import, or resolver-configuration gap that could conceal another relationship. It is
+  `partial` when useful results exist with such blind spots and `none` when graph construction
+  produced no usable changed seed.
+- `test_mapping_confidence` is `partial` for the current filename/convention-based matching,
+  `none` when eligible source files have no match, and `not-applicable` when the change contains no
+  eligible source file. Matching tests are not measured coverage.
+- Executive `confidence` is conservative: `high` requires both high observed-scope confidence and
+  high discovery completeness; `partial` means the reported neighborhood is useful but incomplete;
+  `none` means RepoScout has no graph-backed impact answer. Stable reason codes explain which
+  dimension caused the result.
+
+This means a repository with 49 distant parse errors may still report
+`observed_scope_confidence: high`, while keeping `discovery_completeness: partial` and executive
+`confidence: partial`. The caller learns that known local evidence is clean without being told that
+the blast radius is proven complete.
+
+#### Bounded diagnostics and path allocation
+
+The concise report uses a single deterministic path budget so multiple sections cannot each grow
+to repository size. Reserve capacity in this order:
+
+1. changed files;
+2. relevant coverage gaps;
+3. matching tests;
+4. direct dependents;
+5. selected dependencies and other context files;
+6. transitive dependents;
+7. outside-known-scope gap examples.
+
+Within one priority, sort by existing context score or graph distance and then normalized path.
+Always retain total/shown/omitted counts. Start with a hard aggregate limit of 100 serialized path
+entries, a maximum of 25 detailed gap entries, and 10 validation entries. Expose these constants
+through `reposcout capabilities -f json`; do not add configuration until real usage demonstrates
+that callers need different limits. Existing maximum Git-path-byte rules still apply.
+
+The output-size contract is structural: after metadata and fixed counters, report size is bounded
+by these entry limits rather than total repository size. Paths may appear in more than one logical
+role only when the additional role changes a decision; renderers should merge roles where possible.
+
+#### Evidence-backed validation guidance
+
+Validation guidance is useful only when it remains factual and narrow. Version one may recommend:
+
+- mapped test files already selected by the existing test matcher;
+- validation of a changed manifest, build file, or recognized tool configuration, naming the file
+  that triggered the recommendation;
+- inspection of changed non-graph files that cannot participate in impact analysis; and
+- specialist verification when RepoScout has a relevant graph or parser gap.
+
+Every entry carries a stable kind, target when known, reason, and confidence. An exact shell command
+may appear only when it is read directly from already-consumed project metadata through a bounded,
+tested parser; otherwise report the validation category and evidence, not an invented command.
+RepoScout does not execute the recommendation.
+
+Version one does not infer an old literal from arbitrary diff text, understand a natural-language
+task, validate Docker Compose, run Make targets, start services, call health endpoints, or claim
+that a selected test is sufficient. External diagnostics can later add stronger failure evidence
+to the same context planner, but that separate roadmap item is not a prerequisite for this report.
+
+#### Compatibility and integration
+
+- Invocations without `--change-summary` have byte-for-byte-equivalent report selection semantics;
+  existing fields and `--summary` behavior do not change.
+- The model change is additive and does not require a `SCHEMA_VERSION` bump. It does not require an
+  `ANALYZER_VERSION` bump unless implementation changes cached per-file facts.
+- Baseline compatibility remains based on the existing analysis profile. The change summary is a
+  query projection and is not baseline input.
+- The context and impact blocks remain the detailed source of truth. The concise block must be
+  assembled from their shared inputs/results in `scan.rs`, not reconstructed by JSON or human
+  renderers.
+- Graph node diagnostics need bounded path attribution in the graph module. Renderers consume the
+  resulting model and do not inspect topology internals.
+- Update capability discovery, CLI/reference documentation, agent workflows, the installed skill,
+  and repository agent guidance together so the recommended change-review command uses the new
+  concise path.
+- Preserve terminal, Markdown, JSON, NDJSON, path-escaping, and control-character safety rules for
+  every repository-derived value.
+
+#### Performance and token budgets
+
+`--change-summary` is explicit permission to perform the same on-demand graph/context work as the
+current `--working --context --impact` workflow. It must not add another discovery pass, AST parse,
+or graph build. Assembly should be linear in the already-built bounded facts plus graph nodes and
+edges, with bounded retained detail.
+
+Measure cold/no-cache and warm-cache runtime against the equivalent existing agent-profile change
+analysis. The new projection must add no material scan-time regression; use 5% as an investigation
+threshold rather than masking noise with a generous budget. Record serialized bytes and a
+deterministic token estimate for representative fixtures. A 17-file mixed source/config/docs
+fixture should retain every changed path under the default limit while producing at least 60% fewer
+serialized bytes than the current summary/context/impact JSON and no general health rankings.
+
+#### Failure behavior
+
+- Missing or conflicting diff scope is a usage error before scanning.
+- A valid empty diff returns a successful, minimal report with zero counts, `not-applicable`
+  observed/test coverage, and no invented validation.
+- No first-class changed file is not an error. List the non-graph changes and report graph impact as
+  not applicable.
+- A missing/deleted eligible file may remain a virtual changed seed using existing impact semantics.
+- Resource truncation, deadline expiry, unreadable input, or bounded omission stays explicit in
+  primary diagnostics and lowers the appropriate coverage dimension.
+- If concise projection fails after analysis, return the normal structured runtime error; do not
+  silently fall back to the much larger full report.
+
+#### Validation and acceptance scenarios
+
+Automated tests must cover:
+
+- CLI requirements, implied agent/context/impact behavior, explicit full/safe overrides, supported
+  formats, incompatible formats, capability discovery, and structured errors;
+- additive deserialization defaults plus unchanged output selection for every invocation without
+  `--change-summary`;
+- deterministic path-budget priority, role merging, omitted counts, path normalization, control
+  escaping, and stable reason/kind values;
+- changed, direct-dependent, transitive-dependent, dependency, matching-test, nearby,
+  non-first-class, unsupported, unreadable, and deleted-file cases;
+- relevant versus outside-known-scope parse errors and unresolved imports;
+- resolver-configuration error attribution to affected files;
+- all confidence states and the invariant that repository-wide blind spots prevent a false
+  completeness claim without erasing clean observed-scope evidence;
+- empty diffs, subpath targets, output-path exclusion, project/global configuration, and safe
+  resource truncation;
+- table, Markdown, JSON, and NDJSON projections;
+- bounded serialized size on synthetic repositories larger than every detail cap; and
+- cold/warm timing plus output-byte comparison against the equivalent existing workflow.
+
+Acceptance examples:
+
+- **Given** 17 changed files below the path budget, including source, tests, Compose, Make, and
+  documentation, **when** a working-tree change summary runs, **then** all 17 appear as changed,
+  only eligible source files participate in graph coverage, and general complexity/risk rankings
+  are absent.
+- **Given** clean changed and known-dependent nodes plus 49 parse errors outside the known impact
+  scope, **when** impact is summarized, **then** observed scope is high, discovery completeness and
+  executive confidence are partial, outside-scope totals/examples are visible, and no error is
+  mislabeled as directly change-local.
+- **Given** a parse error in a changed first-class file, **when** impact is summarized, **then** the
+  file is a relevant gap and observed-scope confidence is partial.
+- **Given** only Markdown and Docker Compose changes, **when** the report runs, **then** graph
+  coverage is not applicable, the files remain in the reading order, and configuration validation
+  is recommended without claiming it ran.
+- **Given** more paths or gaps than the hard limits, **when** the report renders in every supported
+  format, **then** priority order is deterministic, totals remain accurate, and omitted counts make
+  truncation explicit.
+- **Given** the same invocation without `--change-summary`, **when** JSON is rendered, **then** the
+  established summary/context/impact contract remains unchanged.
+
+#### Delivery, rollback, and risks
+
+Ship the additive model and scope-aware coverage tests before switching agent documentation to the
+new command. Keep the old recommended command valid throughout. The feature has no persisted data
+or migration; rollback consists of removing the new option/projection before a stable contract is
+promised, while the underlying diagnostic attribution can remain as an internal improvement.
+
+| Risk | Mitigation |
+|------|------------|
+| A concise report hides a consequential global gap | Always include repository-wide gap totals, bounded examples, and conservative discovery confidence |
+| “Relevant” is mistaken for semantically related to the human task | Name the feature change-focused and define relevance only from diff, graph, test, and context evidence |
+| New convenience behavior silently changes analysis cost | Advertise implied context/impact work; reuse one topology; expose timing and the effective profile |
+| The projection duplicates context/impact logic and drifts | Assemble it beside shared scan results; keep renderers data-only; add cross-contract tests |
+| Path lists become large enough to defeat token savings | Use one aggregate priority budget with omitted counts and capability-advertised hard limits |
+| Validation suggestions become hallucinated commands | Require direct metadata evidence for commands; otherwise emit only a category, target, reason, and confidence |
+| More confidence labels create confusion | Define each dimension narrowly, include stable reason codes, and render one short executive explanation |
+| Compatibility pressure prevents improving `--summary` | Leave existing behavior intact and make the new projection an explicit contract |
+
+This opportunity is **implemented and awaiting release**. Future changes should preserve the
+version-one boundaries, progressive-disclosure contract, and conservative confidence semantics
+documented above.
 
 ## Post-0.1 evidence-gated opportunities
 

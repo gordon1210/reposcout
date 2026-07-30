@@ -57,14 +57,20 @@ export function projectGraph(
   focus: string | null,
   direction: GraphDirection,
   depth: number,
-  limit = GRAPH_NODE_LIMIT,
+  limit = GRAPH_NODE_LIMIT
 ): GraphProjection {
   const boundedLimit = Math.max(1, limit)
   const filesByPath = new Map(graph.files.map((file) => [file.path, file]))
   const validFocus = focus && filesByPath.has(focus) ? focus : null
   const edges = structuralFileEdges(graph)
   const selected = validFocus
-    ? focusedPaths(edges, validFocus, direction, Math.max(1, depth), boundedLimit)
+    ? focusedPaths(
+        edges,
+        validFocus,
+        direction,
+        Math.max(1, depth),
+        boundedLimit
+      )
     : overviewPaths(graph.files, boundedLimit)
   const selectedPaths = selected.paths
 
@@ -73,12 +79,15 @@ export function projectGraph(
       .filter((file) => selectedPaths.has(file.path))
       .sort((left, right) => left.path.localeCompare(right.path)),
     edges: edges
-      .filter((edge) => selectedPaths.has(edge.source) && selectedPaths.has(edge.target))
+      .filter(
+        (edge) =>
+          selectedPaths.has(edge.source) && selectedPaths.has(edge.target)
+      )
       .sort(
         (left, right) =>
           left.source.localeCompare(right.source) ||
           left.target.localeCompare(right.target) ||
-          left.resolver.localeCompare(right.resolver),
+          left.resolver.localeCompare(right.resolver)
       ),
     focus: validFocus,
     truncated: selected.truncated,
@@ -94,7 +103,7 @@ function overviewPaths(files: GraphFile[], limit: number): Selection {
     (left, right) =>
       graphFileReach(right) - graphFileReach(left) ||
       right.fan_in - left.fan_in ||
-      left.path.localeCompare(right.path),
+      left.path.localeCompare(right.path)
   )
   return {
     paths: new Set(ranked.slice(0, limit).map((file) => file.path)),
@@ -112,7 +121,7 @@ function focusedPaths(
   focus: string,
   direction: GraphDirection,
   depth: number,
-  limit: number,
+  limit: number
 ): Selection {
   const dependencies = new Map<string, string[]>()
   const dependents = new Map<string, string[]>()
@@ -154,19 +163,22 @@ function graphNeighbors(
   path: string,
   direction: GraphDirection,
   dependencies: Map<string, string[]>,
-  dependents: Map<string, string[]>,
+  dependents: Map<string, string[]>
 ): string[] {
   if (direction === "dependencies") return dependencies.get(path) ?? []
   if (direction === "dependents") return dependents.get(path) ?? []
-  return [...new Set([...(dependencies.get(path) ?? []), ...(dependents.get(path) ?? [])])].sort(
-    (left, right) => left.localeCompare(right),
-  )
+  return [
+    ...new Set([
+      ...(dependencies.get(path) ?? []),
+      ...(dependents.get(path) ?? []),
+    ]),
+  ].sort((left, right) => left.localeCompare(right))
 }
 
 export function searchGraphFiles(
   graph: DependencyGraph,
   query: string,
-  limit = GRAPH_SEARCH_LIMIT,
+  limit = GRAPH_SEARCH_LIMIT
 ): GraphFile[] {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return []
@@ -176,34 +188,76 @@ export function searchGraphFiles(
       (left, right) =>
         matchRank(left.path, normalized) - matchRank(right.path, normalized) ||
         graphFileReach(right) - graphFileReach(left) ||
-        left.path.localeCompare(right.path),
+        left.path.localeCompare(right.path)
     )
     .slice(0, Math.max(1, limit))
 }
 
 export function inspectGraphFile(
   graph: DependencyGraph,
-  path: string,
+  path: string
 ): GraphFileInspection | null {
   const file = graph.files.find((candidate) => candidate.path === path)
   if (!file) return null
 
-  const outgoing = graph.edge_list
-    .filter((edge) => edge.source === path)
-    .sort(compareGraphEdges)
-  const incoming = graph.edge_list
-    .filter((edge) => edge.target === path)
-    .sort(compareGraphEdges)
+  const { incoming, outgoing } = fileEdges(graph, path)
   const cycles = graph.cycles.filter((cycle) => cycle.includes(path))
   const isOrphan = graph.orphans.includes(path)
-  const roles: string[] = []
+  const prominence = graphProminence(file)
+  const symbolInspection = inspectFileSymbols(graph, path)
+
+  return {
+    file,
+    incoming,
+    outgoing,
+    cycles,
+    isOrphan,
+    roles: fileRoles(file, cycles, isOrphan, prominence),
+    prominence,
+    ...symbolInspection,
+    resolverUsage: resolverUsage([...incoming, ...outgoing]),
+  }
+}
+
+function fileEdges(
+  graph: DependencyGraph,
+  path: string
+): Pick<GraphFileInspection, "incoming" | "outgoing"> {
+  return {
+    outgoing: graph.edge_list
+      .filter((edge) => edge.source === path)
+      .sort(compareGraphEdges),
+    incoming: graph.edge_list
+      .filter((edge) => edge.target === path)
+      .sort(compareGraphEdges),
+  }
+}
+
+function inspectFileSymbols(
+  graph: DependencyGraph,
+  path: string
+): Pick<
+  GraphFileInspection,
+  "symbols" | "incomingSymbolEdges" | "outgoingSymbolEdges" | "symbolRelations"
+> {
   const symbols = (graph.symbols ?? [])
     .filter((symbol) => symbol.path === path)
-    .sort((left, right) => right.fan_in - left.fan_in || right.fan_out - left.fan_out || left.line - right.line)
+    .sort(
+      (left, right) =>
+        right.fan_in - left.fan_in ||
+        right.fan_out - left.fan_out ||
+        left.line - right.line
+    )
   const symbolIds = new Set(symbols.map((symbol) => symbol.id))
-  const incomingSymbolEdges = (graph.symbol_edges ?? []).filter((edge) => symbolIds.has(edge.target))
-  const outgoingSymbolEdges = (graph.symbol_edges ?? []).filter((edge) => symbolIds.has(edge.source))
-  const symbolsById = new Map((graph.symbols ?? []).map((symbol) => [symbol.id, symbol]))
+  const incomingSymbolEdges = (graph.symbol_edges ?? []).filter((edge) =>
+    symbolIds.has(edge.target)
+  )
+  const outgoingSymbolEdges = (graph.symbol_edges ?? []).filter((edge) =>
+    symbolIds.has(edge.source)
+  )
+  const symbolsById = new Map(
+    (graph.symbols ?? []).map((symbol) => [symbol.id, symbol])
+  )
   const symbolRelations = [
     ...incomingSymbolEdges.map((edge) => ({
       direction: "incoming" as const,
@@ -216,56 +270,83 @@ export function inspectGraphFile(
       symbol: symbolsById.get(edge.target),
     })),
   ]
-    .filter((entry): entry is { direction: "incoming" | "outgoing"; relation: string; symbol: GraphSymbol } => Boolean(entry.symbol))
-    .sort((left, right) =>
-      left.direction.localeCompare(right.direction)
-      || left.relation.localeCompare(right.relation)
-      || left.symbol.qualified_name.localeCompare(right.symbol.qualified_name),
+    .filter(
+      (
+        entry
+      ): entry is {
+        direction: "incoming" | "outgoing"
+        relation: string
+        symbol: GraphSymbol
+      } => Boolean(entry.symbol)
     )
-  const prominence = graphProminence(file)
-
-  if (cycles.length > 0) roles.push("Cycle member")
-  if (isOrphan) roles.push("Orphan candidate")
-  if (prominence.level !== "standard") roles.push(prominence.label)
-  if (prominence.level === "standard" && file.fan_in >= 2) roles.push("Shared dependency")
-  if (prominence.level === "standard" && file.fan_out >= 2) roles.push("Coordinator")
-  if (file.fan_in > 0 && file.fan_out > 0 && roles.length === 0) roles.push("Connector")
-  if (file.fan_in > 0 && file.fan_out === 0 && roles.length === 0) roles.push("Leaf dependency")
-  if (file.fan_in === 0 && file.fan_out > 0 && roles.length === 0) roles.push("Top-level consumer")
-  if (file.fan_in === 0 && file.fan_out === 0 && roles.length === 0) roles.push("Isolated")
-
-  const resolverCounts = new Map<string, number>()
-  const connections = new Map<string, GraphEdge>()
-  for (const edge of [...incoming, ...outgoing]) {
-    connections.set(`${edge.source}\0${edge.target}\0${edge.resolver}`, edge)
-  }
-  for (const edge of connections.values()) {
-    resolverCounts.set(edge.resolver, (resolverCounts.get(edge.resolver) ?? 0) + 1)
-  }
-
+    .sort(
+      (left, right) =>
+        left.direction.localeCompare(right.direction) ||
+        left.relation.localeCompare(right.relation) ||
+        left.symbol.qualified_name.localeCompare(right.symbol.qualified_name)
+    )
   return {
-    file,
-    incoming,
-    outgoing,
-    cycles,
-    isOrphan,
-    roles,
-    prominence,
     symbols,
     incomingSymbolEdges,
     outgoingSymbolEdges,
     symbolRelations,
-    resolverUsage: [...resolverCounts.entries()]
-      .map(([resolver, connections]) => ({ resolver, connections }))
-      .sort(
-        (left, right) =>
-          right.connections - left.connections || left.resolver.localeCompare(right.resolver),
-      ),
   }
 }
 
+function fileRoles(
+  file: GraphFile,
+  cycles: string[][],
+  isOrphan: boolean,
+  prominence: GraphProminence
+): string[] {
+  const roles: string[] = []
+  if (cycles.length > 0) roles.push("Cycle member")
+  if (isOrphan) roles.push("Orphan candidate")
+  if (prominence.level !== "standard") {
+    roles.push(prominence.label)
+  } else {
+    if (file.fan_in >= 2) roles.push("Shared dependency")
+    if (file.fan_out >= 2) roles.push("Coordinator")
+  }
+  if (roles.length === 0) roles.push(standardFileRole(file))
+  return roles
+}
+
+function standardFileRole(file: GraphFile): string {
+  if (file.fan_in > 0 && file.fan_out > 0) return "Connector"
+  if (file.fan_in > 0) return "Leaf dependency"
+  if (file.fan_out > 0) return "Top-level consumer"
+  return "Isolated"
+}
+
+function resolverUsage(edges: GraphEdge[]): GraphResolverUsage[] {
+  const resolverCounts = new Map<string, number>()
+  const connections = new Map<string, GraphEdge>()
+  for (const edge of edges) {
+    connections.set(`${edge.source}\0${edge.target}\0${edge.resolver}`, edge)
+  }
+  for (const edge of connections.values()) {
+    resolverCounts.set(
+      edge.resolver,
+      (resolverCounts.get(edge.resolver) ?? 0) + 1
+    )
+  }
+
+  return [...resolverCounts.entries()]
+    .map(([resolver, connections]) => ({ resolver, connections }))
+    .sort(
+      (left, right) =>
+        right.connections - left.connections ||
+        left.resolver.localeCompare(right.resolver)
+    )
+}
+
 export function graphProminence(
-  file: (Pick<GraphFile, "fan_in" | "fan_out" | "symbol_reach"> & { language?: string }) | null,
+  file:
+    | (Pick<GraphFile, "fan_in" | "fan_out" | "symbol_reach"> & {
+        language?: string
+      })
+    | null
 ): GraphProminence {
   if (!file) {
     return {
@@ -281,68 +362,12 @@ export function graphProminence(
   const dependents = file.fan_in
   const dependencies = file.fan_out
   if (file.language?.toLowerCase() === "go" && dependents >= 2) {
-    return {
-      level: dependents >= 5 || dependencies >= 8 ? "hub" : "notable",
-      label: "Package anchor",
-      reason: `${dependents} resolved Go package imports are anchored at this representative file${dependencies > 0 ? `; it also imports ${dependencies} packages` : ""}.`,
-      basis: "dependency",
-      reach: Math.max(dependents, dependencies),
-    }
+    return goProminence(dependents, dependencies)
   }
-  if (dependents >= 5 && dependencies >= 4) {
-    return {
-      level: "hub",
-      label: "Central hub",
-      reason: `${dependents} files depend on it and it coordinates ${dependencies} dependencies.`,
-      basis: "dependency",
-      reach: Math.max(dependents, dependencies),
-    }
-  }
-  if (dependents >= 5) {
-    return {
-      level: "hub",
-      label: "High-impact dependency",
-      reason: `${dependents} files directly depend on it through resolved relationships.`,
-      basis: "dependency",
-      reach: dependents,
-    }
-  }
-  if (dependencies >= 8) {
-    return {
-      level: "hub",
-      label: "Broad coordinator",
-      reason: `It coordinates ${dependencies} resolved direct dependencies.`,
-      basis: "dependency",
-      reach: dependencies,
-    }
-  }
-  if (dependents >= 2 && dependencies >= 4) {
-    return {
-      level: "notable",
-      label: "Connector",
-      reason: `${dependents} files depend on it and it coordinates ${dependencies} dependencies.`,
-      basis: "dependency",
-      reach: Math.max(dependents, dependencies),
-    }
-  }
-  if (dependents >= 2) {
-    return {
-      level: "notable",
-      label: "Shared dependency",
-      reason: `${dependents} files directly depend on it through resolved relationships.`,
-      basis: "dependency",
-      reach: dependents,
-    }
-  }
-  if (dependencies >= 4) {
-    return {
-      level: "notable",
-      label: "Coordinator",
-      reason: `It coordinates ${dependencies} resolved direct dependencies.`,
-      basis: "dependency",
-      reach: dependencies,
-    }
-  }
+  const rule = dependencyProminenceRules.find(({ matches }) =>
+    matches(dependents, dependencies)
+  )
+  if (rule) return rule.build(dependents, dependencies)
   return {
     level: "standard",
     label: "Standard",
@@ -352,23 +377,109 @@ export function graphProminence(
   }
 }
 
+function goProminence(
+  dependents: number,
+  dependencies: number
+): GraphProminence {
+  const detail =
+    dependencies > 0 ? `; it also imports ${dependencies} packages` : ""
+  return {
+    level: dependents >= 5 || dependencies >= 8 ? "hub" : "notable",
+    label: "Package anchor",
+    reason: `${dependents} resolved Go package imports are anchored at this representative file${detail}.`,
+    basis: "dependency",
+    reach: Math.max(dependents, dependencies),
+  }
+}
+
+interface DependencyProminenceRule {
+  matches: (dependents: number, dependencies: number) => boolean
+  build: (dependents: number, dependencies: number) => GraphProminence
+}
+
+const dependencyProminenceRules: DependencyProminenceRule[] = [
+  {
+    matches: (dependents, dependencies) => dependents >= 5 && dependencies >= 4,
+    build: (dependents, dependencies) => ({
+      level: "hub",
+      label: "Central hub",
+      reason: `${dependents} files depend on it and it coordinates ${dependencies} dependencies.`,
+      basis: "dependency",
+      reach: Math.max(dependents, dependencies),
+    }),
+  },
+  {
+    matches: (dependents) => dependents >= 5,
+    build: (dependents) => ({
+      level: "hub",
+      label: "High-impact dependency",
+      reason: `${dependents} files directly depend on it through resolved relationships.`,
+      basis: "dependency",
+      reach: dependents,
+    }),
+  },
+  {
+    matches: (_dependents, dependencies) => dependencies >= 8,
+    build: (_dependents, dependencies) => ({
+      level: "hub",
+      label: "Broad coordinator",
+      reason: `It coordinates ${dependencies} resolved direct dependencies.`,
+      basis: "dependency",
+      reach: dependencies,
+    }),
+  },
+  {
+    matches: (dependents, dependencies) => dependents >= 2 && dependencies >= 4,
+    build: (dependents, dependencies) => ({
+      level: "notable",
+      label: "Connector",
+      reason: `${dependents} files depend on it and it coordinates ${dependencies} dependencies.`,
+      basis: "dependency",
+      reach: Math.max(dependents, dependencies),
+    }),
+  },
+  {
+    matches: (dependents) => dependents >= 2,
+    build: (dependents) => ({
+      level: "notable",
+      label: "Shared dependency",
+      reason: `${dependents} files directly depend on it through resolved relationships.`,
+      basis: "dependency",
+      reach: dependents,
+    }),
+  },
+  {
+    matches: (_dependents, dependencies) => dependencies >= 4,
+    build: (_dependents, dependencies) => ({
+      level: "notable",
+      label: "Coordinator",
+      reason: `It coordinates ${dependencies} resolved direct dependencies.`,
+      basis: "dependency",
+      reach: dependencies,
+    }),
+  },
+]
+
 function symbolProminence(symbol: GraphSymbolReach): GraphProminence {
   const level = symbol.fan_in >= 5 ? "hub" : "notable"
-  const subject = symbol.kind === "interface" || symbol.kind === "trait"
-    ? symbol.kind
-    : symbol.kind === "class"
-      ? "class"
-      : "type"
-  const label = symbol.relation === "implements"
-    ? `Implemented ${subject}`
-    : symbol.relation === "embeds"
-      ? `Embedded ${subject}`
-      : `Base ${subject}`
-  const action = symbol.relation === "implements"
-    ? "implement"
-    : symbol.relation === "embeds"
-      ? "embed"
-      : "extend"
+  const subject =
+    symbol.kind === "interface" || symbol.kind === "trait"
+      ? symbol.kind
+      : symbol.kind === "class"
+        ? "class"
+        : "type"
+  const label =
+    symbol.relation === "implements"
+      ? `Implemented ${subject}`
+      : symbol.relation === "embeds"
+        ? `Embedded ${subject}`
+        : `Base ${subject}`
+  const action =
+    symbol.relation === "implements"
+      ? "implement"
+      : symbol.relation === "embeds"
+        ? "embed"
+        : "extend"
   return {
     level,
     label,
@@ -379,7 +490,9 @@ function symbolProminence(symbol: GraphSymbolReach): GraphProminence {
 }
 
 export function structuralFileEdges(graph: DependencyGraph): GraphEdge[] {
-  const symbols = new Map((graph.symbols ?? []).map((symbol) => [symbol.id, symbol]))
+  const symbols = new Map(
+    (graph.symbols ?? []).map((symbol) => [symbol.id, symbol])
+  )
   const edges = new Map<string, GraphEdge>()
   for (const edge of graph.edge_list) {
     edges.set(`${edge.source}\0${edge.target}\0${edge.resolver}`, edge)
@@ -397,7 +510,7 @@ export function structuralFileEdges(graph: DependencyGraph): GraphEdge[] {
 function graphFileReach(file: GraphFile): number {
   return Math.max(
     file.fan_in + file.fan_out,
-    (file.symbol_reach?.fan_in ?? 0) * 2 + (file.symbol_reach?.fan_out ?? 0),
+    (file.symbol_reach?.fan_in ?? 0) * 2 + (file.symbol_reach?.fan_out ?? 0)
   )
 }
 

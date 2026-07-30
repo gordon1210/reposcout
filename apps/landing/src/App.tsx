@@ -1,5 +1,4 @@
 import { useState } from "react"
-import type { CSSProperties } from "react"
 import type { LucideIcon } from "lucide-react"
 import {
   ArrowRight,
@@ -184,7 +183,12 @@ export function App() {
             <a href="#open-source">Open source</a>
           </nav>
 
-          <a className="header-github" href={githubUrl} target="_blank" rel="noreferrer">
+          <a
+            className="header-github"
+            href={githubUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
             <GitHubMark size={17} />
             <span>View on GitHub</span>
             <ArrowRight size={15} />
@@ -245,8 +249,9 @@ export function App() {
               </h1>
 
               <p className="hero-lede">
-                RepoScout turns an unfamiliar codebase into a compact, trustworthy map of
-                context size, complexity, duplication, risk, and change impact—in seconds.
+                RepoScout turns an unfamiliar codebase into a compact,
+                trustworthy map of context size, complexity, duplication, risk,
+                and change impact—in seconds.
               </p>
 
               <div className="hero-actions">
@@ -254,7 +259,12 @@ export function App() {
                   See the agent workflow
                   <ArrowRight size={18} />
                 </a>
-                <a className="button button--ghost" href={githubUrl} target="_blank" rel="noreferrer">
+                <a
+                  className="button button--ghost"
+                  href={githubUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   <GitHubMark size={18} />
                   GitHub
                 </a>
@@ -263,7 +273,11 @@ export function App() {
               <div className="install-command">
                 <Terminal size={16} aria-hidden="true" />
                 <code>{installCommand}</code>
-                <CopyButton copied={copied} onCopy={() => void copyInstall()} compact />
+                <CopyButton
+                  copied={copied}
+                  onCopy={() => void copyInstall()}
+                  compact
+                />
               </div>
 
               <div className="hero-proof" aria-label="Product qualities">
@@ -309,16 +323,25 @@ export function App() {
                 </span>
               </div>
 
-              <div className="hero-coordinate hero-coordinate--top" aria-hidden="true">
+              <div
+                className="hero-coordinate hero-coordinate--top"
+                aria-hidden="true"
+              >
                 52° / SIGNAL
               </div>
-              <div className="hero-coordinate hero-coordinate--bottom" aria-hidden="true">
+              <div
+                className="hero-coordinate hero-coordinate--bottom"
+                aria-hidden="true"
+              >
                 LOCAL / 0.1.0
               </div>
             </div>
           </div>
 
-          <div className="signal-ticker" aria-label="RepoScout analysis signals">
+          <div
+            className="signal-ticker"
+            aria-label="RepoScout analysis signals"
+          >
             <span>Tokens</span>
             <i />
             <span>Complexity</span>
@@ -343,8 +366,9 @@ export function App() {
                 <em>Engineer the context.</em>
               </h2>
               <p>
-                “Read the repo” is not a plan. RepoScout gives an agent enough evidence to choose
-                what matters, what can be skipped, and where a change is most likely to ripple.
+                “Read the repo” is not a plan. RepoScout gives an agent enough
+                evidence to choose what matters, what can be skipped, and where
+                a change is most likely to ripple.
               </p>
             </div>
             <div className="before-after">
@@ -366,7 +390,9 @@ export function App() {
           <div className="section-inner">
             <div className="section-heading">
               <div>
-                <div className="section-kicker section-kicker--light">Agent workflow</div>
+                <div className="section-kicker section-kicker--light">
+                  Agent workflow
+                </div>
                 <h2>
                   Give your agent a map,
                   <br />
@@ -374,8 +400,8 @@ export function App() {
                 </h2>
               </div>
               <p>
-                One compact scan becomes the first piece of context—before file reads, plans,
-                delegation, or edits.
+                One compact scan becomes the first piece of context—before file
+                reads, plans, delegation, or edits.
               </p>
             </div>
 
@@ -391,8 +417,9 @@ export function App() {
                 <div className="prompt-bubble">
                   <span className="prompt-avatar">YOU</span>
                   <p>
-                    Scout this repository before making changes. Tell me whether it fits context,
-                    what to skip, and where the highest risk lives.
+                    Scout this repository before making changes. Tell me whether
+                    it fits context, what to skip, and where the highest risk
+                    lives.
                   </p>
                 </div>
 
@@ -412,7 +439,9 @@ export function App() {
                   <FileSearch size={17} />
                   <span>
                     No source leaves the machine.
-                    <small>Discovery respects .gitignore and .reposcoutignore.</small>
+                    <small>
+                      Discovery respects .gitignore and .reposcoutignore.
+                    </small>
                   </span>
                 </div>
               </div>
@@ -428,7 +457,10 @@ export function App() {
                   <span>1.8 KB</span>
                 </div>
 
-                <div className="json-report" aria-label="Example RepoScout JSON summary">
+                <div
+                  className="json-report"
+                  aria-label="Example RepoScout JSON summary"
+                >
                   <div>
                     <span className="json-muted">{"{"}</span>
                   </div>
@@ -492,7 +524,9 @@ export function App() {
                   </span>
                   <div>
                     <small>AGENT VERDICT</small>
-                    <strong>Fits context. Read 4 risk-ranked files first.</strong>
+                    <strong>
+                      Fits context. Read 4 risk-ranked files first.
+                    </strong>
                   </div>
                 </div>
               </div>
@@ -512,7 +546,11 @@ export function App() {
           </div>
         </section>
 
-        <section className="signals section-pad" id="signals" data-parallax-section>
+        <section
+          className="signals section-pad"
+          id="signals"
+          data-parallax-section
+        >
           <div className="section-inner">
             <div className="section-heading section-heading--ink">
               <div>
@@ -524,7 +562,8 @@ export function App() {
                 </h2>
               </div>
               <p>
-                Every metric is designed to change what an agent reads, plans, or verifies next.
+                Every metric is designed to change what an agent reads, plans,
+                or verifies next.
               </p>
             </div>
 
@@ -533,7 +572,10 @@ export function App() {
                 const Icon = signal.icon
 
                 return (
-                  <article className={"signal-card " + signal.className} key={signal.label}>
+                  <article
+                    className={"signal-card " + signal.className}
+                    key={signal.label}
+                  >
                     <div className="signal-card__top">
                       <span className="signal-card__icon">
                         <Icon size={20} />
@@ -561,15 +603,15 @@ export function App() {
 
                     {index === 1 && (
                       <div className="risk-viz" aria-hidden="true">
-                        <span style={{ "--risk": "82%" } as CSSProperties}>
+                        <span className="risk-viz__high">
                           <i>scan.rs</i>
                           <b>0.82</b>
                         </span>
-                        <span style={{ "--risk": "61%" } as CSSProperties}>
+                        <span className="risk-viz__medium">
                           <i>graph.rs</i>
                           <b>0.61</b>
                         </span>
-                        <span style={{ "--risk": "43%" } as CSSProperties}>
+                        <span className="risk-viz__low">
                           <i>review.rs</i>
                           <b>0.43</b>
                         </span>
@@ -597,7 +639,9 @@ export function App() {
 
                     {index === 3 && (
                       <div className="impact-viz" aria-hidden="true">
-                        <div className="impact-node impact-node--changed">changed.ts</div>
+                        <div className="impact-node impact-node--changed">
+                          changed.ts
+                        </div>
                         <svg
                           className="impact-edge impact-edge--up"
                           viewBox="0 0 100 100"
@@ -623,7 +667,9 @@ export function App() {
                             markerEnd="url(#impact-arrow-up)"
                           />
                         </svg>
-                        <div className="impact-node impact-node--direct">direct.ts</div>
+                        <div className="impact-node impact-node--direct">
+                          direct.ts
+                        </div>
                         <svg
                           className="impact-edge impact-edge--down"
                           viewBox="0 0 100 100"
@@ -649,7 +695,9 @@ export function App() {
                             markerEnd="url(#impact-arrow-down)"
                           />
                         </svg>
-                        <div className="impact-node impact-node--transitive">route.ts</div>
+                        <div className="impact-node impact-node--transitive">
+                          route.ts
+                        </div>
                       </div>
                     )}
                   </article>
@@ -671,19 +719,23 @@ export function App() {
                 Or just <em>the fresh tracks.</em>
               </h2>
               <p>
-                Narrow every signal to staged work, your working tree, or a branch diff. Then
-                plan the changed files, tests, and dependents worth reading; review changed lines;
-                and gate regressions with the same contract.
+                Narrow every signal to staged work, your working tree, or a
+                branch diff. Then plan the changed files, tests, and dependents
+                worth reading; review changed lines; and gate regressions with
+                the same contract.
               </p>
               <a href={cliExamplesUrl} target="_blank" rel="noreferrer">
                 Explore the CLI examples <ArrowRight size={17} />
               </a>
             </div>
 
-            <div className="command-stack" aria-label="RepoScout change-aware command examples">
+            <div
+              className="command-stack"
+              aria-label="RepoScout change-aware command examples"
+            >
               <div>
                 <span>01</span>
-                <code>reposcout --working --context --impact .</code>
+                <code>reposcout --working --change-summary -f json .</code>
                 <GitBranch size={18} />
               </div>
               <div>
@@ -693,7 +745,9 @@ export function App() {
               </div>
               <div>
                 <span>03</span>
-                <code>reposcout --baseline baseline.json --fail-on-regression .</code>
+                <code>
+                  reposcout --baseline baseline.json --fail-on-regression .
+                </code>
                 <ShieldCheck size={18} />
               </div>
             </div>
@@ -710,8 +764,9 @@ export function App() {
                 Useful to <em>humans.</em>
               </h2>
               <p>
-                Human-readable terminal and Markdown reports share the same stable model as JSON,
-                NDJSON, and SARIF. No second source of truth.
+                Human-readable terminal and Markdown reports share the same
+                stable model as JSON, NDJSON, and SARIF. No second source of
+                truth.
               </p>
 
               <div className="format-row">
@@ -751,7 +806,9 @@ export function App() {
               <i />
               <strong>PHP</strong>
             </div>
-            <span className="language-strip__note">6 first-class · 31 recognized formats</span>
+            <span className="language-strip__note">
+              6 first-class · 31 recognized formats
+            </span>
           </div>
         </section>
 
@@ -764,13 +821,17 @@ export function App() {
             <div className="final-cta__icon">
               <img src={reposcoutIcon} alt="" />
             </div>
-            <div className="section-kicker section-kicker--light">Your repo has a signal</div>
+            <div className="section-kicker section-kicker--light">
+              Your repo has a signal
+            </div>
             <h2>
               Find it before
               <br />
               <em>your agent gets lost.</em>
             </h2>
-            <p>Fast to run. Small enough for context. Specific enough to act on.</p>
+            <p>
+              Fast to run. Small enough for context. Specific enough to act on.
+            </p>
 
             <div className="final-install">
               <Terminal size={18} aria-hidden="true" />
@@ -778,7 +839,12 @@ export function App() {
               <CopyButton copied={copied} onCopy={() => void copyInstall()} />
             </div>
 
-            <a className="final-github" href={githubUrl} target="_blank" rel="noreferrer">
+            <a
+              className="final-github"
+              href={githubUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
               <GitHubMark size={18} />
               Browse the source on GitHub
               <ArrowRight size={17} />

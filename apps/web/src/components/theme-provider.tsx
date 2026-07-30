@@ -1,24 +1,12 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
-type Theme = "dark" | "light" | "system"
+import { isTheme, ThemeContext, type Theme } from "@/components/theme-context"
 
 interface ThemeProviderProps {
-  children: React.ReactNode
+  children: ReactNode
   defaultTheme?: Theme
   storageKey?: string
 }
-
-interface ThemeProviderState {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-}
-
-const initialState: ThemeProviderState = {
-  theme: "system",
-  setTheme: () => undefined,
-}
-
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
 
 export function ThemeProvider({
   children,
@@ -26,8 +14,8 @@ export function ThemeProvider({
   storageKey = "reposcout-theme",
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(() => {
-    const stored = localStorage.getItem(storageKey) as Theme | null
-    return stored ?? defaultTheme
+    const stored = localStorage.getItem(storageKey)
+    return stored && isTheme(stored) ? stored : defaultTheme
   })
 
   useEffect(() => {
@@ -51,9 +39,5 @@ export function ThemeProvider({
     },
   }
 
-  return <ThemeProviderContext value={value}>{children}</ThemeProviderContext>
-}
-
-export function useTheme() {
-  return useContext(ThemeProviderContext)
+  return <ThemeContext value={value}>{children}</ThemeContext>
 }

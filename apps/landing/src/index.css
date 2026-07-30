@@ -1309,6 +1309,18 @@ img {
   content: "";
 }
 
+.risk-viz__high {
+  --risk: 82%;
+}
+
+.risk-viz__medium {
+  --risk: 61%;
+}
+
+.risk-viz__low {
+  --risk: 43%;
+}
+
 .risk-viz i,
 .risk-viz b {
   position: relative;

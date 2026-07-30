@@ -33,9 +33,15 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(new Date(value))
 }
 
-export function formatElapsed(startedAt: string | null, now: number): string | null {
+export function formatElapsed(
+  startedAt: string | null,
+  now: number
+): string | null {
   if (!startedAt) return null
-  const seconds = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000))
+  const seconds = Math.max(
+    0,
+    Math.floor((now - new Date(startedAt).getTime()) / 1000)
+  )
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   const remainder = seconds % 60

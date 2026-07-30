@@ -41,8 +41,12 @@ describe("graph routes", () => {
     }
     const path = graphRoutePath(configured)
 
-    expect(path).toBe("/graph/file/src/HttpClient.php?view=full&direction=dependents&depth=3")
-    expect(parseGraphRoute(path.split("?")[0], `?${path.split("?")[1]}`)).toEqual(configured)
+    expect(path).toBe(
+      "/graph/file/src/HttpClient.php?view=full&direction=dependents&depth=3"
+    )
+    expect(
+      parseGraphRoute(path.split("?")[0], `?${path.split("?")[1]}`)
+    ).toEqual(configured)
   })
 
   it("preserves literal percent sequences and rejects malformed or unsafe graph paths", () => {
@@ -63,10 +67,12 @@ describe("graph routes", () => {
   })
 
   it("falls back to safe control defaults for unsupported query values", () => {
-    expect(parseGraphRoute(
-      "/graph/file/src/app.ts",
-      "?view=magic&direction=sideways&depth=99",
-    )).toEqual({
+    expect(
+      parseGraphRoute(
+        "/graph/file/src/app.ts",
+        "?view=magic&direction=sideways&depth=99"
+      )
+    ).toEqual({
       kind: "file",
       focus: "src/app.ts",
       direction: "both",

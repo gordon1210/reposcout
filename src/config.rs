@@ -172,6 +172,8 @@ pub struct Config {
     pub graph_direction: crate::cli::GraphDirection,
     /// Analyze the dependents of a diff-scoped change set.
     pub impact: bool,
+    /// Assemble the bounded, change-focused decision report.
+    pub change_summary: bool,
     /// Filter findings to changed lines, optionally comparing both snapshots.
     pub review: Option<crate::cli::ReviewMode>,
     /// Built-in runtime execution profile selected by the caller.
@@ -240,6 +242,7 @@ impl Default for Config {
             graph_depth: 1,
             graph_direction: crate::cli::GraphDirection::Both,
             impact: false,
+            change_summary: false,
             review: None,
             execution_profile: "full".to_string(),
             config_mode: "defaults".to_string(),

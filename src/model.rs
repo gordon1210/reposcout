@@ -70,6 +70,10 @@ pub struct ScanReport {
     /// scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub impact: Option<ImpactAnalysis>,
+    /// Bounded, decision-oriented projection populated only by
+    /// `--change-summary`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_summary: Option<ChangeSummary>,
     /// Changed-line review, populated only by `--review`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<ReviewReport>,
@@ -763,6 +767,9 @@ pub struct CapabilitiesReport {
     pub error_formats: Vec<String>,
     pub max_graph_depth: usize,
     pub max_symbol_results: usize,
+    /// Contract and hard payload limits for the change-focused projection.
+    #[serde(default)]
+    pub change_summary: ChangeSummaryCapability,
     /// Maximum Type-2 candidate seed pairs examined in one format pool.
     #[serde(default)]
     pub type2_max_seed_pairs_per_pool: u64,
@@ -772,6 +779,17 @@ pub struct CapabilitiesReport {
     /// Maximum pairwise overlap checks during Type-2 suppression per pool.
     #[serde(default)]
     pub type2_max_overlap_checks_per_pool: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeSummaryCapability {
+    pub flag: String,
+    pub requires_one_of: Vec<String>,
+    pub implies: Vec<String>,
+    pub formats: Vec<String>,
+    pub max_path_entries: usize,
+    pub max_gap_entries: usize,
+    pub max_validations: usize,
 }
 
 /// A file that is almost certainly not hand-authored code an agent should read.
@@ -1183,6 +1201,155 @@ pub struct ImpactAnalysis {
     pub confidence: String,
 }
 
+/// Bounded, change-focused decision report assembled from shared scan,
+/// context, and graph facts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeSummary {
+    pub strategy_version: u32,
+    pub scope: String,
+    pub executive: ChangeExecutive,
+    pub changed: ChangeFileList,
+    pub reading_order: Vec<ChangeReadingFile>,
+    pub reading_order_total: usize,
+    pub reading_order_shown: usize,
+    pub reading_order_omitted: usize,
+    pub impact: ChangeImpactSummary,
+    pub tests: ChangeTestList,
+    pub coverage: ChangeCoverage,
+    pub validations: Vec<ChangeValidation>,
+    pub validations_omitted: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeExecutive {
+    pub changed_files: usize,
+    pub graph_eligible_changed_files: usize,
+    pub known_direct_dependents: usize,
+    pub known_transitive_dependents: usize,
+    pub matching_tests: usize,
+    /// `high`, `partial`, or `none`.
+    pub confidence: String,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeFileList {
+    pub total: usize,
+    pub shown: usize,
+    pub omitted: usize,
+    pub files: Vec<ChangeFile>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeFile {
+    pub path: String,
+    pub graph_eligible: bool,
+    pub graph_covered: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeReadingFile {
+    pub path: String,
+    pub roles: Vec<String>,
+    /// `high` or `partial`.
+    pub confidence: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolver: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeImpactSummary {
+    pub direct_total: usize,
+    pub transitive_total: usize,
+    pub shown: usize,
+    pub omitted: usize,
+    pub files: Vec<ChangeImpactFile>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeImpactFile {
+    pub path: String,
+    pub distance: usize,
+    /// Graph resolution is heuristic, so version one reports `partial`.
+    pub confidence: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolver: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeTestList {
+    pub total: usize,
+    pub shown: usize,
+    pub omitted: usize,
+    pub files: Vec<ChangeTestFile>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeTestFile {
+    pub path: String,
+    pub matched_sources: Vec<String>,
+    /// Filename/convention matching is useful but not measured coverage.
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeCoverage {
+    /// `high`, `partial`, `none`, or `not-applicable`.
+    pub observed_scope_confidence: String,
+    /// `high`, `partial`, or `none`.
+    pub discovery_completeness: String,
+    /// `partial`, `none`, or `not-applicable`.
+    pub test_mapping_confidence: String,
+    pub graph_eligible_changed: usize,
+    pub graph_covered_changed: usize,
+    pub non_graph_changed: usize,
+    pub relevant_gaps: ChangeGapCounts,
+    pub outside_known_scope_gaps: ChangeGapCounts,
+    pub gaps: Vec<ChangeGap>,
+    pub gaps_omitted: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeGapCounts {
+    pub unreadable_files: usize,
+    pub parse_errors: usize,
+    pub unresolved_imports: usize,
+    pub config_errors: usize,
+}
+
+impl ChangeGapCounts {
+    pub fn is_empty(&self) -> bool {
+        self.unreadable_files == 0
+            && self.parse_errors == 0
+            && self.unresolved_imports == 0
+            && self.config_errors == 0
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeGap {
+    pub path: String,
+    /// `changed`, `known-impact`, `selected-context`, or
+    /// `outside-known-scope`.
+    pub scope: String,
+    pub unreadable: bool,
+    pub parse_errors: usize,
+    pub unresolved_imports: usize,
+    pub config_errors: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeValidation {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    pub reason: String,
+    /// `high` for directly observed file categories, otherwise `partial`.
+    pub confidence: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LineRange {
     pub start: usize,
@@ -1408,6 +1575,23 @@ pub struct FindingDelta {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_scan_reports_default_the_additive_change_summary() {
+        let report: ScanReport = serde_json::from_value(serde_json::json!({
+            "schema_version": "1.0",
+            "root": "/tmp/example",
+            "target": "/tmp/example",
+            "generated_at": "2026-07-29T00:00:00Z",
+            "encoding": "o200k_base",
+            "summary": serde_json::to_value(Summary::default()).unwrap(),
+            "files": [],
+            "duplicates": serde_json::to_value(Duplication::default()).unwrap()
+        }))
+        .expect("legacy scan report");
+
+        assert!(report.change_summary.is_none());
+    }
 
     #[test]
     fn scan_diagnostics_default_and_expose_partial_type2_analysis() {

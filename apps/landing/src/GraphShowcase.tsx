@@ -37,7 +37,8 @@ const graphNodes: GraphNode[] = [
     kind: "SOURCE",
     language: "PHP",
     role: "BASE CLASS · 8",
-    summary: "Shared HTTP client behavior used across the application integration layer.",
+    summary:
+      "Shared HTTP client behavior used across the application integration layer.",
     relation: "8 resolved types directly extend HttpClient.",
     fanIn: 27,
     fanOut: 2,
@@ -54,8 +55,10 @@ const graphNodes: GraphNode[] = [
     kind: "CONTRACT",
     language: "PHP",
     role: "IMPLEMENTS",
-    summary: "The public transport contract implemented by the selected client hierarchy.",
-    relation: "HttpClient implements this interface through an explicit declaration.",
+    summary:
+      "The public transport contract implemented by the selected client hierarchy.",
+    relation:
+      "HttpClient implements this interface through an explicit declaration.",
     fanIn: 9,
     fanOut: 0,
     tokens: "214",
@@ -70,7 +73,8 @@ const graphNodes: GraphNode[] = [
     kind: "SOURCE",
     language: "PHP",
     role: "EXTENDS",
-    summary: "Symfony transport adapter that inherits the shared HTTP behavior.",
+    summary:
+      "Symfony transport adapter that inherits the shared HTTP behavior.",
     relation: "SymfonyClient directly extends HttpClient.",
     fanIn: 2,
     fanOut: 3,
@@ -102,8 +106,10 @@ const graphNodes: GraphNode[] = [
     kind: "SOURCE",
     language: "TypeScript",
     role: "ROUTE",
-    summary: "Checkout route that coordinates cart state and the typed API client.",
-    relation: "CheckoutPage imports api-client through a configured package alias.",
+    summary:
+      "Checkout route that coordinates cart state and the typed API client.",
+    relation:
+      "CheckoutPage imports api-client through a configured package alias.",
     fanIn: 1,
     fanOut: 4,
     tokens: "845",
@@ -150,7 +156,8 @@ const graphNodes: GraphNode[] = [
     kind: "SOURCE",
     language: "Go",
     role: "PACKAGE HUB",
-    summary: "Core payment orchestration shared by transport and worker entrypoints.",
+    summary:
+      "Core payment orchestration shared by transport and worker entrypoints.",
     relation: "4 Go files import the payments service package.",
     fanIn: 4,
     fanOut: 2,
@@ -196,14 +203,21 @@ const graphEdges = [
 
 export function GraphShowcase() {
   const [selectedId, setSelectedId] = useState("http-client")
-  const selected = graphNodes.find((node) => node.id === selectedId) ?? graphNodes[0]
+  const selected =
+    graphNodes.find((node) => node.id === selectedId) ?? graphNodes[0]
 
   return (
-    <section className="graph-feature section-pad" id="graph" data-parallax-section>
+    <section
+      className="graph-feature section-pad"
+      id="graph"
+      data-parallax-section
+    >
       <div className="section-inner">
         <div className="graph-feature__heading">
           <div>
-            <div className="section-kicker section-kicker--light">One topology · two interfaces</div>
+            <div className="section-kicker section-kicker--light">
+              One topology · two interfaces
+            </div>
             <h2>
               Explore the system.
               <br />
@@ -212,8 +226,9 @@ export function GraphShowcase() {
           </div>
           <div className="graph-feature__intro">
             <p>
-              Navigate mixed-language architecture in the dashboard, then ask the same stable
-              graph-focused questions from a terminal, script, or agent.
+              Navigate mixed-language architecture in the dashboard, then ask
+              the same stable graph-focused questions from a terminal, script,
+              or agent.
             </p>
             <div>
               <span>6 first-class languages</span>
@@ -225,7 +240,10 @@ export function GraphShowcase() {
 
         <div className="graph-preview">
           <div className="graph-preview__bar">
-            <div className="graph-breadcrumbs" aria-label="Example graph breadcrumb">
+            <div
+              className="graph-breadcrumbs"
+              aria-label="Example graph breadcrumb"
+            >
               <strong>Project</strong>
               <ChevronRight size={13} />
               <span>app</span>
@@ -235,7 +253,9 @@ export function GraphShowcase() {
               <span>Http</span>
             </div>
             <div className="graph-preview__modes" aria-hidden="true">
-              <span className="graph-preview__mode graph-preview__mode--active">Architecture</span>
+              <span className="graph-preview__mode graph-preview__mode--active">
+                Architecture
+              </span>
               <span className="graph-preview__mode">Relations</span>
             </div>
           </div>
@@ -262,13 +282,22 @@ export function GraphShowcase() {
               aria-label="Interactive example of a mixed-language repository graph"
             >
               <div className="graph-canvas__grid" aria-hidden="true" />
-              <div className="graph-boundary graph-boundary--php" aria-hidden="true">
+              <div
+                className="graph-boundary graph-boundary--php"
+                aria-hidden="true"
+              >
                 <span>backend · Composer / PHP</span>
               </div>
-              <div className="graph-boundary graph-boundary--typescript" aria-hidden="true">
+              <div
+                className="graph-boundary graph-boundary--typescript"
+                aria-hidden="true"
+              >
                 <span>web · npm / TypeScript</span>
               </div>
-              <div className="graph-boundary graph-boundary--go" aria-hidden="true">
+              <div
+                className="graph-boundary graph-boundary--go"
+                aria-hidden="true"
+              >
                 <span>payments · Go module</span>
               </div>
 
@@ -327,7 +356,8 @@ export function GraphShowcase() {
                   <strong>{node.file}</strong>
                   <span className="graph-node__path">{node.path}</span>
                   <span className="graph-node__facts">
-                    {node.tokens} tok&nbsp;&nbsp; {node.fanIn} in · {node.fanOut} out
+                    {node.tokens} tok&nbsp;&nbsp; {node.fanIn} in ·{" "}
+                    {node.fanOut} out
                   </span>
                 </button>
               ))}
@@ -371,7 +401,9 @@ export function GraphShowcase() {
                   <span>STRUCTURAL REACH</span>
                 </div>
                 <strong>{selected.relation}</strong>
-                <small>Resolved from explicit syntax and repository configuration.</small>
+                <small>
+                  Resolved from explicit syntax and repository configuration.
+                </small>
               </div>
 
               <div className="graph-inspector__metrics">
@@ -406,10 +438,13 @@ export function GraphShowcase() {
               </span>
             </div>
             <code>
-              <i>$</i> reposcout --graph-focus src/Http/HttpClient.php --graph-direction both
-              --graph-depth 2 -f json .
+              <i>$</i> reposcout --graph-focus src/Http/HttpClient.php
+              --graph-direction both --graph-depth 2 -f json .
             </code>
-            <div className="graph-cli__formats" aria-label="Available graph output formats">
+            <div
+              className="graph-cli__formats"
+              aria-label="Available graph output formats"
+            >
               <span>JSON</span>
               <span>DOT</span>
               <span>MERMAID</span>
@@ -423,7 +458,10 @@ export function GraphShowcase() {
               <Layers3 size={16} /> 01
             </span>
             <h3>Architecture before files</h3>
-            <p>Drill through useful scopes without wasting clicks on empty directory layers.</p>
+            <p>
+              Drill through useful scopes without wasting clicks on empty
+              directory layers.
+            </p>
           </article>
           <article>
             <span>
@@ -431,8 +469,8 @@ export function GraphShowcase() {
             </span>
             <h3>Evidence over guesses</h3>
             <p>
-              Imports and explicit extends, implements, trait, and embedding relations stay
-              distinct.
+              Imports and explicit extends, implements, trait, and embedding
+              relations stay distinct.
             </p>
           </article>
           <article>
@@ -441,8 +479,8 @@ export function GraphShowcase() {
             </span>
             <h3>Built for every consumer</h3>
             <p>
-              Humans explore visually; agents and automation consume bounded JSON, DOT, or
-              Mermaid.
+              Humans explore visually; agents and automation consume bounded
+              JSON, DOT, or Mermaid.
             </p>
           </article>
         </div>

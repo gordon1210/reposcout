@@ -49,7 +49,7 @@ narrowest reproducing command. Keep the same profile and analyzer options so the
 remains equivalent:
 
 ```sh
-reposcout --debug-log /tmp/reposcout-debug-2026-07-17.jsonl <path>
+reposcout --debug-log /tmp/reposcout-debug-2026-07-29.jsonl <path>
 ```
 
 The path must not exist. Inspect the last `stage_start`, `scan_stage`, or unmatched `file_start`
@@ -100,6 +100,8 @@ Interpret the response in this order:
    investigate.
 4. When full analysis is enabled, inspect `summary.duplication`, `summary.top_duplicates`, and
    `summary.top_hotspots` as prioritization signals rather than automatic refactoring decisions.
+   Raw duplication covers the configured health corpus, including tests; the cleanup assessment
+   separately uses production code and excludes direct Rust `#[cfg(test)]` regions.
 
 Request a bounded reading plan when the task needs source inspection:
 
@@ -154,13 +156,34 @@ Choose exactly one diff scope:
 For a reading plan and blast radius while keeping scan metrics change-scoped, run:
 
 ```sh
+reposcout --working --change-summary -f json <path>
+```
+
+Substitute the appropriate diff scope. `--change-summary` defaults to the `agent` profile, implies
+context and impact analysis, and emits only the bounded decision projection. Confirm that
+`capabilities.change_summary.flag` exists before using it with an older installed binary; otherwise
+fall back to:
+
+```sh
 reposcout -f json --summary --profile agent \
   --working --context --impact <path>
 ```
 
-Substitute the appropriate diff scope. Read `impact.confidence` and its diagnostics before relying
-on the dependent list. Use `context.files[].evidence` to distinguish changed files, tests,
-dependencies, and dependents.
+Interpret the concise response in this order:
+
+1. Read `change_summary.coverage`: `observed_scope_confidence` describes the known change
+   neighborhood, while `discovery_completeness` separately records repository-wide blind spots.
+2. Check `relevant_gaps` before `outside_known_scope_gaps`; distant gaps can hide an edge but are
+   not mislabeled as failures in the observed scope.
+3. Follow `reading_order`, then inspect bounded matching tests and impact entries. Matching tests
+   remain convention-based evidence, not measured coverage.
+4. Check every `omitted` counter. Capability discovery advertises the aggregate path, gap, and
+   validation limits.
+
+Use `--profile safe` explicitly for an untrusted checkout or `--profile full` only when the
+change decision also needs the full analyzer set. Request the existing detailed
+`--summary --context --impact` workflow when declaration outlines or complete context/impact
+blocks are actually needed.
 
 For finding-level review, enable the full analyzers and compare both snapshots when the task
 warrants the additional work:

@@ -22,7 +22,10 @@ function file(path: string, fanIn = 0, fanOut = 0): ExplorerFileSummary {
   }
 }
 
-function view(entities: ExplorerFileSummary[], connections: ExplorerConnection[] = []): ExplorerView {
+function view(
+  entities: ExplorerFileSummary[],
+  connections: ExplorerConnection[] = []
+): ExplorerView {
   return {
     presentation: "neighborhood",
     focusPath: null,
@@ -77,24 +80,31 @@ describe("graph explorer layout", () => {
       fileEdges: [{ source, target, resolver: "relative" }],
     }))
 
-    const layout = layoutExplorerView(view(entities, connections), "neighborhood")
+    const layout = layoutExplorerView(
+      view(entities, connections),
+      "neighborhood"
+    )
 
     expect(layout.groups.map((group) => group.group.path)).toEqual([
       "src/controllers",
       "src/services",
     ])
-    expect(layout.entities.get("file:src/controllers/a.ts")?.parentId).toBe("group:src/controllers")
+    expect(layout.entities.get("file:src/controllers/a.ts")?.parentId).toBe(
+      "group:src/controllers"
+    )
     expect(layout.entities.get("file:src/services/a.ts")).toMatchObject({
       parentId: "group:src/services",
       width: 270,
       height: 104,
     })
-    expect(layout.prominence.get("file:src/services/a.ts")?.level).toBe("notable")
+    expect(layout.prominence.get("file:src/services/a.ts")?.level).toBe(
+      "notable"
+    )
   })
 
   it("keeps group containers inside the hard 100-node render budget", () => {
     const entities = Array.from({ length: 99 }, (_, index) =>
-      file(`${index < 50 ? "src/a" : "src/b"}/file-${index}.ts`),
+      file(`${index < 50 ? "src/a" : "src/b"}/file-${index}.ts`)
     )
 
     const layout = layoutExplorerView(view(entities), "neighborhood")
@@ -157,15 +167,27 @@ describe("graph explorer layout", () => {
 
     const layout = layoutExplorerView(semantic, "type")
     const focusPlacement = layout.entities.get(focus.id)!
-    const incoming = layout.groups.find((group) => group.group.id === "relationship:incoming")!
-    const outgoing = layout.groups.find((group) => group.group.id === "relationship:outgoing")!
+    const incoming = layout.groups.find(
+      (group) => group.group.id === "relationship:incoming"
+    )!
+    const outgoing = layout.groups.find(
+      (group) => group.group.id === "relationship:outgoing"
+    )!
 
     expect(focusPlacement).toMatchObject({ width: 480, height: 176 })
     expect(focusPlacement).not.toHaveProperty("parentId")
-    expect(layout.entities.get(child.id)?.parentId).toBe("relationship:incoming")
-    expect(layout.entities.get(dependency.id)?.parentId).toBe("relationship:outgoing")
-    expect(incoming.position.x + incoming.width).toBeLessThan(focusPlacement.position.x)
-    expect(outgoing.position.x).toBeGreaterThan(focusPlacement.position.x + focusPlacement.width)
+    expect(layout.entities.get(child.id)?.parentId).toBe(
+      "relationship:incoming"
+    )
+    expect(layout.entities.get(dependency.id)?.parentId).toBe(
+      "relationship:outgoing"
+    )
+    expect(incoming.position.x + incoming.width).toBeLessThan(
+      focusPlacement.position.x
+    )
+    expect(outgoing.position.x).toBeGreaterThan(
+      focusPlacement.position.x + focusPlacement.width
+    )
     expect(layout.dense).toBe(false)
   })
 })

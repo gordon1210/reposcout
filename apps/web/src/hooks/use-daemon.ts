@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { daemonAuthHeaders, daemonEventsUrl } from "@/lib/daemon-auth"
+import { isDaemonSnapshot } from "@/lib/api-validation"
 import type { DaemonSnapshot } from "@/lib/types"
 
 export type ConnectionState = "connecting" | "live" | "offline"
@@ -21,7 +22,11 @@ async function fetchSnapshot(signal?: AbortSignal): Promise<DaemonSnapshot> {
   if (!response.ok) {
     throw new Error(`Snapshot request failed (${response.status})`)
   }
-  return (await response.json()) as DaemonSnapshot
+  const body: unknown = await response.json()
+  if (!isDaemonSnapshot(body)) {
+    throw new Error("Snapshot response had an invalid shape")
+  }
+  return body
 }
 
 export function useDaemon(): DaemonState {
@@ -37,7 +42,11 @@ export function useDaemon(): DaemonState {
       setError(null)
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return
-      setError(reason instanceof Error ? reason.message : "Failed to load daemon snapshot")
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Failed to load daemon snapshot"
+      )
     } finally {
       if (!signal?.aborted) setLoading(false)
     }

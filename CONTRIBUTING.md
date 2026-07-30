@@ -19,6 +19,7 @@ cargo build
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+pnpm lint:frontend
 pnpm build:web
 pnpm test:web
 pnpm build:landing

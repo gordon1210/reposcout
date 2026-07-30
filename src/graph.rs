@@ -94,6 +94,7 @@ struct Topology {
     parse_errors: usize,
     edge_resolvers: BTreeMap<(usize, usize), String>,
     config_errors: usize,
+    config_errors_by_path: BTreeMap<String, usize>,
     config_files: Vec<String>,
     symbols: Vec<GraphSymbol>,
     symbol_edges: Vec<GraphSymbolEdge>,
@@ -124,6 +125,15 @@ pub(crate) struct GraphAnalysis {
     pub report: DepGraph,
     pub signals: GraphSignals,
     topology: Topology,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct GraphDiagnosticFact {
+    pub path: String,
+    pub unreadable: bool,
+    pub parse_errors: usize,
+    pub unresolved_imports: usize,
+    pub config_errors: usize,
 }
 
 struct GraphQuery<'a> {
@@ -435,6 +445,38 @@ pub(crate) fn impact_from_analysis(
     impact_from_topology(&analysis.topology, changed)
 }
 
+pub(crate) fn diagnostic_facts(analysis: &GraphAnalysis) -> Vec<GraphDiagnosticFact> {
+    let topology = &analysis.topology;
+    let mut facts = BTreeMap::new();
+    for (index, path) in topology.graph_files.iter().enumerate() {
+        let unreadable = topology.unreadable_nodes.contains(&index);
+        let parse_errors = topology.parse_errors_by_node[index];
+        let unresolved_imports = topology.unresolved_by_node[index];
+        if unreadable || parse_errors > 0 || unresolved_imports > 0 {
+            facts.insert(
+                path.clone(),
+                GraphDiagnosticFact {
+                    path: path.clone(),
+                    unreadable,
+                    parse_errors,
+                    unresolved_imports,
+                    config_errors: 0,
+                },
+            );
+        }
+    }
+    for (path, config_errors) in &topology.config_errors_by_path {
+        facts
+            .entry(path.clone())
+            .or_insert_with(|| GraphDiagnosticFact {
+                path: path.clone(),
+                ..GraphDiagnosticFact::default()
+            })
+            .config_errors = *config_errors;
+    }
+    facts.into_values().collect()
+}
+
 /// Return direct graph context for one already-scanned file.
 pub fn explain(files: &[crate::model::FileReport], root: &Path, path: &Path) -> FileGraphContext {
     let paths: Vec<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
@@ -706,6 +748,12 @@ fn build_from_paths_with_query(
             .saturating_add(php_resolver.config_errors)
             .saturating_add(rust_resolver.config_errors)
             .saturating_add(go_resolver.config_errors),
+        config_errors_by_path: combined_config_errors([
+            &js_resolver.config_errors_by_path,
+            &php_resolver.config_errors_by_path,
+            &rust_resolver.config_errors_by_path,
+            &go_resolver.config_errors_by_path,
+        ]),
         config_files: combined_config_files([
             js_resolver.config_files.as_slice(),
             php_resolver.config_files.as_slice(),
@@ -1771,6 +1819,7 @@ struct RustResolver {
     ambiguous_crates: HashSet<String>,
     config_files: Vec<String>,
     config_errors: usize,
+    config_errors_by_path: BTreeMap<String, usize>,
 }
 
 #[derive(Clone)]
@@ -1787,6 +1836,7 @@ struct RustCrateTarget {
 
 #[derive(Clone)]
 struct RustPackage {
+    config_path: String,
     directory: String,
     names: Vec<String>,
     lib_path: String,
@@ -1823,15 +1873,19 @@ impl RustResolver {
         let mut packages = Vec::new();
         let mut config_files = Vec::new();
         let mut config_errors = 0usize;
+        let mut config_errors_by_path = BTreeMap::new();
         for relative in candidates {
             match read_cargo_package(access, &relative) {
                 Some(Ok(package)) => {
-                    config_files.push(relative);
+                    config_files.push(relative.clone());
                     if let Some(package) = package {
                         packages.push(package);
                     }
                 }
-                Some(Err(())) => config_errors = config_errors.saturating_add(1),
+                Some(Err(())) => {
+                    config_errors = config_errors.saturating_add(1);
+                    *config_errors_by_path.entry(relative).or_insert(0) += 1;
+                }
                 None => {}
             }
         }
@@ -1846,6 +1900,7 @@ impl RustResolver {
         resolver.config_files.sort();
         resolver.config_files.dedup();
         resolver.config_errors = resolver.config_errors.saturating_add(config_errors);
+        resolver.config_errors_by_path = config_errors_by_path;
 
         let node_set = rust_files.iter().cloned().collect::<HashSet<_>>();
         for package in packages {
@@ -1869,6 +1924,10 @@ impl RustResolver {
                     resolver.crates.remove(&name);
                     resolver.ambiguous_crates.insert(name);
                     resolver.config_errors = resolver.config_errors.saturating_add(1);
+                    *resolver
+                        .config_errors_by_path
+                        .entry(package.config_path.clone())
+                        .or_insert(0) += 1;
                 }
             }
         }
@@ -2155,6 +2214,7 @@ fn read_cargo_package(
     names.sort();
     names.dedup();
     Some(Ok(Some(RustPackage {
+        config_path: relative.to_string(),
         directory: directory.clone(),
         names,
         lib_path: join_graph_path(&directory, lib_path),
@@ -2228,6 +2288,7 @@ struct GoResolver {
     packages: BTreeMap<String, String>,
     config_files: Vec<String>,
     config_errors: usize,
+    config_errors_by_path: BTreeMap<String, usize>,
 }
 
 struct GoModule {
@@ -2300,9 +2361,16 @@ impl GoResolver {
                         });
                     } else {
                         resolver.config_errors = resolver.config_errors.saturating_add(1);
+                        *resolver
+                            .config_errors_by_path
+                            .entry(relative.clone())
+                            .or_insert(0) += 1;
                     }
                 }
-                Some(Err(())) => resolver.config_errors = resolver.config_errors.saturating_add(1),
+                Some(Err(())) => {
+                    resolver.config_errors = resolver.config_errors.saturating_add(1);
+                    *resolver.config_errors_by_path.entry(relative).or_insert(0) += 1;
+                }
                 None => {}
             }
         }
@@ -2402,6 +2470,7 @@ struct PhpResolver {
     mappings: Vec<PhpMapping>,
     config_files: Vec<String>,
     config_errors: usize,
+    config_errors_by_path: BTreeMap<String, usize>,
 }
 
 struct PhpMapping {
@@ -2449,7 +2518,10 @@ impl PhpResolver {
                     resolver.mappings.extend(mappings);
                 }
                 Some(Ok(_)) => {}
-                Some(Err(())) => resolver.config_errors += 1,
+                Some(Err(())) => {
+                    resolver.config_errors += 1;
+                    *resolver.config_errors_by_path.entry(relative).or_insert(0) += 1;
+                }
                 None => {}
             }
         }
@@ -2677,6 +2749,19 @@ fn combined_config_files<'a>(groups: impl IntoIterator<Item = &'a [String]>) -> 
     files
 }
 
+fn combined_config_errors<'a>(
+    groups: impl IntoIterator<Item = &'a BTreeMap<String, usize>>,
+) -> BTreeMap<String, usize> {
+    let mut combined = BTreeMap::new();
+    for group in groups {
+        for (path, count) in group {
+            let entry = combined.entry(path.clone()).or_insert(0usize);
+            *entry = entry.saturating_add(*count);
+        }
+    }
+    combined
+}
+
 fn python_root_rank(importer_rel: &str, root: &str) -> usize {
     if root.is_empty() {
         return 1;
@@ -2710,6 +2795,7 @@ struct JsResolver {
     ambiguous_packages: HashSet<String>,
     config_files: Vec<String>,
     config_errors: usize,
+    config_errors_by_path: BTreeMap<String, usize>,
 }
 
 struct TsConfig {
@@ -2821,7 +2907,13 @@ impl JsResolver {
                         })
                         .or_insert(config);
                 }
-                Some(Err(())) => resolver.config_errors += 1,
+                Some(Err(())) => {
+                    resolver.config_errors += 1;
+                    *resolver
+                        .config_errors_by_path
+                        .entry(relative.clone())
+                        .or_insert(0) += 1;
+                }
                 None => {}
             }
         }
@@ -2829,7 +2921,7 @@ impl JsResolver {
             match read_package_config(access, &relative) {
                 Some(Ok(package)) => {
                     if package.name.is_some() || package.has_exports || package.has_imports {
-                        resolver.config_files.push(relative);
+                        resolver.config_files.push(relative.clone());
                     }
                     resolver
                         .packages_by_directory
@@ -2842,10 +2934,17 @@ impl JsResolver {
                             resolver.packages.remove(&name);
                             resolver.ambiguous_packages.insert(name);
                             resolver.config_errors += 1;
+                            *resolver
+                                .config_errors_by_path
+                                .entry(relative.clone())
+                                .or_insert(0) += 1;
                         }
                     }
                 }
-                Some(Err(())) => resolver.config_errors += 1,
+                Some(Err(())) => {
+                    resolver.config_errors += 1;
+                    *resolver.config_errors_by_path.entry(relative).or_insert(0) += 1;
+                }
                 None => {}
             }
         }
@@ -4641,6 +4740,39 @@ var ignored = "example.com/project/not-an-import"
         );
         assert_eq!(impact.config_errors, 1);
         assert_eq!(impact.confidence, "partial");
+    }
+
+    #[test]
+    fn diagnostic_facts_merge_all_errors_for_the_same_path() {
+        let analysis = GraphAnalysis {
+            report: DepGraph::default(),
+            signals: GraphSignals::default(),
+            topology: Topology {
+                graph_files: vec!["src/main.rs".to_string()],
+                edges: Vec::new(),
+                unresolved_imports: 2,
+                unresolved_by_node: vec![2],
+                parse_errors_by_node: vec![1],
+                unreadable_nodes: HashSet::new(),
+                parse_errors: 1,
+                edge_resolvers: BTreeMap::new(),
+                config_errors: 3,
+                config_errors_by_path: BTreeMap::from([("src/main.rs".to_string(), 3)]),
+                config_files: Vec::new(),
+                symbols: Vec::new(),
+                symbol_edges: Vec::new(),
+                unresolved_symbol_relations: 0,
+                unresolved_symbol_relations_by_path: HashMap::new(),
+            },
+        };
+
+        let facts = diagnostic_facts(&analysis);
+
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].path, "src/main.rs");
+        assert_eq!(facts[0].parse_errors, 1);
+        assert_eq!(facts[0].unresolved_imports, 2);
+        assert_eq!(facts[0].config_errors, 3);
     }
 
     #[test]

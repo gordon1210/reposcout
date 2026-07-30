@@ -8,7 +8,7 @@
 use crate::config::Config;
 use crate::fs_budget::{self, DEFAULT_MAX_CACHE_FILE_BYTES, ReadOutcome};
 use crate::lang::{HealthInclude, HealthScope};
-use crate::model::{FileReport, SCHEMA_VERSION, SymbolOutline};
+use crate::model::{FileReport, LineRange, SCHEMA_VERSION, SymbolOutline};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,8 @@ struct Entry {
     hash: u64,
     report: FileReport,
     #[serde(default)]
+    test_regions: Vec<LineRange>,
+    #[serde(default)]
     symbol_outlines: Option<Vec<SymbolOutline>>,
     #[serde(default)]
     graph_facts: Option<crate::graph::SourceFacts>,
@@ -33,6 +35,7 @@ struct Entry {
 
 pub(crate) struct CachedAnalysis {
     pub report: FileReport,
+    pub test_regions: Vec<LineRange>,
     pub symbol_outlines: Option<Vec<SymbolOutline>>,
     pub graph_facts: Option<crate::graph::SourceFacts>,
 }
@@ -101,7 +104,7 @@ pub struct CacheClearResult {
 }
 
 /// Bump when cached per-file analysis facts are added or changed.
-const ANALYZER_VERSION: &str = "14";
+const ANALYZER_VERSION: &str = "15";
 
 /// The configuration that can change a cached per-file analysis entry.
 ///
@@ -232,6 +235,7 @@ impl Cache {
             .insert(rel.to_string(), entry.clone());
         Some(CachedAnalysis {
             report: entry.report.clone(),
+            test_regions: entry.test_regions.clone(),
             symbol_outlines: entry.symbol_outlines.clone(),
             graph_facts: entry.graph_facts.clone(),
         })
@@ -242,6 +246,7 @@ impl Cache {
         rel: &str,
         hash: u64,
         report: &FileReport,
+        test_regions: &[LineRange],
         symbol_outlines: Option<&[SymbolOutline]>,
         graph_facts: Option<&crate::graph::SourceFacts>,
     ) {
@@ -253,6 +258,7 @@ impl Cache {
             Entry {
                 hash,
                 report: report.clone(),
+                test_regions: test_regions.to_vec(),
                 symbol_outlines: symbol_outlines.map(<[SymbolOutline]>::to_vec),
                 graph_facts: graph_facts.cloned(),
             },
@@ -425,7 +431,7 @@ mod tests {
     };
     use crate::config::{Config, Enabled};
     use crate::lang::{HealthInclude, HealthScope};
-    use crate::model::{FileReport, SymbolOutline};
+    use crate::model::{FileReport, LineRange, SymbolOutline};
     use std::collections::{BTreeMap, HashMap};
     use std::path::PathBuf;
 
@@ -456,6 +462,7 @@ mod tests {
         Entry {
             hash,
             report: report(path),
+            test_regions: Vec::new(),
             symbol_outlines: None,
             graph_facts: None,
         }
@@ -633,7 +640,7 @@ mod tests {
             misses: Default::default(),
             enrichments: Default::default(),
         };
-        cache.put("new.rs", 2, &report("new.rs"), None, None);
+        cache.put("new.rs", 2, &report("new.rs"), &[], None, None);
         cache.save(false).unwrap();
         let merged = load(&path, "test-key").unwrap();
         assert_eq!(merged.len(), 2);
@@ -650,7 +657,7 @@ mod tests {
             misses: Default::default(),
             enrichments: Default::default(),
         };
-        cache.put("new.rs", 2, &report("new.rs"), None, None);
+        cache.put("new.rs", 2, &report("new.rs"), &[], None, None);
         cache.save(true).unwrap();
         let pruned = load(&cache.path, "test-key").unwrap();
         assert_eq!(
@@ -681,7 +688,14 @@ mod tests {
             reasons: vec!["exported/public declaration".to_string()],
         };
 
-        cache.put("lib.rs", 42, &report("lib.rs"), Some(&[outline]), None);
+        cache.put(
+            "lib.rs",
+            42,
+            &report("lib.rs"),
+            &[LineRange { start: 8, end: 12 }],
+            Some(&[outline]),
+            None,
+        );
         cache.save(true).unwrap();
         let loaded = Cache {
             enabled: true,
@@ -700,6 +714,9 @@ mod tests {
         assert_eq!(outlines[0].name, "PublicValue");
         assert_eq!(outlines[0].line, 3);
         assert!(outlines[0].exported);
+        assert_eq!(cached.test_regions.len(), 1);
+        assert_eq!(cached.test_regions[0].start, 8);
+        assert_eq!(cached.test_regions[0].end, 12);
     }
 
     #[test]
@@ -720,7 +737,7 @@ mod tests {
             "lib.rs",
             "pub trait Service {}\npub struct App;\nimpl Service for App {}\n",
         );
-        cache.put("lib.rs", 42, &report("lib.rs"), None, Some(&facts));
+        cache.put("lib.rs", 42, &report("lib.rs"), &[], None, Some(&facts));
         cache.save(true).unwrap();
 
         let loaded = Cache {

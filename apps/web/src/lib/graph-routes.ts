@@ -25,7 +25,10 @@ const GRAPH_PATH = "/graph"
 const SCOPE_PATH = `${GRAPH_PATH}/scope`
 const FILE_PATH = `${GRAPH_PATH}/file`
 
-export function parseGraphRoute(pathname: string, search = ""): GraphRoute | null {
+export function parseGraphRoute(
+  pathname: string,
+  search = ""
+): GraphRoute | null {
   const path = stripTrailingSlashes(pathname)
   if (path === GRAPH_PATH) return GRAPH_ROOT_ROUTE
 
@@ -44,7 +47,7 @@ export function parseGraphRoute(pathname: string, search = ""): GraphRoute | nul
     kind: "file",
     focus,
     direction: parseDirection(params.get("direction")),
-    depth: parseDepth(params.get("depth")),
+    depth: parseGraphRouteDepth(params.get("depth")),
     presentation: parsePresentation(params.get("view")),
   }
 }
@@ -76,9 +79,16 @@ function encodeRepositoryPath(path: string): string {
 function decodeRepositoryPath(path: string): string | null {
   if (!path) return null
   try {
-    const segments = path.split("/").map((segment) => decodeURIComponent(segment))
-    const invalid = segments.some((segment) =>
-      !segment || segment === "." || segment === ".." || segment.includes("/") || segment.includes("\0")
+    const segments = path
+      .split("/")
+      .map((segment) => decodeURIComponent(segment))
+    const invalid = segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment.includes("/") ||
+        segment.includes("\0")
     )
     if (invalid) return null
     return segments.join("/")
@@ -97,13 +107,15 @@ function parseDirection(value: string | null): GraphDirection {
   return "both"
 }
 
-function parseDepth(value: string | null): GraphRouteDepth {
+export function parseGraphRouteDepth(value: string | null): GraphRouteDepth {
   if (value === "1") return 1
   if (value === "3") return 3
   return 2
 }
 
-function parsePresentation(value: string | null): ExplorerNeighborhoodPresentation {
+function parsePresentation(
+  value: string | null
+): ExplorerNeighborhoodPresentation {
   if (value === "full" || value === "type") return value
   return "auto"
 }

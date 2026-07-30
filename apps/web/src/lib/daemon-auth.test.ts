@@ -16,7 +16,9 @@ describe("daemon browser authentication", () => {
 
     window.history.replaceState(null, "", "/#section-heading")
 
-    expect(daemonAuthHeaders().get("Authorization")).toBe(`Bearer ${VALID_TOKEN}`)
+    expect(daemonAuthHeaders().get("Authorization")).toBe(
+      `Bearer ${VALID_TOKEN}`
+    )
   })
 
   it("does not replace a stored token with a malformed named token fragment", () => {
@@ -25,7 +27,9 @@ describe("daemon browser authentication", () => {
 
     window.history.replaceState(null, "", "/#token=section-heading")
 
-    expect(daemonAuthHeaders().get("Authorization")).toBe(`Bearer ${VALID_TOKEN}`)
+    expect(daemonAuthHeaders().get("Authorization")).toBe(
+      `Bearer ${VALID_TOKEN}`
+    )
   })
 
   it("does not authenticate with a malformed query token", () => {

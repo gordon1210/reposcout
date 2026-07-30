@@ -11,9 +11,13 @@ import type { DaemonSnapshot } from "@/lib/types"
 import { makeReport, makeSnapshot } from "@/test/fixtures"
 
 vi.mock("@/components/repository-graph", () => ({
-  RepositoryGraph: ({ revision, report }: { revision: number; report: { root: string } }) => (
-    <div data-report-root={report.root}>Graph for revision {revision}</div>
-  ),
+  RepositoryGraph: ({
+    revision,
+    report,
+  }: {
+    revision: number
+    report: { root: string }
+  }) => <div data-report-root={report.root}>Graph for revision {revision}</div>,
 }))
 
 function DashboardHarness({
@@ -45,7 +49,7 @@ function DashboardHarness({
 function renderDashboard(
   snapshot = makeSnapshot(),
   loading = false,
-  initialTab: DashboardTab = "overview",
+  initialTab: DashboardTab = "overview"
 ) {
   const onRescan = vi.fn().mockResolvedValue(undefined)
   render(
@@ -58,7 +62,7 @@ function renderDashboard(
           initialTab={initialTab}
         />
       </TooltipProvider>
-    </ThemeProvider>,
+    </ThemeProvider>
   )
   return { onRescan }
 }
@@ -67,13 +71,19 @@ describe("Dashboard", () => {
   it("shows a bounded loading state before the first report", () => {
     renderDashboard(
       makeSnapshot({ status: "starting", report: null, scan_started_at: null }),
-      true,
+      true
     )
 
-    expect(screen.getByRole("heading", { name: "RepoScout" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "RepoScout" })
+    ).toBeInTheDocument()
     expect(screen.getByRole("img", { name: "RepoScout" })).toBeInTheDocument()
-    expect(screen.getByLabelText("Loading repository metrics")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Run repository scan" })).toBeDisabled()
+    expect(
+      screen.getByLabelText("Loading repository metrics")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Run repository scan" })
+    ).toBeDisabled()
   })
 
   it("keeps the previous report visible during a long scan", () => {
@@ -81,7 +91,7 @@ describe("Dashboard", () => {
       makeSnapshot({
         status: "scanning",
         scan_started_at: new Date(Date.now() - 65_000).toISOString(),
-      }),
+      })
     )
 
     expect(screen.getByText("Scanning")).toBeInTheDocument()
@@ -91,7 +101,9 @@ describe("Dashboard", () => {
     expect(screen.queryByText("1,234 total")).not.toBeInTheDocument()
     expect(screen.getByText("Not run")).toBeInTheDocument()
     expect(screen.getByText("lite profile")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Run repository scan" })).toBeDisabled()
+    expect(
+      screen.getByRole("button", { name: "Run repository scan" })
+    ).toBeDisabled()
   })
 
   it("navigates to risk details without replacing the report", async () => {
@@ -112,21 +124,33 @@ describe("Dashboard", () => {
       cyclomatic: 9,
       functions: [
         { name: "first", line: 1, cyclomatic: 3, cognitive: 2, max_nesting: 1 },
-        { name: "second", line: 10, cyclomatic: 5, cognitive: 4, max_nesting: 2 },
+        {
+          name: "second",
+          line: 10,
+          cyclomatic: 5,
+          cognitive: 4,
+          max_nesting: 2,
+        },
       ],
     }
 
     renderDashboard(makeSnapshot({ report }), false, "files")
 
     const table = screen.getByRole("table", { name: "Repository files" })
-    expect(within(table).getByRole("button", { name: "Sort by Cyclomatic total" })).toBeInTheDocument()
-    expect(within(table).getByRole("button", { name: "Sort by Cyclomatic avg" })).toBeInTheDocument()
+    expect(
+      within(table).getByRole("button", { name: "Sort by Cyclomatic total" })
+    ).toBeInTheDocument()
+    expect(
+      within(table).getByRole("button", { name: "Sort by Cyclomatic avg" })
+    ).toBeInTheDocument()
 
     const measured = within(table).getByRole("row", { name: /src\/lib\.rs/ })
     expect(within(measured).getByText("9")).toBeInTheDocument()
     expect(within(measured).getByText("4.0")).toBeInTheDocument()
 
-    const withoutCallables = within(table).getByRole("row", { name: /src\/main\.rs/ })
+    const withoutCallables = within(table).getByRole("row", {
+      name: /src\/main\.rs/,
+    })
     expect(within(withoutCallables).getByText("-")).toBeInTheDocument()
   })
 
@@ -158,7 +182,10 @@ describe("Dashboard", () => {
 
     await user.click(screen.getByRole("tab", { name: "Graph" }))
 
-    expect(await screen.findByText("Graph for revision 12")).toHaveAttribute("data-report-root", "/workspace/repo")
+    expect(await screen.findByText("Graph for revision 12")).toHaveAttribute(
+      "data-report-root",
+      "/workspace/repo"
+    )
   })
 
   it("shows ranked exact and Type-2 duplicate blocks", async () => {
@@ -204,7 +231,9 @@ describe("Dashboard", () => {
 
     await user.click(screen.getByRole("tab", { name: "Duplication" }))
 
-    expect(screen.getByText("No duplicate blocks met the configured thresholds.")).toBeInTheDocument()
+    expect(
+      screen.getByText("No duplicate blocks met the configured thresholds.")
+    ).toBeInTheDocument()
   })
 
   it("shows when duplication was not run", async () => {
@@ -213,8 +242,12 @@ describe("Dashboard", () => {
 
     await user.click(screen.getByRole("tab", { name: "Duplication" }))
 
-    expect(screen.getByText("Duplication analysis was not run for this report.")).toBeInTheDocument()
-    expect(screen.getByText("No duplication data is available.")).toBeInTheDocument()
+    expect(
+      screen.getByText("Duplication analysis was not run for this report.")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("No duplication data is available.")
+    ).toBeInTheDocument()
   })
 
   it("renders findings that share a fingerprint without duplicate React keys", async () => {
@@ -229,14 +262,18 @@ describe("Dashboard", () => {
         primary_location: { path: "src/main.rs", start_line: 24, end_line: 30 },
       },
     ]
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined)
 
     try {
       renderDashboard(makeSnapshot({ report }))
       await user.click(screen.getByRole("tab", { name: "Findings" }))
 
       expect(screen.getByText("TODO marker")).toBeInTheDocument()
-      expect(screen.getByText("Same duplicate family at another location")).toBeInTheDocument()
+      expect(
+        screen.getByText("Same duplicate family at another location")
+      ).toBeInTheDocument()
       expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key")
     } finally {
       consoleError.mockRestore()

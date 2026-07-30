@@ -10,6 +10,20 @@ import {
   type TypeNeighborhoodDirection,
   type TypeNeighborhoodFamily,
 } from "@/lib/graph-type-neighborhood"
+import {
+  classifyFile,
+  type ExplorerFileCategory,
+} from "@/lib/graph-file-classification"
+import {
+  fileId,
+  joinPath,
+  normalizeScope,
+  pathInScope,
+  pathParent,
+  relativeToScope,
+  scopeId,
+} from "@/lib/graph-explorer-paths"
+import { compareGraphEdges, fileMatchRank } from "@/lib/graph-explorer-ranking"
 import type {
   DependencyGraph,
   FileReport,
@@ -26,13 +40,10 @@ export const EXPLORER_NODE_LIMIT = 100
 export type ExplorerPresentation = "architecture" | "neighborhood" | "type"
 export type ExplorerNeighborhoodPresentation = "auto" | "full" | "type"
 
-export type ExplorerFileCategory =
-  | "source"
-  | "test"
-  | "config"
-  | "schema"
-  | "entrypoint"
-  | "generated"
+export {
+  classifyFile,
+  type ExplorerFileCategory,
+} from "@/lib/graph-file-classification"
 
 export interface ExplorerLanguageStat {
   name: string
@@ -101,7 +112,15 @@ export interface ExplorerConnection {
   source: string
   target: string
   count: number
-  relation: "imports" | "includes" | "declares-module" | "imports-package" | "extends" | "implements" | "embeds" | "mixed"
+  relation:
+    | "imports"
+    | "includes"
+    | "declares-module"
+    | "imports-package"
+    | "extends"
+    | "implements"
+    | "embeds"
+    | "mixed"
   resolvers: ExplorerResolverUsage[]
   fileEdges: GraphEdge[]
 }
@@ -142,7 +161,7 @@ export interface RepositoryGraphExplorer {
     path: string,
     direction: GraphDirection,
     depth: number,
-    presentation?: ExplorerNeighborhoodPresentation,
+    presentation?: ExplorerNeighborhoodPresentation
   ): ExplorerView
   inspectScope(scopePath: string): ExplorerScopeInspection
   inspectFile(path: string): ExplorerFileInspection | null
@@ -183,9 +202,11 @@ const PACKAGE_MANIFESTS = new Set([
 
 export function buildRepositoryGraphExplorer(
   graph: DependencyGraph,
-  report: ScanReport,
+  report: ScanReport
 ): RepositoryGraphExplorer {
-  const reportFiles = [...report.files].sort((left, right) => left.path.localeCompare(right.path))
+  const reportFiles = [...report.files].sort((left, right) =>
+    left.path.localeCompare(right.path)
+  )
   const indexes: ModelIndexes = {
     graph,
     structuralEdges: structuralFileEdges(graph),
@@ -195,9 +216,11 @@ export function buildRepositoryGraphExplorer(
     graphFilesByPath: new Map(graph.files.map((file) => [file.path, file])),
     findingsByPath: groupByPath(
       report.finding_catalog.findings,
-      (finding) => finding.primary_location.path,
+      (finding) => finding.primary_location.path
     ),
-    risksByPath: new Map(report.summary.top_risks.map((risk) => [risk.path, risk])),
+    risksByPath: new Map(
+      report.summary.top_risks.map((risk) => [risk.path, risk])
+    ),
     anchorDirectories: anchorDirectories(graph, reportFiles),
   }
 
@@ -205,7 +228,8 @@ export function buildRepositoryGraphExplorer(
     view: (scopePath) => buildView(indexes, normalizeScope(scopePath)),
     neighborhood: (path, direction, depth, presentation = "auto") =>
       buildNeighborhood(indexes, path, direction, depth, presentation),
-    inspectScope: (scopePath) => inspectScope(indexes, normalizeScope(scopePath)),
+    inspectScope: (scopePath) =>
+      inspectScope(indexes, normalizeScope(scopePath)),
     inspectFile: (path) => inspectFile(indexes, path),
     search: (query, limit = 10) => searchFiles(indexes, query, limit),
     parentScope: (path) => pathParent(path),
@@ -230,10 +254,12 @@ function buildView(indexes: ModelIndexes, scopePath: string): ExplorerView {
     const targetInside = pathInScope(edge.target, scopePath)
     if (!sourceInside && !targetInside) continue
 
-    const source = mappedGraphFiles.get(edge.source)
-      ?? ensureBoundaryEntity(indexes, entities, scopePath, edge.source)
-    const target = mappedGraphFiles.get(edge.target)
-      ?? ensureBoundaryEntity(indexes, entities, scopePath, edge.target)
+    const source =
+      mappedGraphFiles.get(edge.source) ??
+      ensureBoundaryEntity(indexes, entities, scopePath, edge.source)
+    const target =
+      mappedGraphFiles.get(edge.target) ??
+      ensureBoundaryEntity(indexes, entities, scopePath, edge.target)
     if (source === target) continue
     connectionEdges.push([edge, source, target])
   }
@@ -242,7 +268,10 @@ function buildView(indexes: ModelIndexes, scopePath: string): ExplorerView {
   const ranked = rankEntities([...entities.values()], connections)
   const totalEntities = ranked.length
   const totalRenderedNodes = ranked.length + groups.length
-  const retained = ranked.slice(0, Math.max(1, EXPLORER_NODE_LIMIT - groups.length))
+  const retained = ranked.slice(
+    0,
+    Math.max(1, EXPLORER_NODE_LIMIT - groups.length)
+  )
   const retainedIds = new Set(retained.map((entity) => entity.id))
   const retainedGroups = groups
     .map((group) => ({
@@ -259,7 +288,8 @@ function buildView(indexes: ModelIndexes, scopePath: string): ExplorerView {
     entities: retained.sort(compareEntities),
     groups: retainedGroups,
     connections: connections.filter(
-      (connection) => retainedIds.has(connection.source) && retainedIds.has(connection.target),
+      (connection) =>
+        retainedIds.has(connection.source) && retainedIds.has(connection.target)
     ),
     totalEntities,
     truncated: totalRenderedNodes > EXPLORER_NODE_LIMIT,
@@ -271,38 +301,49 @@ function buildNeighborhood(
   focus: string,
   direction: GraphDirection,
   depth: number,
-  presentation: ExplorerNeighborhoodPresentation,
+  presentation: ExplorerNeighborhoodPresentation
 ): ExplorerView {
   const architecture = buildView(indexes, pathParent(focus))
   if (presentation !== "full") {
-    const typeProjection = projectTypeNeighborhood(indexes.graph, focus, EXPLORER_NODE_LIMIT)
+    const typeProjection = projectTypeNeighborhood(
+      indexes.graph,
+      focus,
+      EXPLORER_NODE_LIMIT
+    )
     if (typeProjection) {
-      const entities = typeProjection.files
-        .flatMap((path) => indexes.reportsByPath.has(path) ? [summarizeFile(indexes, path, false)] : [])
-      const entitiesByPath = new Map(entities.map((entity) => [entity.path, entity]))
+      const entities = typeProjection.files.flatMap((path) =>
+        indexes.reportsByPath.has(path)
+          ? [summarizeFile(indexes, path, false)]
+          : []
+      )
+      const entitiesByPath = new Map(
+        entities.map((entity) => [entity.path, entity])
+      )
       const groups = typeProjection.groups.flatMap((group) => {
         const members = group.paths.flatMap((path) => {
           const entity = entitiesByPath.get(path)
           return entity ? [entity] : []
         })
         if (members.length === 0) return []
-        return [{
-          id: group.id,
-          path: group.id,
-          name: group.name,
-          kind: "relationship" as const,
-          label: group.label,
-          members,
-          totalMembers: group.totalMembers,
-          languages: languageStats(members),
-          relationship: {
-            family: group.family,
-            direction: group.direction,
-            relation: group.relation,
-            description: group.description,
-            focusPath: focus,
+        return [
+          {
+            id: group.id,
+            path: group.id,
+            name: group.name,
+            kind: "relationship" as const,
+            label: group.label,
+            members,
+            totalMembers: group.totalMembers,
+            languages: languageStats(members),
+            relationship: {
+              family: group.family,
+              direction: group.direction,
+              relation: group.relation,
+              description: group.description,
+              focusPath: focus,
+            },
           },
-        }]
+        ]
       })
       return {
         ...architecture,
@@ -319,7 +360,9 @@ function buildNeighborhood(
 
   const projection = projectGraph(indexes.graph, focus, direction, depth)
   const entities = projection.files.flatMap((file) =>
-    indexes.reportsByPath.has(file.path) ? [summarizeFile(indexes, file.path, false)] : [],
+    indexes.reportsByPath.has(file.path)
+      ? [summarizeFile(indexes, file.path, false)]
+      : []
   )
   return {
     ...architecture,
@@ -336,7 +379,7 @@ function buildNeighborhood(
 function buildArchitectureGroups(
   indexes: ModelIndexes,
   scopePath: string,
-  entities: Map<string, ExplorerEntity>,
+  entities: Map<string, ExplorerEntity>
 ): ExplorerGroup[] {
   if (scopePath !== EXPLORER_ROOT) return []
 
@@ -344,7 +387,10 @@ function buildArchitectureGroups(
   for (const root of rootChildScopes(indexes)) {
     const members = new Map<string, ExplorerEntity>()
     addScopeContents(indexes, root, members, false)
-    if (members.size === 0 || (members.size === 1 && !indexes.anchorDirectories.has(root))) {
+    if (
+      members.size === 0 ||
+      (members.size === 1 && !indexes.anchorDirectories.has(root))
+    ) {
       const summary = summarizeScope(indexes, root, false)
       entities.set(summary.id, summary)
       continue
@@ -356,11 +402,12 @@ function buildArchitectureGroups(
       path: root,
       name: scope.name,
       kind: "architecture",
-      label: scope.scopeKind === "package"
-        ? "Package"
-        : scope.scopeKind === "area"
-          ? "Project area"
-          : "Directory",
+      label:
+        scope.scopeKind === "package"
+          ? "Package"
+          : scope.scopeKind === "area"
+            ? "Project area"
+            : "Directory",
       members: [...members.values()].sort(compareEntities),
       languages: scope.languages,
     })
@@ -376,7 +423,7 @@ function addScopeContents(
   indexes: ModelIndexes,
   scopePath: string,
   entities: Map<string, ExplorerEntity>,
-  collapseChildren = true,
+  collapseChildren = true
 ) {
   const childScopes = collapseChildren
     ? visibleChildScopes(indexes, scopePath)
@@ -391,21 +438,30 @@ function addScopeContents(
   }
 }
 
-function inspectScope(indexes: ModelIndexes, scopePath: string): ExplorerScopeInspection {
+function inspectScope(
+  indexes: ModelIndexes,
+  scopePath: string
+): ExplorerScopeInspection {
   const allFiles = filesInScope(indexes, scopePath).map((file) =>
-    summarizeFile(indexes, file.path, false),
+    summarizeFile(indexes, file.path, false)
   )
   return {
     ...summarizeScope(indexes, scopePath, false),
     allFiles,
     directFiles: directFiles(indexes, scopePath).map((file) =>
-      summarizeFile(indexes, file.path, false),
+      summarizeFile(indexes, file.path, false)
     ),
-    configFiles: indexes.graph.config_files?.filter((path) => pathInScope(path, scopePath)) ?? [],
+    configFiles:
+      indexes.graph.config_files?.filter((path) =>
+        pathInScope(path, scopePath)
+      ) ?? [],
   }
 }
 
-function inspectFile(indexes: ModelIndexes, path: string): ExplorerFileInspection | null {
+function inspectFile(
+  indexes: ModelIndexes,
+  path: string
+): ExplorerFileInspection | null {
   if (!indexes.reportsByPath.has(path)) return null
   return {
     file: summarizeFile(indexes, path, false),
@@ -415,22 +471,31 @@ function inspectFile(indexes: ModelIndexes, path: string): ExplorerFileInspectio
   }
 }
 
-function searchFiles(indexes: ModelIndexes, query: string, limit: number): ExplorerFileSummary[] {
+function searchFiles(
+  indexes: ModelIndexes,
+  query: string,
+  limit: number
+): ExplorerFileSummary[] {
   const normalized = query.trim().toLowerCase()
   if (!normalized) return []
   return indexes.reportFiles
     .filter((file) => file.path.toLowerCase().includes(normalized))
     .sort(
       (left, right) =>
-        fileMatchRank(left.path, normalized) - fileMatchRank(right.path, normalized)
-        || graphConnectivity(indexes, right.path) - graphConnectivity(indexes, left.path)
-        || left.path.localeCompare(right.path),
+        fileMatchRank(left.path, normalized) -
+          fileMatchRank(right.path, normalized) ||
+        graphConnectivity(indexes, right.path) -
+          graphConnectivity(indexes, left.path) ||
+        left.path.localeCompare(right.path)
     )
     .slice(0, Math.max(1, limit))
     .map((file) => summarizeFile(indexes, file.path, false))
 }
 
-function visibleChildScopes(indexes: ModelIndexes, scopePath: string): string[] {
+function visibleChildScopes(
+  indexes: ModelIndexes,
+  scopePath: string
+): string[] {
   if (scopePath === EXPLORER_ROOT) {
     return rootChildScopes(indexes)
   }
@@ -445,15 +510,19 @@ function rootChildScopes(indexes: ModelIndexes): string[] {
     const directory = pathParent(file.path)
     if (!directory) continue
     const parts = directory.split("/")
-    const root = ARCHITECTURE_CONTAINERS.has(parts[0]) && parts.length > 1
-      ? `${parts[0]}/${parts[1]}`
-      : parts[0]
+    const root =
+      ARCHITECTURE_CONTAINERS.has(parts[0]) && parts.length > 1
+        ? `${parts[0]}/${parts[1]}`
+        : parts[0]
     roots.add(collapseScope(indexes, root))
   }
   return [...roots].sort()
 }
 
-function immediateChildScopes(indexes: ModelIndexes, scopePath: string): string[] {
+function immediateChildScopes(
+  indexes: ModelIndexes,
+  scopePath: string
+): string[] {
   const children = new Set<string>()
   for (const file of filesInScope(indexes, scopePath)) {
     const relative = relativeToScope(file.path, scopePath)
@@ -465,7 +534,10 @@ function immediateChildScopes(indexes: ModelIndexes, scopePath: string): string[
 
 function collapseScope(indexes: ModelIndexes, initial: string): string {
   let scope = initial
-  while (!indexes.anchorDirectories.has(scope) && directFiles(indexes, scope).length === 0) {
+  while (
+    !indexes.anchorDirectories.has(scope) &&
+    directFiles(indexes, scope).length === 0
+  ) {
     const children = immediateChildScopes(indexes, scope)
     if (children.length !== 1) break
     scope = children[0]
@@ -477,7 +549,7 @@ function ensureBoundaryEntity(
   indexes: ModelIndexes,
   entities: Map<string, ExplorerEntity>,
   currentScope: string,
-  path: string,
+  path: string
 ): string {
   const boundaryScope = boundaryScopeForPath(currentScope, path)
   if (!boundaryScope) {
@@ -499,7 +571,11 @@ function boundaryScopeForPath(currentScope: string, path: string): string {
   const current = currentScope ? currentScope.split("/") : []
   const outside = directory.split("/")
   let shared = 0
-  while (shared < current.length && shared < outside.length && current[shared] === outside[shared]) {
+  while (
+    shared < current.length &&
+    shared < outside.length &&
+    current[shared] === outside[shared]
+  ) {
     shared += 1
   }
   if (shared === outside.length && shared < current.length) return EXPLORER_ROOT
@@ -510,18 +586,25 @@ function boundaryScopeForPath(currentScope: string, path: string): string {
 function entityForPath(
   path: string,
   currentScope: string,
-  entities: ExplorerEntity[],
+  entities: ExplorerEntity[]
 ): ExplorerEntity | null {
   if (!pathInScope(path, currentScope)) return null
-  return entities.find((entity) =>
-    entity.kind === "file" ? entity.path === path : pathInScope(path, entity.path),
-  ) ?? null
+  return (
+    entities.find((entity) =>
+      entity.kind === "file"
+        ? entity.path === path
+        : pathInScope(path, entity.path)
+    ) ?? null
+  )
 }
 
 function aggregateConnections(
-  edges: Array<[GraphEdge, string, string]>,
+  edges: Array<[GraphEdge, string, string]>
 ): ExplorerConnection[] {
-  const grouped = new Map<string, { source: string; target: string; edges: GraphEdge[] }>()
+  const grouped = new Map<
+    string,
+    { source: string; target: string; edges: GraphEdge[] }
+  >()
   for (const [edge, source, target] of edges) {
     const id = `${source}→${target}`
     const group = grouped.get(id)
@@ -533,9 +616,14 @@ function aggregateConnections(
     .map(([id, group]) => {
       const resolverCounts = new Map<string, number>()
       for (const edge of group.edges) {
-        resolverCounts.set(edge.resolver, (resolverCounts.get(edge.resolver) ?? 0) + 1)
+        resolverCounts.set(
+          edge.resolver,
+          (resolverCounts.get(edge.resolver) ?? 0) + 1
+        )
       }
-      const relations = new Set(group.edges.map((edge) => edgeRelation(edge.resolver)))
+      const relations = new Set(
+        group.edges.map((edge) => edgeRelation(edge.resolver))
+      )
       return {
         id,
         source: group.source,
@@ -546,29 +634,37 @@ function aggregateConnections(
           .map(([resolver, connections]) => ({ resolver, connections }))
           .sort(
             (left, right) =>
-              right.connections - left.connections || left.resolver.localeCompare(right.resolver),
+              right.connections - left.connections ||
+              left.resolver.localeCompare(right.resolver)
           ),
         fileEdges: [...group.edges].sort(compareGraphEdges),
       } satisfies ExplorerConnection
     })
     .sort(
       (left, right) =>
-        left.source.localeCompare(right.source) || left.target.localeCompare(right.target),
+        left.source.localeCompare(right.source) ||
+        left.target.localeCompare(right.target)
     )
 }
 
 function summarizeScope(
   indexes: ModelIndexes,
   scopePath: string,
-  external: boolean,
+  external: boolean
 ): ExplorerScopeSummary {
   const files = filesInScope(indexes, scopePath)
   const graphPaths = new Set(
-    indexes.graph.files.filter((file) => pathInScope(file.path, scopePath)).map((file) => file.path),
+    indexes.graph.files
+      .filter((file) => pathInScope(file.path, scopePath))
+      .map((file) => file.path)
   )
-  const complexity = files.flatMap((file) => file.complexity ? [file.complexity] : [])
+  const complexity = files.flatMap((file) =>
+    file.complexity ? [file.complexity] : []
+  )
   const languages = new Map<string, number>()
-  for (const file of files) languages.set(file.language, (languages.get(file.language) ?? 0) + 1)
+  for (const file of files) {
+    languages.set(file.language, (languages.get(file.language) ?? 0) + 1)
+  }
   let fanIn = 0
   let fanOut = 0
   for (const edge of indexes.structuralEdges) {
@@ -582,7 +678,7 @@ function summarizeScope(
     kind: "scope",
     id: scopeId(scopePath, external),
     path: scopePath,
-    name: scopePath ? scopePath.split("/").at(-1) ?? scopePath : "Project",
+    name: scopeName(scopePath),
     scopeKind: scopeKind(indexes, scopePath),
     external,
     files: files.length,
@@ -590,28 +686,39 @@ function summarizeScope(
     tokens: files.reduce((total, file) => total + file.tokens, 0),
     sloc: files.reduce((total, file) => total + file.sloc, 0),
     findings: indexes.report.finding_catalog.findings.filter((finding) =>
-      pathInScope(finding.primary_location.path, scopePath),
+      pathInScope(finding.primary_location.path, scopePath)
     ).length,
-    riskFiles: indexes.report.summary.top_risks.filter((risk) => pathInScope(risk.path, scopePath)).length,
+    riskFiles: indexes.report.summary.top_risks.filter((risk) =>
+      pathInScope(risk.path, scopePath)
+    ).length,
     maxCyclomatic: complexity.reduce(
       (maximum, value) => Math.max(maximum, value.cyclomatic),
-      0,
+      0
     ),
-    minMaintainability: complexity.length > 0
-      ? Math.min(...complexity.map((value) => value.maintainability_index))
-      : null,
+    minMaintainability:
+      complexity.length > 0
+        ? Math.min(...complexity.map((value) => value.maintainability_index))
+        : null,
     fanIn,
     fanOut,
     languages: [...languages.entries()]
       .map(([name, count]) => ({ name, files: count }))
-      .sort((left, right) => right.files - left.files || left.name.localeCompare(right.name)),
+      .sort(
+        (left, right) =>
+          right.files - left.files || left.name.localeCompare(right.name)
+      ),
   }
+}
+
+function scopeName(scopePath: string): string {
+  if (!scopePath) return "Project"
+  return scopePath.split("/").at(-1) ?? scopePath
 }
 
 function summarizeFile(
   indexes: ModelIndexes,
   path: string,
-  external: boolean,
+  external: boolean
 ): ExplorerFileSummary {
   const report = indexes.reportsByPath.get(path)
   if (!report) {
@@ -631,46 +738,33 @@ function summarizeFile(
 }
 
 function directFiles(indexes: ModelIndexes, scopePath: string): FileReport[] {
-  return indexes.reportFiles.filter((file) => pathParent(file.path) === scopePath)
+  return indexes.reportFiles.filter(
+    (file) => pathParent(file.path) === scopePath
+  )
 }
 
 function filesInScope(indexes: ModelIndexes, scopePath: string): FileReport[] {
   return indexes.reportFiles.filter((file) => pathInScope(file.path, scopePath))
 }
 
-function scopeKind(indexes: ModelIndexes, scopePath: string): ExplorerScopeSummary["scopeKind"] {
+function scopeKind(
+  indexes: ModelIndexes,
+  scopePath: string
+): ExplorerScopeSummary["scopeKind"] {
   if (!scopePath) return "project"
   if (indexes.anchorDirectories.has(scopePath)) return "package"
-  if (!scopePath.includes("/") || ARCHITECTURE_CONTAINERS.has(scopePath.split("/")[0])) {
+  if (
+    !scopePath.includes("/") ||
+    ARCHITECTURE_CONTAINERS.has(scopePath.split("/")[0])
+  ) {
     return "area"
   }
   return "directory"
 }
 
-export function classifyFile(file: FileReport): ExplorerFileCategory {
-  const normalized = file.path.toLowerCase()
-  const name = normalized.split("/").at(-1) ?? normalized
-  if (file.skip_hint) return "generated"
-  if (
-    file.has_inline_tests
-    || /(^|[/_.-])(test|tests|spec|specs)([/_.-]|$)/.test(normalized)
-    || /(_test\.go|_test\.rs|\.test\.[^.]+|\.spec\.[^.]+|test\.php)$/.test(name)
-  ) return "test"
-  if (
-    /(^|[/_.-])(config|configs|configuration)([/_.-]|$)/.test(normalized)
-    || /\.(json|jsonc|ya?ml|toml)$/.test(name)
-    || /^(cargo\.toml|composer\.json|package\.json|pyproject\.toml|tsconfig.*\.json)$/.test(name)
-  ) return "config"
-  if (/\.(proto|graphql|gql|sql|xsd)$/.test(name) || /(^|[/_.-])(schema|schemas)([/_.-]|$)/.test(normalized)) {
-    return "schema"
-  }
-  if (/^(main|index|app|artisan|lib)\.[^.]+$/.test(name) || name === "artisan") {
-    return "entrypoint"
-  }
-  return "source"
-}
-
-export function groupExplorerFiles(entities: ExplorerEntity[]): ExplorerGroup[] {
+export function groupExplorerFiles(
+  entities: ExplorerEntity[]
+): ExplorerGroup[] {
   const grouped = new Map<string, ExplorerFileSummary[]>()
   for (const entity of entities) {
     if (entity.kind !== "file") continue
@@ -681,11 +775,13 @@ export function groupExplorerFiles(entities: ExplorerEntity[]): ExplorerGroup[] 
 
   return [...grouped.entries()]
     .map(([path, files]) => {
-      const sortedFiles = [...files].sort((left, right) => left.path.localeCompare(right.path))
+      const sortedFiles = [...files].sort((left, right) =>
+        left.path.localeCompare(right.path)
+      )
       return {
         id: `group:${path || "."}`,
         path,
-        name: path ? path.split("/").at(-1) ?? path : "Project root",
+        name: path ? (path.split("/").at(-1) ?? path) : "Project root",
         kind: "path",
         label: fileGroupLabel(sortedFiles),
         members: sortedFiles,
@@ -698,37 +794,52 @@ export function groupExplorerFiles(entities: ExplorerEntity[]): ExplorerGroup[] 
 function languageStats(files: ExplorerFileSummary[]): ExplorerLanguageStat[] {
   const languages = new Map<string, number>()
   for (const file of files) {
-    languages.set(file.report.language, (languages.get(file.report.language) ?? 0) + 1)
+    languages.set(
+      file.report.language,
+      (languages.get(file.report.language) ?? 0) + 1
+    )
   }
   return [...languages.entries()]
     .map(([name, count]) => ({ name, files: count }))
-    .sort((left, right) => right.files - left.files || left.name.localeCompare(right.name))
+    .sort(
+      (left, right) =>
+        right.files - left.files || left.name.localeCompare(right.name)
+    )
 }
 
 export function connectExplorerFiles(
   files: ExplorerFileSummary[],
-  edges: GraphEdge[],
+  edges: GraphEdge[]
 ): ExplorerConnection[] {
   const ids = new Map(files.map((file) => [file.path, file.id]))
   return aggregateConnections(
     edges.flatMap((edge) => {
       const source = ids.get(edge.source)
       const target = ids.get(edge.target)
-      return source && target ? [[edge, source, target] as [GraphEdge, string, string]] : []
-    }),
+      if (!source || !target) return []
+      const connection: [GraphEdge, string, string] = [edge, source, target]
+      return [connection]
+    })
   )
 }
 
 function fileGroupLabel(files: ExplorerFileSummary[]): ExplorerGroup["label"] {
-  const families = new Set(files.map((file) => languageFamily(file.report.language)))
+  const families = new Set(
+    files.map((file) => languageFamily(file.report.language))
+  )
   if (families.size !== 1) return "Mixed-language scope"
   switch ([...families][0]) {
-    case "rust": return "Module scope"
+    case "rust":
+      return "Module scope"
     case "go":
-    case "python": return "Package scope"
-    case "php": return "Namespace path"
-    case "javascript": return "Module directory"
-    default: return "Directory"
+    case "python":
+      return "Package scope"
+    case "php":
+      return "Namespace path"
+    case "javascript":
+      return "Module directory"
+    default:
+      return "Directory"
   }
 }
 
@@ -739,11 +850,12 @@ function languageFamily(language: string): string {
   if (normalized.includes("python")) return "python"
   if (normalized === "php") return "php"
   if (
-    normalized.includes("javascript")
-    || normalized.includes("typescript")
-    || normalized === "jsx"
-    || normalized === "tsx"
-  ) return "javascript"
+    normalized.includes("javascript") ||
+    normalized.includes("typescript") ||
+    normalized === "jsx" ||
+    normalized === "tsx"
+  )
+    return "javascript"
   return normalized
 }
 
@@ -752,24 +864,25 @@ function edgeRelation(resolver: string): ExplorerConnection["relation"] {
   if (resolver === "symbol-implements") return "implements"
   if (resolver === "symbol-embeds") return "embeds"
   if (resolver === "php-include") return "includes"
-  if (resolver === "rust-mod" || resolver === "rust-path") return "declares-module"
+  if (resolver === "rust-mod" || resolver === "rust-path")
+    return "declares-module"
   if (resolver.startsWith("go-")) return "imports-package"
   return "imports"
 }
 
 function rankEntities(
   entities: ExplorerEntity[],
-  connections: ExplorerConnection[],
+  connections: ExplorerConnection[]
 ): ExplorerEntity[] {
   const connectionWeight = new Map<string, number>()
   for (const connection of connections) {
     connectionWeight.set(
       connection.source,
-      (connectionWeight.get(connection.source) ?? 0) + connection.count,
+      (connectionWeight.get(connection.source) ?? 0) + connection.count
     )
     connectionWeight.set(
       connection.target,
-      (connectionWeight.get(connection.target) ?? 0) + connection.count,
+      (connectionWeight.get(connection.target) ?? 0) + connection.count
     )
   }
   return [...entities].sort((left, right) => {
@@ -778,24 +891,26 @@ function rankEntities(
     const leftFiles = left.kind === "scope" ? left.files : 1
     const rightFiles = right.kind === "scope" ? right.files : 1
     return (
-      Number(left.external) - Number(right.external)
-      || rightWeight - leftWeight
-      || rightFiles - leftFiles
-      || compareEntities(left, right)
+      Number(left.external) - Number(right.external) ||
+      rightWeight - leftWeight ||
+      rightFiles - leftFiles ||
+      compareEntities(left, right)
     )
   })
 }
 
 function compareEntities(left: ExplorerEntity, right: ExplorerEntity): number {
   return (
-    Number(left.external) - Number(right.external)
-    || Number(left.kind === "file") - Number(right.kind === "file")
-    || left.path.localeCompare(right.path)
+    Number(left.external) - Number(right.external) ||
+    Number(left.kind === "file") - Number(right.kind === "file") ||
+    left.path.localeCompare(right.path)
   )
 }
 
 function breadcrumbs(scopePath: string): ExplorerBreadcrumb[] {
-  const result: ExplorerBreadcrumb[] = [{ path: EXPLORER_ROOT, label: "Project" }]
+  const result: ExplorerBreadcrumb[] = [
+    { path: EXPLORER_ROOT, label: "Project" },
+  ]
   if (!scopePath) return result
   const parts = scopePath.split("/")
   for (let index = 0; index < parts.length; index += 1) {
@@ -807,16 +922,25 @@ function breadcrumbs(scopePath: string): ExplorerBreadcrumb[] {
   return result
 }
 
-function anchorDirectories(graph: DependencyGraph, files: FileReport[]): Set<string> {
+function anchorDirectories(
+  graph: DependencyGraph,
+  files: FileReport[]
+): Set<string> {
   const directories = new Set<string>()
-  for (const path of [...files.map((file) => file.path), ...(graph.config_files ?? [])]) {
+  for (const path of [
+    ...files.map((file) => file.path),
+    ...(graph.config_files ?? []),
+  ]) {
     const name = path.split("/").at(-1)?.toLowerCase() ?? ""
     if (PACKAGE_MANIFESTS.has(name)) directories.add(pathParent(path))
   }
   return directories
 }
 
-function groupByPath<T>(items: T[], path: (item: T) => string): Map<string, T[]> {
+function groupByPath<T>(
+  items: T[],
+  path: (item: T) => string
+): Map<string, T[]> {
   const grouped = new Map<string, T[]>()
   for (const item of items) {
     const key = path(item)
@@ -830,53 +954,4 @@ function groupByPath<T>(items: T[], path: (item: T) => string): Map<string, T[]>
 function graphConnectivity(indexes: ModelIndexes, path: string): number {
   const file = indexes.graphFilesByPath.get(path)
   return file ? file.fan_in + file.fan_out : 0
-}
-
-function fileMatchRank(path: string, query: string): number {
-  const normalized = path.toLowerCase()
-  const name = normalized.split("/").at(-1) ?? normalized
-  if (normalized === query) return 0
-  if (name === query) return 1
-  if (name.startsWith(query)) return 2
-  if (normalized.startsWith(query)) return 3
-  return 4
-}
-
-function compareGraphEdges(left: GraphEdge, right: GraphEdge): number {
-  return (
-    left.source.localeCompare(right.source)
-    || left.target.localeCompare(right.target)
-    || left.resolver.localeCompare(right.resolver)
-  )
-}
-
-function normalizeScope(path: string): string {
-  return path.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "")
-}
-
-function relativeToScope(path: string, scope: string): string {
-  if (!scope) return path
-  return path.slice(scope.length + 1)
-}
-
-function pathInScope(path: string, scope: string): boolean {
-  return !scope || path === scope || path.startsWith(`${scope}/`)
-}
-
-function pathParent(path: string): string {
-  const parts = path.split("/")
-  parts.pop()
-  return parts.join("/")
-}
-
-function joinPath(parent: string, child: string): string {
-  return parent ? `${parent}/${child}` : child
-}
-
-function scopeId(path: string, external: boolean): string {
-  return `${external ? "external-scope" : "scope"}:${path || "."}`
-}
-
-function fileId(path: string, external: boolean): string {
-  return `${external ? "external-file" : "file"}:${path}`
 }

@@ -76,6 +76,7 @@ Interactive terminals receive the compact table report. Redirected output defaul
 reposcout .                         # human table
 reposcout -f json .                # complete machine report
 reposcout -f json --summary .      # compact scouting report
+reposcout --working --change-summary -f json . # bounded change decision
 reposcout -o report.md .           # format inferred from extension
 reposcout -o report.sarif .        # SARIF 2.1.0
 ```
@@ -120,6 +121,7 @@ npx skills add gordon1210/reposcout --skill reposcout
 ```
 
 The `reposcout` binary must already be available on `PATH`.
+Update an existing skill installation separately with `npx skills update reposcout`.
 
 ## Where to go next
 

@@ -3,4 +3,5 @@ node_modules/
 /apps/*/dist
 .playwright-mcp/
 .reposcout/
+.tmp/
 *.profraw
