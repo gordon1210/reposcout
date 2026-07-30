@@ -1621,8 +1621,25 @@ fn scan_profiles_compatible_except_base(left: &ScanProfile, right: &ScanProfile)
     left.analyzers == right.analyzers
         && left.diff_scope == right.diff_scope
         && left.duplication == right.duplication
-        && left.health == right.health
+        && health_profiles_compatible(left, right)
         && left.resources == right.resources
+}
+
+fn health_profiles_compatible(left: &ScanProfile, right: &ScanProfile) -> bool {
+    if left.health == right.health {
+        return true;
+    }
+    if left.analyzers.markers || left.analyzers.duplication {
+        return false;
+    }
+
+    // Reports created before path exclusions omitted health metadata when both
+    // health analyzers were disabled. Scope and format includes cannot change
+    // the remaining source-only signals, but a path exclusion can.
+    match (left.health.as_ref(), right.health.as_ref()) {
+        (None, Some(profile)) => profile.excludes.is_empty(),
+        _ => false,
+    }
 }
 
 fn target_scope(root: &Path, target: &Path) -> String {
@@ -1735,14 +1752,14 @@ pub(crate) fn analyze_source(
     report_path: &Path,
     content: &str,
     cfg: &Config,
+    health_policy: &HealthPolicy,
     counter: Option<&TokenCounter>,
 ) -> Option<FileReport> {
-    let health_policy = cfg.health_policy().ok()?;
     analyze_source_details(
         report_path,
         content,
         cfg,
-        &health_policy,
+        health_policy,
         counter,
         ArtifactRequirements::default(),
     )
@@ -2869,9 +2886,24 @@ mod tests {
     #[test]
     fn source_duplication_excludes_test_files() {
         let cfg = Config::default();
+        let health_policy = cfg.health_policy().unwrap();
         let content = "fn example() {}\n".repeat(10);
-        let source = analyze_source(Path::new("src/example.rs"), &content, &cfg, None).unwrap();
-        let test = analyze_source(Path::new("tests/example.rs"), &content, &cfg, None).unwrap();
+        let source = analyze_source(
+            Path::new("src/example.rs"),
+            &content,
+            &cfg,
+            &health_policy,
+            None,
+        )
+        .unwrap();
+        let test = analyze_source(
+            Path::new("tests/example.rs"),
+            &content,
+            &cfg,
+            &health_policy,
+            None,
+        )
+        .unwrap();
         let instance = |path: &str, end_line: usize| CloneInstance {
             path: path.into(),
             start_line: 1,
@@ -2891,7 +2923,6 @@ mod tests {
             ..Duplication::default()
         };
         let coverage = DuplicateCoverage::from_duplication(&duplication);
-        let health_policy = cfg.health_policy().unwrap();
 
         assert_eq!(
             source_duplication_pct(
@@ -2907,10 +2938,12 @@ mod tests {
     #[test]
     fn source_analysis_limits_first_class_markers_to_comments() {
         let cfg = Config::default();
+        let health_policy = cfg.health_policy().unwrap();
         let report = analyze_source(
             Path::new("src/example.rs"),
             "const TODO: &str = \"TODO\";\n// TODO real work\n",
             &cfg,
+            &health_policy,
             None,
         )
         .unwrap();
