@@ -1,0 +1,4 @@
+interface:
+  display_name: "RepoScout"
+  short_description: "Scout repositories and assess code changes"
+  default_prompt: "Use $reposcout to scout this codebase and recommend a bounded reading plan."
