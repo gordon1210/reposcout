@@ -26,7 +26,8 @@ within their section.
   and resolver-configuration gaps so change reports can distinguish relevant evidence gaps from
   distant potential blind spots.
 - Updated the bundled RepoScout agent skill to prefer the concise change-report workflow while
-  retaining the detailed context/impact command as a compatibility fallback.
+  retaining the detailed context/impact command as a compatibility fallback. Existing skill
+  installations can be refreshed with `npx skills update reposcout`.
 
 ## [0.1.7] - 2026-07-28
 

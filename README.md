@@ -87,6 +87,7 @@ npx skills add gordon1210/reposcout --skill reposcout
 ```
 
 The `reposcout` binary must already be available on `PATH`.
+Update an existing skill installation separately with `npx skills update reposcout`.
 
 ## Quick start
 
