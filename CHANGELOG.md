@@ -35,6 +35,10 @@ within their section.
   instead of unresolved code dependencies.
 - Keep complexity-only cache entries isolated by the effective health scope, format includes, and
   path exclusions.
+- Preserve baseline compatibility with older focused reports that omitted irrelevant health
+  metadata, while still rejecting comparisons whose new path exclusions change analyzed signals.
+- Apply the compiled health policy consistently to both deep-review snapshots and their
+  duplication corpus.
 - Recognize named `Dockerfile.*` variants such as `Dockerfile.nodejs.dev`.
 - Avoid double-counting a branch change and the merge commit that carries it in Git churn.
 

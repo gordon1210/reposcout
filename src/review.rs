@@ -1,9 +1,10 @@
 //! Changed-line review over canonical findings.
 
 use crate::cli::ReviewMode;
-use crate::config::Config;
+use crate::config::{Config, HealthPolicy};
 use crate::dup::{self, DetectionOptions, DupInput};
 use crate::git::DiffScope;
+use crate::lang;
 use crate::model::{
     FindingCatalog, FindingChange, FindingLocation, ReviewChangedFile, ReviewCounts,
     ReviewDiagnostics, ReviewFinding, ReviewReport,
@@ -22,11 +23,13 @@ pub fn run(
     exclusions: &[PathBuf],
     deadline: Option<Instant>,
 ) -> Result<ReviewReport> {
+    let health_policy = cfg.health_policy()?;
     let current = SourceSnapshot::current(root, cfg, scope, exclusions, deadline)?;
-    let current_catalog = catalog(&current, cfg);
+    let current_catalog = catalog(&current, cfg, &health_policy);
     if cfg.review == Some(ReviewMode::Deep) {
         let base = SourceSnapshot::base(root, cfg, scope, base_tree_id, exclusions, deadline)?;
-        let before = crate::findings::remap_renames(&catalog(&base, cfg), &changed_files);
+        let before =
+            crate::findings::remap_renames(&catalog(&base, cfg, &health_policy), &changed_files);
         let delta = crate::findings::compare(&before, &current_catalog);
         let binary_files = changed_files.iter().filter(|file| file.binary).count();
         let findings = delta
@@ -82,14 +85,23 @@ pub fn run(
     Ok(filter_lines(&current_catalog, changed_files, scope))
 }
 
-fn catalog(snapshot: &SourceSnapshot, cfg: &Config) -> FindingCatalog {
+fn catalog(
+    snapshot: &SourceSnapshot,
+    cfg: &Config,
+    health_policy: &HealthPolicy,
+) -> FindingCatalog {
     let files = snapshot
         .iter()
-        .filter_map(|(path, content)| crate::scan::analyze_source(path, content, cfg, None))
+        .filter_map(|(path, content)| {
+            crate::scan::analyze_source(path, content, cfg, health_policy, None)
+        })
         .collect::<Vec<_>>();
     let duplication = if cfg.enabled.duplication {
         let inputs = snapshot
             .iter()
+            .filter(|(path, _)| {
+                lang::detect(path).is_some_and(|info| health_policy.includes(path, info))
+            })
             .map(|(path, content)| DupInput {
                 path: path.to_path_buf(),
                 content: content.to_string(),

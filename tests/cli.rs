@@ -2756,6 +2756,82 @@ fn focused_baseline_reports_only_available_metrics() {
 }
 
 #[test]
+fn focused_baseline_accepts_legacy_profile_without_health_metadata() {
+    let fix = fixture();
+    let tmp = tempfile::NamedTempFile::new().expect("temp file");
+    let tmp_path = tmp.path().to_str().unwrap().to_string();
+
+    let mut save = reposcout_command();
+    save.args([
+        "tokens",
+        "-f",
+        "json",
+        "--no-cache",
+        "--quiet",
+        "-o",
+        &tmp_path,
+        &fix,
+    ]);
+    save.assert().success();
+
+    let mut baseline: Value = serde_json::from_slice(&std::fs::read(&tmp_path).unwrap()).unwrap();
+    baseline["analysis_profile"]
+        .as_object_mut()
+        .unwrap()
+        .remove("health");
+    std::fs::write(&tmp_path, serde_json::to_vec(&baseline).unwrap()).unwrap();
+
+    let report = run_json(&["tokens", "-f", "json", "--baseline", &tmp_path, &fix]);
+    assert_eq!(report["baseline"]["regressed"], false);
+}
+
+#[test]
+fn focused_legacy_baseline_rejects_new_health_path_excludes() {
+    let fix = fixture();
+    let tmp = tempfile::NamedTempFile::new().expect("temp file");
+    let tmp_path = tmp.path().to_str().unwrap().to_string();
+
+    let mut save = reposcout_command();
+    save.args([
+        "tokens",
+        "-f",
+        "json",
+        "--no-cache",
+        "--quiet",
+        "-o",
+        &tmp_path,
+        &fix,
+    ]);
+    save.assert().success();
+
+    let mut baseline: Value = serde_json::from_slice(&std::fs::read(&tmp_path).unwrap()).unwrap();
+    baseline["analysis_profile"]
+        .as_object_mut()
+        .unwrap()
+        .remove("health");
+    std::fs::write(&tmp_path, serde_json::to_vec(&baseline).unwrap()).unwrap();
+
+    let mut compare = reposcout_command();
+    compare.args([
+        "tokens",
+        "-f",
+        "json",
+        "--health-exclude",
+        "app.js",
+        "--baseline",
+        &tmp_path,
+        "--no-cache",
+        "--quiet",
+        &fix,
+    ]);
+    let error = String::from_utf8(compare.assert().code(1).get_output().stderr.clone()).unwrap();
+    assert!(
+        error.contains("baseline analyzer profile does not match"),
+        "error was: {error}"
+    );
+}
+
+#[test]
 fn baseline_rejects_mismatched_token_encoding() {
     let fix = fixture();
     let tmp = tempfile::NamedTempFile::new().expect("temp file");
@@ -3142,6 +3218,44 @@ fn review_detects_changed_code_duplicated_from_an_unchanged_file() {
             .iter()
             .any(|finding| finding["finding"]["kind"] == "duplication"),
         "review findings were: {findings:?}"
+    );
+}
+
+#[test]
+fn deep_review_excludes_health_filtered_files_from_duplication() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    let block = (0..30)
+        .map(|index| format!("const value{index} = input + {index};\n"))
+        .collect::<String>();
+    std::fs::write(dir.path().join("original.js"), &block).unwrap();
+    std::fs::write(
+        dir.path().join("copy.js"),
+        "export const initiallyUnique = true;\n",
+    )
+    .unwrap();
+    commit_all(&repo, "initial duplication exclusion fixture");
+    std::fs::write(dir.path().join("copy.js"), &block).unwrap();
+
+    let report = run_json(&[
+        "--working",
+        "--review=deep",
+        "--only",
+        "duplication",
+        "--health-exclude",
+        "copy.js",
+        "-f",
+        "json",
+        dir.path().to_str().unwrap(),
+    ]);
+
+    assert_eq!(report["review"]["counts"]["new"], 0);
+    assert!(
+        report["review"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|finding| finding["finding"]["kind"] != "duplication")
     );
 }
 
