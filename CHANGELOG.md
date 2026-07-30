@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-30
+
 ### Added
 
 - Added `--change-summary`, a bounded change-focused report for working-tree, staged, or
