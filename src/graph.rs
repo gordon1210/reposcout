@@ -447,34 +447,34 @@ pub(crate) fn impact_from_analysis(
 
 pub(crate) fn diagnostic_facts(analysis: &GraphAnalysis) -> Vec<GraphDiagnosticFact> {
     let topology = &analysis.topology;
-    let mut facts = topology
-        .graph_files
-        .iter()
-        .enumerate()
-        .filter_map(|(index, path)| {
-            let unreadable = topology.unreadable_nodes.contains(&index);
-            let parse_errors = topology.parse_errors_by_node[index];
-            let unresolved_imports = topology.unresolved_by_node[index];
-            (unreadable || parse_errors > 0 || unresolved_imports > 0).then(|| {
+    let mut facts = BTreeMap::new();
+    for (index, path) in topology.graph_files.iter().enumerate() {
+        let unreadable = topology.unreadable_nodes.contains(&index);
+        let parse_errors = topology.parse_errors_by_node[index];
+        let unresolved_imports = topology.unresolved_by_node[index];
+        if unreadable || parse_errors > 0 || unresolved_imports > 0 {
+            facts.insert(
+                path.clone(),
                 GraphDiagnosticFact {
                     path: path.clone(),
                     unreadable,
                     parse_errors,
                     unresolved_imports,
                     config_errors: 0,
-                }
-            })
-        })
-        .collect::<Vec<_>>();
-    for (path, config_errors) in &topology.config_errors_by_path {
-        facts.push(GraphDiagnosticFact {
-            path: path.clone(),
-            config_errors: *config_errors,
-            ..GraphDiagnosticFact::default()
-        });
+                },
+            );
+        }
     }
-    facts.sort_by(|left, right| left.path.cmp(&right.path));
-    facts
+    for (path, config_errors) in &topology.config_errors_by_path {
+        facts
+            .entry(path.clone())
+            .or_insert_with(|| GraphDiagnosticFact {
+                path: path.clone(),
+                ..GraphDiagnosticFact::default()
+            })
+            .config_errors = *config_errors;
+    }
+    facts.into_values().collect()
 }
 
 /// Return direct graph context for one already-scanned file.
@@ -4740,6 +4740,39 @@ var ignored = "example.com/project/not-an-import"
         );
         assert_eq!(impact.config_errors, 1);
         assert_eq!(impact.confidence, "partial");
+    }
+
+    #[test]
+    fn diagnostic_facts_merge_all_errors_for_the_same_path() {
+        let analysis = GraphAnalysis {
+            report: DepGraph::default(),
+            signals: GraphSignals::default(),
+            topology: Topology {
+                graph_files: vec!["src/main.rs".to_string()],
+                edges: Vec::new(),
+                unresolved_imports: 2,
+                unresolved_by_node: vec![2],
+                parse_errors_by_node: vec![1],
+                unreadable_nodes: HashSet::new(),
+                parse_errors: 1,
+                edge_resolvers: BTreeMap::new(),
+                config_errors: 3,
+                config_errors_by_path: BTreeMap::from([("src/main.rs".to_string(), 3)]),
+                config_files: Vec::new(),
+                symbols: Vec::new(),
+                symbol_edges: Vec::new(),
+                unresolved_symbol_relations: 0,
+                unresolved_symbol_relations_by_path: HashMap::new(),
+            },
+        };
+
+        let facts = diagnostic_facts(&analysis);
+
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].path, "src/main.rs");
+        assert_eq!(facts[0].parse_errors, 1);
+        assert_eq!(facts[0].unresolved_imports, 2);
+        assert_eq!(facts[0].config_errors, 3);
     }
 
     #[test]

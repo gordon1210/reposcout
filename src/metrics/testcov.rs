@@ -53,7 +53,7 @@ pub fn inline_rust_test_regions(content: &str, tree: &Tree) -> Vec<LineRange> {
 fn attributed_item(node: Node<'_>) -> Option<Node<'_>> {
     let parent = node.parent()?;
     if parent.kind() != "attribute_item" {
-        return Some(parent);
+        return None;
     }
     let mut sibling = parent.next_named_sibling()?;
     while sibling.kind() == "attribute_item" {

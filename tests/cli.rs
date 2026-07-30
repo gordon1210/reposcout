@@ -4784,6 +4784,26 @@ fn change_summary_supports_human_and_machine_formats() {
     assert_eq!(rendered.lines().count(), 1);
     let record: Value = serde_json::from_str(rendered.trim()).unwrap();
     assert_eq!(record["report_kind"], "change-summary");
+
+    let output_path = dir.path().join("change-summary.ndjson");
+    let mut ndjson_file = reposcout_command();
+    ndjson_file.args([
+        "-f",
+        "ndjson",
+        "--working",
+        "--change-summary",
+        "--no-cache",
+        "--quiet",
+        "-o",
+        output_path.to_str().unwrap(),
+        path,
+    ]);
+    ndjson_file.assert().success();
+    let rendered = std::fs::read_to_string(output_path).unwrap();
+    assert!(
+        rendered.ends_with('\n'),
+        "NDJSON files must end with a record delimiter"
+    );
 }
 
 #[test]

@@ -43,7 +43,10 @@ pub fn json(report: &ScanReport) -> Result<String> {
 }
 
 pub fn ndjson(report: &ScanReport) -> Result<String> {
-    serde_json::to_string(&projection(report)?).context("failed to render change-summary NDJSON")
+    let mut rendered = serde_json::to_string(&projection(report)?)
+        .context("failed to render change-summary NDJSON")?;
+    rendered.push('\n');
+    Ok(rendered)
 }
 
 pub fn table(report: &ScanReport) -> Result<String> {
