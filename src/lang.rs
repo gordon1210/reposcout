@@ -64,7 +64,7 @@ pub const RECOGNIZED_LANGUAGE_NAMES: &[&str] = &[
 
 /// Formats treated as authored program/build source by default. Repository
 /// inventory still covers every recognized format; this list controls the
-/// higher-signal health corpus used by markers, duplication, and human rollups.
+/// higher-signal health corpus used by actionable analyzers and rankings.
 pub const SOURCE_LANGUAGE_NAMES: &[&str] = &[
     "Rust",
     "Python",
@@ -96,7 +96,7 @@ pub const OPTIONAL_HEALTH_FORMAT_NAMES: &[&str] = &[
     "HTML", "CSS", "SCSS", "JSON", "YAML", "TOML", "Markdown", "XML", "Text",
 ];
 
-/// Breadth of the marker and duplication health corpus.
+/// Breadth of the actionable health corpus.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthScope {
@@ -219,7 +219,7 @@ pub fn is_source_name(name: &str) -> bool {
     SOURCE_LANGUAGE_NAMES.contains(&name)
 }
 
-/// Decide whether a recognized format enters marker and duplication analysis.
+/// Decide whether a recognized format enters health analysis.
 /// Inventory metrics deliberately do not use this policy.
 pub fn included_in_health(info: &LangInfo, scope: HealthScope, includes: &[HealthInclude]) -> bool {
     scope == HealthScope::All
@@ -280,6 +280,14 @@ const TEXT: LangInfo = lang!("Text", None, [], []);
 
 /// Detect a language from a file path (by extension, then by file name).
 pub fn detect(path: &Path) -> Option<&'static LangInfo> {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "Dockerfile" || name.starts_with("Dockerfile."))
+    {
+        return Some(&DOCKERFILE);
+    }
+
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         let info = match ext.to_ascii_lowercase().as_str() {
             "rs" => &RUST,
@@ -377,6 +385,20 @@ mod tests {
             let info = detect(Path::new(path)).unwrap();
             assert_eq!(info.name, "PHP", "{path}");
             assert_eq!(info.first_class, Some(FirstClass::Php), "{path}");
+        }
+    }
+
+    #[test]
+    fn detects_named_dockerfile_variants() {
+        for path in [
+            "Dockerfile",
+            "docker/Dockerfile.nodejs.dev",
+            "docker/Dockerfile.rust.dev",
+        ] {
+            assert_eq!(
+                detect(Path::new(path)).map(|info| info.name),
+                Some("Dockerfile")
+            );
         }
     }
 }

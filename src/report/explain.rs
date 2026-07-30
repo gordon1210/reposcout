@@ -94,11 +94,8 @@ fn table(report: &ExplainReport, color: bool) -> String {
             &mut out,
             "Factors",
             &format!(
-                "size {:.2} · complexity {:.2} · churn {:.2} · test-match multiplier {:.2}",
-                risk.size_factor,
-                risk.complexity_factor,
-                risk.churn_factor,
-                risk.untested_multiplier
+                "size {:.2} · complexity {:.2} · churn {:.2}",
+                risk.size_factor, risk.complexity_factor, risk.churn_factor
             ),
         );
         if !risk.reasons.is_empty() {
@@ -235,12 +232,8 @@ fn markdown(report: &ExplainReport) -> String {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "- Score **{:.2}**: size {:.2}, complexity {:.2}, churn {:.2}, test-match multiplier {:.2}.",
-            risk.score,
-            risk.size_factor,
-            risk.complexity_factor,
-            risk.churn_factor,
-            risk.untested_multiplier
+            "- Score **{:.2}**: size {:.2}, complexity {:.2}, churn {:.2}.",
+            risk.score, risk.size_factor, risk.complexity_factor, risk.churn_factor
         );
         if !risk.reasons.is_empty() {
             let reasons = risk

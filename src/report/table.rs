@@ -10,7 +10,7 @@ use crate::report::{
     dup_locations, human_bytes, similarity_label, terminal_text, thousands, thousands_u64,
 };
 use comfy_table::presets::UTF8_BORDERS_ONLY;
-use comfy_table::{CellAlignment, ContentArrangement, Table};
+use comfy_table::{CellAlignment, ColumnConstraint, ContentArrangement, Table, Width};
 use owo_colors::OwoColorize;
 use std::fmt::Write as _;
 use std::path::Path;
@@ -70,9 +70,10 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
             header("Skip candidates (generated/minified/vendored)", color)
         );
         let mut t = new_table(vec!["Path", "Reason", "Tokens"]);
+        set_path_column_width(&mut t, 0, PATH_MEDIUM);
         for c in &s.skip_candidates {
             t.add_row(vec![
-                terminal_text(&c.path),
+                path_cell(&c.path, PATH_MEDIUM),
                 terminal_text(&c.reason),
                 thousands(c.tokens),
             ]);
@@ -109,9 +110,10 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
     if !s.top_source_token_files.is_empty() {
         let _ = writeln!(out, "{}", header("Top source files by tokens", color));
         let mut t = new_table(vec!["File", "Tokens"]);
+        set_path_column_width(&mut t, 0, PATH_WIDE);
         for f in &s.top_source_token_files {
             t.add_row(vec![
-                terminal_text(&f.path.display().to_string()),
+                path_cell(&f.path.display().to_string(), PATH_WIDE),
                 thousands(f.tokens),
             ]);
         }
@@ -123,10 +125,11 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
     // Hotspots
     if !s.top_hotspots.is_empty() {
         let _ = writeln!(out, "{}", header("Hotspots (churn × complexity)", color));
-        let mut t = new_table(vec!["File", "Commits", "Cyclomatic", "Avg/fn", "Score"]);
+        let mut t = new_table(vec!["File", "Commits", "Cyclo", "Avg/fn", "Score"]);
+        set_path_column_width(&mut t, 0, PATH_HOTSPOT);
         for h in &s.top_hotspots {
             t.add_row(vec![
-                terminal_text(&h.path.display().to_string()),
+                path_cell(&h.path.display().to_string(), PATH_HOTSPOT),
                 thousands(h.commits),
                 thousands(h.cyclomatic as usize),
                 file_cyclomatic_average(report, &h.path)
@@ -178,12 +181,12 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
     // Test presence
     {
         let tp = &s.test_presence;
-        let _ = writeln!(out, "{}", header("Test presence", color));
+        let _ = writeln!(out, "{}", header("Test filename matching", color));
         kv(&mut out, "Test files", &thousands(tp.test_files));
         kv(&mut out, "Source files", &thousands(tp.source_files));
         kv(
             &mut out,
-            "No matching test",
+            "No filename match",
             &thousands(tp.untested_source_files),
         );
         if !tp.untested_samples.is_empty() {
@@ -196,17 +199,12 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
     if !s.top_risks.is_empty() {
         let _ = writeln!(out, "{}", header("Top risks", color));
         let mut t = new_table(vec![
-            "Path",
-            "Score",
-            "SLOC",
-            "Cyclomatic",
-            "Avg/fn",
-            "Churn",
-            "Reasons",
+            "Path", "Score", "SLOC", "Cyclo", "Avg/fn", "Churn", "Reasons",
         ]);
+        set_path_column_width(&mut t, 0, PATH_TIGHT);
         for r in &s.top_risks {
             t.add_row(vec![
-                terminal_text(&r.path),
+                path_cell(&r.path, PATH_TIGHT),
                 format!("{:.2}", r.score),
                 thousands(r.sloc),
                 thousands(r.cyclomatic as usize),
@@ -241,11 +239,12 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
             "Cyclo avg",
             "MI avg",
             "Dup lines",
-            "No matching test",
+            "No filename match",
         ]);
+        set_path_column_width(&mut t, 0, PATH_TIGHT);
         for d in &report.directories {
             t.add_row(vec![
-                terminal_text(&d.path),
+                path_cell(&d.path, PATH_TIGHT),
                 thousands(d.files),
                 thousands(d.tokens),
                 thousands(d.sloc),
@@ -435,9 +434,10 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
     }
     if !context.files.is_empty() {
         let mut table = new_table(vec!["File", "Tokens", "Score", "Why"]);
+        set_path_column_width(&mut table, 0, PATH_CONTEXT);
         for file in &context.files {
             table.add_row(vec![
-                terminal_text(&file.path.display().to_string()),
+                path_cell(&file.path.display().to_string(), PATH_CONTEXT),
                 thousands(file.tokens),
                 format!("{:.2}", file.score),
                 terminal_text(&file.reasons.join(", ")),
@@ -449,9 +449,10 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
     if !context.outline_only.is_empty() {
         let _ = writeln!(out, "{}", header("Outline-only focus", color));
         let mut table = new_table(vec!["File", "Source tokens", "Reason"]);
+        set_path_column_width(&mut table, 0, PATH_MEDIUM);
         for file in &context.outline_only {
             table.add_row(vec![
-                terminal_text(&file.path.display().to_string()),
+                path_cell(&file.path.display().to_string(), PATH_MEDIUM),
                 thousands(file.source_tokens),
                 terminal_text(&file.reason),
             ]);
@@ -462,10 +463,11 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
     if context.files.iter().any(|file| !file.symbols.is_empty()) {
         let _ = writeln!(out, "{}", header("Selected symbol outlines", color));
         let mut table = new_table(vec!["File", "Line", "Kind", "Signature", "Why"]);
+        set_path_column_width(&mut table, 0, PATH_TIGHT);
         for file in &context.files {
             for symbol in &file.symbols {
                 table.add_row(vec![
-                    terminal_text(&file.path.display().to_string()),
+                    path_cell(&file.path.display().to_string(), PATH_TIGHT),
                     thousands(symbol.line),
                     terminal_text(&symbol.kind),
                     terminal_text(&symbol.signature),
@@ -483,10 +485,11 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
     {
         let _ = writeln!(out, "{}", header("Outline-only declarations", color));
         let mut table = new_table(vec!["File", "Line", "Kind", "Signature", "Why"]);
+        set_path_column_width(&mut table, 0, PATH_TIGHT);
         for file in &context.outline_only {
             for symbol in &file.symbols {
                 table.add_row(vec![
-                    terminal_text(&file.path.display().to_string()),
+                    path_cell(&file.path.display().to_string(), PATH_TIGHT),
                     thousands(symbol.line),
                     terminal_text(&symbol.kind),
                     terminal_text(&symbol.signature),
@@ -589,6 +592,9 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
             "Unsupported",
             &thousands(diagnostics.unsupported_files),
         );
+        if !diagnostics.unsupported_samples.is_empty() {
+            kv(out, "Examples", &diagnostics.unsupported_samples.join(", "));
+        }
     }
     if diagnostics.unreadable_files > 0 {
         kv(out, "Unreadable", &thousands(diagnostics.unreadable_files));
@@ -730,18 +736,16 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
     if !summary.complexity_violations.is_empty() {
         let _ = writeln!(out, "{}", header("Complexity violations", color));
         let mut table = new_table(vec![
-            "Function",
-            "Location",
-            "Cyclomatic",
-            "Max",
-            "Over",
-            "Cognitive",
-            "Nesting",
+            "Function", "Location", "Cyclo", "Max", "Over", "Cog.", "Nest",
         ]);
+        set_path_column_width(&mut table, 1, PATH_TIGHT);
         for function in &summary.complexity_violations {
             table.add_row(vec![
                 terminal_text(&function.name),
-                terminal_text(&format!("{}:{}", function.path.display(), function.line)),
+                path_cell(
+                    &format!("{}:{}", function.path.display(), function.line),
+                    PATH_TIGHT,
+                ),
                 thousands(function.cyclomatic as usize),
                 thousands(complexity.cyclomatic_threshold as usize),
                 format!(
@@ -763,17 +767,15 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
             "{}",
             header("Most complex functions (all within limit)", color)
         );
-        let mut table = new_table(vec![
-            "Function",
-            "Location",
-            "Cyclomatic",
-            "Cognitive",
-            "Nesting",
-        ]);
+        let mut table = new_table(vec!["Function", "Location", "Cyclo", "Cog.", "Nest"]);
+        set_path_column_width(&mut table, 1, PATH_CONTEXT);
         for function in &summary.top_functions {
             table.add_row(vec![
                 terminal_text(&function.name),
-                terminal_text(&format!("{}:{}", function.path.display(), function.line)),
+                path_cell(
+                    &format!("{}:{}", function.path.display(), function.line),
+                    PATH_CONTEXT,
+                ),
                 thousands(function.cyclomatic as usize),
                 thousands(function.cognitive as usize),
                 thousands(function.max_nesting as usize),
@@ -970,13 +972,14 @@ fn render_review(out: &mut String, report: &ScanReport, color: bool) {
 
     if !review.findings.is_empty() {
         let mut table = new_table(vec!["State", "Kind", "Severity", "Location", "Finding"]);
+        set_path_column_width(&mut table, 3, PATH_TIGHT);
         for item in &review.findings {
             let finding = item.after.as_ref().unwrap_or(&item.finding);
             table.add_row(vec![
                 terminal_text(&item.state),
                 terminal_text(&finding.kind),
                 terminal_text(&finding.severity),
-                terminal_text(&finding_location(finding)),
+                path_cell(&finding_location(finding), PATH_TIGHT),
                 terminal_text(&finding.message),
             ]);
         }
@@ -1034,9 +1037,10 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     if !graph.focus.is_empty() && !graph.files.is_empty() {
         let _ = writeln!(out, "{}", header("  Focused graph files", color));
         let mut table = new_table(vec!["Path", "Distance", "Fan-in", "Fan-out"]);
+        set_path_column_width(&mut table, 0, PATH_HOTSPOT);
         for file in &graph.files {
             table.add_row(vec![
-                terminal_text(&file.path),
+                path_cell(&file.path, PATH_HOTSPOT),
                 file.focus_distance.unwrap_or_default().to_string(),
                 thousands(file.fan_in),
                 thousands(file.fan_out),
@@ -1061,8 +1065,12 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     if !graph.top_depended.is_empty() {
         let _ = writeln!(out, "{}", header("  Most depended-upon", color));
         let mut table = new_table(vec!["Path", "Fan-in"]);
+        set_path_column_width(&mut table, 0, PATH_WIDE);
         for node in &graph.top_depended {
-            table.add_row(vec![terminal_text(&node.path), thousands(node.fan_in)]);
+            table.add_row(vec![
+                path_cell(&node.path, PATH_WIDE),
+                thousands(node.fan_in),
+            ]);
         }
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
@@ -1072,8 +1080,12 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     if !graph.most_dependent.is_empty() {
         let _ = writeln!(out, "{}", header("  Most dependent", color));
         let mut table = new_table(vec!["Path", "Fan-out"]);
+        set_path_column_width(&mut table, 0, PATH_WIDE);
         for node in &graph.most_dependent {
-            table.add_row(vec![terminal_text(&node.path), thousands(node.fan_out)]);
+            table.add_row(vec![
+                path_cell(&node.path, PATH_WIDE),
+                thousands(node.fan_out),
+            ]);
         }
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
@@ -1157,6 +1169,34 @@ fn kv(out: &mut String, key: &str, value: &str) {
     let _ = writeln!(out, "  {key:<16} {value}");
 }
 
+const PATH_WIDE: usize = 48;
+const PATH_MEDIUM: usize = 36;
+const PATH_HOTSPOT: usize = 34;
+const PATH_CONTEXT: usize = 24;
+const PATH_TIGHT: usize = 18;
+
+fn path_cell(path: &str, max_chars: usize) -> String {
+    let escaped = terminal_text(path);
+    let char_count = escaped.chars().count();
+    if char_count <= max_chars {
+        return escaped;
+    }
+    let suffix = escaped
+        .chars()
+        .skip(char_count.saturating_sub(max_chars.saturating_sub(1)))
+        .collect::<String>();
+    format!("…{suffix}")
+}
+
+fn set_path_column_width(table: &mut Table, index: usize, width: usize) {
+    if let Some(column) = table.column_mut(index) {
+        column.set_constraint(ColumnConstraint::Absolute(Width::Fixed(
+            u16::try_from(width.saturating_add(2))
+                .expect("path column widths and padding fit in u16"),
+        )));
+    }
+}
+
 fn new_table(headers: Vec<&str>) -> Table {
     let mut t = Table::new();
     t.load_preset(UTF8_BORDERS_ONLY)
@@ -1175,7 +1215,7 @@ fn right_align(table: &mut Table, columns: &[usize]) {
 
 #[cfg(test)]
 mod tests {
-    use super::render_scan_diagnostics;
+    use super::{PATH_WIDE, path_cell, render_scan_diagnostics};
     use crate::model::ScanDiagnostics;
 
     #[test]
@@ -1214,5 +1254,15 @@ mod tests {
 
         assert!(out.contains("Known files omitted"));
         assert!(out.contains("at least 1"));
+    }
+
+    #[test]
+    fn long_table_paths_keep_the_filename_and_truncate_the_front() {
+        let path = "packages/application/src/components/navigation/command-globe-scene.tsx";
+        let rendered = path_cell(path, PATH_WIDE);
+
+        assert!(rendered.starts_with('…'));
+        assert!(rendered.ends_with("command-globe-scene.tsx"));
+        assert!(rendered.chars().count() <= 48);
     }
 }

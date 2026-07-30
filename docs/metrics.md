@@ -13,12 +13,18 @@ Every recognized format contributes:
 - token/context size; and
 - LOC, SLOC, blank, and comment facts.
 
-Health analysis is source-first. Marker and duplication analysis defaults to programming
-languages, SQL, Dockerfiles, and Makefiles. HTML, CSS/SCSS, JSON, YAML, TOML, Markdown, XML, and
-text require `--health-include <FORMAT>` or `--health-scope all`.
+Health analysis is source-first. Complexity, markers, duplication, risk, test-presence, and cleanup
+signals default to programming languages, SQL, Dockerfiles (including `Dockerfile.*` variants),
+and Makefiles. HTML, CSS/SCSS, JSON, YAML, TOML, Markdown, XML, and text require
+`--health-include <FORMAT>` or `--health-scope all`.
 
 This separation prevents documentation and generated data from diluting code-health percentages
 while retaining complete repository inventory.
+
+`--health-exclude <GLOB>` removes selected repository-relative paths from health analysis without
+removing their inventory, token, line, navigation, import, symbol, or context facts. Selection
+order is scope, then format includes, then path excludes; an exclude always wins. Ordinary
+`--exclude` is different because it removes the path from the whole scan.
 
 ## Line metrics
 
@@ -147,7 +153,8 @@ occurrence contributes to the canonical finding catalog.
 ## Churn and hotspots
 
 Git churn records commit count, authors, and first/last change dates for discovered paths.
-Hotspots combine churn with complexity for code files only.
+Hotspots combine churn with complexity for code files only. A merge commit does not count as a
+second touch when the authored branch commit already represents the same path change.
 
 History is bounded by `churn_max_commits` unless explicitly configured otherwise. The immutable
 per-commit history index is cached separately from file analysis.
@@ -160,12 +167,9 @@ Source-file risk is a stable composite:
 0.40 × size + 0.40 × complexity + 0.20 × churn
 ```
 
-Inputs saturate at 1,000 SLOC, cyclomatic `100`, and `20` commits. When no conventional matching
-test file or inline Rust test is found, the result receives a modest `1.10` multiplier, capped at
-`1.0`.
-
-Risk reasons expose the contributing factors. The test signal is explicitly a filename/inline-test
-heuristic, not code coverage.
+Inputs saturate at 1,000 SLOC, cyclomatic `100`, and `20` commits. Risk reasons expose those
+contributing factors. A missing conventional test filename remains visible as navigation evidence,
+but it does not change the risk score because filename matching is not measured coverage.
 
 ## Test presence
 
@@ -179,18 +183,21 @@ For Rust binary crates, `tests/cli.rs` conventionally matches the package `src/m
 entrypoint.
 
 Serialized `untested_*` names are retained for schema compatibility and mean only “no matching test
-was found.”
+was found.” This heuristic does not change risk or cleanup scoring.
 
 ## Assessment
 
 `summary.assessment` is computed after other signals and answers:
 
-- whether the repository appears to fit a context budget;
+- whether readable source/build tokens appear to fit a context budget;
 - whether cleanup value looks low, medium, or high; and
 - why.
 
 Its source-duplication signal excludes separate test files and direct Rust `#[cfg(test)]` regions.
 Raw duplication metrics and findings still cover the complete configured health corpus.
+Complete repository token totals remain available as `summary.tokens`; context fit deliberately
+uses `summary.source.tokens` so large data, prose, and other content assets do not create a false
+source-reading overflow.
 
 Evidence qualifiers prevent disabled analysis from becoming a synthetic clean result:
 
@@ -198,8 +205,9 @@ Evidence qualifiers prevent disabled analysis from becoming a synthetic clean re
 - `cleanup_worth_complete` is false when required health evidence was disabled; and
 - `unavailable_signals` lists missing inputs.
 
-The assessment's duplication reason uses non-test source only and triggers above 15%. Raw
-duplication summaries still cover the effective health corpus.
+The assessment's duplication reason uses non-test source only and triggers above 15%. Filename
+test matching is informational and does not become a cleanup reason. Raw duplication summaries
+still cover the effective health corpus.
 
 ## Known interpretation limits
 

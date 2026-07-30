@@ -67,8 +67,9 @@ table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 | Flag | Description | Default |
 |---|---|---|
 | `--max-complexity <N>` | Report callables whose cyclomatic complexity exceeds `N` | `20` |
-| `--health-scope <source\|all>` | Choose files eligible for markers and duplication | `source` |
-| `--health-include <FORMAT>` | Add an optional content format; repeatable | — |
+| `--health-scope <source\|all>` | Choose the starting corpus for health analysis | `source` |
+| `--health-include <FORMAT>` | Add a non-source format to health analysis; repeatable | — |
+| `--health-exclude <GLOB>` | Remove repository-relative paths from health analysis while retaining inventory; repeatable | — |
 | `--dup-mode <strict\|mild\|weak>` | Keep all trivia, ignore whitespace, or also ignore comments | `mild` |
 | `--dup-format-scope <exact\|compatible\|all>` | Choose cross-format candidate pools | `exact` |
 | `--dup-snippets` | Include bounded source snippets in duplicate findings | off |
@@ -77,6 +78,8 @@ table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 `compatible` combines JavaScript, TypeScript, and TSX; `exact` isolates every detected format.
 Duplication token, line, and similarity thresholds are configurable in
 [`reposcout.toml`](configuration.md#example-reposcouttoml).
+Health selection always applies scope first, format includes second, and path excludes last, so an
+exclude wins over an include. Ordinary `--exclude` removes a path from the entire scan instead.
 
 ## Context, structure, and graph
 
@@ -169,6 +172,9 @@ reposcout dup --dup-mode weak --dup-details src/
 
 # Include authored styles in health analysis
 reposcout --health-include css --health-include scss .
+
+# Keep third-party source in inventory but out of health signals
+reposcout --health-exclude 'packages/ui/src/components/**' .
 
 # Two-hop reverse dependency neighborhood
 reposcout --graph-focus src/service.ts --graph-direction dependents \

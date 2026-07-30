@@ -2,7 +2,7 @@
 //! churn, run duplication detection, and aggregate a [`ScanReport`].
 
 use crate::cache::{self, Cache};
-use crate::config::Config;
+use crate::config::{Config, HealthPolicy};
 use crate::debug_log;
 use crate::dup::{self, DupInput, DuplicateCoverage};
 use crate::git;
@@ -38,7 +38,7 @@ struct SourceAnalysis {
 
 enum AnalysisOutcome {
     Analyzed(Box<AnalyzedFile>),
-    Unsupported,
+    Unsupported(PathBuf),
     Unreadable,
     Oversized(u64),
     DurationLimit,
@@ -48,7 +48,7 @@ impl AnalysisOutcome {
     fn status(&self) -> &'static str {
         match self {
             Self::Analyzed(_) => "analyzed",
-            Self::Unsupported => "unsupported",
+            Self::Unsupported(_) => "unsupported",
             Self::Unreadable => "unreadable",
             Self::Oversized(_) => "oversized",
             Self::DurationLimit => "duration_limit",
@@ -73,6 +73,7 @@ struct PreparedScan {
     context_changes: Option<crate::context::ChangeSeeds>,
     all_report_paths: Vec<PathBuf>,
     deadline: Option<Instant>,
+    health_policy: HealthPolicy,
 }
 
 struct AnalyzedScan {
@@ -308,6 +309,7 @@ fn prepare_scan(
     exclusions: &[PathBuf],
     deadline: Option<Instant>,
 ) -> Result<PreparedScan> {
+    let health_policy = cfg.health_policy()?;
     let effective_exclusions = scan_exclusions(cfg, exclusions);
     let target_missing = !target.exists();
     let mut discovered =
@@ -386,6 +388,7 @@ fn prepare_scan(
         context_changes,
         all_report_paths,
         deadline,
+        health_policy,
     })
 }
 
@@ -522,9 +525,9 @@ fn analyze_discovered_files(
     requirements: ArtifactRequirements,
 ) -> Result<FileAnalysis> {
     analyze_files(
-        &prepared.root,
         &prepared.discovered,
         cfg,
+        &prepared.health_policy,
         progress,
         requirements,
         "primary",
@@ -533,9 +536,9 @@ fn analyze_discovered_files(
 }
 
 fn analyze_files(
-    root: &Path,
     discovered: &walk::Discovered,
     cfg: &Config,
+    health_policy: &HealthPolicy,
     progress: &ScanProgress,
     requirements: ArtifactRequirements,
     batch: &'static str,
@@ -552,7 +555,7 @@ fn analyze_files(
         .unwrap_or_else(|| cfg.encoding.clone());
 
     let cache = Cache::open(
-        root,
+        &discovered.root,
         cfg.use_cache,
         cache::AnalysisProfile::from_config(cfg),
     );
@@ -588,6 +591,7 @@ fn analyze_files(
                         &file.absolute_path,
                         &file.report_path,
                         cfg,
+                        health_policy,
                         counter_ref,
                         &cache,
                         requirements,
@@ -627,7 +631,14 @@ fn analyze_files(
     for outcome in outcomes {
         match outcome {
             AnalysisOutcome::Analyzed(file) => analyzed.push(*file),
-            AnalysisOutcome::Unsupported => diagnostics.unsupported_files += 1,
+            AnalysisOutcome::Unsupported(path) => {
+                diagnostics.unsupported_files += 1;
+                if diagnostics.unsupported_samples.len() < 10 {
+                    diagnostics
+                        .unsupported_samples
+                        .push(path.to_string_lossy().into_owned());
+                }
+            }
             AnalysisOutcome::Unreadable => diagnostics.unreadable_files += 1,
             AnalysisOutcome::Oversized(bytes) => {
                 diagnostics.oversized_files = diagnostics.oversized_files.saturating_add(1);
@@ -691,7 +702,8 @@ fn analyze_cross_file_metrics(
         let inputs: Vec<DupInput> = analyzed
             .iter()
             .filter(|file| {
-                lang::detect(&file.report.path).is_some_and(|info| cfg.includes_in_health(info))
+                lang::detect(&file.report.path)
+                    .is_some_and(|info| prepared.health_policy.includes(&file.report.path, info))
             })
             .map(|a| DupInput {
                 path: a.report.path.clone(),
@@ -844,9 +856,9 @@ fn analyze_planning_universe(
         discovered.files.len(),
     );
     let mut analysis = analyze_files(
-        &prepared.root,
         discovered,
         cfg,
+        &prepared.health_policy,
         progress,
         requirements,
         "planning_universe",
@@ -1287,7 +1299,7 @@ fn scan_profile(cfg: &Config, diff_base: Option<String>) -> ScanProfile {
         }
         .to_string(),
     });
-    let health = (cfg.enabled.markers || cfg.enabled.duplication).then(|| {
+    let health = {
         let mut includes = if cfg.health_scope == lang::HealthScope::Source {
             cfg.health_includes
                 .iter()
@@ -1298,11 +1310,15 @@ fn scan_profile(cfg: &Config, diff_base: Option<String>) -> ScanProfile {
         };
         includes.sort();
         includes.dedup();
-        HealthProfile {
+        let mut excludes = cfg.health_excludes.clone();
+        excludes.sort();
+        excludes.dedup();
+        Some(HealthProfile {
             scope: cfg.health_scope.to_string(),
             includes,
-        }
-    });
+            excludes,
+        })
+    };
 
     let mut finding_markers = if cfg.enabled.markers {
         cfg.markers
@@ -1620,12 +1636,13 @@ fn analyze_file(
     path: &Path,
     report_path: &Path,
     cfg: &Config,
+    health_policy: &HealthPolicy,
     counter: Option<&TokenCounter>,
     cache: &Cache,
     requirements: ArtifactRequirements,
 ) -> AnalysisOutcome {
     if lang::detect(path).is_none() {
-        return AnalysisOutcome::Unsupported;
+        return AnalysisOutcome::Unsupported(report_path.to_path_buf());
     }
     let content = match walk::read_text_bounded(path, cfg.max_file_bytes) {
         walk::BoundedText::Content(content) => content,
@@ -1683,8 +1700,15 @@ fn analyze_file(
         }));
     }
 
-    let analysis = analyze_source_details(report_path, &content, cfg, counter, requirements)
-        .expect("filesystem path and report path use the same recognized language");
+    let analysis = analyze_source_details(
+        report_path,
+        &content,
+        cfg,
+        health_policy,
+        counter,
+        requirements,
+    )
+    .expect("filesystem path and report path use the same recognized language");
 
     cache.put(
         &rel_str,
@@ -1711,10 +1735,12 @@ pub(crate) fn analyze_source(
     cfg: &Config,
     counter: Option<&TokenCounter>,
 ) -> Option<FileReport> {
+    let health_policy = cfg.health_policy().ok()?;
     analyze_source_details(
         report_path,
         content,
         cfg,
+        &health_policy,
         counter,
         ArtifactRequirements::default(),
     )
@@ -1725,10 +1751,12 @@ fn analyze_source_details(
     report_path: &Path,
     content: &str,
     cfg: &Config,
+    health_policy: &HealthPolicy,
     counter: Option<&TokenCounter>,
     requirements: ArtifactRequirements,
 ) -> Option<SourceAnalysis> {
     let info = lang::detect(report_path)?;
+    let health_eligible = health_policy.includes(report_path, info);
     let rel = report_path.to_path_buf();
     let rel_str = rel.to_string_lossy().to_string();
     let tokens = counter.map(|c| c.count(content)).unwrap_or(0);
@@ -1737,7 +1765,7 @@ fn analyze_source_details(
     // when structural analyzers are disabled.
     let tree = info.first_class.and_then(|fc| parse::parse(fc, content));
     let line_stats = lines::measure(info, content, tree.as_ref());
-    let marker_scan = if cfg.enabled.markers && cfg.includes_in_health(info) {
+    let marker_scan = if cfg.enabled.markers && health_eligible {
         match (info.first_class, tree.as_ref()) {
             (Some(_), Some(tree)) => markers::scan_detailed_in_tree(content, &cfg.markers, tree),
             _ => markers::scan_detailed(content, &cfg.markers),
@@ -1752,12 +1780,13 @@ fn analyze_source_details(
             None
         };
 
-    let (complexity_opt, approximate) = if cfg.enabled.complexity && info.is_code() {
-        let (c, approx) = complexity::analyze(info, content, tree.as_ref(), &line_stats);
-        (Some(c), approx)
-    } else {
-        (None, false)
-    };
+    let (complexity_opt, approximate) =
+        if cfg.enabled.complexity && health_eligible && info.is_code() {
+            let (c, approx) = complexity::analyze(info, content, tree.as_ref(), &line_stats);
+            (Some(c), approx)
+        } else {
+            (None, false)
+        };
 
     let import_list = if cfg.enabled.imports {
         match (info.first_class, tree.as_ref()) {
@@ -1902,15 +1931,20 @@ fn aggregate(
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     cfg: &Config,
 ) -> (Summary, Vec<RiskEntry>) {
+    let health_policy = cfg
+        .health_policy()
+        .expect("health excludes are validated before analysis");
     let mut s = Summary::default();
     let accumulated = accumulate_file_metrics(files, &mut s);
     finish_complexity_and_languages(&mut s, accumulated, cfg);
     summarize_duplication(&mut s, dup, duplicate_coverage, cfg);
     populate_file_rankings(&mut s, files, cfg);
-    let (test_presence, top_risks, all_risk_entries) = test_and_risk_summary(files, cfg);
+    let (test_presence, top_risks, all_risk_entries) =
+        test_and_risk_summary(files, cfg, &health_policy);
     s.test_presence = test_presence;
     s.top_risks = top_risks;
-    let source_duplication = source_duplication_pct(files, duplicate_coverage, test_regions);
+    let source_duplication =
+        source_duplication_pct(files, duplicate_coverage, test_regions, &health_policy);
     s.assessment = build_assessment(&s, source_duplication, cfg.enabled);
     (s, all_risk_entries)
 }
@@ -2194,13 +2228,16 @@ fn populate_file_rankings(summary: &mut Summary, files: &[FileReport], cfg: &Con
 fn test_and_risk_summary(
     files: &[FileReport],
     cfg: &Config,
+    health_policy: &HealthPolicy,
 ) -> (TestPresence, Vec<RiskEntry>, Vec<RiskEntry>) {
     let mut test_stem_set: HashSet<String> = HashSet::new();
     let mut test_file_count = 0usize;
     let mut source_files: Vec<&FileReport> = Vec::new();
 
     for f in files {
-        if !lang::detect(&f.path).map(|i| i.is_code()).unwrap_or(false) {
+        if !lang::detect(&f.path)
+            .is_some_and(|info| info.is_code() && health_policy.includes(&f.path, info))
+        {
             continue;
         }
         let path_str = f.path.to_string_lossy();
@@ -2261,9 +2298,11 @@ fn source_duplication_pct(
     files: &[FileReport],
     coverage: &DuplicateCoverage,
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
+    health_policy: &HealthPolicy,
 ) -> f64 {
     let source_files = files.iter().filter(|file| {
-        lang::detect(&file.path).is_some_and(|info| info.is_code())
+        lang::detect(&file.path)
+            .is_some_and(|info| info.is_code() && health_policy.includes(&file.path, info))
             && !testcov::is_test_file(file.path.to_string_lossy().as_ref())
     });
     let (duplicated_lines, lines) = source_files.fold((0usize, 0usize), |totals, file| {
@@ -2296,7 +2335,8 @@ fn build_assessment(
 ) -> Assessment {
     let token_budget = DEFAULT_CONTEXT_BUDGET;
     let fits_context_known = enabled.tokens;
-    let fits_context = fits_context_known && summary.tokens <= token_budget;
+    let readable_source_tokens = summary.source.tokens;
+    let fits_context = fits_context_known && readable_source_tokens <= token_budget;
     let cleanup_worth_complete = enabled.complexity && enabled.duplication && enabled.churn;
     let mut unavailable_signals = Vec::new();
     if !enabled.tokens {
@@ -2337,12 +2377,6 @@ fn build_assessment(
     if high_risk_count >= 3 {
         cleanup_reasons.push("several high-risk files".to_string());
     }
-    let src_count = summary.test_presence.source_files;
-    let untested_count = summary.test_presence.untested_source_files;
-    if src_count > 0 && (untested_count as f64 / src_count as f64) > 0.5 {
-        cleanup_reasons.push("many source files have no matching test file".to_string());
-    }
-
     let signal_count = cleanup_reasons.len();
     let cleanup_worth = if signal_count >= 3 {
         "high"
@@ -2357,11 +2391,12 @@ fn build_assessment(
     if !fits_context_known {
         assessment_reasons.push("context fit unavailable (tokens analyzer disabled)".to_string());
     } else if fits_context {
-        assessment_reasons.push(format!("fits in {token_budget}-token context"));
+        assessment_reasons.push(format!(
+            "fits in {token_budget}-token context ({readable_source_tokens} source tokens)"
+        ));
     } else {
         assessment_reasons.push(format!(
-            "exceeds {token_budget}-token context budget ({} tokens)",
-            summary.tokens
+            "exceeds {token_budget}-token context budget ({readable_source_tokens} source tokens)"
         ));
     }
     assessment_reasons.extend(cleanup_reasons);
@@ -2742,7 +2777,7 @@ mod tests {
     }
 
     #[test]
-    fn assessment_uses_explicit_test_matching_and_source_duplication_wording() {
+    fn assessment_treats_test_filename_matching_as_informational() {
         let mut summary = Summary::default();
         summary.test_presence.source_files = 4;
         summary.test_presence.untested_source_files = 3;
@@ -2763,7 +2798,7 @@ mod tests {
                 .any(|reason| reason == "high source duplication (15.1%)")
         );
         assert!(
-            above_threshold
+            !above_threshold
                 .reasons
                 .iter()
                 .any(|reason| reason == "many source files have no matching test file")
@@ -2856,12 +2891,14 @@ mod tests {
             ..Duplication::default()
         };
         let coverage = DuplicateCoverage::from_duplication(&duplication);
+        let health_policy = cfg.health_policy().unwrap();
 
         assert_eq!(
             source_duplication_pct(
                 &[source, test],
                 &coverage,
-                &std::collections::BTreeMap::new()
+                &std::collections::BTreeMap::new(),
+                &health_policy,
             ),
             20.0
         );

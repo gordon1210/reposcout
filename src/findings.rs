@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use xxhash_rust::xxh3::xxh3_128;
 
 pub const CATALOG_VERSION: u32 = 1;
-pub const RISK_ALGORITHM_VERSION: u32 = 3;
+pub const RISK_ALGORITHM_VERSION: u32 = 4;
 pub const RISK_THRESHOLD: f64 = 0.7;
 
 /// Project analyzer outputs into one complete, deterministically ordered

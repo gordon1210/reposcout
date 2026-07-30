@@ -78,6 +78,7 @@ pub fn capabilities() -> CapabilitiesReport {
             .map(|name| (*name).to_string())
             .collect(),
         health_scopes: ["source", "all"].into_iter().map(str::to_string).collect(),
+        health_exclude_flag: "--health-exclude".to_string(),
         machine_interfaces: ["cli-json", "cli-ndjson", "debug-log-ndjson"]
             .into_iter()
             .map(str::to_string)

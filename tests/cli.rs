@@ -203,6 +203,67 @@ fn project_config_can_opt_content_into_the_health_corpus() {
 }
 
 #[test]
+fn health_excludes_win_after_scope_and_format_includes_without_removing_inventory() {
+    let dir = tempfile::tempdir().unwrap();
+    write_health_scope_fixture(dir.path());
+    std::fs::write(
+        dir.path().join("reposcout.toml"),
+        concat!(
+            "health_includes = [\"json\"]\n",
+            "health_excludes = [\"second.rs\"]\n",
+        ),
+    )
+    .unwrap();
+
+    let report = run_json(&[
+        "-f",
+        "json",
+        "--health-exclude",
+        "second.json",
+        dir.path().to_str().unwrap(),
+    ]);
+
+    assert_eq!(
+        report["summary"]["files"], 5,
+        "inventory retains the four fixture files and project config"
+    );
+    assert_eq!(report["summary"]["source"]["files"], 2);
+    assert_eq!(report["summary"]["markers"]["TODO"], 2);
+    assert_eq!(
+        report["analysis_profile"]["health"]["includes"],
+        serde_json::json!(["JSON"])
+    );
+    assert_eq!(
+        report["analysis_profile"]["health"]["excludes"],
+        serde_json::json!(["second.json", "second.rs"])
+    );
+    assert_eq!(report["summary"]["test_presence"]["source_files"], 1);
+
+    for excluded in ["second.rs", "second.json"] {
+        let file = report["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["path"] == excluded)
+            .unwrap();
+        assert!(
+            file.get("markers").is_none() || file["markers"].is_null(),
+            "{excluded} must not carry marker health results"
+        );
+    }
+    let excluded_source = report["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["path"] == "second.rs")
+        .unwrap();
+    assert!(
+        excluded_source.get("complexity").is_none() || excluded_source["complexity"].is_null(),
+        "health-excluded source must not carry complexity health results"
+    );
+}
+
+#[test]
 fn capabilities_are_machine_discoverable_without_scanning() {
     let mut cmd = reposcout_command();
     cmd.args(["capabilities", "-f", "json"]);
@@ -212,6 +273,7 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     assert_eq!(report["schema_version"], "1.0");
     assert_eq!(report["default_operation"], "scan");
     assert_eq!(report["default_invocation"], "reposcout [PATH]");
+    assert_eq!(report["health_exclude_flag"], "--health-exclude");
     assert_eq!(
         report["symbol_query_formats"],
         serde_json::json!(["table", "json", "markdown", "ndjson"])
@@ -1403,6 +1465,61 @@ fn table_output_has_headers() {
 }
 
 #[test]
+fn narrow_human_tables_front_truncate_paths_without_wrapping_the_suffix() {
+    let dir = tempfile::tempdir().unwrap();
+    let nested = dir
+        .path()
+        .join("packages/application/src/components/navigation");
+    std::fs::create_dir_all(&nested).unwrap();
+    let source_path = nested.join("command-globe-scene.tsx");
+    let mut source =
+        String::from("export function analyze(input: number): number {\n  let total = 0;\n");
+    for value in 0..30 {
+        source.push_str(&format!("  if (input > {value}) total += 1;\n"));
+    }
+    source.push_str("  return total;\n}\n");
+    std::fs::write(&source_path, source).unwrap();
+
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    commit_all(&repo, "add long path");
+
+    let mut command = reposcout_command();
+    command.args([
+        "--no-cache",
+        "--quiet",
+        "-f",
+        "table",
+        "--top",
+        "1",
+        dir.path().to_str().unwrap(),
+    ]);
+    let output = command.assert().success().get_output().stdout.clone();
+    let rendered = String::from_utf8(output).unwrap();
+
+    assert!(rendered.contains("Complexity violations"));
+    assert!(rendered.contains("Hotspots (churn × complexity)"));
+    assert!(rendered.contains("Top risks"));
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.contains("…globe-scene.tsx:1")),
+        "complexity locations should keep the path tail and line on one row:\n{rendered}"
+    );
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.contains("command-globe-scene.tsx") && line.contains("31.0")),
+        "hotspots should keep the filename on one row:\n{rendered}"
+    );
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.contains("…d-globe-scene.tsx") && line.contains("0.15")),
+        "risk rows should keep an identifying path suffix on one row:\n{rendered}"
+    );
+}
+
+#[test]
 fn markdown_output_has_headings() {
     let mut cmd = reposcout_command();
     cmd.args([
@@ -1782,6 +1899,33 @@ fn agent_profile_skips_expensive_cross_file_analyzers_and_reports_partial_eviden
             .unwrap()
             .iter()
             .any(|signal| signal == "duplication")
+    );
+}
+
+#[test]
+fn context_fit_uses_readable_source_tokens_without_hiding_total_inventory() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(dir.path().join("catalog.txt"), "entry ".repeat(220_000)).unwrap();
+
+    let report = run_json(&[
+        "-f",
+        "json",
+        "--only",
+        "tokens",
+        dir.path().to_str().unwrap(),
+    ]);
+
+    assert!(report["summary"]["tokens"].as_u64().unwrap() > 200_000);
+    assert!(report["summary"]["source"]["tokens"].as_u64().unwrap() < 200_000);
+    assert_eq!(report["summary"]["assessment"]["fits_context"], true);
+    assert!(
+        report["summary"]["assessment"]["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason.as_str().unwrap().contains("source tokens")),
+        "assessment should explain that context fit is source-based"
     );
 }
 
@@ -2277,10 +2421,10 @@ fn large_complex_file_receives_strong_absolute_risk_without_coverage_claims() {
     let report = run_json(&["--only", "complexity", "-f", "json", file.to_str().unwrap()]);
     let risk = &report["summary"]["top_risks"][0];
     let score = risk["score"].as_f64().unwrap();
-    assert!(score >= 0.6, "risk was: {risk:?}");
+    assert!(score >= 0.59, "risk was: {risk:?}");
     assert!(
-        score < 0.7,
-        "test matching should be a modest signal: {risk:?}"
+        score < 0.60,
+        "test filename matching must not inflate the score: {risk:?}"
     );
     let reasons = risk["reasons"].as_array().unwrap();
     assert!(reasons.iter().any(|reason| reason == "large"));
@@ -4176,6 +4320,10 @@ fn diagnostics_explain_unsupported_and_unreadable_files() {
     assert_eq!(diagnostics["discovered_files"], 3);
     assert_eq!(diagnostics["analyzed_files"], 1);
     assert_eq!(diagnostics["unsupported_files"], 1);
+    assert_eq!(
+        diagnostics["unsupported_samples"],
+        serde_json::json!(["notes.unknown"])
+    );
     assert_eq!(diagnostics["unreadable_files"], 1);
 }
 
@@ -4220,6 +4368,30 @@ fn invalid_config_fails_instead_of_falling_back_to_defaults() {
         "error was: {error}"
     );
     assert!(error.contains("reposcout.toml"), "error was: {error}");
+}
+
+#[test]
+fn invalid_health_exclude_glob_fails_before_scanning() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("sample.rs"), "fn sample() {}\n").unwrap();
+
+    let mut cmd = reposcout_command();
+    cmd.args([
+        "-f",
+        "json",
+        "--health-exclude",
+        "[",
+        "--no-cache",
+        "--quiet",
+        dir.path().to_str().unwrap(),
+    ]);
+    let output = cmd.assert().failure().get_output().stderr.clone();
+    let error = String::from_utf8(output).unwrap();
+
+    assert!(
+        error.contains("invalid health exclude glob"),
+        "error was: {error}"
+    );
 }
 
 fn commit_all(repo: &git2::Repository, message: &str) {

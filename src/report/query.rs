@@ -64,6 +64,12 @@ pub fn render_capabilities(
                 "Health scopes: {}\n",
                 report.health_scopes.join(", ")
             ));
+            if !report.health_exclude_flag.is_empty() {
+                out.push_str(&format!(
+                    "Health path exclusions: {}\n",
+                    report.health_exclude_flag
+                ));
+            }
             out.push_str(&format!(
                 "Machine interfaces: {}\n",
                 report.machine_interfaces.join(", ")

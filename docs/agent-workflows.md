@@ -19,7 +19,8 @@ The most useful first-pass fields are:
 
 | Question | Evidence |
 |---|---|
-| Will this fit? | `summary.tokens`, `summary.files`, `summary.assessment` |
+| Will readable source fit? | `summary.source.tokens`, `summary.assessment` |
+| How large is the complete inventory? | `summary.tokens`, `summary.files` |
 | Is cleanup worthwhile? | duplication, complexity violations, risks, and assessment reasons |
 | What should be read first? | `summary.top_risks`, `summary.top_source_token_files` |
 | What can be skipped? | `summary.skip_candidates` and each reason |
@@ -29,7 +30,7 @@ The most useful first-pass fields are:
 
 The serialized `untested_*` fields mean “no conventional matching test file or inline Rust test
 was found.” Rust `tests/cli.rs` also conventionally matches `src/main.rs`; these are
-test-presence heuristics, not measured coverage.
+test-presence heuristics, not measured coverage, and they do not change risk or cleanup scoring.
 
 ## Discover capabilities
 
@@ -40,8 +41,8 @@ reposcout capabilities -f json
 ```
 
 This command performs no repository scan. It advertises commands, output/error formats, profiles,
-language coverage, health scopes, symbol kinds, and hard graph, duplication, and change-summary
-bounds.
+language coverage, health scopes and path-exclusion support, symbol kinds, and hard graph,
+duplication, and change-summary bounds.
 
 ## Find declarations
 
@@ -224,7 +225,8 @@ signals, so disabled work never appears as a confident zero.
 
 Every scan reports:
 
-- discovered, analyzed, unsupported, and unreadable file counts;
+- discovered, analyzed, unsupported, and unreadable file counts, plus bounded path examples for
+  unsupported files;
 - oversized and resource-omitted file/byte counts;
 - whether discovery or analysis stopped at a file, byte, or cooperative time limit;
 - walker errors;
