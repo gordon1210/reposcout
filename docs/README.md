@@ -34,4 +34,5 @@ reposcout capabilities -f json
 ```
 
 It describes the installed commands, formats, execution profiles, supported languages,
-health scopes, change-summary contract, and hard analysis bounds without scanning a repository.
+health scopes, change-summary/work-scope contracts, and hard analysis bounds without scanning a
+repository.

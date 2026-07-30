@@ -86,6 +86,12 @@ pub fn render_capabilities(
                 report.change_summary.max_gap_entries,
                 report.change_summary.max_validations
             ));
+            out.push_str(&format!(
+                "Work scope: strategy {} (paths <= {}, components <= {})\n",
+                report.work_scope.strategy_version,
+                report.work_scope.max_path_entries,
+                report.work_scope.max_components
+            ));
             Ok(out)
         }
     }

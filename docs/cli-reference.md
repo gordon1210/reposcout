@@ -120,6 +120,9 @@ Only one of `--since`, `--staged`, and `--working` may define the diff scope.
 `--change-summary` requires one of them. It defaults to the `agent` profile unless `--profile
 full` or `--profile safe` is explicit, and supports table, JSON, Markdown, and NDJSON only.
 Capability discovery reports its fixed path, gap, and validation limits.
+It also reports the additive work-scope strategy version, aggregate path bound, and component
+bound. Work-scope facts appear in ordinary JSON/NDJSON and human reports without enabling
+additional analysis; `--baseline-ready` and graph-only formats omit them.
 
 ## Common examples
 

@@ -47,6 +47,11 @@ pub struct ScanReport {
     #[serde(default)]
     pub finding_catalog: FindingCatalog,
     pub summary: Summary,
+    /// Compact raw facts describing the observed reading and structural scope.
+    /// This is additive and does not trigger analysis beyond the selected
+    /// workflow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_scope: Option<WorkScope>,
     pub files: Vec<FileReport>,
     pub duplicates: Duplication,
     /// Per-directory rollup, populated only when `--by-dir` is passed.
@@ -775,6 +780,9 @@ pub struct CapabilitiesReport {
     /// Contract and hard payload limits for the change-focused projection.
     #[serde(default)]
     pub change_summary: ChangeSummaryCapability,
+    /// Contract and hard payload limits for raw work-scope evidence.
+    #[serde(default)]
+    pub work_scope: WorkScopeCapability,
     /// Maximum Type-2 candidate seed pairs examined in one format pool.
     #[serde(default)]
     pub type2_max_seed_pairs_per_pool: u64,
@@ -795,6 +803,13 @@ pub struct ChangeSummaryCapability {
     pub max_path_entries: usize,
     pub max_gap_entries: usize,
     pub max_validations: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeCapability {
+    pub strategy_version: u32,
+    pub max_path_entries: usize,
+    pub max_components: usize,
 }
 
 /// A file that is almost certainly not hand-authored code an agent should read.
@@ -852,6 +867,169 @@ pub struct Assessment {
     pub reasons: Vec<String>,
 }
 
+/// Compact, versioned evidence about the amount and shape of observed work.
+///
+/// RepoScout reports these measurements without deciding whether an agent
+/// should work directly, delegate, or split the task.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScope {
+    pub strategy_version: u32,
+    /// Ordered basis labels: `repository` or `diff`, followed by `focus` when
+    /// explicit focus paths contributed.
+    pub basis: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_scope: Option<String>,
+    pub inventory: WorkScopeInventory,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seeds: Option<WorkScopeSeeds>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<WorkScopeContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impact: Option<WorkScopeImpact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<WorkScopeStructure>,
+    pub confidence: WorkScopeConfidence,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeInventory {
+    /// Files in the post-ignore discovery universe before an optional diff
+    /// narrows the primary analysis.
+    pub discovery_files: usize,
+    /// Files analyzed in the primary repository or diff scope.
+    pub primary_files: usize,
+    pub source_files: usize,
+    pub source_tokens: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeSeeds {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<WorkScopeFocus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<WorkScopeChanges>,
+    /// Aggregate number of seed-path entries omitted by the work-scope bound.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub paths_omitted: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeFocus {
+    pub total: usize,
+    pub resolved: usize,
+    pub unresolved: usize,
+    pub shown: usize,
+    pub omitted: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmatched_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeChanges {
+    pub scope: String,
+    pub total: usize,
+    pub shown: usize,
+    pub omitted: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeContext {
+    pub budget_tokens: usize,
+    pub selected_files: usize,
+    pub selected_tokens: usize,
+    pub candidate_files: usize,
+    pub outline_only_files: usize,
+    pub outline_only_tokens: usize,
+    pub outline_symbols: usize,
+    pub outline_bytes: usize,
+    pub outline_omitted_symbols: usize,
+    pub omitted_files: usize,
+    pub omitted_tokens: usize,
+    pub skipped_files: usize,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeImpact {
+    pub seed_files: usize,
+    pub graph_eligible_seed_files: usize,
+    pub graph_covered_seed_files: usize,
+    pub direct_dependents: usize,
+    pub transitive_dependents: usize,
+    pub matching_tests: usize,
+    /// False when the selected workflow did not run filename-based test
+    /// matching for the seeds.
+    pub matching_tests_known: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeStructure {
+    pub graph_files: usize,
+    pub components: usize,
+    pub largest_component_files: usize,
+    pub shown: usize,
+    pub omitted: usize,
+    pub entries: Vec<WorkScopeComponent>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeComponent {
+    pub files: usize,
+    pub seed_files: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub representative_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub representative_paths_omitted: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeConfidence {
+    pub primary: WorkScopeCoverage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planning_universe: Option<WorkScopeCoverage>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub graph_unresolved_imports: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub graph_parse_errors: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub graph_config_errors: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub type2_analysis_partial: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable_signals: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkScopeCoverage {
+    pub discovered_files: usize,
+    pub analyzed_files: usize,
+    pub unsupported_files: usize,
+    pub unreadable_files: usize,
+    pub walker_errors: usize,
+    /// True when `analyzed_files` is intentionally limited to the selected
+    /// diff rather than expected to equal the discovery universe.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub diff_scoped: bool,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub oversized_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub oversized_bytes: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub files_omitted_by_limit: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub bytes_omitted_by_limit: u64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub omitted_count_incomplete: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub duration_limit_reached: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub truncated: bool,
+}
+
 /// A bounded, deterministic set of files an agent should read first.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ContextPlan {
@@ -865,7 +1043,25 @@ pub struct ContextPlan {
     pub selected_tokens: usize,
     pub candidate_files: usize,
     pub omitted_files: usize,
+    /// Sum of source tokens across every candidate omitted by the context
+    /// budget or file cap. Unlike `omitted`, this total is not detail-capped.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub omitted_tokens: usize,
     pub skipped_files: usize,
+    /// Unique resolved focus/change files that seeded the plan, including
+    /// deleted change paths.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub seed_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub graph_eligible_seed_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub graph_covered_seed_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub direct_dependents: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub transitive_dependents: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub matching_tests: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus: Vec<PathBuf>,
     /// Explicit focus paths that matched no analyzed file or directory after
@@ -1587,7 +1783,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn legacy_scan_reports_default_the_additive_change_summary() {
+    fn legacy_scan_reports_default_additive_agent_projections() {
         let report: ScanReport = serde_json::from_value(serde_json::json!({
             "schema_version": "1.0",
             "root": "/tmp/example",
@@ -1601,6 +1797,7 @@ mod tests {
         .expect("legacy scan report");
 
         assert!(report.change_summary.is_none());
+        assert!(report.work_scope.is_none());
     }
 
     #[test]

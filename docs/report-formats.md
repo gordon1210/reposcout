@@ -49,6 +49,7 @@ reposcout -f json --summary --profile agent .
 Summary mode removes the heavy arrays while retaining:
 
 - `summary` and `diagnostics`;
+- bounded raw `work_scope` evidence;
 - analysis/execution profile metadata;
 - `summary.top_duplicates` and other top-N evidence; and
 - explicitly requested `context`, `directories`, `graph`, `impact`, `baseline`, or `review`
@@ -57,7 +58,8 @@ Summary mode removes the heavy arrays while retaining:
 Summary JSON remains valid aggregate baseline input.
 
 Use `--baseline-ready` when the artifact exists specifically for later comparison. It stays
-compact but retains the complete `finding_catalog`, enabling finding-level comparison.
+compact but retains the complete `finding_catalog`, enabling finding-level comparison. It removes
+`work_scope` because transient reading/impact facts do not participate in baseline compatibility.
 
 ## Change-summary projection
 
@@ -69,9 +71,9 @@ reposcout --working --change-summary -f json .
 ```
 
 The compact JSON/NDJSON record identifies itself with `report_kind: "change-summary"` and retains
-only report identity, interpretation metadata, primary diagnostics, and `change_summary`. It omits
-the ordinary `summary`, `files`, `duplicates`, `finding_catalog`, raw `context`, and raw `impact`
-blocks. The projection includes:
+only report identity, interpretation metadata, primary diagnostics, bounded `work_scope`, and
+`change_summary`. It omits the ordinary `summary`, `files`, `duplicates`, `finding_catalog`, raw
+`context`, and raw `impact` blocks. The projection includes:
 
 - all changed-file counts and bounded path details;
 - merged reading-order roles, known impact, and convention-matched tests, each with explicit
@@ -102,6 +104,7 @@ Scan reports carry `schema_version: "1.0"`. The top-level contract is organized 
 | `execution` | Profile, config provenance, timings, cache facts, and safety limits |
 | `diagnostics` | Discovery coverage, bounded unsupported-path examples, omitted-count completeness, and partial Type-2 state |
 | `summary` | Repository totals, language rollups, rankings, risks, tests, and assessment |
+| `work_scope` | Versioned raw inventory, seed, context-budget, impact, graph-component, and confidence facts |
 | `files` | Per-file metrics and facts; omitted by compact modes |
 | `duplicates` | Exact/near groups, precise pairs, and coverage; omitted by compact modes |
 | `finding_catalog` | Complete versioned complexity, marker, duplication, and risk findings |
@@ -184,7 +187,8 @@ Records are emitted in this order:
 3. one `finding` record per duplicate pair.
 
 The summary record also carries identity/profile metadata, diagnostics, and requested optional
-blocks. Review findings use `kind: "review_finding"`. `--summary` emits only the first record.
+blocks. Review findings use `kind: "review_finding"`. The first record carries `work_scope`, and
+`--summary` emits only that record.
 
 `reposcout explain FILE -f ndjson` emits one contextual record. Symbol lookup emits a query header
 followed by one record per match. `--change-summary -f ndjson` emits one bounded record carrying

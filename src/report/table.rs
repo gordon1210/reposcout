@@ -32,6 +32,9 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
     let _ = writeln!(out);
 
     render_overview(&mut out, report, color);
+    if let Some(work_scope) = &report.work_scope {
+        super::work_scope::table(&mut out, work_scope, color);
+    }
 
     render_complexity(&mut out, report, color);
 
@@ -330,61 +333,7 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
         return;
     };
     let _ = writeln!(out, "{}", header("Agent context plan", color));
-    kv(
-        out,
-        "Token budget",
-        &format!(
-            "{} / {} selected",
-            thousands(context.selected_tokens),
-            thousands(context.budget_tokens)
-        ),
-    );
-    kv(
-        out,
-        "Files",
-        &format!(
-            "{} selected · {} candidates · {} omitted · {} skipped",
-            context.files.len(),
-            context.candidate_files,
-            context.omitted_files,
-            context.skipped_files
-        ),
-    );
-    kv(
-        out,
-        "Planning",
-        &format!(
-            "{} ms · {} outline symbols · {} bytes · {} outline omissions",
-            context.planning_ms,
-            context.outline_symbols,
-            context.outline_bytes,
-            context.outline_omitted_symbols
-        ),
-    );
-    if !context.focus.is_empty() {
-        kv(
-            out,
-            "Focus",
-            &context
-                .focus
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
-    if !context.unmatched_focus.is_empty() {
-        kv(
-            out,
-            "Unmatched focus",
-            &context
-                .unmatched_focus
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
+    kv(out, "Planning time", &format!("{} ms", context.planning_ms));
     if !context.graph_languages.is_empty() {
         kv(
             out,
@@ -397,40 +346,6 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
                 context.graph_config_errors
             ),
         );
-    }
-    if let Some(diagnostics) = &context.planning_diagnostics {
-        kv(
-            out,
-            "Planning coverage",
-            &format!(
-                "{} / {} analyzed · {} unsupported · {} unreadable · {} walker errors",
-                diagnostics.analyzed_files,
-                diagnostics.discovered_files,
-                diagnostics.unsupported_files,
-                diagnostics.unreadable_files,
-                diagnostics.walker_errors
-            ),
-        );
-    }
-    if let Some(scope) = &context.change_scope {
-        let mut paths = context
-            .changed_files
-            .iter()
-            .take(10)
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>();
-        if context.changed_files.len() > paths.len() {
-            paths.push(format!(
-                "+{} more",
-                context.changed_files.len() - paths.len()
-            ));
-        }
-        let paths = if paths.is_empty() {
-            "no changed paths".to_string()
-        } else {
-            paths.join(", ")
-        };
-        kv(out, "Change seed", &format!("{scope} · {paths}"));
     }
     if !context.files.is_empty() {
         let mut table = new_table(vec!["File", "Tokens", "Score", "Why"]);

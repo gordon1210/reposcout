@@ -69,6 +69,7 @@ struct PreparedScan {
     analysis_profile: ScanProfile,
     effective_exclusions: Vec<PathBuf>,
     review_changed_files: Option<Vec<ReviewChangedFile>>,
+    scoped_changed_files: HashSet<PathBuf>,
     impact_changed_files: HashSet<PathBuf>,
     context_changes: Option<crate::context::ChangeSeeds>,
     all_report_paths: Vec<PathBuf>,
@@ -335,6 +336,16 @@ fn prepare_scan(
         diff_base.as_deref(),
         &excluded_report_paths,
     )?;
+    let scoped_changed_files = changed_files
+        .as_ref()
+        .map(|changed| {
+            changed
+                .iter()
+                .filter(|path| path_is_within_target(path, &root, &discovered.target))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
     let impact_changed_files =
         impact_changed_files(cfg, changed_files.as_ref(), &root, &discovered.target)?;
     let context_changes =
@@ -384,6 +395,7 @@ fn prepare_scan(
         analysis_profile,
         effective_exclusions,
         review_changed_files,
+        scoped_changed_files,
         impact_changed_files,
         context_changes,
         all_report_paths,
@@ -1165,12 +1177,6 @@ fn assemble_report(
         let elapsed = analysis_elapsed + assembly_started.elapsed();
         context.planning_ms = usize::try_from(elapsed.as_millis()).unwrap_or(usize::MAX);
     }
-    let graph = if cfg.graph {
-        scoped_graph_analysis.map(|analysis| analysis.report)
-    } else {
-        None
-    };
-
     let impact = if cfg.impact {
         progress.stage("analyzing change impact");
         Some(if let Some(analysis) = planning_graph_analysis.as_ref() {
@@ -1185,20 +1191,20 @@ fn assemble_report(
     } else {
         None
     };
+    let diff_scope = match cfg.diff_scope.as_ref() {
+        Some(git::DiffScope::Since(_)) => Some("since"),
+        Some(git::DiffScope::Staged) => Some("staged"),
+        Some(git::DiffScope::Working) => Some("working"),
+        None => None,
+    };
     let change_summary = if cfg.change_summary {
-        let scope = match cfg.diff_scope.as_ref() {
-            Some(git::DiffScope::Since(_)) => "since",
-            Some(git::DiffScope::Staged) => "staged",
-            Some(git::DiffScope::Working) => "working",
-            None => "full",
-        };
         let graph_diagnostics = planning_graph_analysis
             .as_ref()
             .map(crate::graph::diagnostic_facts)
             .unwrap_or_default();
         Some(crate::change_summary::build(
             crate::change_summary::Inputs {
-                scope,
+                scope: diff_scope.unwrap_or("full"),
                 changed: &prepared.impact_changed_files,
                 context: context.as_ref(),
                 files: planning
@@ -1214,6 +1220,23 @@ fn assemble_report(
                     .map_or(&analyzed.diagnostics, |planning| &planning.diagnostics),
             },
         ))
+    } else {
+        None
+    };
+    let work_scope = crate::work_scope::build(crate::work_scope::Inputs {
+        summary: &summary,
+        diagnostics: &analyzed.diagnostics,
+        context: context.as_ref(),
+        graph: planning_graph_analysis
+            .as_ref()
+            .or(scoped_graph_analysis.as_ref())
+            .map(|analysis| &analysis.signals),
+        impact: impact.as_ref(),
+        diff_scope,
+        changed: &prepared.scoped_changed_files,
+    });
+    let graph = if cfg.graph {
+        scoped_graph_analysis.map(|analysis| analysis.report)
     } else {
         None
     };
@@ -1264,6 +1287,7 @@ fn assemble_report(
             },
             finding_catalog,
             summary,
+            work_scope: Some(work_scope),
             files: analyzed.files,
             duplicates: analyzed.duplication,
             directories,

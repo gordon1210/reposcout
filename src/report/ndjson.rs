@@ -38,6 +38,9 @@ pub fn render(report: &ScanReport, summary_only: bool) -> Result<String> {
         "diagnostics".to_string(),
         serde_json::to_value(&report.diagnostics)?,
     );
+    if let Some(work_scope) = &report.work_scope {
+        map.insert("work_scope".to_string(), serde_json::to_value(work_scope)?);
+    }
     if let Some(impact) = &report.impact {
         map.insert("impact".to_string(), serde_json::to_value(impact)?);
     }

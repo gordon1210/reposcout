@@ -134,6 +134,8 @@ src/
                      process-memory sampling, and panic capture.
   context.rs         Deterministic, token-budgeted, focus/change-aware reading-plan ranking
                      plus bounded structural-outline projection.
+  work_scope.rs      Additive bounded projection of observed repository, seed, context, impact,
+                     graph-component, and confidence facts for agent decisions.
   model.rs           THE shared data contract (all serde result structs).
   lang.rs            Language detection by extension/filename.
   walk.rs            .gitignore-aware discovery (ignore crate) + git root +
@@ -476,6 +478,14 @@ Metric semantics worth knowing:
   unsupported-path examples, walker errors, and any bounded/partial Type-2 run (including skipped
   seed pairs/matches and which limit fired)
   so agents can tell whether an apparent absence is a scan gap or a lower-bound duplication result.
+- **Work scope is raw bounded evidence, not agent routing.** New scan reports project primary
+  inventory, focus/diff seeds, context selection and uncapped omission totals, observed
+  dependents/tests, weak graph components, and primary/planning confidence into top-level
+  `work_scope`. All path examples share the capability-advertised bound and component records are
+  separately bounded; exact totals and omissions survive. The projection uses only analysis
+  already requested by the caller, is retained by summary/change-summary/NDJSON output, and is
+  removed from baseline-ready and graph-only formats. Graph components describe observed topology
+  and never prove independent tasks or prescribe delegation.
 - **Opt-in blocks are omitted unless their flag is passed.** `context` (`--context`, context
   budget/file flags, or `--focus`), `directories` (`--by-dir`), `baseline` (`--baseline`),
   `graph` (`--graph`), `impact` (`--impact`), and `review`

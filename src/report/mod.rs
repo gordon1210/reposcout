@@ -11,6 +11,7 @@ mod projection;
 pub mod query;
 pub mod sarif;
 pub mod table;
+mod work_scope;
 
 use crate::model::ScanReport;
 use anyhow::{Context, Result};

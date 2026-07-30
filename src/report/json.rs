@@ -20,6 +20,7 @@ pub fn render(report: &ScanReport, summary_only: bool, baseline_ready: bool) -> 
                 obj.remove("baseline");
                 obj.remove("review");
                 obj.remove("context");
+                obj.remove("work_scope");
             }
             if summary_only && !baseline_ready {
                 obj.remove("finding_catalog");

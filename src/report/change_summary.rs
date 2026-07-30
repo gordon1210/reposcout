@@ -1,4 +1,4 @@
-use crate::model::{ChangeGapCounts, ChangeSummary, ScanReport};
+use crate::model::{ChangeGapCounts, ChangeSummary, ScanReport, WorkScope};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -16,6 +16,7 @@ struct Projection<'a> {
     analysis_profile: &'a Option<crate::model::ScanProfile>,
     execution: &'a crate::model::ExecutionMetadata,
     diagnostics: &'a crate::model::ScanDiagnostics,
+    work_scope: &'a WorkScope,
     change_summary: &'a ChangeSummary,
 }
 
@@ -24,6 +25,10 @@ fn projection(report: &ScanReport) -> Result<Projection<'_>> {
         .change_summary
         .as_ref()
         .context("change-summary output requires change-summary analysis")?;
+    let work_scope = report
+        .work_scope
+        .as_ref()
+        .context("change-summary output requires work-scope evidence")?;
     Ok(Projection {
         schema_version: &report.schema_version,
         report_kind: "change-summary",
@@ -34,6 +39,7 @@ fn projection(report: &ScanReport) -> Result<Projection<'_>> {
         analysis_profile: &report.analysis_profile,
         execution: &report.execution,
         diagnostics: &report.diagnostics,
+        work_scope,
         change_summary,
     })
 }
@@ -50,7 +56,8 @@ pub fn ndjson(report: &ScanReport) -> Result<String> {
 }
 
 pub fn table(report: &ScanReport) -> Result<String> {
-    let summary = projection(report)?.change_summary;
+    let projection = projection(report)?;
+    let summary = projection.change_summary;
     let mut out = String::new();
     writeln!(out, "RepoScout change summary ({})", summary.scope).unwrap();
     writeln!(out, "Confidence: {}", summary.executive.confidence).unwrap();
@@ -82,6 +89,8 @@ pub fn table(report: &ScanReport) -> Result<String> {
         "Outside-scope gaps",
         &summary.coverage.outside_known_scope_gaps,
     );
+    writeln!(out).unwrap();
+    super::work_scope::table(&mut out, projection.work_scope, false);
     if !summary.reading_order.is_empty() {
         writeln!(out, "\nReading order").unwrap();
         for file in &summary.reading_order {
@@ -116,7 +125,8 @@ pub fn table(report: &ScanReport) -> Result<String> {
 }
 
 pub fn markdown(report: &ScanReport) -> Result<String> {
-    let summary = projection(report)?.change_summary;
+    let projection = projection(report)?;
+    let summary = projection.change_summary;
     let mut out = String::new();
     writeln!(out, "# RepoScout change summary\n").unwrap();
     writeln!(out, "- Scope: {}", markdown_code_span(&summary.scope)).unwrap();
@@ -147,6 +157,8 @@ pub fn markdown(report: &ScanReport) -> Result<String> {
         markdown_text(&summary.coverage.test_mapping_confidence)
     )
     .unwrap();
+    writeln!(out).unwrap();
+    super::work_scope::markdown(&mut out, projection.work_scope);
     if !summary.reading_order.is_empty() {
         writeln!(out, "\n## Reading order\n").unwrap();
         for file in &summary.reading_order {

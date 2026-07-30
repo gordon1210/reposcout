@@ -28,6 +28,37 @@ The most useful first-pass fields are:
 | Did the scan cover the target? | top-level `diagnostics` |
 | Was Type-2 analysis complete? | `diagnostics.type2_analysis_partial` |
 
+## Read the work scope before choosing depth
+
+Every new scan report except `--baseline-ready` includes a versioned top-level `work_scope` block.
+It projects facts already produced by the selected workflow; it never enables graph construction,
+context planning, or another analyzer on its own.
+
+Read it in this order:
+
+1. `basis` and `inventory` identify whether the primary facts describe a repository or diff.
+   `inventory.discovery_files` is the post-ignore repository discovery universe before an optional
+   diff narrows the scan; `inventory.primary_files` is the repository or diff scope actually
+   analyzed, while `source_files` and `source_tokens` describe that primary scope.
+2. `seeds` preserves exact focus/change totals, resolved versus unmatched focus inputs, bounded
+   path examples, and omissions.
+3. `context` reports selected, outline-only, omitted, and skipped files plus uncapped selected and
+   omitted token totals.
+4. `impact` reports graph-eligible/covered seed files, direct/transitive dependents, and whether
+   matching-test counts were actually evaluated.
+5. `structure` reports weakly connected components only when the selected workflow already built
+   a graph. Components describe observed topology; they do not prove that work is independent.
+6. `confidence` separates primary-scan and full planning-universe coverage, graph gaps, partial
+   Type-2 analysis, and unavailable signals. `primary.diff_scoped` makes an intentional diff
+   boundary explicit rather than presenting it as a discovery gap.
+
+Path examples share one hard 25-entry budget and graph structure keeps at most 10 component
+records; exact totals and omission counts survive either bound. Discover the installed version and
+limits through `reposcout capabilities -f json`.
+
+These are raw measurements. The calling agent decides whether the task fits its available context,
+needs deeper inspection, or would benefit from splitting or delegation.
+
 The serialized `untested_*` fields mean “no conventional matching test file or inline Rust test
 was found.” Rust `tests/cli.rs` also conventionally matches `src/main.rs`; these are
 test-presence heuristics, not measured coverage, and they do not change risk or cleanup scoring.
@@ -42,7 +73,7 @@ reposcout capabilities -f json
 
 This command performs no repository scan. It advertises commands, output/error formats, profiles,
 language coverage, health scopes and path-exclusion support, symbol kinds, and hard graph,
-duplication, and change-summary bounds.
+duplication, change-summary, and work-scope bounds.
 
 ## Find declarations
 
