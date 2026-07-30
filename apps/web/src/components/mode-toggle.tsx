@@ -1,6 +1,6 @@
 import { Laptop, Moon, Sun } from "lucide-react"
 
-import { useTheme } from "@/components/theme-provider"
+import { isTheme, useTheme } from "@/components/theme-context"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -9,7 +9,11 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export function ModeToggle() {
   const { theme, setTheme } = useTheme()
@@ -19,7 +23,11 @@ export function ModeToggle() {
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" aria-label="Change color theme">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Change color theme"
+            >
               <Sun className="size-4 dark:hidden" />
               <Moon className="hidden size-4 dark:block" />
             </Button>
@@ -28,7 +36,12 @@ export function ModeToggle() {
         <TooltipContent>Theme</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as typeof theme)}>
+        <DropdownMenuRadioGroup
+          value={theme}
+          onValueChange={(value) => {
+            if (isTheme(value)) setTheme(value)
+          }}
+        >
           <DropdownMenuRadioItem value="light">
             <Sun /> Light
           </DropdownMenuRadioItem>

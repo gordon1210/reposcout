@@ -19,10 +19,19 @@ export function App() {
     <ThemeProvider defaultTheme="system">
       <TooltipProvider>
         <Routes>
-          <Route index element={<Navigate to={dashboardPath("overview")} replace />} />
-          <Route path="graph/*" element={<RoutedDashboard daemon={daemon} fixedTab="graph" />} />
+          <Route
+            index
+            element={<Navigate to={dashboardPath("overview")} replace />}
+          />
+          <Route
+            path="graph/*"
+            element={<RoutedDashboard daemon={daemon} fixedTab="graph" />}
+          />
           <Route path=":tab" element={<RoutedDashboard daemon={daemon} />} />
-          <Route path="*" element={<Navigate to={dashboardPath("overview")} replace />} />
+          <Route
+            path="*"
+            element={<Navigate to={dashboardPath("overview")} replace />}
+          />
         </Routes>
       </TooltipProvider>
     </ThemeProvider>

@@ -8,7 +8,9 @@ const graph: DependencyGraph = {
   languages: ["TypeScript"],
   nodes: 1,
   edges: 0,
-  files: [{ path: "src/app.ts", language: "TypeScript", fan_in: 0, fan_out: 0 }],
+  files: [
+    { path: "src/app.ts", language: "TypeScript", fan_in: 0, fan_out: 0 },
+  ],
   edge_list: [],
   cycles: [],
   orphans: [],

@@ -13,12 +13,19 @@ vi.mock("@/hooks/use-daemon", () => ({
 }))
 
 vi.mock("@/components/repository-graph", () => ({
-  RepositoryGraph: ({ revision }: { revision: number }) => <div>Graph for revision {revision}</div>,
+  RepositoryGraph: ({ revision }: { revision: number }) => (
+    <div>Graph for revision {revision}</div>
+  ),
 }))
 
 function LocationProbe() {
   const location = useLocation()
-  return <output aria-label="Current route">{location.pathname}{location.search}</output>
+  return (
+    <output aria-label="Current route">
+      {location.pathname}
+      {location.search}
+    </output>
+  )
 }
 
 function renderRoute(path: string) {
@@ -26,7 +33,7 @@ function renderRoute(path: string) {
     <MemoryRouter initialEntries={[path]}>
       <App />
       <LocationProbe />
-    </MemoryRouter>,
+    </MemoryRouter>
   )
 }
 
@@ -62,7 +69,7 @@ describe("dashboard routing", () => {
 
     expect(await screen.findByText("Graph for revision 12")).toBeInTheDocument()
     expect(screen.getByLabelText("Current route")).toHaveTextContent(
-      "/graph/file/src/api.ts?view=full&direction=dependencies",
+      "/graph/file/src/api.ts?view=full&direction=dependencies"
     )
     expect(document.title).toBe("Graph · RepoScout")
   })
@@ -71,6 +78,8 @@ describe("dashboard routing", () => {
     renderRoute("/not-a-dashboard-view")
 
     expect(await screen.findByText("Languages")).toBeInTheDocument()
-    expect(screen.getByLabelText("Current route")).toHaveTextContent("/overview")
+    expect(screen.getByLabelText("Current route")).toHaveTextContent(
+      "/overview"
+    )
   })
 })

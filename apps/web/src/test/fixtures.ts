@@ -93,7 +93,9 @@ export function makeReport(overrides: Partial<ScanReport> = {}): ScanReport {
       markers: { TODO: 1 },
       top_token_files: [{ path: "src/lib.rs", tokens: 900 }],
       top_source_token_files: [{ path: "src/lib.rs", tokens: 900 }],
-      top_hotspots: [{ path: "src/lib.rs", commits: 3, cyclomatic: 7, score: 21 }],
+      top_hotspots: [
+        { path: "src/lib.rs", commits: 3, cyclomatic: 7, score: 21 },
+      ],
       top_functions: [
         {
           path: "src/lib.rs",
@@ -140,7 +142,11 @@ export function makeReport(overrides: Partial<ScanReport> = {}): ScanReport {
           kind: "marker",
           severity: "warning",
           message: "TODO marker",
-          primary_location: { path: "src/lib.rs", start_line: 12, end_line: 12 },
+          primary_location: {
+            path: "src/lib.rs",
+            start_line: 12,
+            end_line: 12,
+          },
         },
       ],
     },
@@ -155,7 +161,9 @@ export function makeReport(overrides: Partial<ScanReport> = {}): ScanReport {
   return { ...report, ...overrides }
 }
 
-export function makeSnapshot(overrides: Partial<DaemonSnapshot> = {}): DaemonSnapshot {
+export function makeSnapshot(
+  overrides: Partial<DaemonSnapshot> = {}
+): DaemonSnapshot {
   return {
     target: "/workspace/repo",
     profile: "lite",

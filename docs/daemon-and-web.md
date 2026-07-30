@@ -131,6 +131,7 @@ Ambiguous names and unresolved imports remain diagnostics rather than speculativ
 ## Production builds
 
 ```sh
+pnpm lint:frontend
 pnpm build:web
 pnpm test:web
 pnpm build:landing

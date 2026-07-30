@@ -11,6 +11,7 @@ on:
       - apps/web/**
       - "!apps/web/**/*.md"
       - package.json
+      - packages/eslint-config/**
       - patches/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -29,6 +30,7 @@ on:
       - apps/web/**
       - "!apps/web/**/*.md"
       - package.json
+      - packages/eslint-config/**
       - patches/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -64,6 +66,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Lint frontends
+        run: pnpm lint:frontend
 
       - name: Build dashboard
         run: pnpm build:web

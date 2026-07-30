@@ -38,7 +38,11 @@ function migrateQueryToken(): string | null {
   url.searchParams.delete("token")
   // Prefer a fragment so reloads keep the token without server-visible query logs.
   url.hash = `token=${encodeURIComponent(fromQuery)}`
-  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`)
+  window.history.replaceState(
+    null,
+    "",
+    `${url.pathname}${url.search}${url.hash}`
+  )
   return fromQuery
 }
 

@@ -44,19 +44,45 @@ function mixedFixture() {
       kind: "risk",
       severity: "warning",
       message: "Main is risky",
-      primary_location: { path: "apps/web/src/main.ts", start_line: 1, end_line: 1 },
+      primary_location: {
+        path: "apps/web/src/main.ts",
+        start_line: 1,
+        end_line: 1,
+      },
     },
   ]
 
   const edge_list = [
-    { source: "apps/web/src/main.ts", target: "apps/web/src/api/client.ts", resolver: "relative" },
-    { source: "apps/web/src/legacy.php", target: "apps/web/src/api/client.ts", resolver: "php-include" },
-    { source: "crates/core/src/lib.rs", target: "crates/core/src/model.rs", resolver: "rust-mod" },
-    { source: "services/worker/main.go", target: "services/worker/internal/job.go", resolver: "go-module" },
-    { source: "tools/run.py", target: "tools/helpers.py", resolver: "python-absolute" },
+    {
+      source: "apps/web/src/main.ts",
+      target: "apps/web/src/api/client.ts",
+      resolver: "relative",
+    },
+    {
+      source: "apps/web/src/legacy.php",
+      target: "apps/web/src/api/client.ts",
+      resolver: "php-include",
+    },
+    {
+      source: "crates/core/src/lib.rs",
+      target: "crates/core/src/model.rs",
+      resolver: "rust-mod",
+    },
+    {
+      source: "services/worker/main.go",
+      target: "services/worker/internal/job.go",
+      resolver: "go-module",
+    },
+    {
+      source: "tools/run.py",
+      target: "tools/helpers.py",
+      resolver: "python-absolute",
+    },
   ]
   const graphPaths = report.files
-    .filter((entry) => ["TypeScript", "PHP", "Rust", "Go", "Python"].includes(entry.language))
+    .filter((entry) =>
+      ["TypeScript", "PHP", "Rust", "Go", "Python"].includes(entry.language)
+    )
     .map((entry) => entry.path)
   const graph: DependencyGraph = {
     languages: ["Go", "PHP", "Python", "Rust", "TypeScript"],
@@ -74,7 +100,11 @@ function mixedFixture() {
     top_depended: [],
     most_dependent: [],
     unresolved_imports: 0,
-    config_files: ["apps/web/package.json", "crates/core/Cargo.toml", "services/worker/go.mod"],
+    config_files: [
+      "apps/web/package.json",
+      "crates/core/Cargo.toml",
+      "services/worker/go.mod",
+    ],
   }
   return { graph, report }
 }
@@ -91,10 +121,11 @@ describe("repository graph explorer model", () => {
       "services/worker",
       "tools",
     ])
-    expect(root.groups?.find((group) => group.path === "apps/web")?.members.map((member) => member.path)).toEqual([
-      "apps/web/src",
-      "apps/web/package.json",
-    ])
+    expect(
+      root.groups
+        ?.find((group) => group.path === "apps/web")
+        ?.members.map((member) => member.path)
+    ).toEqual(["apps/web/src", "apps/web/package.json"])
     expect(root.scope.languages.map((language) => language.name)).toEqual([
       "Go",
       "Python",
@@ -138,15 +169,16 @@ describe("repository graph explorer model", () => {
       "apps/web/src/main.ts",
     ])
     expect(sourceView.connections).toHaveLength(2)
-    expect(sourceView.connections.map((connection) => connection.relation).sort()).toEqual([
-      "imports",
-      "includes",
-    ].sort())
+    expect(
+      sourceView.connections.map((connection) => connection.relation).sort()
+    ).toEqual(["imports", "includes"].sort())
   })
 
   it("exposes complete scope and file inspection without semantic invention", () => {
     const { graph, report } = mixedFixture()
-    report.files.find((entry) => entry.path === "apps/web/src/main.ts")!.complexity!.functions = [
+    report.files.find(
+      (entry) => entry.path === "apps/web/src/main.ts"
+    )!.complexity!.functions = [
       {
         name: "main",
         line: 4,
@@ -178,17 +210,32 @@ describe("repository graph explorer model", () => {
     expect(classifyFile(file("src/main.rs", "Rust"))).toBe("entrypoint")
     expect(classifyFile(file("pkg/service_test.go", "Go"))).toBe("test")
     expect(classifyFile(file("tests/ControllerTest.php", "PHP"))).toBe("test")
-    expect(classifyFile(file("schema/events.proto", "Protocol Buffers"))).toBe("schema")
+    expect(classifyFile(file("schema/events.proto", "Protocol Buffers"))).toBe(
+      "schema"
+    )
     expect(classifyFile(file("apps/web/tsconfig.json", "JSON"))).toBe("config")
-    expect(classifyFile({ ...file("generated/client.ts", "TypeScript"), skip_hint: "generated" })).toBe("generated")
+    expect(
+      classifyFile({
+        ...file("generated/client.ts", "TypeScript"),
+        skip_hint: "generated",
+      })
+    ).toBe("generated")
     expect(classifyFile(file("src/helpers.py", "Python"))).toBe("source")
   })
 
   it("retains every first-class language in one multilingual scope", () => {
-    const languages = ["Rust", "Python", "JavaScript", "TypeScript", "TSX", "Go", "PHP"]
+    const languages = [
+      "Rust",
+      "Python",
+      "JavaScript",
+      "TypeScript",
+      "TSX",
+      "Go",
+      "PHP",
+    ]
     const report = makeReport()
     report.files = languages.map((language, index) =>
-      file(`src/language-${index}.${index === 0 ? "rs" : "txt"}`, language),
+      file(`src/language-${index}.${index === 0 ? "rs" : "txt"}`, language)
     )
     const graph: DependencyGraph = {
       languages: [...languages].sort(),
@@ -208,9 +255,13 @@ describe("repository graph explorer model", () => {
       unresolved_imports: 0,
     }
 
-    const scope = buildRepositoryGraphExplorer(graph, report).inspectScope("src")
+    const scope = buildRepositoryGraphExplorer(graph, report).inspectScope(
+      "src"
+    )
     expect(scope.graphFiles).toBe(7)
-    expect(scope.languages.map((language) => language.name).sort()).toEqual([...languages].sort())
+    expect(scope.languages.map((language) => language.name).sort()).toEqual(
+      [...languages].sort()
+    )
   })
 
   it("labels path groups with honest language-aware scope semantics", () => {
@@ -218,20 +269,30 @@ describe("repository graph explorer model", () => {
     const explorer = buildRepositoryGraphExplorer(graph, report)
     const summary = (path: string) => explorer.inspectFile(path)!.file
 
-    expect(groupExplorerFiles([
-      summary("crates/core/src/lib.rs"),
-      summary("crates/core/src/model.rs"),
-    ])[0].label).toBe("Module scope")
-    expect(groupExplorerFiles([
-      summary("tools/run.py"),
-      summary("tools/helpers.py"),
-    ])[0].label).toBe("Package scope")
-    expect(groupExplorerFiles([summary("apps/web/src/legacy.php")])[0].label).toBe("Namespace path")
-    expect(groupExplorerFiles([summary("apps/web/src/main.ts")])[0].label).toBe("Module directory")
-    expect(groupExplorerFiles([
-      summary("apps/web/src/main.ts"),
-      summary("apps/web/src/legacy.php"),
-    ])[0].label).toBe("Mixed-language scope")
+    expect(
+      groupExplorerFiles([
+        summary("crates/core/src/lib.rs"),
+        summary("crates/core/src/model.rs"),
+      ])[0].label
+    ).toBe("Module scope")
+    expect(
+      groupExplorerFiles([
+        summary("tools/run.py"),
+        summary("tools/helpers.py"),
+      ])[0].label
+    ).toBe("Package scope")
+    expect(
+      groupExplorerFiles([summary("apps/web/src/legacy.php")])[0].label
+    ).toBe("Namespace path")
+    expect(groupExplorerFiles([summary("apps/web/src/main.ts")])[0].label).toBe(
+      "Module directory"
+    )
+    expect(
+      groupExplorerFiles([
+        summary("apps/web/src/main.ts"),
+        summary("apps/web/src/legacy.php"),
+      ])[0].label
+    ).toBe("Mixed-language scope")
   })
 
   it("projects a semantic type neighborhood before the noisy multi-hop file graph", () => {
@@ -245,11 +306,31 @@ describe("repository graph explorer model", () => {
       file("src/SecondHop.php", "PHP"),
     ]
     const edge_list = [
-      { source: "src/GuzzleClient.php", target: "src/HttpClient.php", resolver: "composer-psr-4" },
-      { source: "src/CurlClient.php", target: "src/HttpClient.php", resolver: "composer-psr-4" },
-      { source: "src/Factory.php", target: "src/HttpClient.php", resolver: "composer-psr-4" },
-      { source: "src/HttpClient.php", target: "src/Response.php", resolver: "composer-psr-4" },
-      { source: "src/SecondHop.php", target: "src/Factory.php", resolver: "composer-psr-4" },
+      {
+        source: "src/GuzzleClient.php",
+        target: "src/HttpClient.php",
+        resolver: "composer-psr-4",
+      },
+      {
+        source: "src/CurlClient.php",
+        target: "src/HttpClient.php",
+        resolver: "composer-psr-4",
+      },
+      {
+        source: "src/Factory.php",
+        target: "src/HttpClient.php",
+        resolver: "composer-psr-4",
+      },
+      {
+        source: "src/HttpClient.php",
+        target: "src/Response.php",
+        resolver: "composer-psr-4",
+      },
+      {
+        source: "src/SecondHop.php",
+        target: "src/Factory.php",
+        resolver: "composer-psr-4",
+      },
     ]
     const graph: DependencyGraph = {
       languages: ["PHP"],
@@ -260,16 +341,17 @@ describe("repository graph explorer model", () => {
         language: entry.language,
         fan_in: edge_list.filter((edge) => edge.target === entry.path).length,
         fan_out: edge_list.filter((edge) => edge.source === entry.path).length,
-        symbol_reach: entry.path === "src/HttpClient.php"
-          ? {
-              symbol_id: "http-client",
-              name: "HttpClient",
-              kind: "class",
-              fan_in: 2,
-              fan_out: 0,
-              relation: "extends",
-            }
-          : undefined,
+        symbol_reach:
+          entry.path === "src/HttpClient.php"
+            ? {
+                symbol_id: "http-client",
+                name: "HttpClient",
+                kind: "class",
+                fan_in: 2,
+                fan_out: 0,
+                relation: "extends",
+              }
+            : undefined,
       })),
       edge_list,
       symbols: [
@@ -313,17 +395,27 @@ describe("repository graph explorer model", () => {
     const semantic = explorer.neighborhood("src/HttpClient.php", "both", 2)
     expect(semantic.presentation).toBe("type")
     expect(semantic.focusPath).toBe("src/HttpClient.php")
-    expect(semantic.groups?.map((group) => [group.label, group.members.length])).toEqual([
+    expect(
+      semantic.groups?.map((group) => [group.label, group.members.length])
+    ).toEqual([
       ["Extends", 2],
       ["Import dependents", 1],
       ["Import dependencies", 1],
     ])
-    expect(semantic.groups?.every((group) => group.totalMembers === group.members.length)).toBe(true)
-    expect(semantic.entities.map((entity) => entity.path)).not.toContain("src/SecondHop.php")
+    expect(
+      semantic.groups?.every(
+        (group) => group.totalMembers === group.members.length
+      )
+    ).toBe(true)
+    expect(semantic.entities.map((entity) => entity.path)).not.toContain(
+      "src/SecondHop.php"
+    )
 
     const full = explorer.neighborhood("src/HttpClient.php", "both", 2, "full")
     expect(full.presentation).toBe("neighborhood")
-    expect(full.entities.map((entity) => entity.path)).toContain("src/SecondHop.php")
+    expect(full.entities.map((entity) => entity.path)).toContain(
+      "src/SecondHop.php"
+    )
   })
 
   it("collapses redundant entry chains into a selectable package containing useful children", () => {
@@ -340,7 +432,12 @@ describe("repository graph explorer model", () => {
       edges: 0,
       files: report.files
         .filter((entry) => entry.language !== "JSON")
-        .map((entry) => ({ path: entry.path, language: entry.language, fan_in: 0, fan_out: 0 })),
+        .map((entry) => ({
+          path: entry.path,
+          language: entry.language,
+          fan_in: 0,
+          fan_out: 0,
+        })),
       edge_list: [],
       cycles: [],
       orphans: [],
@@ -355,7 +452,9 @@ describe("repository graph explorer model", () => {
 
     const root = buildRepositoryGraphExplorer(graph, report).view("")
 
-    expect(root.groups?.map((group) => group.path)).toEqual(["paas/libraries/common"])
+    expect(root.groups?.map((group) => group.path)).toEqual([
+      "paas/libraries/common",
+    ])
     expect(root.groups?.[0].label).toBe("Package")
     expect(root.groups?.[0].members.map((member) => member.path)).toEqual([
       "paas/libraries/common/src",

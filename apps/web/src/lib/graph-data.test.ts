@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest"
 
-import { graphProminence, inspectGraphFile, projectGraph, searchGraphFiles } from "@/lib/graph-data"
+import {
+  graphProminence,
+  inspectGraphFile,
+  projectGraph,
+  searchGraphFiles,
+} from "@/lib/graph-data"
 import type { DependencyGraph } from "@/lib/types"
 
 function makeGraph(): DependencyGraph {
-  const paths = ["src/app.ts", "src/api.ts", "src/db.ts", "src/ui.ts", "src/unused.ts"]
+  const paths = [
+    "src/app.ts",
+    "src/api.ts",
+    "src/db.ts",
+    "src/ui.ts",
+    "src/unused.ts",
+  ]
   const edge_list = [
     { source: "src/app.ts", target: "src/api.ts", resolver: "relative" },
     { source: "src/app.ts", target: "src/ui.ts", resolver: "tsconfig-paths" },
@@ -19,8 +30,12 @@ function makeGraph(): DependencyGraph {
       language: "TypeScript",
       fan_in: edge_list.filter((edge) => edge.target === path).length,
       fan_out: edge_list.filter((edge) => edge.source === path).length,
-      dependencies: edge_list.filter((edge) => edge.source === path).map((edge) => edge.target),
-      dependents: edge_list.filter((edge) => edge.target === path).map((edge) => edge.source),
+      dependencies: edge_list
+        .filter((edge) => edge.source === path)
+        .map((edge) => edge.target),
+      dependents: edge_list
+        .filter((edge) => edge.target === path)
+        .map((edge) => edge.source),
     })),
     edge_list,
     cycles: [],
@@ -33,7 +48,12 @@ function makeGraph(): DependencyGraph {
 
 describe("repository graph projection", () => {
   it("follows dependencies to an exact depth", () => {
-    const projection = projectGraph(makeGraph(), "src/app.ts", "dependencies", 1)
+    const projection = projectGraph(
+      makeGraph(),
+      "src/app.ts",
+      "dependencies",
+      1
+    )
 
     expect(projection.files.map((file) => file.path)).toEqual([
       "src/api.ts",
@@ -56,7 +76,10 @@ describe("repository graph projection", () => {
   it("caps overview rendering while retaining the most connected files", () => {
     const projection = projectGraph(makeGraph(), null, "both", 2, 2)
 
-    expect(projection.files.map((file) => file.path)).toEqual(["src/api.ts", "src/app.ts"])
+    expect(projection.files.map((file) => file.path)).toEqual([
+      "src/api.ts",
+      "src/app.ts",
+    ])
     expect(projection.truncated).toBe(true)
     expect(projection.totalFiles).toBe(5)
   })
@@ -92,7 +115,9 @@ describe("repository graph projection", () => {
   })
 
   it("distinguishes orphan candidates and unknown paths", () => {
-    expect(inspectGraphFile(makeGraph(), "src/unused.ts")?.roles).toEqual(["Orphan candidate"])
+    expect(inspectGraphFile(makeGraph(), "src/unused.ts")?.roles).toEqual([
+      "Orphan candidate",
+    ])
     expect(inspectGraphFile(makeGraph(), "missing.ts")).toBeNull()
   })
 
@@ -109,7 +134,9 @@ describe("repository graph projection", () => {
       level: "notable",
       label: "Shared dependency",
     })
-    expect(graphProminence({ fan_in: 6, fan_out: 0, language: "Go" })).toMatchObject({
+    expect(
+      graphProminence({ fan_in: 6, fan_out: 0, language: "Go" })
+    ).toMatchObject({
       level: "hub",
       label: "Package anchor",
     })
@@ -150,25 +177,31 @@ describe("repository graph projection", () => {
         fan_out: 1,
       },
     ]
-    graph.symbol_edges = [{
-      source: "unused:CustomStore",
-      target: "db:BaseStore",
-      relation: "extends",
-      resolver: "unique-name",
-    }]
+    graph.symbol_edges = [
+      {
+        source: "unused:CustomStore",
+        target: "db:BaseStore",
+        relation: "extends",
+        resolver: "unique-name",
+      },
+    ]
 
-    expect(projectGraph(graph, "src/db.ts", "dependents", 1).files.map((file) => file.path)).toEqual([
-      "src/api.ts",
-      "src/db.ts",
-      "src/unused.ts",
-    ])
-    expect(graphProminence(graph.files.find((file) => file.path === "src/db.ts")!)).toMatchObject({
+    expect(
+      projectGraph(graph, "src/db.ts", "dependents", 1).files.map(
+        (file) => file.path
+      )
+    ).toEqual(["src/api.ts", "src/db.ts", "src/unused.ts"])
+    expect(
+      graphProminence(graph.files.find((file) => file.path === "src/db.ts")!)
+    ).toMatchObject({
       level: "hub",
       label: "Base class",
       basis: "symbol",
       reach: 9,
     })
-    expect(inspectGraphFile(graph, "src/db.ts")?.symbolRelations[0]).toMatchObject({
+    expect(
+      inspectGraphFile(graph, "src/db.ts")?.symbolRelations[0]
+    ).toMatchObject({
       direction: "incoming",
       relation: "extends",
       symbol: { name: "CustomStore", path: "src/unused.ts" },

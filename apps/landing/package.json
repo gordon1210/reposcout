@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "dev": "vite",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
@@ -16,11 +18,13 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@reposcout/eslint-config": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.4",
+    "eslint": "^10.7.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"

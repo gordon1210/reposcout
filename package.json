@@ -8,6 +8,8 @@
     "dev:daemon": "reposcout daemon .",
     "dev:landing": "pnpm --filter @reposcout/landing dev",
     "dev:web": "pnpm --filter @reposcout/web dev",
+    "lint:frontend": "pnpm --filter @reposcout/eslint-config --filter @reposcout/web --filter @reposcout/landing lint",
+    "lint:fix:frontend": "pnpm --filter @reposcout/eslint-config --filter @reposcout/web --filter @reposcout/landing lint:fix",
     "test:web": "pnpm --filter @reposcout/web test",
     "typecheck:landing": "pnpm --filter @reposcout/landing typecheck",
     "typecheck:web": "pnpm --filter @reposcout/web typecheck"

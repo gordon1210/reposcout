@@ -96,7 +96,7 @@ full-suite command.
 
 - A C compiler is required (vendored `libgit2` and the tree-sitter grammars build
   via `cc`). `cmake` is **not** needed.
-- Frontend packages use the root pnpm workspace (`pnpm@11.13.1`).
+- Frontend packages use the root pnpm workspace (`pnpm@11.18.0`).
 
 ## Common commands
 
@@ -108,6 +108,8 @@ cargo test <FILTER>         # targeted test; inherits the same safe default
 cargo clippy --all-targets -- -D warnings
 cargo fmt                   # format (run before committing)
 cargo run -- -f json .      # run against this repo
+pnpm lint:frontend          # shared ESLint config + both frontend apps
+pnpm lint:fix:frontend      # apply ESLint and Prettier fixes across frontend packages
 pnpm build:web              # type-check + production dashboard build
 pnpm test:web               # dashboard Vitest suite
 pnpm build:landing          # type-check + production landing-page build
@@ -120,6 +122,8 @@ CHANGELOG.md          User-visible changes in reverse chronological order.
 apps/
   web/                React dashboard for the live daemon.
   landing/            Bespoke public RepoScout landing page.
+packages/
+  eslint-config/      Shared flat ESLint configuration for both frontend apps.
 src/
   main.rs            CLI entry: scan/query/explain dispatch, profiles, gates, output/errors,
                      and debug-session lifecycle.
@@ -189,6 +193,16 @@ tests/
                      Exact and Type-2 samples for all 31 detected formats.
   fixtures/sample/   Small multi-language fixture tree.
 ```
+
+`apps/web/src/components/ui/` contains imported shadcn primitives. It is globally ignored by
+ESLint and must not be edited by hand.
+
+Frontend production code is linted with a cyclomatic-complexity ceiling of 20 and a 900-line
+module ceiling. Tests keep correctness and formatting checks but are exempt from size,
+complexity, strict assertion, and development-only React rules. The dashboard keeps its runtime
+shell in `dashboard.tsx` and report rendering in `dashboard-report.tsx`; the repository graph is
+split across controller, workspace view, canvas renderers, layout decoration, detail panels, and
+pure graph helpers under `apps/web/src/components/repository-graph-*` and `apps/web/src/lib/graph-*`.
 
 ## Architecture & the frozen contract
 
@@ -563,10 +577,11 @@ Metric semantics worth knowing:
 2. `cargo fmt --check`
 3. `cargo clippy --all-targets -- -D warnings`
 4. `cargo test` (all green; the harness is serialized by repository configuration).
-5. `pnpm build:web && pnpm test:web`
-6. `pnpm build:landing`
-7. `cargo build --release`  (refreshes the `reposcoutdev` symlink)
-8. Sanity-run: `reposcoutdev -f json .` and confirm the output looks right.
+5. `pnpm lint:frontend`
+6. `pnpm build:web && pnpm test:web`
+7. `pnpm build:landing`
+8. `cargo build --release`  (refreshes the `reposcoutdev` symlink)
+9. Sanity-run: `reposcoutdev -f json .` and confirm the output looks right.
 
 ## Testing notes
 
