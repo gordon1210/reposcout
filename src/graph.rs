@@ -726,7 +726,9 @@ fn build_from_paths_with_query(
                     unresolved_imports += 1;
                     unresolved_by_node[i] += 1;
                 }
-                ImportResolution::External => {}
+                ImportResolution::Local
+                | ImportResolution::NonGraph
+                | ImportResolution::External => {}
             }
         }
     }
@@ -1735,6 +1737,8 @@ enum ImportResolution {
         target: String,
         resolver: &'static str,
     },
+    Local,
+    NonGraph,
     Unresolved,
     External,
 }
@@ -2022,11 +2026,14 @@ impl RustResolver {
 
         let mut source_root = file.source_root.clone();
         let mut module = file.module.clone();
+        let inside_inline_module = !inline_modules.is_empty();
         module.extend(inline_modules.iter().cloned());
+        let mut file_local_scope = false;
         let resolver = match segments.first().map(String::as_str) {
             Some("crate") => {
                 segments.remove(0);
                 module.clear();
+                file_local_scope = inside_inline_module && module.starts_with(&file.module);
                 "rust-use"
             }
             Some("super") => {
@@ -2034,10 +2041,12 @@ impl RustResolver {
                     segments.remove(0);
                     module.pop();
                 }
+                file_local_scope = inside_inline_module && module.starts_with(&file.module);
                 "rust-use"
             }
             Some("self") => {
                 segments.remove(0);
+                file_local_scope = inside_inline_module && module.starts_with(&file.module);
                 "rust-use"
             }
             Some(name) if self.ambiguous_crates.contains(name) => {
@@ -2048,12 +2057,19 @@ impl RustResolver {
                 segments.remove(0);
                 source_root.clone_from(&target.source_root);
                 module.clear();
-                if segments.is_empty() && target.root_file != importer_rel {
-                    return ImportResolution::Resolved {
-                        target: target.root_file.clone(),
-                        resolver: "rust-workspace",
+                if segments.is_empty() {
+                    return if target.root_file == importer_rel {
+                        ImportResolution::Local
+                    } else {
+                        ImportResolution::Resolved {
+                            target: target.root_file.clone(),
+                            resolver: "rust-workspace",
+                        }
                     };
                 }
+                file_local_scope = inside_inline_module
+                    && target.root_file == importer_rel
+                    && module.starts_with(&file.module);
                 "rust-workspace"
             }
             _ => {
@@ -2064,7 +2080,9 @@ impl RustResolver {
         module.extend(segments);
 
         match self.resolve_module_prefix(&source_root, &module, importer_rel) {
+            Some(target) if target == importer_rel => ImportResolution::Local,
             Some(target) => ImportResolution::Resolved { target, resolver },
+            None if file_local_scope => ImportResolution::Local,
             None if resolver == "rust-workspace"
                 || path.starts_with("crate::")
                 || path.starts_with("self::")
@@ -2100,7 +2118,8 @@ impl RustResolver {
             if let Some(target) = self.modules.get(&key).and_then(|targets| {
                 targets
                     .iter()
-                    .find(|target| target.as_str() != importer_rel)
+                    .find(|target| target.as_str() == importer_rel)
+                    .or_else(|| targets.first())
                     .cloned()
             }) {
                 return Some(target);
@@ -2954,6 +2973,9 @@ impl JsResolver {
     }
 
     fn resolve(&self, importer_rel: &str, spec: &str, nodes: &HashSet<String>) -> ImportResolution {
+        if is_js_non_graph_specifier(spec) {
+            return ImportResolution::NonGraph;
+        }
         if spec.starts_with("./") || spec.starts_with("../") {
             let parent = path_parent(importer_rel);
             let joined = if parent.is_empty() {
@@ -3095,6 +3117,17 @@ impl JsResolver {
 
         ImportResolution::External
     }
+}
+
+fn is_js_non_graph_specifier(spec: &str) -> bool {
+    let path = spec.split(['?', '#']).next().unwrap_or(spec);
+    let Some(extension) = Path::new(path).extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    !matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "ts" | "tsx" | "mts" | "cts" | "js" | "jsx" | "mjs" | "cjs"
+    )
 }
 
 fn split_package_specifier(spec: &str) -> Option<(&str, Option<&str>)> {
@@ -3477,7 +3510,10 @@ pub(crate) fn resolve_js(
 ) -> Option<String> {
     match JsResolver::default().resolve(importer_rel, spec, nodes) {
         ImportResolution::Resolved { target, .. } => Some(target),
-        ImportResolution::Unresolved | ImportResolution::External => None,
+        ImportResolution::Local
+        | ImportResolution::NonGraph
+        | ImportResolution::Unresolved
+        | ImportResolution::External => None,
     }
 }
 
@@ -4451,6 +4487,145 @@ var ignored = "example.com/project/not-an-import"
         assert!(edges.contains(&("src/lib.rs", "src/service.rs", "rust-mod")));
         assert!(edges.contains(&("src/main.rs", "src/service.rs", "rust-workspace")));
         assert!(edges.contains(&("src/service.rs", "src/service/nested.rs", "rust-mod")));
+    }
+
+    #[test]
+    fn rust_inline_test_imports_from_the_same_file_are_not_graph_gaps() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            r#"
+pub struct Service;
+fn helper() {}
+
+#[cfg(test)]
+mod tests {
+    use super::{Service, helper};
+}
+"#,
+        )
+        .unwrap();
+
+        let graph = build(&[file_report("src/lib.rs")], dir.path());
+
+        assert_eq!(graph.nodes, 1);
+        assert_eq!(graph.edges, 0);
+        assert_eq!(graph.unresolved_imports, 0);
+        assert!(graph.cycles.is_empty());
+    }
+
+    #[test]
+    fn rust_inline_test_imports_do_not_fall_back_to_the_parent_module() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/report")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "pub mod report;\n").unwrap();
+        std::fs::write(dir.path().join("src/report/mod.rs"), "pub mod table;\n").unwrap();
+        std::fs::write(
+            dir.path().join("src/report/table.rs"),
+            r#"
+pub fn render() {}
+
+#[cfg(test)]
+mod tests {
+    use super::render;
+}
+"#,
+        )
+        .unwrap();
+
+        let graph = build(
+            &[
+                file_report("src/lib.rs"),
+                file_report("src/report/mod.rs"),
+                file_report("src/report/table.rs"),
+            ],
+            dir.path(),
+        );
+
+        assert_eq!(graph.edges, 2);
+        assert_eq!(graph.unresolved_imports, 0);
+        assert!(!graph.edge_list.iter().any(|edge| {
+            edge.source == "src/report/table.rs" && edge.target == "src/report/mod.rs"
+        }));
+    }
+
+    #[test]
+    fn rust_missing_external_modules_remain_graph_gaps() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "mod missing;\n").unwrap();
+
+        let graph = build(&[file_report("src/lib.rs")], dir.path());
+
+        assert_eq!(graph.edges, 0);
+        assert_eq!(graph.unresolved_imports, 1);
+    }
+
+    #[test]
+    fn rust_missing_local_use_targets_remain_graph_gaps() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "use crate::missing::Service;\n",
+        )
+        .unwrap();
+
+        let graph = build(&[file_report("src/lib.rs")], dir.path());
+
+        assert_eq!(graph.edges, 0);
+        assert_eq!(graph.unresolved_imports, 1);
+    }
+
+    #[test]
+    fn javascript_local_resource_imports_are_not_graph_gaps() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/assets")).unwrap();
+        std::fs::write(
+            dir.path().join("src/main.tsx"),
+            "import './index.css';\nimport logo from '@/assets/logo.png';\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/index.css"), "body {}\n").unwrap();
+        std::fs::write(dir.path().join("src/assets/logo.png"), []).unwrap();
+
+        let graph = build(&[file_report("src/main.tsx")], dir.path());
+
+        assert_eq!(graph.edges, 0);
+        assert_eq!(graph.unresolved_imports, 0);
+    }
+
+    #[test]
+    fn javascript_missing_source_imports_remain_graph_gaps() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/main.ts"), "import './missing.ts';\n").unwrap();
+
+        let graph = build(&[file_report("src/main.ts")], dir.path());
+
+        assert_eq!(graph.edges, 0);
+        assert_eq!(graph.unresolved_imports, 1);
     }
 
     #[test]

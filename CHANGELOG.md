@@ -28,6 +28,11 @@ within their section.
 
 ### Fixed
 
+- Treat Rust imports that stay within the current source file as resolved graph facts. Inline test
+  modules no longer create false unresolved-import diagnostics or fall back to spurious parent
+  module edges, while genuinely missing external modules remain visible.
+- Treat explicit non-code JS/TS imports such as stylesheets and images as non-graph resources
+  instead of unresolved code dependencies.
 - Recognize named `Dockerfile.*` variants such as `Dockerfile.nodejs.dev`.
 - Avoid double-counting a branch change and the merge commit that carries it in Git churn.
 
