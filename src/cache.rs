@@ -121,10 +121,10 @@ pub struct AnalysisProfile {
     /// The effective marker set. Disabled marker analysis and an empty marker
     /// list both produce the same empty per-file result.
     markers: Vec<String>,
-    /// Marker eligibility changes cached per-file findings. These fields are
-    /// absent when marker analysis is effectively disabled.
-    marker_health_scope: Option<HealthScope>,
-    marker_health_includes: Vec<HealthInclude>,
+    /// Health eligibility changes cached complexity and marker facts. These
+    /// fields are absent when neither analyzer is effectively enabled.
+    health_scope: Option<HealthScope>,
+    health_includes: Vec<HealthInclude>,
     health_excludes: Vec<String>,
 }
 
@@ -135,16 +135,16 @@ impl AnalysisProfile {
         } else {
             Vec::new()
         };
-        let marker_health_scope = (!markers.is_empty()).then_some(cfg.health_scope);
-        let mut marker_health_includes =
-            if !markers.is_empty() && cfg.health_scope == HealthScope::Source {
-                cfg.health_includes.clone()
-            } else {
-                Vec::new()
-            };
-        marker_health_includes.sort();
-        marker_health_includes.dedup();
-        let mut health_excludes = if cfg.enabled.complexity || !markers.is_empty() {
+        let health_enabled = cfg.enabled.complexity || !markers.is_empty();
+        let health_scope = health_enabled.then_some(cfg.health_scope);
+        let mut health_includes = if health_enabled && cfg.health_scope == HealthScope::Source {
+            cfg.health_includes.clone()
+        } else {
+            Vec::new()
+        };
+        health_includes.sort();
+        health_includes.dedup();
+        let mut health_excludes = if health_enabled {
             cfg.health_excludes.clone()
         } else {
             Vec::new()
@@ -159,8 +159,8 @@ impl AnalysisProfile {
             complexity: cfg.enabled.complexity,
             imports: cfg.enabled.imports,
             markers,
-            marker_health_scope,
-            marker_health_includes,
+            health_scope,
+            health_includes,
             health_excludes,
         }
     }
@@ -596,7 +596,31 @@ mod tests {
     }
 
     #[test]
-    fn profile_ignores_redundant_includes_for_all_content_marker_scope() {
+    fn profile_tracks_health_selection_for_complexity_without_markers() {
+        let base = Config {
+            enabled: Enabled {
+                complexity: true,
+                ..Enabled::none()
+            },
+            ..Config::default()
+        };
+        let base_profile = AnalysisProfile::from_config(&base);
+
+        let scope_changed = Config {
+            health_scope: HealthScope::All,
+            ..base.clone()
+        };
+        assert_ne!(base_profile, AnalysisProfile::from_config(&scope_changed));
+
+        let include_changed = Config {
+            health_includes: vec![HealthInclude::Json],
+            ..base
+        };
+        assert_ne!(base_profile, AnalysisProfile::from_config(&include_changed));
+    }
+
+    #[test]
+    fn profile_ignores_redundant_includes_for_all_content_health_scope() {
         let all = Config {
             health_scope: HealthScope::All,
             ..Config::default()

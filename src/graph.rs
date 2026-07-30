@@ -2033,7 +2033,8 @@ impl RustResolver {
             Some("crate") => {
                 segments.remove(0);
                 module.clear();
-                file_local_scope = inside_inline_module && module.starts_with(&file.module);
+                file_local_scope =
+                    inside_inline_module && segments.len() == 1 && module.starts_with(&file.module);
                 "rust-use"
             }
             Some("super") => {
@@ -2041,12 +2042,14 @@ impl RustResolver {
                     segments.remove(0);
                     module.pop();
                 }
-                file_local_scope = inside_inline_module && module.starts_with(&file.module);
+                file_local_scope =
+                    inside_inline_module && segments.len() == 1 && module.starts_with(&file.module);
                 "rust-use"
             }
             Some("self") => {
                 segments.remove(0);
-                file_local_scope = inside_inline_module && module.starts_with(&file.module);
+                file_local_scope =
+                    inside_inline_module && segments.len() == 1 && module.starts_with(&file.module);
                 "rust-use"
             }
             Some(name) if self.ambiguous_crates.contains(name) => {
@@ -2069,6 +2072,7 @@ impl RustResolver {
                 }
                 file_local_scope = inside_inline_module
                     && target.root_file == importer_rel
+                    && segments.len() == 1
                     && module.starts_with(&file.module);
                 "rust-workspace"
             }
@@ -4506,7 +4510,8 @@ fn helper() {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Service, helper};
+    use super::helper;
+    use crate::Service;
 }
 "#,
         )
@@ -4518,6 +4523,71 @@ mod tests {
         assert_eq!(graph.edges, 0);
         assert_eq!(graph.unresolved_imports, 0);
         assert!(graph.cycles.is_empty());
+    }
+
+    #[test]
+    fn rust_missing_local_use_targets_inside_inline_modules_remain_graph_gaps() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            r#"
+#[cfg(test)]
+mod tests {
+    use crate::missing::Service;
+}
+"#,
+        )
+        .unwrap();
+
+        let graph = build(&[file_report("src/lib.rs")], dir.path());
+
+        assert_eq!(graph.edges, 0);
+        assert_eq!(graph.unresolved_imports, 1);
+    }
+
+    #[test]
+    fn rust_crate_paths_inside_nested_files_still_start_at_the_crate_root() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"demo-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "pub mod report;\n").unwrap();
+        std::fs::write(
+            dir.path().join("src/report.rs"),
+            r#"
+pub struct SomeType;
+
+#[cfg(test)]
+mod tests {
+    use crate::report::SomeType;
+    use crate::MissingAtRoot;
+}
+"#,
+        )
+        .unwrap();
+
+        let graph = build(
+            &[file_report("src/lib.rs"), file_report("src/report.rs")],
+            dir.path(),
+        );
+
+        assert_eq!(graph.edges, 1);
+        assert_eq!(graph.unresolved_imports, 1);
+        assert!(
+            !graph
+                .edge_list
+                .iter()
+                .any(|edge| { edge.source == "src/report.rs" && edge.target == "src/lib.rs" })
+        );
     }
 
     #[test]
