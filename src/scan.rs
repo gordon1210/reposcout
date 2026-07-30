@@ -919,6 +919,7 @@ fn analyze_planning_universe(
         &DuplicateCoverage::default(),
         &BTreeMap::new(),
         cfg,
+        &prepared.health_policy,
     );
     Ok(Some(PlanningAnalysis {
         files,
@@ -991,6 +992,7 @@ fn assemble_report(
         &analyzed.duplicate_coverage,
         &analyzed.test_regions,
         cfg,
+        &prepared.health_policy,
     );
     let finding_catalog =
         crate::findings::build(&analyzed.files, &analyzed.duplication, &risk_entries, cfg);
@@ -1930,21 +1932,19 @@ fn aggregate(
     duplicate_coverage: &DuplicateCoverage,
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     cfg: &Config,
+    health_policy: &HealthPolicy,
 ) -> (Summary, Vec<RiskEntry>) {
-    let health_policy = cfg
-        .health_policy()
-        .expect("health excludes are validated before analysis");
     let mut s = Summary::default();
     let accumulated = accumulate_file_metrics(files, &mut s);
     finish_complexity_and_languages(&mut s, accumulated, cfg);
     summarize_duplication(&mut s, dup, duplicate_coverage, cfg);
     populate_file_rankings(&mut s, files, cfg);
     let (test_presence, top_risks, all_risk_entries) =
-        test_and_risk_summary(files, cfg, &health_policy);
+        test_and_risk_summary(files, cfg, health_policy);
     s.test_presence = test_presence;
     s.top_risks = top_risks;
     let source_duplication =
-        source_duplication_pct(files, duplicate_coverage, test_regions, &health_policy);
+        source_duplication_pct(files, duplicate_coverage, test_regions, health_policy);
     s.assessment = build_assessment(&s, source_duplication, cfg.enabled);
     (s, all_risk_entries)
 }
