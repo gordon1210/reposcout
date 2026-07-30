@@ -184,12 +184,12 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
     // Test presence
     {
         let tp = &s.test_presence;
-        let _ = writeln!(out, "## Test presence");
+        let _ = writeln!(out, "## Test filename matching");
         let _ = writeln!(out);
         let _ = writeln!(out, "- Test files: **{}**", thousands(tp.test_files));
         let _ = writeln!(
             out,
-            "- Source files: **{}**, without a matching test file: **{}**",
+            "- Source files: **{}**, without a matching test filename: **{}**",
             thousands(tp.source_files),
             thousands(tp.untested_source_files)
         );
@@ -201,7 +201,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
                 .collect();
             let _ = writeln!(
                 out,
-                "- Samples without a matching test: {}",
+                "- Samples without a matching test filename: {}",
                 samples.join(", ")
             );
         }
@@ -250,7 +250,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "| Path | Files | Tokens | SLOC | Cyclo avg | MI avg | Dup lines | No matching test |"
+            "| Path | Files | Tokens | SLOC | Cyclo avg | MI avg | Dup lines | No filename match |"
         );
         let _ = writeln!(out, "|---|--:|--:|--:|--:|--:|--:|--:|");
         for d in &report.directories {
@@ -585,6 +585,18 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
             "- Unsupported files: **{}**",
             thousands(diagnostics.unsupported_files)
         );
+        if !diagnostics.unsupported_samples.is_empty() {
+            let _ = writeln!(
+                out,
+                "- Unsupported examples: {}.",
+                diagnostics
+                    .unsupported_samples
+                    .iter()
+                    .map(|path| format!("`{}`", markdown_text(path)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
     }
     if diagnostics.unreadable_files > 0 {
         let _ = writeln!(

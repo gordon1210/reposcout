@@ -653,6 +653,7 @@ fn log_configuration(operation: &'static str, target: &Path, cfg: &Config) {
             "analyzers": cfg.enabled,
             "health_scope": cfg.health_scope.to_string(),
             "health_includes": cfg.health_includes.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "health_excludes": cfg.health_excludes.as_slice(),
             "context": cfg.context,
             "graph": cfg.graph,
             "impact": cfg.impact,
@@ -829,6 +830,7 @@ fn apply_common_overrides(cfg: &mut Config, args: &CommonArgs) {
         cfg.health_scope = scope;
     }
     extend_health_includes(&mut cfg.health_includes, &args.health_includes);
+    extend_excludes(&mut cfg.health_excludes, &args.health_excludes);
     if args.quiet {
         cfg.quiet_progress = true;
     }

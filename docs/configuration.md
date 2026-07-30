@@ -23,8 +23,8 @@ Set `REPOSCOUT_GLOBAL_CONFIG` to an explicit path for hermetic automation and te
 are normal; invalid or unknown keys fail with the source path and setting name.
 
 Only defined fields override the lower layer. Nested `[context]` fields merge independently.
-Arrays replace lower-layer arrays, while repeated CLI `--exclude` and `--health-include` values
-extend the effective lists.
+Arrays replace lower-layer arrays, while repeated CLI `--exclude`, `--health-include`, and
+`--health-exclude` values extend the effective lists.
 
 ## Inspect the effective configuration
 
@@ -60,6 +60,7 @@ excludes = ["vendor/**", "*.min.js"]
 markers = ["TODO", "FIXME", "HACK", "XXX", "BUG"]
 health_scope = "source"             # source or all
 health_includes = []                # html, css, scss, json, yaml, toml, markdown, xml, text
+health_excludes = []                # repository-relative path globs, e.g. vendor/**
 
 min_dup_tokens = 50
 min_dup_lines = 3
@@ -80,6 +81,30 @@ enabled = false
 budget = 32000
 max_files = 25
 ```
+
+## Health corpus precedence
+
+Health selection is deterministic:
+
+1. `health_scope` establishes the starting corpus (`source` or every recognized format);
+2. `health_includes` adds named non-source formats such as `json` or `markdown`;
+3. `health_excludes` removes matching repository-relative paths; and
+4. ordinary discovery exclusions (`excludes`, ignore files, hidden-file policy, and lockfile
+   policy) still remove files from the entire scan before health selection.
+
+`health_excludes` therefore wins when a file was selected by either the scope or a format include.
+For example:
+
+```toml
+health_scope = "source"
+health_includes = ["json"]
+health_excludes = ["packages/ui/src/components/**", "fixtures/generated/**"]
+```
+
+A JSON file under `fixtures/generated/` remains in repository inventory but does not contribute
+markers, complexity, duplication, risk, test-presence, or cleanup signals. It still contributes
+tokens and line totals and remains available to navigation, imports, symbols, and context queries.
+Use the ordinary `excludes` setting instead when the file should disappear from the scan entirely.
 
 ## Execution profiles
 

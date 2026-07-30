@@ -6,6 +6,31 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added repeatable `--health-exclude <GLOB>` and `health_excludes` configuration for retaining
+  files in inventory and navigation while excluding repository-relative paths from complexity,
+  markers, duplication, risk, test-presence, and cleanup signals. Health selection is now
+  explicitly documented and reported as scope, then format includes, then path excludes.
+- Added bounded `diagnostics.unsupported_samples` paths and human-readable examples so unsupported
+  file counts identify concrete follow-up work.
+
+### Changed
+
+- Context-fit assessment now uses readable source/build tokens while preserving complete
+  repository token totals. Filename-based test matching remains visible but no longer changes risk
+  scores or cleanup assessment.
+- Human-readable tables front-truncate paths to table-specific one-line widths so filenames,
+  trailing directories, and line numbers remain visible instead of wrapping.
+- The bundled RepoScout skill now documents exact zero-argument behavior, configuration creation
+  and precedence, health selection, and the requirement to obtain user approval before creating
+  or changing configuration.
+
+### Fixed
+
+- Recognize named `Dockerfile.*` variants such as `Dockerfile.nodejs.dev`.
+- Avoid double-counting a branch change and the merge commit that carries it in Git churn.
+
 ## [0.1.8] - 2026-07-30
 
 ### Added

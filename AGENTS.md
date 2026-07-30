@@ -252,7 +252,7 @@ Two more contract rules that keep JSON stable:
   `has_inline_tests`, changing `skip_hint`, or changing report-path semantics) requires a
   bump to invalidate stale entries. `AnalysisProfile` must also include every runtime setting
   that changes a cached `FileReport`: token encoding/enablement, complexity, imports, and the
-  effective marker set plus marker health-file eligibility. Features that only add *summary* or top-level fields (rollup, baseline,
+  effective marker set plus health-file eligibility and `health_excludes`. Features that only add *summary* or top-level fields (rollup, baseline,
   finding catalog, graph, context, diagnostics, review, impact) do **not** need a bump. Precise marker
   occurrences are per-file facts, so their introduction required an analyzer-version bump.
 - `imports::extract` returns only **root** module names (`std`, `crate`, `os`, `node:fs`),
@@ -277,10 +277,13 @@ an `ExplainReport` with focused renderers.
 
 First-class (tree-sitter) languages: **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP**.
 Every recognized format contributes to complete inventory, token/context size, and line facts.
-Marker and duplication health analysis defaults to programming/build source; HTML, CSS/SCSS,
-JSON, YAML, TOML, Markdown, XML, and text require `health_includes` / `--health-include` or the
-explicit all-content health scope. Generic code languages use heuristic complexity flagged
-`approximate`; non-code formats do not receive complexity metrics.
+Health analysis defaults to programming/build source; HTML, CSS/SCSS, JSON, YAML, TOML, Markdown,
+XML, and text require `health_includes` / `--health-include` or the explicit all-content health
+scope. `health_excludes` / `--health-exclude` then remove repository-relative path globs from
+complexity, markers, duplication, risk, test-presence, and cleanup signals while inventory,
+tokens, lines, imports, symbols, and context discovery remain complete. The fixed order is scope,
+then format includes, then path excludes; path excludes win. Generic code languages use heuristic
+complexity flagged `approximate`; non-code formats do not receive complexity metrics.
 
 Metric semantics worth knowing:
 
@@ -305,7 +308,8 @@ Metric semantics worth knowing:
   Rust closures, Python lambdas, Go function literals, and PHP closures/arrows; anonymous scopes inherit a
   binding name when possible and must not inflate their enclosing function.
   `--fail-on max-cyclomatic>N` therefore gates on the single worst function.
-  Complexity runs only when `LangInfo::is_code()` is true — prose/data/markup/style
+  Complexity runs only when `LangInfo::is_code()` is true and the path is health-eligible —
+  prose/data/markup/style
   languages (Markdown, JSON, YAML, TOML, HTML, CSS, XML, …) get `complexity: null`
   (and `approximate: false`) and never enter the churn×complexity hotspot ranking.
   Heuristic (`approximate`) files are generic *code* languages (C, Java, …) with no
@@ -322,8 +326,9 @@ Metric semantics worth knowing:
   cross-language equivalents.
 - **Duplication is structured, format-scoped, similarity-scored, and line-filtered.**
   The zero-config corpus is source/build files only. `health_includes` adds selected content
-  formats and `health_scope = "all"` restores every recognized format; the equivalent CLI flags
-  are `--health-include` and `--health-scope`. Inventory metrics are never filtered by this policy.
+  formats and `health_scope = "all"` restores every recognized format; `health_excludes` removes
+  matching paths last. The equivalent CLI flags are `--health-include`, `--health-scope`, and
+  `--health-exclude`. Inventory metrics are never filtered by this policy.
   `summary.duplication.duplicated_pct` uses `analyzed_lines`, not whole-repository LOC, so excluded
   content cannot dilute coverage. `duplicates.file_coverage` and `by_language` contain only
   eligible files/formats. The effective policy is recorded in `analysis_profile.health` and must
@@ -457,17 +462,19 @@ Metric semantics worth knowing:
   they mean "no matching test file or inline Rust test", not measured coverage.
   `top_risks` = source files ranked by a composite score
   (0.40·size + 0.40·complexity + 0.20·churn, with stable saturation anchors of 1,000 SLOC,
-  cyclomatic 100, and 20 commits; ×1.10 when no matching test is found, capped at 1.0), each with
-  `reasons`. `assessment` = the one-glance verdict (`fits_context`, `token_budget`,
+  cyclomatic 100, and 20 commits), each with `reasons`. Filename-based test matching remains
+  informational and never changes risk or cleanup scoring. `assessment` = the one-glance verdict (`fits_context`, `token_budget`,
   `cleanup_worth` ∈ {low,medium,high}, `reasons`); computed last in `aggregate()` from the
-  other signals (`DEFAULT_CONTEXT_BUDGET = 200_000`). Its duplication signal uses only
+  other signals (`DEFAULT_CONTEXT_BUDGET = 200_000`); context fit uses `summary.source.tokens`,
+  while `summary.tokens` remains complete inventory. Its duplication signal uses only
   non-test code files, excluding direct Rust `#[cfg(test)]` regions, and triggers above 15%;
   raw duplication summaries cover the effective health corpus. Repository-wide totals and
   `languages` remain complete inventory. Additive
   `source` totals and `top_source_token_files` drive concise human reports, whose language table
   collapses non-source formats into one content rollup.
-  Top-level `diagnostics` records discovered/analyzed/unsupported/unreadable files, walker errors,
-  and any bounded/partial Type-2 run (including skipped seed pairs/matches and which limit fired)
+  Top-level `diagnostics` records discovered/analyzed/unsupported/unreadable files, bounded
+  unsupported-path examples, walker errors, and any bounded/partial Type-2 run (including skipped
+  seed pairs/matches and which limit fired)
   so agents can tell whether an apparent absence is a scan gap or a lower-bound duplication result.
 - **Opt-in blocks are omitted unless their flag is passed.** `context` (`--context`, context
   budget/file flags, or `--focus`), `directories` (`--by-dir`), `baseline` (`--baseline`),

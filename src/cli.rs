@@ -241,13 +241,17 @@ pub struct CommonArgs {
     #[arg(long = "dup-format-scope", value_enum)]
     pub duplication_format_scope: Option<DuplicationFormatScope>,
 
-    /// File scope for source-health analyzers such as markers and duplication
+    /// Starting file scope for actionable health analysis
     #[arg(long = "health-scope", value_enum)]
     pub health_scope: Option<HealthScope>,
 
-    /// Add a non-source format to marker and duplication analysis (repeatable)
+    /// Add a non-source format to health analysis (repeatable)
     #[arg(long = "health-include", value_enum)]
     pub health_includes: Vec<HealthInclude>,
+
+    /// Exclude a repository-relative path glob from health analysis (repeatable)
+    #[arg(long = "health-exclude", value_name = "GLOB")]
+    pub health_excludes: Vec<String>,
 
     /// Suppress the progress bar
     #[arg(short, long)]

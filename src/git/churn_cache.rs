@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use xxhash_rust::xxh3::xxh3_64;
 
 /// Bumped when event/view cache identity or semantics change.
-const CACHE_VERSION: &str = "2";
+const CACHE_VERSION: &str = "3";
 const MAX_VIEWS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

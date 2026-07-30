@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 (toolchain, layout, the frozen contract, validation checklist) and `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-07-17 · version 0.1.0 · JSON `SCHEMA_VERSION` 1.0_
+_Last updated: 2026-07-30 · version 0.1.8 · JSON `SCHEMA_VERSION` 1.0_
 
 ---
 
@@ -14,7 +14,8 @@ _Last updated: 2026-07-17 · version 0.1.0 · JSON `SCHEMA_VERSION` 1.0_
 reposcout exists to give **agents and humans a fast, consolidated status for a repo or
 any path inside it**, so they can make decisions *before* diving in:
 
-- **Does this fit in a context window?** → `summary.tokens`, `summary.files`.
+- **Does readable source fit in a context window?** → `summary.source.tokens` and
+  `summary.assessment`; `summary.tokens` and `summary.files` remain complete inventory.
 - **Just tell me the verdict.** → `summary.assessment` (`fits_context_known`, `fits_context`,
   `cleanup_worth_complete`, `cleanup_worth`, `unavailable_signals`, `reasons`) — the one-glance
   answer without treating a disabled analyzer as zero evidence.
@@ -49,11 +50,13 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   don't-read `skip_hint`s, test-presence, a composite per-file `top_risks` ranking, and a
   one-glance health `assessment`.
 - **Source-first zero-config health.** Complete inventory, tokens/context size, and line facts
-  retain every recognized format, but markers and duplication default to programming/build source.
+  retain every recognized format, but actionable health analysis defaults to programming/build source.
   HTML, CSS/SCSS, JSON, YAML, TOML, Markdown, XML, and text require repeated
   `--health-include` / `health_includes`, or explicit `--health-scope all` /
-  `health_scope = "all"`. Human reports collapse those formats into one content rollup and rank
-  source files; duplication coverage denominators contain only eligible analyzed files.
+  `health_scope = "all"`. Repeatable `--health-exclude` / `health_excludes` path globs are applied
+  last and retain inventory while removing complexity, markers, duplication, risk, test-presence,
+  and cleanup signals. Human reports collapse content formats into one rollup and rank source
+  files; duplication coverage denominators contain only eligible analyzed files.
 - **Large-run observability and bounded Type-2 work.** Global `--debug-log` records flushed
   lifecycle/stage/file/render/error/panic events plus liveness/memory and detailed Type-2 progress.
   CLI duplication orchestration schedules rare fingerprint buckets first and caps each format pool
@@ -82,8 +85,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   `--no-project-config` selects only the trust boundary. `--error-format json` makes failures
   structured, and `execution` records provenance, timings, cache behavior, and graph-fact coverage.
 - **Trust signals.** Every report now carries top-level `diagnostics` (discovered/analyzed/
-  unsupported/unreadable files, walker errors, and partial Type-2 reasons/omitted work); malformed
-  config files fail loudly instead of silently falling back to defaults.
+  unsupported/unreadable files, bounded unsupported-path examples, walker errors, and partial
+  Type-2 reasons/omitted work); malformed config files fail loudly instead of silently falling
+  back to defaults.
 - **Output:** `table` (human), `json` (agent), `markdown` (PRs/issues), `sarif` (SARIF
   2.1.0 for code scanning / CI), `ndjson` (streamable), and graph-only `dot` / `mermaid`.
   `--summary` drops heavy arrays while retaining explicitly requested context/graph/directory/
@@ -98,7 +102,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   with bespoke styling and the RepoScout fox artwork.
 - **Quality gates:** Rust formatting, clippy, and test suites; dashboard Vitest; and production
   builds for both frontend packages.
-- **Global install:** `~/.local/bin/reposcout` is a symlink to `target/release/reposcout`.
+- **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
+  `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any change** (`cargo build --release`) — see AGENTS.md.
 - **CI gates:** `--fail-on "max-cyclomatic>30,duplicated-pct>5,…"` (exit 2), or
   `--baseline b.json --fail-on-regression` to fail when any metric worsens.
@@ -128,7 +133,7 @@ came from "I ran it and the output wasn't actually useful":
 
 **Feature expansion (newest first).** Implemented in scoped waves, then reviewed,
 validated, and sanity-run before committing. All changes remain additive (`SCHEMA_VERSION` is
-still `1.0`); `ANALYZER_VERSION` is now `14`.
+still `1.0`); `ANALYZER_VERSION` is now `15`.
 
 - **2026-07-17 — source-first default health corpus.** `reposcout .` now keeps complete
   repository inventory and context-size evidence without feeding data, docs, markup, styles, or
@@ -271,22 +276,22 @@ Earlier, driven by dogfooding:
    `diagnostics.type2_analysis_partial` is true. Exact duplication remains complete. Do not remove
    limits or silently auto-escalate; a higher-effort mode should be reconsidered only if real usage
    shows that partial results materially reduce the tool's value.
-3. **Vendored / generated source can still inflate duplication; all recognized content still
-   affects inventory and token counts.** Bundled UI
-   component libraries (e.g. shadcn/ui), `dist/`, codegen output, etc. Users exclude them
-   via `excludes` in `reposcout.toml` or repeated `--exclude <glob>`. `.gitignore` is
-   respected by default; lockfiles are excluded by default.
+3. **Vendored / generated source can still inflate health signals; all recognized content still
+   affects inventory and token counts.** Bundled UI component libraries (e.g. shadcn/ui), `dist/`,
+   and codegen output can be removed only from health analysis with `health_excludes` or
+   `--health-exclude`, or removed from the complete scan with `excludes` / `--exclude`.
+   `.gitignore` is respected by default; lockfiles are excluded by default.
 4. **First-class complexity is limited to Rust, Python, JS, TS/TSX, Go, and PHP.** Generic code
    languages get tokens/lines/markers/dup plus *heuristic* complexity flagged `approximate`
    (contributes to `mi_avg`/`mi_min` but not to per-function cyclomatic/cognitive stats).
-   Non-source formats always retain inventory/line facts and receive markers/duplication only when
-   their health format or all-content scope is explicitly selected.
+   Non-source formats always retain inventory/line facts and receive health analysis only when
+   their format or all-content scope is explicitly selected.
 5. **Heuristic thresholds.** `min_dup_tokens=50`, `min_dup_lines=3`,
    `near_dup_min_similarity=0.85` are defaults that worked well in practice, tunable via
    `reposcout.toml`. There's no magic here — revisit them if a repo type shows noise.
 6. **Per-file cache entries store `FileReport` plus reusable source facts**, keyed by content hash
    + version + the effective per-file analysis profile (token encoding/enablement, complexity,
-   imports, markers, and marker health-file eligibility). Declaration outlines enrich entries only for queries/context; graph import,
+   imports, markers, and health-file eligibility/excludes). Declaration outlines enrich entries only for queries/context; graph import,
    parse, and type-relation facts enrich them only when a graph consumer requests them.
    Churn has a separate OS-cache index of immutable commit events and exact result views.
    `Duplication`, graph topology, and `Summary` remain scan-wide computations. `--no-cache`

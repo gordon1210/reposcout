@@ -42,6 +42,59 @@ it does not return source bodies or replace direct inspection of the selected co
    reposcout -f json --summary --profile safe <path>
    ```
 
+## Know the zero-argument contract
+
+With no global or project configuration, options, subcommand, or path, `reposcout` is equivalent to
+`reposcout .` with the `full` profile:
+
+- the current path is scanned and the surrounding Git worktree becomes the report root when one
+  exists;
+- a terminal receives the human-readable table report, while redirected/non-terminal stdout
+  receives full JSON;
+- hidden files, recognized lockfiles, Git-ignored paths, `.ignore`, and `.reposcoutignore` rules
+  are excluded; symlinks are not followed;
+- every recognized text format contributes inventory, tokens, and line facts;
+- the source-first health corpus runs complexity, markers, duplication, risk, test-presence, and
+  cleanup signals, while Git churn and imports are also enabled;
+- the OS cache is enabled and no file is written into the scanned repository; and
+- context plans, graph/impact queries, review, baselines, output files, updates, and the daemon
+  remain off until explicitly requested.
+
+The default health corpus is programming/build source. Optional content formats enter only through
+`--health-include` / `health_includes` or all-content scope. Repository-relative
+`--health-exclude` / `health_excludes` globs are applied last and win over includes; they retain
+inventory/navigation facts while removing health signals. `summary.assessment.fits_context` uses
+`summary.source.tokens`, while `summary.tokens` remains the complete recognized inventory.
+Filename-based test matching is navigation evidence only and does not change risk or cleanup
+scoring. Check bounded `diagnostics.unsupported_samples` before assuming an unsupported count is
+irrelevant.
+
+## Respect configuration authority
+
+RepoScout has no configuration generator. A configuration is created manually as
+`reposcout.toml` or `.reposcout.toml` in a project, or as the OS-specific global
+`reposcout.toml`. Inspect the current resolution before proposing a change:
+
+```sh
+reposcout config <path>
+reposcout config -f json <path>
+```
+
+Precedence is CLI > nearest project file > global file > defaults. File-backed arrays replace the
+lower layer; repeated CLI `--exclude`, `--health-include`, and `--health-exclude` values extend the
+resolved lists. Health selection order is:
+
+1. `health_scope` establishes `source` or `all`;
+2. `health_includes` adds named formats such as `json` or `markdown`;
+3. `health_excludes` removes matching repository-relative path globs; and
+4. ordinary discovery exclusions remove paths from the entire scan.
+
+Never create or modify a global/project RepoScout configuration or `.reposcoutignore` without the
+user's explicit approval. Explain the exact proposed keys, affected paths/analyzers, precedence,
+and inventory-versus-health consequence first. Reading an existing configuration and using
+`reposcout config` are non-mutating; use `--no-project-config` or the `safe` profile when
+repository-owned configuration is not trusted.
+
 ## Diagnose slow or crashing runs
 
 When a scan stalls, crashes, or consumes unexpected resources, add a unique debug-log path to the

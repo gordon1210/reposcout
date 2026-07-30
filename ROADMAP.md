@@ -186,10 +186,10 @@ heuristic topology rather than replacing it.
 
 ### Change-focused, token-efficient decision reports
 
-**Status:** Implemented and awaiting release. The public CLI/report contract, scope-aware
-confidence, bounded renderers, capability discovery, tests, bundled agent skill, and user-facing
-documentation are complete. The change is additive and retains the existing detailed
-summary/context/impact workflow.
+**Status:** Released in `v0.1.8`. The public CLI/report contract, scope-aware confidence, bounded
+renderers, capability discovery, tests, bundled agent skill, and user-facing documentation are
+complete. The change is additive and retains the existing detailed summary/context/impact
+workflow.
 
 #### Problem and evidence
 

@@ -125,8 +125,7 @@ pub struct ScanProfile {
     pub diff_base: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duplication: Option<DuplicationProfile>,
-    /// Effective file eligibility shared by marker and duplication health
-    /// analysis. Absent when neither analyzer is enabled.
+    /// Effective file eligibility for health analysis and derived rankings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<HealthProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -144,6 +143,9 @@ pub struct HealthProfile {
     /// Canonical non-source format names added to `source` scope.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub includes: Vec<String>,
+    /// Repository-relative path globs removed after scope and includes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excludes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -763,6 +765,9 @@ pub struct CapabilitiesReport {
     pub optional_health_formats: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub health_scopes: Vec<String>,
+    /// Repeatable path-glob flag applied after health scope and includes.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub health_exclude_flag: String,
     pub machine_interfaces: Vec<String>,
     pub error_formats: Vec<String>,
     pub max_graph_depth: usize,
@@ -1118,6 +1123,9 @@ pub struct ScanDiagnostics {
     pub analyzed_files: usize,
     /// Files discovered but not recognized as a supported language.
     pub unsupported_files: usize,
+    /// Bounded repository-relative examples of unsupported files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsupported_samples: Vec<String>,
     /// Files that could not be read as UTF-8 text or inspected.
     pub unreadable_files: usize,
     /// Traversal errors skipped by the filesystem walker.
@@ -1483,6 +1491,8 @@ pub struct RiskExplanation {
     /// No matching test file or inline Rust test was found. Retained under its
     /// original JSON name for compatibility.
     pub untested: bool,
+    /// Legacy compatibility field. Filename matching no longer changes risk,
+    /// so new reports always emit `1.0`.
     pub untested_multiplier: f64,
     pub reasons: Vec<String>,
 }

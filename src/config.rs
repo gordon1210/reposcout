@@ -7,6 +7,7 @@ use crate::dup::{DuplicationFormatScope, DuplicationMode};
 use crate::lang::{self, HealthInclude, HealthScope, LangInfo};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
+use ignore::overrides::{Override, OverrideBuilder};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -94,11 +95,14 @@ pub struct Config {
     pub exclude_lockfiles: bool,
     pub extra_excludes: Vec<String>,
     pub markers: Vec<String>,
-    /// Formats eligible for source-health analyzers such as markers and
-    /// duplication. Inventory metrics always retain every recognized format.
+    /// Starting corpus for actionable health analysis. Inventory metrics
+    /// always retain every recognized format.
     pub health_scope: HealthScope,
     /// Non-source formats added to the default source-health corpus.
     pub health_includes: Vec<HealthInclude>,
+    /// Repository-relative path globs removed from health analysis after the
+    /// scope and format includes have selected the corpus.
+    pub health_excludes: Vec<String>,
     /// Minimum token run length for duplication detection.
     pub min_dup_tokens: usize,
     /// Minimum line span for a reported clone (filters single-line noise).
@@ -206,6 +210,7 @@ impl Default for Config {
                 .collect(),
             health_scope: HealthScope::Source,
             health_includes: Vec::new(),
+            health_excludes: Vec::new(),
             min_dup_tokens: 50,
             min_dup_lines: 3,
             near_dup_min_similarity: 0.85,
@@ -269,6 +274,7 @@ struct FileConfig {
     markers: Option<Vec<String>>,
     health_scope: Option<HealthScope>,
     health_includes: Option<Vec<HealthInclude>>,
+    health_excludes: Option<Vec<String>>,
     min_dup_tokens: Option<usize>,
     min_dup_lines: Option<usize>,
     near_dup_min_similarity: Option<f64>,
@@ -339,6 +345,7 @@ pub struct ConfigValues {
     pub markers: Vec<String>,
     pub health_scope: HealthScope,
     pub health_includes: Vec<HealthInclude>,
+    pub health_excludes: Vec<String>,
     pub min_dup_tokens: usize,
     pub min_dup_lines: usize,
     pub near_dup_min_similarity: f64,
@@ -383,6 +390,7 @@ impl From<&Config> for ConfigValues {
             markers: config.markers.clone(),
             health_scope: config.health_scope,
             health_includes: config.health_includes.clone(),
+            health_excludes: config.health_excludes.clone(),
             min_dup_tokens: config.min_dup_tokens,
             min_dup_lines: config.min_dup_lines,
             near_dup_min_similarity: config.near_dup_min_similarity,
@@ -424,6 +432,38 @@ pub struct ConfigInspection {
 pub struct ConfigResolution {
     pub config: Config,
     pub sources: ConfigSources,
+}
+
+/// Compiled file policy for actionable health signals. Inventory, tokens,
+/// lines, imports, symbols, and context discovery remain complete.
+#[derive(Clone, Debug)]
+pub struct HealthPolicy {
+    scope: HealthScope,
+    includes: Vec<HealthInclude>,
+    excludes: Override,
+}
+
+impl HealthPolicy {
+    fn new(config: &Config) -> Result<Self> {
+        let mut builder = OverrideBuilder::new(".");
+        for pattern in &config.health_excludes {
+            builder
+                .add(&format!("!{pattern}"))
+                .with_context(|| format!("invalid health exclude glob: {pattern}"))?;
+        }
+        Ok(Self {
+            scope: config.health_scope,
+            includes: config.health_includes.clone(),
+            excludes: builder
+                .build()
+                .context("building health exclude overrides")?,
+        })
+    }
+
+    pub fn includes(&self, path: &Path, info: &LangInfo) -> bool {
+        lang::included_in_health(info, self.scope, &self.includes)
+            && !self.excludes.matched(path, false).is_ignore()
+    }
 }
 
 impl ConfigResolution {
@@ -499,6 +539,9 @@ impl Config {
         }
         if let Some(v) = fc.health_includes {
             self.health_includes = v;
+        }
+        if let Some(v) = fc.health_excludes {
+            self.health_excludes = v;
         }
         if let Some(v) = fc.min_dup_tokens {
             self.min_dup_tokens = v;
@@ -576,11 +619,10 @@ impl Config {
         }
     }
 
-    /// Whether a recognized format participates in the source-health corpus.
-    /// This is the sole configuration seam used by per-file markers and
-    /// scan-wide duplication eligibility.
-    pub fn includes_in_health(&self, info: &LangInfo) -> bool {
-        lang::included_in_health(info, self.health_scope, &self.health_includes)
+    /// Compile the effective health policy. Scope selects the default corpus,
+    /// format includes add to it, and path excludes are applied last.
+    pub fn health_policy(&self) -> Result<HealthPolicy> {
+        HealthPolicy::new(self)
     }
 
     pub fn enforce_absolute_limits(&mut self) {
@@ -791,6 +833,7 @@ impl FileConfig {
         key!(markers);
         key!(health_scope);
         key!(health_includes);
+        key!(health_excludes);
         key!(min_dup_tokens);
         key!(min_dup_lines);
         key!(near_dup_min_similarity);
@@ -935,7 +978,11 @@ mod tests {
         let config = dir.path().join("reposcout.toml");
         fs::write(
             &config,
-            "health_scope = \"all\"\nhealth_includes = [\"json\", \"css\"]\n",
+            concat!(
+                "health_scope = \"all\"\n",
+                "health_includes = [\"json\", \"css\"]\n",
+                "health_excludes = [\"vendor/**\", \"generated/**\"]\n",
+            ),
         )
         .unwrap();
 
@@ -946,6 +993,7 @@ mod tests {
             loaded.health_includes,
             vec![HealthInclude::Json, HealthInclude::Css]
         );
+        assert_eq!(loaded.health_excludes, vec!["vendor/**", "generated/**"]);
     }
 
     #[test]

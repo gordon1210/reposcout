@@ -125,6 +125,7 @@ pub struct AnalysisProfile {
     /// absent when marker analysis is effectively disabled.
     marker_health_scope: Option<HealthScope>,
     marker_health_includes: Vec<HealthInclude>,
+    health_excludes: Vec<String>,
 }
 
 impl AnalysisProfile {
@@ -143,6 +144,13 @@ impl AnalysisProfile {
             };
         marker_health_includes.sort();
         marker_health_includes.dedup();
+        let mut health_excludes = if cfg.enabled.complexity || !markers.is_empty() {
+            cfg.health_excludes.clone()
+        } else {
+            Vec::new()
+        };
+        health_excludes.sort();
+        health_excludes.dedup();
         AnalysisProfile {
             token_encoding: cfg
                 .enabled
@@ -153,6 +161,7 @@ impl AnalysisProfile {
             markers,
             marker_health_scope,
             marker_health_includes,
+            health_excludes,
         }
     }
 
@@ -559,6 +568,13 @@ mod tests {
         assert_ne!(
             base_profile,
             AnalysisProfile::from_config(&marker_include_changed)
+        );
+
+        let mut health_exclude_changed = base.clone();
+        health_exclude_changed.health_excludes = vec!["vendor/**".to_string()];
+        assert_ne!(
+            base_profile,
+            AnalysisProfile::from_config(&health_exclude_changed)
         );
 
         let context_with_narrow_analyzers = Config {

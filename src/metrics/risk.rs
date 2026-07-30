@@ -5,7 +5,6 @@ use crate::model::{FileReport, RiskEntry, RiskExplanation};
 const SLOC_SATURATION: f64 = 1_000.0;
 const CYCLOMATIC_SATURATION: f64 = 100.0;
 const CHURN_SATURATION: f64 = 20.0;
-const NO_MATCHING_TEST_MULTIPLIER: f64 = 1.10;
 
 pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanation {
     let sloc = file.sloc;
@@ -18,13 +17,11 @@ pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanatio
     let size_factor = (sloc as f64 / SLOC_SATURATION).min(1.0);
     let complexity_factor = (cyclomatic as f64 / CYCLOMATIC_SATURATION).min(1.0);
     let churn_factor = (churn_commits as f64 / CHURN_SATURATION).min(1.0);
-    let base = 0.40 * size_factor + 0.40 * complexity_factor + 0.20 * churn_factor;
-    let untested_multiplier = if no_matching_test_file {
-        NO_MATCHING_TEST_MULTIPLIER
-    } else {
-        1.0
-    };
-    let score = (base * untested_multiplier).min(1.0);
+    let score = (0.40 * size_factor + 0.40 * complexity_factor + 0.20 * churn_factor).min(1.0);
+    // Retained in the stable JSON contract. Filename matching is useful
+    // navigation evidence, but it is not measured coverage and must not alter
+    // the risk score.
+    let untested_multiplier = 1.0;
 
     let mut reasons = Vec::new();
     if size_factor >= 0.66 {
@@ -78,14 +75,14 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn missing_test_match_is_a_modest_explicit_heuristic() {
+    fn missing_test_match_is_informational_and_does_not_change_risk() {
         let file = representative_file();
         let matched = explain(&file, false);
         let unmatched = explain(&file, true);
 
         assert_eq!(matched.score, 0.5);
-        assert_eq!(unmatched.score, 0.55);
-        assert_eq!(unmatched.untested_multiplier, 1.10);
+        assert_eq!(unmatched.score, matched.score);
+        assert_eq!(unmatched.untested_multiplier, 1.0);
         assert_eq!(unmatched.reasons, ["no matching test file"]);
     }
 

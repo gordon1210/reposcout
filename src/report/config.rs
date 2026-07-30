@@ -85,6 +85,11 @@ fn render_table(inspection: &ConfigInspection) -> String {
     );
     value(
         &mut out,
+        "health_excludes",
+        &format_list(&config.health_excludes),
+    );
+    value(
+        &mut out,
         "min_dup_tokens",
         &config.min_dup_tokens.to_string(),
     );

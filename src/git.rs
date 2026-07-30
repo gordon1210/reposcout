@@ -230,10 +230,18 @@ fn collect_impl_with_native(
         oids.push(oid);
     }
 
+    let merge_oids = oids
+        .iter()
+        .copied()
+        .filter(|oid| {
+            repo.find_commit(*oid)
+                .is_ok_and(|commit| commit.parent_count() > 1)
+        })
+        .collect::<HashSet<_>>();
     let uncached = oids
         .iter()
         .copied()
-        .filter(|oid| cache.event(&oid.to_string()).is_none())
+        .filter(|oid| !merge_oids.contains(oid) && cache.event(&oid.to_string()).is_none())
         .collect::<Vec<_>>();
     let mut streamed_events = if uncached.is_empty() {
         HashMap::new()
@@ -277,7 +285,15 @@ fn collect_impl_with_native(
             break;
         }
         let oid_string = oid.to_string();
-        let mut event = if let Some(event) = cache.event(&oid_string).cloned() {
+        let mut event = if merge_oids.contains(&oid) {
+            let Some(commit) = repo.find_commit(oid).ok() else {
+                complete = false;
+                continue;
+            };
+            // The branch commit already carries the authored change. Counting
+            // the merge's first-parent diff as another touch inflates churn.
+            commit_event(&commit, oid, Vec::new(), true)
+        } else if let Some(event) = cache.event(&oid_string).cloned() {
             stats.event_hits += 1;
             event
         } else if let Some(event) = streamed_events.remove(&oid_string) {
@@ -866,7 +882,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    fn commit_all(repo: &Repository, message: &str) {
+    fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
         let mut index = repo.index().unwrap();
         index
             .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
@@ -885,7 +901,7 @@ mod tests {
             &tree,
             &parents,
         )
-        .unwrap();
+        .unwrap()
     }
 
     #[test]
@@ -925,6 +941,55 @@ mod tests {
 
         let churn = collect(dir.path(), &[PathBuf::from("new.rs")], 0);
         assert_eq!(churn[Path::new("new.rs")].commits, 3);
+    }
+
+    #[test]
+    fn churn_does_not_double_count_a_change_and_its_merge_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let source = dir.path().join("lib.rs");
+        fs::write(&source, "fn value() -> i32 { 1 }\n").unwrap();
+        let root = commit_all(&repo, "root");
+        let main_ref = repo.head().unwrap().name().unwrap().to_string();
+
+        let root_commit = repo.find_commit(root).unwrap();
+        repo.branch("feature", &root_commit, false).unwrap();
+        drop(root_commit);
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        fs::write(&source, "fn value() -> i32 { 2 }\n").unwrap();
+        let feature = commit_all(&repo, "feature change");
+
+        repo.set_head(&main_ref).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        fs::write(dir.path().join("other.rs"), "fn other() {}\n").unwrap();
+        let main = commit_all(&repo, "main change");
+
+        fs::write(&source, "fn value() -> i32 { 2 }\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let signature = git2::Signature::now("reposcout tests", "tests@example.com").unwrap();
+        let main_parent = repo.find_commit(main).unwrap();
+        let feature_parent = repo.find_commit(feature).unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            "merge feature",
+            &tree,
+            &[&main_parent, &feature_parent],
+        )
+        .unwrap();
+
+        let churn = collect(dir.path(), &[PathBuf::from("lib.rs")], 0);
+        assert_eq!(churn[Path::new("lib.rs")].commits, 2);
     }
 
     #[test]
