@@ -107,8 +107,19 @@ Type-2 similarity is weighted:
 - consistently renamed identifiers: `0.80`; and
 - changed literals of the same category: `0.70`.
 
-`summary.top_duplicates` ranks clone families by removable lines. Full reports also expose stable
-pair findings and precise locations.
+`summary.top_duplicates` ranks clone families by removable lines across the configured health
+corpus. It is a compact projection: after retaining the highest-impact family, a later family must
+add at least `min_dup_lines` contiguous uncovered lines in at least two instances. This suppresses
+nested or substantially overlapping blocks without changing the detector result.
+
+`summary.top_production_duplicates` applies the same compact ranking to families that touch
+production source. Families found only in conventional test files or direct Rust `#[cfg(test)]`
+regions are omitted; a mixed production/test family remains visible. Table and Markdown reports
+use this production projection by default.
+
+Full JSON retains every exact/near group in `duplicates`, stable pair findings, precise locations,
+and union coverage. `--dup-details` expands human reports from the same raw pair findings. Compact
+projection filtering never removes or rewrites that evidence.
 
 ### Coverage semantics
 
@@ -161,15 +172,24 @@ per-commit history index is cached separately from file analysis.
 
 ## Risk
 
-Source-file risk is a stable composite:
+Source-file risk algorithm `5` is a stable, continuous composite:
 
 ```text
 0.40 × size + 0.40 × complexity + 0.20 × churn
+
+factor(value, anchor) = value / (value + anchor)
 ```
 
-Inputs saturate at 1,000 SLOC, cyclomatic `100`, and `20` commits. Risk reasons expose those
-contributing factors. A missing conventional test filename remains visible as navigation evidence,
-but it does not change the risk score because filename matching is not measured coverage.
+The half-saturation anchors are 1,000 SLOC, cyclomatic `100`, and `20` commits: each factor is
+`0.5` at its anchor and continues increasing smoothly above it rather than becoming tied at a hard
+cap. Compact risk entries and detailed file explanations carry `algorithm_version` plus the raw
+SLOC, cyclomatic, and commit inputs; deterministic ties fall back to those inputs and then path.
+The canonical risk-finding threshold remains `0.7`, and a risk-algorithm change makes finding
+profiles baseline-incompatible.
+
+Risk reasons expose the contributing raw signals. A missing conventional test filename remains
+visible as navigation evidence, but it does not change the risk score because filename matching is
+not measured coverage.
 
 ## Test presence
 
@@ -193,8 +213,18 @@ was found.” This heuristic does not change risk or cleanup scoring.
 - whether cleanup value looks low, medium, or high; and
 - why.
 
-Its source-duplication signal excludes separate test files and direct Rust `#[cfg(test)]` regions.
-Raw duplication metrics and findings still cover the complete configured health corpus.
+Its `production_duplication` evidence records the `production-source` corpus, duplicated/analyzed
+line counts, percentage, and whether that value is complete. It excludes separate test files and
+direct Rust `#[cfg(test)]` regions. Raw duplication metrics and findings still cover the complete
+set of analyzed files in the configured health corpus.
+
+Production duplication is marked partial when Type-2 analysis stopped at a safety bound or
+recognized source evidence was lost to unreadable files, walker errors, file/byte limits, or the
+scan-duration limit. The percentage is then observed partial evidence rather than a complete clean
+result. When only Type-2 work is partial and the source corpus is complete, it is a lower bound;
+when source files were omitted, the complete-repository percentage may move in either direction.
+A churn-only truncation does not make duplication evidence partial because it does not change the
+duplication corpus.
 Complete repository token totals remain available as `summary.tokens`; context fit deliberately
 uses `summary.source.tokens` so large data, prose, and other content assets do not create a false
 source-reading overflow.
@@ -202,7 +232,8 @@ source-reading overflow.
 Evidence qualifiers prevent disabled analysis from becoming a synthetic clean result:
 
 - `fits_context_known` is false without token analysis;
-- `cleanup_worth_complete` is false when required health evidence was disabled; and
+- `cleanup_worth_complete` is false when required health evidence was disabled or production
+  duplication is partial; and
 - `unavailable_signals` lists missing inputs.
 
 The assessment's duplication reason uses non-test source only and triggers above 15%. Filename

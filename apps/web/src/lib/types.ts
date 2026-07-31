@@ -201,6 +201,7 @@ export interface Summary {
   top_functions: FunctionHotspot[]
   complexity_violations: FunctionHotspot[]
   top_duplicates: DuplicateBlock[]
+  top_production_duplicates?: DuplicateBlock[]
   symbols: SymbolCounts
   test_presence: TestPresence
   top_risks: RiskEntry[]
@@ -277,6 +278,7 @@ export interface TestPresence {
 
 export interface RiskEntry {
   path: string
+  algorithm_version?: number
   score: number
   sloc: number
   cyclomatic: number
@@ -289,7 +291,16 @@ export interface Assessment {
   fits_context: boolean
   token_budget: number
   cleanup_worth: "low" | "medium" | "high" | string
+  production_duplication?: ProductionDuplication
   reasons: string[]
+}
+
+export interface ProductionDuplication {
+  corpus: string
+  duplicated_lines: number
+  analyzed_lines: number
+  duplicated_pct: number
+  complete: boolean
 }
 
 export interface FileRef {

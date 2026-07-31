@@ -13,7 +13,7 @@ use crate::model::{
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-pub const STRATEGY_VERSION: u32 = 1;
+pub const STRATEGY_VERSION: u32 = 2;
 pub const MAX_PATH_ENTRIES: usize = 25;
 pub const MAX_COMPONENTS: usize = 10;
 
@@ -99,6 +99,7 @@ pub(crate) fn build(inputs: Inputs<'_>) -> WorkScope {
             source_files: inputs.summary.source.files,
             source_tokens: inputs.summary.source.tokens,
         },
+        production_duplication: inputs.summary.assessment.production_duplication.clone(),
         seeds,
         context,
         impact,
@@ -389,7 +390,7 @@ impl PathBudget {
 mod tests {
     use super::*;
     use crate::graph::GraphFileSignal;
-    use crate::model::{Assessment, SourceSummary};
+    use crate::model::{Assessment, ProductionDuplication, SourceSummary};
     use std::collections::HashMap;
 
     fn summary() -> Summary {
@@ -401,6 +402,13 @@ mod tests {
             },
             assessment: Assessment {
                 unavailable_signals: vec!["churn".to_string()],
+                production_duplication: Some(ProductionDuplication {
+                    corpus: "production-source".to_string(),
+                    duplicated_lines: 12,
+                    analyzed_lines: 120,
+                    duplicated_pct: 10.0,
+                    complete: true,
+                }),
                 ..Assessment::default()
             },
             ..Summary::default()
@@ -432,6 +440,12 @@ mod tests {
         assert_eq!(scope.basis, ["repository"]);
         assert_eq!(scope.inventory.source_files, 12);
         assert_eq!(scope.inventory.source_tokens, 24_000);
+        let production = scope
+            .production_duplication
+            .expect("production duplication evidence");
+        assert_eq!(production.corpus, "production-source");
+        assert_eq!(production.duplicated_pct, 10.0);
+        assert!(production.complete);
         assert!(scope.seeds.is_none());
         assert!(scope.context.is_none());
         assert!(scope.impact.is_none());

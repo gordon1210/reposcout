@@ -26,7 +26,7 @@ RepoScout combines signals that usually require several tools:
 | Question | RepoScout answers with |
 |---|---|
 | **What is here?** | Languages, files, SLOC, tokens, symbols, imports, and repository size |
-| **Where is the risk?** | Per-callable complexity, maintainability, churn, test presence, and composite risk |
+| **Where is the risk?** | Per-callable complexity, maintainability, churn, separate test-presence evidence, and continuously ranked composite risk |
 | **What can be skipped?** | Generated, minified, vendored, and oversized-file hints |
 | **Is cleanup worthwhile?** | Exact and Type-2 duplication, markers, hotspots, and an evidence-qualified assessment |
 | **How broad is the work?** | Raw seed, context-budget, dependent, test, graph-component, and confidence counts |
@@ -42,8 +42,8 @@ into the repository it scans.
   data, or styles dilute code-health metrics.
 - **Actionable complexity:** cyclomatic, cognitive, nesting, Halstead, and Maintainability Index
   with precise callable-level findings.
-- **Structured duplication:** format-aware exact and consistent-rename Type-2 clones with precise
-  locations and union-based coverage.
+- **Structured duplication:** raw format-aware exact and consistent-rename Type-2 evidence, plus a
+  compact production-source projection with redundant blocks removed.
 - **Agent-ready queries:** compact summary mode, capability discovery, declaration lookup,
   raw work-scope evidence, structured errors, and guardrailed execution profiles.
 - **Explainable context:** bounded reading plans that rank focus paths, changes, tests,
@@ -113,8 +113,9 @@ reposcout --working --change-summary -f json .
 detected automatically.
 
 Machine-readable scans include a bounded `work_scope` block with raw measurements of the observed
-repository, focus, or diff scope. RepoScout leaves decisions about reading, splitting, or
-delegating work to the caller and never enables another analyzer just to populate this block.
+repository, focus, or diff scope, including explicit production-source duplication evidence when
+that analyzer ran. RepoScout leaves decisions about reading, splitting, or delegating work to the
+caller and never enables another analyzer just to populate this block.
 
 ## Common workflows
 

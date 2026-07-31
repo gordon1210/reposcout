@@ -191,17 +191,20 @@ model, or decide whether work must be delegated.
 The milestone is delivered as focused pull requests and released only when the complete package is
 ready:
 
-1. **Raw work-scope evidence:** add one bounded, versioned projection for repository, focus, and
-   diff workflows. Preserve inventory, seed, context-budget, omission, dependent/test,
-   graph-component, and confidence totals without enabling analysis that the invocation did not
-   request.
-2. **Evidence-backed quality tuning:** make existing risk rankings less saturated and compact
-   duplication projections less repetitive while retaining complete detector output and all
-   existing analysis behind detailed output or explicit options/configuration.
-3. **Progressive skill disclosure:** keep the installed RepoScout skill's core workflow lean and
-   route scouting, context, change, quality, and diagnostic details through focused references.
-   The skill must document exact zero-config/configuration behavior and require user approval
-   before creating or modifying configuration.
+1. **Raw work-scope evidence (complete):** the bounded strategy-`2` projection preserves
+   repository/diff/focus inventory, production-duplication evidence, seeds, context-budget
+   omissions, dependent/test counts, graph components, and confidence totals without enabling
+   unrequested analysis.
+2. **Evidence-backed quality tuning (complete):** risk algorithm `5` uses continuous
+   half-saturation factors and exposes its version/raw inputs. Compact duplicate rankings suppress
+   families that do not contribute `min_dup_lines` new contiguous lines in at least two instances,
+   while a production-source projection removes test-only noise and reports explicit
+   completeness. Full exact/near groups, coverage, pair/canonical findings, and detailed output
+   remain unchanged and available.
+3. **Progressive skill disclosure (next):** keep the installed RepoScout skill's core workflow
+   lean and route scouting, context, change, quality, and diagnostic details through focused
+   references. The skill must document exact zero-config/configuration behavior and require user
+   approval before creating or modifying configuration.
 
 Concise defaults are progressive disclosure, not feature reduction. Any detail removed from a
 default projection remains available through an appropriate detailed format, option, or

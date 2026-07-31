@@ -342,11 +342,17 @@ Metric semantics worth knowing:
   retain comments) preserves historical behavior; `weak` also ignores comments. Every
   clone group (in `duplicates.exact` / `duplicates.near`) carries `format`, precise
   instance ranges, and `similarity`: exact clones are `1.0`; pair-oriented near groups
-  are `< 1.0` and `>= near_dup_min_similarity`. `summary.top_duplicates` remains the
-  actionable rollup — the highest-impact blocks ranked by `duplicated_lines` (removable
+  are `< 1.0` and `>= near_dup_min_similarity`. `summary.top_duplicates` is the compact
+  all-health-corpus rollup — the highest-impact blocks ranked by `duplicated_lines` (removable
   lines = `lines * (copies - 1)`), each with `copies`, `similarity`, and up to 10
-  `locations` (`path:start-end`). Groups whose largest instance spans fewer than
-  `min_dup_lines` lines (default 3) are dropped, so a single dense line that merely
+  `locations` (`path:start-end`). The first block is retained; a later block must add at least
+  `min_dup_lines` contiguous uncovered lines in at least two instances relative to already
+  selected blocks. `summary.top_production_duplicates` applies the same compact filter after
+  excluding test-only and direct Rust-inline-test-only families; table/Markdown use this
+  production projection by default. A mixed production/test family remains visible. These are
+  projections only: never delete or rewrite raw exact/near groups, coverage, canonical findings,
+  or pair findings when changing their redundancy policy. Groups whose largest instance spans
+  fewer than `min_dup_lines` lines (default 3) are dropped, so a single dense line that merely
   exceeds `min_dup_tokens` no longer shows up as a "clone". Instances that physically
   overlap another instance in the same file are pruned before grouping (a "copy" that
   overlaps another is not a separate copy), which removes tandem-repeat false positives
@@ -375,9 +381,10 @@ Metric semantics worth knowing:
   `files[]`, `duplicates`, and canonical finding arrays are dropped while the aggregate
   `summary` and explicitly requested `context`, `directories`, `graph`, `impact`, baseline, and
   review query blocks remain — a few KB instead of megabytes for an ordinary scan without
-  erasing requested answers. `summary.top_duplicates` is deliberately kept, so an agent still
-  gets actionable duplication data. The table/markdown renderers already show only top-N
-  rollups, so the flag mainly affects JSON. `--baseline-ready` removes opt-in analysis blocks.
+  erasing requested answers. The redundancy-filtered `summary.top_duplicates` and optional
+  `summary.top_production_duplicates` are deliberately kept, so an agent still gets actionable
+  duplication data. The table/markdown renderers use the production top-N rollup, so the flag
+  mainly affects JSON. `--baseline-ready` removes opt-in analysis blocks.
   Summary JSON remains valid baseline input because baseline loading consumes only
   report metadata plus `summary` rather than requiring the omitted arrays. It cannot provide
   finding-level comparison. `--baseline-ready` is the finding-complete compact artifact: it
@@ -462,15 +469,22 @@ Metric semantics worth knowing:
   `#[test]`/`#[cfg(test)]` counts a file as tested via per-file `has_inline_tests`). The
   serialized `untested_*` names are retained for compatibility;
   they mean "no matching test file or inline Rust test", not measured coverage.
-  `top_risks` = source files ranked by a composite score
-  (0.40·size + 0.40·complexity + 0.20·churn, with stable saturation anchors of 1,000 SLOC,
-  cyclomatic 100, and 20 commits), each with `reasons`. Filename-based test matching remains
-  informational and never changes risk or cleanup scoring. `assessment` = the one-glance verdict (`fits_context`, `token_budget`,
+  `top_risks` = source files ranked by risk algorithm `5`:
+  `0.40·size + 0.40·complexity + 0.20·churn`, where each continuous factor is
+  `value / (value + half_saturation_anchor)` and the anchors are 1,000 SLOC, cyclomatic 100,
+  and 20 commits. Scores therefore remain monotonic above their former hard caps. Entries and
+  file explanations carry `algorithm_version` plus raw SLOC/cyclomatic/churn inputs; ordering
+  ties break on those inputs and then path. Filename-based test matching remains informational
+  and never changes risk or cleanup scoring. `assessment` = the one-glance verdict (`fits_context`, `token_budget`,
   `cleanup_worth` ∈ {low,medium,high}, `reasons`); computed last in `aggregate()` from the
   other signals (`DEFAULT_CONTEXT_BUDGET = 200_000`); context fit uses `summary.source.tokens`,
-  while `summary.tokens` remains complete inventory. Its duplication signal uses only
-  non-test code files, excluding direct Rust `#[cfg(test)]` regions, and triggers above 15%;
-  raw duplication summaries cover the effective health corpus. Repository-wide totals and
+  while `summary.tokens` remains complete inventory. Its `production_duplication` signal uses
+  only non-test code files, excluding direct Rust `#[cfg(test)]` regions, and triggers above 15%.
+  The evidence records the `production-source` corpus, duplicated/analyzed line counts,
+  percentage, and `complete`; Type-2 truncation or source discovery/read limits make it partial.
+  The percentage is a lower bound only when Type-2 work was the sole gap; omitted source files can
+  change its denominator. Churn-only truncation does not change duplication completeness. Raw
+  duplication summaries cover the effective health corpus. Repository-wide totals and
   `languages` remain complete inventory. Additive
   `source` totals and `top_source_token_files` drive concise human reports, whose language table
   collapses non-source formats into one content rollup.
@@ -478,8 +492,9 @@ Metric semantics worth knowing:
   unsupported-path examples, walker errors, and any bounded/partial Type-2 run (including skipped
   seed pairs/matches and which limit fired)
   so agents can tell whether an apparent absence is a scan gap or a lower-bound duplication result.
-- **Work scope is raw bounded evidence, not agent routing.** New scan reports project primary
-  inventory, focus/diff seeds, context selection and uncapped omission totals, observed
+- **Work scope is raw bounded evidence, not agent routing.** Strategy `2` scan reports project
+  primary inventory, production-source duplication evidence when available, focus/diff seeds,
+  context selection and uncapped omission totals, observed
   dependents/tests, weak graph components, and primary/planning confidence into top-level
   `work_scope`. All path examples share the capability-advertised bound and component records are
   separately bounded; exact totals and omissions survive. The projection uses only analysis

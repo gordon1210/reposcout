@@ -64,7 +64,7 @@ fn full_scan_reports_core_metrics() {
     assert_eq!(v["encoding"], "o200k_base");
     assert!(v.get("report_kind").is_none());
     assert!(v.get("change_summary").is_none());
-    assert_eq!(v["work_scope"]["strategy_version"], 1);
+    assert_eq!(v["work_scope"]["strategy_version"], 2);
     assert_eq!(v["work_scope"]["basis"], serde_json::json!(["repository"]));
     assert_eq!(
         v["work_scope"]["inventory"]["source_files"],
@@ -73,6 +73,10 @@ fn full_scan_reports_core_metrics() {
     assert_eq!(
         v["work_scope"]["inventory"]["source_tokens"],
         v["summary"]["source"]["tokens"]
+    );
+    assert_eq!(
+        v["work_scope"]["production_duplication"],
+        v["summary"]["assessment"]["production_duplication"]
     );
 
     let files = v["summary"]["files"].as_u64().unwrap();
@@ -370,7 +374,7 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     assert_eq!(report["change_summary"]["max_path_entries"], 100);
     assert_eq!(report["change_summary"]["max_gap_entries"], 25);
     assert_eq!(report["change_summary"]["max_validations"], 10);
-    assert_eq!(report["work_scope"]["strategy_version"], 1);
+    assert_eq!(report["work_scope"]["strategy_version"], 2);
     assert_eq!(report["work_scope"]["max_path_entries"], 25);
     assert_eq!(report["work_scope"]["max_components"], 10);
 }
@@ -1539,9 +1543,9 @@ fn narrow_human_tables_front_truncate_paths_without_wrapping_the_suffix() {
         "hotspots should keep the filename on one row:\n{rendered}"
     );
     assert!(
-        rendered
-            .lines()
-            .any(|line| line.contains("…d-globe-scene.tsx") && line.contains("0.15")),
+        rendered.lines().any(|line| {
+            line.contains("…d-globe-scene.tsx") && line.contains("no matching test file")
+        }),
         "risk rows should keep an identifying path suffix on one row:\n{rendered}"
     );
 }
@@ -2191,6 +2195,64 @@ fn summary_flag_keeps_top_duplicates() {
             .is_empty(),
         "--summary must retain summary.top_duplicates"
     );
+    assert!(
+        brief["summary"]["assessment"]["production_duplication"].is_object(),
+        "--summary must retain explicit production duplication evidence"
+    );
+}
+
+#[test]
+fn production_duplicates_are_actionable_in_compact_and_human_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(".reposcout.toml"),
+        "min_dup_tokens = 8\nmin_dup_lines = 3\nnear_dup_min_similarity = 1.0\n",
+    )
+    .unwrap();
+    let duplicate = r#"
+pub fn repeated_business_rule(values: &[i32]) -> i32 {
+    let mut total = 0;
+    for value in values {
+        if *value > 0 {
+            total += value * 2;
+        } else {
+            total -= value.abs();
+        }
+    }
+    total
+}
+"#;
+    std::fs::write(dir.path().join("first.rs"), duplicate).unwrap();
+    std::fs::write(dir.path().join("second.rs"), duplicate).unwrap();
+
+    let report = run_json(&["-f", "json", "--summary", dir.path().to_str().unwrap()]);
+    let production = &report["summary"]["assessment"]["production_duplication"];
+    assert_eq!(production["corpus"], "production-source");
+    assert!(production["duplicated_lines"].as_u64().unwrap() > 0);
+    assert!(production["analyzed_lines"].as_u64().unwrap() > 0);
+    assert_eq!(production["complete"], true);
+    assert!(
+        !report["summary"]["top_production_duplicates"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    for format in ["table", "markdown"] {
+        let mut cmd = reposcout_command();
+        cmd.args([
+            "--no-cache",
+            "--quiet",
+            "-f",
+            format,
+            dir.path().to_str().unwrap(),
+        ]);
+        let output = cmd.assert().success().get_output().stdout.clone();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Production duplication"));
+        assert!(text.contains("Top production duplicates"));
+        assert!(text.contains("Top risks · algorithm 5"));
+    }
 }
 
 #[test]
@@ -2398,6 +2460,16 @@ mod tests {
             > 15.0,
         "fixture must retain raw duplication evidence"
     );
+    let production = &report["summary"]["assessment"]["production_duplication"];
+    assert_eq!(production["corpus"], "production-source");
+    assert_eq!(production["duplicated_lines"], 0);
+    assert_eq!(production["duplicated_pct"], 0.0);
+    assert_eq!(production["complete"], true);
+    assert!(
+        report["summary"].get("top_production_duplicates").is_none(),
+        "inline-test-only families must not enter the production projection"
+    );
+    assert_eq!(&report["work_scope"]["production_duplication"], production);
     assert!(
         report["summary"]["assessment"]["reasons"]
             .as_array()
@@ -2433,7 +2505,7 @@ fn tiny_single_file_scan_is_not_labeled_high_risk() {
 }
 
 #[test]
-fn large_complex_file_receives_strong_absolute_risk_without_coverage_claims() {
+fn large_complex_file_uses_continuous_risk_without_coverage_claims() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("risky.rs");
     let mut source = String::from("pub fn risky(input: i32) -> i32 {\n    let mut value = 0;\n");
@@ -2449,10 +2521,11 @@ fn large_complex_file_receives_strong_absolute_risk_without_coverage_claims() {
     let report = run_json(&["--only", "complexity", "-f", "json", file.to_str().unwrap()]);
     let risk = &report["summary"]["top_risks"][0];
     let score = risk["score"].as_f64().unwrap();
-    assert!(score >= 0.59, "risk was: {risk:?}");
+    assert_eq!(risk["algorithm_version"], 5);
+    assert!(score > 0.340, "risk was: {risk:?}");
     assert!(
-        score < 0.60,
-        "test filename matching must not inflate the score: {risk:?}"
+        score < 0.341,
+        "continuous half-saturation score changed unexpectedly: {risk:?}"
     );
     let reasons = risk["reasons"].as_array().unwrap();
     assert!(reasons.iter().any(|reason| reason == "large"));
@@ -3545,6 +3618,7 @@ fn explain_json_combines_file_findings_tests_and_graph_context() {
     assert_eq!(report["discovery"]["status"], "analyzed");
     assert_eq!(report["file"]["language"], "JavaScript");
     assert!(report["risk"]["score"].is_number());
+    assert_eq!(report["risk"]["algorithm_version"], 5);
     assert_eq!(report["testing"]["tested"], true);
     assert!(
         report["testing"]["matches"]
@@ -5064,6 +5138,14 @@ fn change_summary_honors_explicit_full_and_safe_profiles() {
     assert_eq!(full["execution"]["profile"], "full");
     assert_eq!(full["analysis_profile"]["analyzers"]["duplication"], true);
     assert_eq!(full["analysis_profile"]["analyzers"]["churn"], true);
+    assert_eq!(
+        full["work_scope"]["production_duplication"]["corpus"],
+        "production-source"
+    );
+    assert_eq!(
+        full["work_scope"]["production_duplication"]["complete"],
+        true
+    );
 
     let safe = run_json(&[
         "-f",
@@ -5077,6 +5159,7 @@ fn change_summary_honors_explicit_full_and_safe_profiles() {
     assert_eq!(safe["execution"]["profile"], "safe");
     assert_eq!(safe["analysis_profile"]["analyzers"]["duplication"], false);
     assert_eq!(safe["analysis_profile"]["analyzers"]["churn"], false);
+    assert!(safe["work_scope"].get("production_duplication").is_none());
 }
 
 #[test]

@@ -213,7 +213,11 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
 
     // Top risks
     if !s.top_risks.is_empty() {
-        let _ = writeln!(out, "## Top risks");
+        let _ = writeln!(
+            out,
+            "## Top risks · algorithm {}",
+            crate::findings::RISK_ALGORITHM_VERSION
+        );
         let _ = writeln!(out);
         let _ = writeln!(
             out,
@@ -725,15 +729,15 @@ fn render_duplication(out: &mut String, report: &ScanReport, duplication_details
     );
     let _ = writeln!(out);
 
-    if !summary.top_duplicates.is_empty() {
-        let _ = writeln!(out, "## Top duplicates");
+    if !summary.top_production_duplicates.is_empty() {
+        let _ = writeln!(out, "## Top production duplicates");
         let _ = writeln!(out);
         let _ = writeln!(
             out,
             "| Lines | Copies | Similarity | Removable | Locations |"
         );
         let _ = writeln!(out, "|--:|--:|---|--:|---|");
-        for duplicate in &summary.top_duplicates {
+        for duplicate in &summary.top_production_duplicates {
             let _ = writeln!(
                 out,
                 "| {} | {} | {} | {} | {} |",

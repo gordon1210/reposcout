@@ -66,8 +66,9 @@ The default health corpus is programming/build source. Optional content formats 
 inventory/navigation facts while removing health signals. `summary.assessment.fits_context` uses
 `summary.source.tokens`, while `summary.tokens` remains the complete recognized inventory.
 Filename-based test matching is navigation evidence only and does not change risk or cleanup
-scoring. Check bounded `diagnostics.unsupported_samples` before assuming an unsupported count is
-irrelevant.
+scoring. Compact human duplication output prioritizes production-source families; full JSON
+retains the complete configured health corpus. Check bounded `diagnostics.unsupported_samples`
+before assuming an unsupported count is irrelevant.
 
 ## Respect configuration authority
 
@@ -146,15 +147,23 @@ Interpret the response in this order:
    `type2_analysis_partial`. When Type-2 is partial, treat near-duplicate findings and combined
    duplication percentages as lower bounds; use the skipped-work and limit-reason fields to see
    why.
-2. Check `summary.assessment`, including its completeness fields and `unavailable_signals`; never
-   interpret a disabled analyzer as a measured zero.
+2. Check `summary.assessment`, including `production_duplication`, completeness fields, and
+   `unavailable_signals`; never interpret a disabled analyzer as a measured zero. When production
+   duplication has `complete: false`, report it as observed partial evidence. Call the percentage a
+   lower bound only when diagnostics show Type-2 work was the sole gap; omitted source files also
+   change the denominator.
 3. Use `summary.top_risks`, `summary.complexity_violations`, `summary.test_presence`,
    `summary.skip_candidates`, `summary.symbols`, and `summary.top_token_files` to choose where to
-   investigate.
-4. When full analysis is enabled, inspect `summary.duplication`, `summary.top_duplicates`, and
-   `summary.top_hotspots` as prioritization signals rather than automatic refactoring decisions.
-   Raw duplication covers the configured health corpus, including tests; the cleanup assessment
-   separately uses production code and excludes direct Rust `#[cfg(test)]` regions.
+   investigate. Risk algorithm `5` is a continuous ranking; confirm each entry's
+   `algorithm_version` and raw SLOC, cyclomatic, and churn inputs before comparing reports.
+4. When full analysis is enabled, inspect `summary.top_production_duplicates` first, then
+   `summary.top_duplicates` only when the complete configured health corpus matters. Both compact
+   lists suppress substantially overlapping rankings; full `duplicates` groups and
+   `--dup-details` retain the detector evidence.
+5. Treat duplication rankings and `summary.top_hotspots` as prioritization signals rather than
+   automatic refactoring decisions. Production evidence excludes conventional test files and
+   direct Rust `#[cfg(test)]` regions; raw duplication still includes every analyzed eligible
+   health file.
 
 Request a bounded reading plan when the task needs source inspection:
 
@@ -254,4 +263,5 @@ write baselines, or create SARIF/output files unless the user asked for CI or pe
 State the scanned target, profile, and diff scope. Lead with coverage gaps, then the few findings
 that affect the task, the recommended reading order, and any likely test or dependent files.
 Distinguish measured facts from heuristics: matching tests are not measured coverage, risk is a
-ranking signal, and import/type resolution can be partial.
+versioned ranking signal, compact duplicate lists are projections over retained raw findings, and
+import/type resolution can be partial.

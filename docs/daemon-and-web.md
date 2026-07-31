@@ -93,6 +93,10 @@ The dashboard provides bookmarkable routes for:
 - `/graph`
 
 Non-graph views use searchable, sortable, paginated data grids over the complete report.
+The risk view identifies the report's risk-algorithm version. The duplication view prefers the
+compact production-source projection for reports carrying production evidence and falls back to
+the legacy all-health-corpus projection only for older reports; raw groups remain part of the
+daemon snapshot.
 
 ## Graph explorer
 

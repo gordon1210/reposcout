@@ -269,9 +269,13 @@ pub struct Summary {
     /// ordered by severity and capped by the top-N setting.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub complexity_violations: Vec<FunctionHotspot>,
-    /// The highest-impact duplicate blocks (exact and near), ranked by how many
-    /// lines could be removed by de-duplicating them.
+    /// Compact highest-impact duplicate blocks (exact and near), with nested or
+    /// substantially overlapping families suppressed.
     pub top_duplicates: Vec<DuplicateBlock>,
+    /// Highest-impact duplicate blocks that touch production source. Test-only
+    /// and Rust inline-test-only families are excluded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub top_production_duplicates: Vec<DuplicateBlock>,
     /// Highest-impact pair findings with stable IDs and precise locations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub top_duplicate_findings: Vec<DuplicateFindingSummary>,
@@ -351,6 +355,19 @@ pub struct DuplicationSummary {
     /// Duplication coverage partitioned by detected language/format.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub by_language: Vec<LanguageDuplication>,
+}
+
+/// Duplication coverage restricted to production source lines.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProductionDuplication {
+    /// Stable corpus label; currently `production-source`.
+    pub corpus: String,
+    pub duplicated_lines: usize,
+    pub analyzed_lines: usize,
+    pub duplicated_pct: f64,
+    /// False when source discovery/reading or Type-2 analysis retained only
+    /// partial duplication evidence.
+    pub complete: bool,
 }
 
 /// Union-based duplication statistics for one detected language/format.
@@ -836,6 +853,9 @@ pub struct TestPresence {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RiskEntry {
     pub path: String,
+    /// Composite-risk formula version used for this entry.
+    #[serde(default)]
+    pub algorithm_version: u32,
     pub score: f64,
     pub sloc: usize,
     pub cyclomatic: u32,
@@ -858,12 +878,17 @@ pub struct Assessment {
     pub token_budget: usize,
     /// `"low"` | `"medium"` | `"high"`
     pub cleanup_worth: String,
-    /// False when one or more inputs used by the cleanup verdict were disabled.
+    /// False when one or more inputs used by the cleanup verdict were disabled
+    /// or production duplication retained only partial evidence.
     #[serde(default)]
     pub cleanup_worth_complete: bool,
     /// Analyzer signals that were unavailable to this verdict.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unavailable_signals: Vec<String>,
+    /// Production-source duplication used by the cleanup verdict. Absent when
+    /// duplication analysis was disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub production_duplication: Option<ProductionDuplication>,
     pub reasons: Vec<String>,
 }
 
@@ -880,6 +905,9 @@ pub struct WorkScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_scope: Option<String>,
     pub inventory: WorkScopeInventory,
+    /// Production-source duplication already computed for the assessment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub production_duplication: Option<ProductionDuplication>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seeds: Option<WorkScopeSeeds>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1677,6 +1705,9 @@ pub struct ExplainRepository {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RiskExplanation {
+    /// Composite-risk formula version used for this explanation.
+    #[serde(default)]
+    pub algorithm_version: u32,
     pub score: f64,
     pub sloc: usize,
     pub cyclomatic: u32,
@@ -1960,10 +1991,42 @@ mod tests {
         assert_eq!(summary.duplication.analyzed_lines, 0);
         assert_eq!(summary.duplication.analyzed_tokens, 0);
         assert!(summary.duplication.by_language.is_empty());
+        assert!(summary.top_production_duplicates.is_empty());
         assert!(summary.top_duplicate_findings.is_empty());
+        assert!(summary.assessment.production_duplication.is_none());
         assert_eq!(summary.complexity.cyclomatic_threshold, 0);
         assert_eq!(summary.complexity.functions_over_threshold, 0);
         assert!(summary.complexity_violations.is_empty());
+    }
+
+    #[test]
+    fn legacy_risk_evidence_defaults_the_algorithm_version() {
+        let entry: RiskEntry = serde_json::from_value(serde_json::json!({
+            "path": "src/lib.rs",
+            "score": 0.5,
+            "sloc": 100,
+            "cyclomatic": 20,
+            "churn_commits": 3,
+            "untested": false,
+            "reasons": []
+        }))
+        .expect("legacy risk entry");
+        let explanation: RiskExplanation = serde_json::from_value(serde_json::json!({
+            "score": 0.5,
+            "sloc": 100,
+            "cyclomatic": 20,
+            "churn_commits": 3,
+            "size_factor": 0.1,
+            "complexity_factor": 0.2,
+            "churn_factor": 0.15,
+            "untested": false,
+            "untested_multiplier": 1.0,
+            "reasons": []
+        }))
+        .expect("legacy risk explanation");
+
+        assert_eq!(entry.algorithm_version, 0);
+        assert_eq!(explanation.algorithm_version, 0);
     }
 
     #[test]

@@ -21,7 +21,7 @@ The most useful first-pass fields are:
 |---|---|
 | Will readable source fit? | `summary.source.tokens`, `summary.assessment` |
 | How large is the complete inventory? | `summary.tokens`, `summary.files` |
-| Is cleanup worthwhile? | duplication, complexity violations, risks, and assessment reasons |
+| Is cleanup worthwhile? | `summary.assessment.production_duplication`, complexity violations, risks, and assessment reasons |
 | What should be read first? | `summary.top_risks`, `summary.top_source_token_files` |
 | What can be skipped? | `summary.skip_candidates` and each reason |
 | Are tests present? | `summary.test_presence` |
@@ -40,15 +40,17 @@ Read it in this order:
    `inventory.discovery_files` is the post-ignore repository discovery universe before an optional
    diff narrows the scan; `inventory.primary_files` is the repository or diff scope actually
    analyzed, while `source_files` and `source_tokens` describe that primary scope.
-2. `seeds` preserves exact focus/change totals, resolved versus unmatched focus inputs, bounded
+2. `production_duplication`, when present, gives production-source duplicated/analyzed line counts
+   and an explicit completeness bit. A partial percentage is observed evidence, not a clean result.
+3. `seeds` preserves exact focus/change totals, resolved versus unmatched focus inputs, bounded
    path examples, and omissions.
-3. `context` reports selected, outline-only, omitted, and skipped files plus uncapped selected and
+4. `context` reports selected, outline-only, omitted, and skipped files plus uncapped selected and
    omitted token totals.
-4. `impact` reports graph-eligible/covered seed files, direct/transitive dependents, and whether
+5. `impact` reports graph-eligible/covered seed files, direct/transitive dependents, and whether
    matching-test counts were actually evaluated.
-5. `structure` reports weakly connected components only when the selected workflow already built
+6. `structure` reports weakly connected components only when the selected workflow already built
    a graph. Components describe observed topology; they do not prove that work is independent.
-6. `confidence` separates primary-scan and full planning-universe coverage, graph gaps, partial
+7. `confidence` separates primary-scan and full planning-universe coverage, graph gaps, partial
    Type-2 analysis, and unavailable signals. `primary.diff_scoped` makes an intentional diff
    boundary explicit rather than presenting it as a discovery gap.
 
@@ -62,6 +64,29 @@ needs deeper inspection, or would benefit from splitting or delegation.
 The serialized `untested_*` fields mean “no conventional matching test file or inline Rust test
 was found.” Rust `tests/cli.rs` also conventionally matches `src/main.rs`; these are
 test-presence heuristics, not measured coverage, and they do not change risk or cleanup scoring.
+
+## Interpret quality evidence progressively
+
+Start with the smallest decision-ready projections:
+
+1. Use `summary.assessment.production_duplication` for cleanup decisions. It excludes conventional
+   test files and direct Rust inline-test regions, preserves duplicated/analyzed line counts, and
+   says whether the result is complete.
+2. Use `summary.top_production_duplicates` for the first production blocks to inspect. Its
+   redundancy filter suppresses nested/substantially overlapping rankings; it does not change raw
+   detector output.
+3. Use `summary.top_duplicates` when test/content relationships in the complete configured health
+   corpus matter. Request full JSON or `--dup-details` only when every raw group, pair, or precise
+   location is needed.
+4. Use `summary.top_risks` as a ranking, not a severity verdict. Algorithm `5` uses continuous
+   half-saturation factors, and each entry identifies `algorithm_version` plus its raw SLOC,
+   cyclomatic, and churn inputs.
+
+If production duplication has `complete: false`, report it as observed partial evidence. It is an
+“at least” percentage only when diagnostics show Type-2 work was the sole gap; omitted source files
+can change both numerator and denominator. If `top_production_duplicates` is absent but production
+evidence is present, no production family survived the compact projection; do not reinterpret that
+omission as a disabled analyzer.
 
 ## Discover capabilities
 
@@ -266,7 +291,9 @@ Every scan reports:
 - whether Type-2 candidate, match, or suppression bounds made duplication partial.
 
 If `type2_analysis_partial` is true, exact-clone analysis is complete but Type-2 findings and the
-combined duplication percentage are lower bounds.
+combined duplication percentage are lower bounds. Read
+`summary.assessment.production_duplication.complete` for the corresponding production-source
+qualification; other discovery/read limits can also make it partial.
 
 ## Suggested agent sequence
 

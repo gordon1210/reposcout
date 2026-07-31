@@ -741,14 +741,18 @@ function RiskTable({
   report: ScanReport
   churnEnabled: boolean
 }) {
+  const algorithmVersion = report.summary.top_risks[0]?.algorithm_version
+  const algorithm = algorithmVersion
+    ? ` Risk algorithm ${algorithmVersion}.`
+    : ""
   return (
     <Card>
       <CardHeader>
         <CardTitle>Highest-risk source files</CardTitle>
         <CardDescription>
           {churnEnabled
-            ? "Composite size, complexity, churn, and test-presence signals."
-            : "Composite size, complexity, and test-presence signals; churn was not run."}
+            ? `Composite size, complexity, and churn signals.${algorithm}`
+            : `Composite size and complexity signals; churn was not run.${algorithm}`}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -800,17 +804,28 @@ function DuplicationTable({
   report: ScanReport
   enabled: boolean
 }) {
-  const { duplication, top_duplicates: duplicates } = report.summary
+  const { duplication, top_duplicates, top_production_duplicates } =
+    report.summary
+  const usesProductionProjection =
+    report.summary.assessment.production_duplication !== undefined
+  const production = report.summary.assessment.production_duplication
+  const duplicates = usesProductionProjection
+    ? (top_production_duplicates ?? [])
+    : top_duplicates
+  const title = usesProductionProjection
+    ? "Largest production duplicate blocks"
+    : "Largest duplicate blocks"
+  const description = !enabled
+    ? "Duplication analysis was not run for this report."
+    : production
+      ? `${production.complete ? "" : "Partial evidence: "}${formatPercent(production.duplicated_pct)} production-source duplication (${formatNumber(production.duplicated_lines)} / ${formatNumber(production.analyzed_lines)} lines); raw detection retained ${formatNumber(duplication.exact_groups)} exact and ${formatNumber(duplication.near_groups)} Type-2 groups.`
+      : `${formatNumber(duplication.exact_groups)} exact and ${formatNumber(duplication.near_groups)} Type-2 groups; ${formatNumber(duplication.duplicated_lines)} duplicated lines across the repository.`
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Largest duplicate blocks</CardTitle>
-        <CardDescription>
-          {enabled
-            ? `${formatNumber(duplication.exact_groups)} exact and ${formatNumber(duplication.near_groups)} Type-2 groups; ${formatNumber(duplication.duplicated_lines)} duplicated lines across the repository.`
-            : "Duplication analysis was not run for this report."}
-        </CardDescription>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
         {!enabled ? (
@@ -825,7 +840,7 @@ function DuplicationTable({
           <DataTable
             columns={duplicateColumns}
             data={duplicates}
-            label="Largest duplicate blocks"
+            label={title}
             searchPlaceholder="Search duplicate locations or kind..."
             searchText={(duplicate) =>
               `${duplicate.similarity === 1 ? "exact" : "type-2"} ${duplicate.locations.join(" ")}`
