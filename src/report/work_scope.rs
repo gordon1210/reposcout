@@ -14,6 +14,24 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
     let _ = writeln!(out, "{heading}");
     kv(out, "Basis", &scope.basis.join(" + "));
     kv(out, "Primary inventory", &table_inventory(scope));
+    if let Some(production) = &scope.production_duplication {
+        kv(
+            out,
+            "Production duplication",
+            &format!(
+                "{:.1}% ({} / {} {} lines) · {}",
+                production.duplicated_pct,
+                thousands(production.duplicated_lines),
+                thousands(production.analyzed_lines),
+                terminal_text(&production.corpus),
+                if production.complete {
+                    "complete"
+                } else {
+                    "partial"
+                }
+            ),
+        );
+    }
     if let Some(seeds) = &scope.seeds {
         if let Some(focus) = &seeds.focus {
             let mut details = format!(
@@ -181,6 +199,21 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
     let _ = writeln!(out, "## Work scope\n");
     let _ = writeln!(out, "- Basis: {}", markdown_text(&scope.basis.join(" + ")));
     let _ = writeln!(out, "- Primary inventory: {}", markdown_inventory(scope));
+    if let Some(production) = &scope.production_duplication {
+        let _ = writeln!(
+            out,
+            "- Production duplication: **{:.1}%** (**{} / {}** {} lines); **{}**",
+            production.duplicated_pct,
+            thousands(production.duplicated_lines),
+            thousands(production.analyzed_lines),
+            markdown_text(&production.corpus),
+            if production.complete {
+                "complete"
+            } else {
+                "partial"
+            }
+        );
+    }
     if let Some(seeds) = &scope.seeds {
         if let Some(focus) = &seeds.focus {
             let paths = focus

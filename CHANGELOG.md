@@ -18,17 +18,30 @@ within their section.
   explicitly documented and reported as scope, then format includes, then path excludes.
 - Added bounded `diagnostics.unsupported_samples` paths and human-readable examples so unsupported
   file counts identify concrete follow-up work.
+- Added explicit `production-source` duplication evidence to the assessment and work-scope
+  contracts, including duplicated/analyzed line counts and a completeness bit. Added a compact
+  `summary.top_production_duplicates` projection that excludes conventional test-only and direct
+  Rust-inline-test-only families.
+- Added the risk `algorithm_version` to compact rankings and detailed file explanations so machine
+  consumers can identify the formula behind each score.
 
 ### Changed
 
+- Risk algorithm `5` replaces hard saturation with continuous half-saturation factors at 1,000
+  SLOC, cyclomatic 100, and 20 commits. Large files remain ordered above those anchors, raw-input
+  ties are deterministic, and the canonical risk threshold remains `0.7`.
+- Compact duplicate rankings now suppress a later family unless it contributes at least
+  `min_dup_lines` new contiguous lines in two instances. Human reports and the dashboard prefer
+  the production-source projection, while full exact/near groups, coverage, pair findings, and
+  canonical findings remain unchanged.
 - Context-fit assessment now uses readable source/build tokens while preserving complete
   repository token totals. Filename-based test matching remains visible but no longer changes risk
   scores or cleanup assessment.
 - Human-readable tables front-truncate paths to table-specific one-line widths so filenames,
   trailing directories, and line numbers remain visible instead of wrapping.
 - The bundled RepoScout skill now documents exact zero-argument behavior, configuration creation
-  and precedence, health selection, and the requirement to obtain user approval before creating
-  or changing configuration.
+  and precedence, health selection, continuous risk evidence, raw versus production duplication,
+  and the requirement to obtain user approval before creating or changing configuration.
 
 ### Fixed
 

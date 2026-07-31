@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use xxhash_rust::xxh3::xxh3_128;
 
 pub const CATALOG_VERSION: u32 = 1;
-pub const RISK_ALGORITHM_VERSION: u32 = 4;
+pub const RISK_ALGORITHM_VERSION: u32 = crate::metrics::risk::ALGORITHM_VERSION;
 pub const RISK_THRESHOLD: f64 = 0.7;
 
 /// Project analyzer outputs into one complete, deterministically ordered
@@ -413,9 +413,11 @@ fn fingerprint(parts: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{clone_location, compare};
-    use crate::model::{CloneInstance, FindingCatalog, FindingRecord};
+    use super::{RISK_THRESHOLD, build, clone_location, compare};
+    use crate::config::Config;
+    use crate::model::{CloneInstance, Duplication, FindingCatalog, FindingRecord, RiskEntry};
     use std::collections::BTreeMap;
+    use std::path::Path;
 
     fn complexity(fingerprint: &str, cyclomatic: f64) -> FindingRecord {
         FindingRecord {
@@ -470,5 +472,31 @@ mod tests {
         assert_eq!(location.end_line, 1);
         assert_eq!(location.start_column, Some(1));
         assert_eq!(location.end_column, None);
+    }
+
+    #[test]
+    fn risk_finding_threshold_remains_inclusive_at_point_seven() {
+        let risks = [
+            RiskEntry {
+                path: "below.rs".to_string(),
+                score: RISK_THRESHOLD - 0.001,
+                ..RiskEntry::default()
+            },
+            RiskEntry {
+                path: "at.rs".to_string(),
+                score: RISK_THRESHOLD,
+                ..RiskEntry::default()
+            },
+        ];
+
+        let catalog = build(&[], &Duplication::default(), &risks, &Config::default());
+        let risk_findings = catalog
+            .findings
+            .iter()
+            .filter(|finding| finding.kind == "risk")
+            .collect::<Vec<_>>();
+
+        assert_eq!(risk_findings.len(), 1);
+        assert_eq!(risk_findings[0].primary_location.path, Path::new("at.rs"));
     }
 }

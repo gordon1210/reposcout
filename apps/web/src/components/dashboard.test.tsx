@@ -212,11 +212,21 @@ describe("Dashboard", () => {
         locations: ["src/d.rs:5-12", "src/e.rs:20-27"],
       },
     ]
+    report.summary.top_production_duplicates = report.summary.top_duplicates
+    report.summary.assessment.production_duplication = {
+      corpus: "production-source",
+      duplicated_lines: 32,
+      analyzed_lines: 100,
+      duplicated_pct: 32,
+      complete: true,
+    }
     renderDashboard(makeSnapshot({ profile: "full", report }))
 
     await user.click(screen.getByRole("tab", { name: "Duplication" }))
 
-    expect(screen.getByText("Largest duplicate blocks")).toBeInTheDocument()
+    expect(
+      screen.getByText("Largest production duplicate blocks")
+    ).toBeInTheDocument()
     expect(screen.getByText("Exact")).toBeInTheDocument()
     expect(screen.getByText("Type-2")).toBeInTheDocument()
     expect(screen.getByText("92.0%")).toBeInTheDocument()
@@ -234,6 +244,44 @@ describe("Dashboard", () => {
     expect(
       screen.getByText("No duplicate blocks met the configured thresholds.")
     ).toBeInTheDocument()
+  })
+
+  it("does not fall back to test-only blocks when the production projection is empty", async () => {
+    const user = userEvent.setup()
+    const report = makeReport()
+    report.analysis_profile!.analyzers.duplication = true
+    report.summary.duplication.exact_groups = 1
+    report.summary.top_duplicates = [
+      {
+        lines: 8,
+        tokens: 52,
+        similarity: 1,
+        copies: 2,
+        duplicated_lines: 8,
+        locations: ["tests/a.rs:5-12", "tests/b.rs:20-27"],
+      },
+    ]
+    report.summary.assessment.production_duplication = {
+      corpus: "production-source",
+      duplicated_lines: 0,
+      analyzed_lines: 120,
+      duplicated_pct: 0,
+      complete: true,
+    }
+    renderDashboard(makeSnapshot({ profile: "full", report }))
+
+    await user.click(screen.getByRole("tab", { name: "Duplication" }))
+
+    expect(
+      screen.getByText("Largest production duplicate blocks")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("No duplicate blocks met the configured thresholds.")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/0\.0% production-source duplication/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText("tests/a.rs:5-12")).not.toBeInTheDocument()
   })
 
   it("shows when duplication was not run", async () => {

@@ -89,6 +89,11 @@ fn table(report: &ExplainReport, color: bool) -> String {
 
     if let Some(risk) = &report.risk {
         section(&mut out, "Risk", color);
+        kv(
+            &mut out,
+            "Algorithm",
+            &format!("version {}", risk.algorithm_version),
+        );
         kv(&mut out, "Score", &format!("{:.2}", risk.score));
         kv(
             &mut out,
@@ -230,6 +235,7 @@ fn markdown(report: &ExplainReport) -> String {
     if let Some(risk) = &report.risk {
         let _ = writeln!(out, "## Risk");
         let _ = writeln!(out);
+        let _ = writeln!(out, "- Algorithm: **version {}**.", risk.algorithm_version);
         let _ = writeln!(
             out,
             "- Score **{:.2}**: size {:.2}, complexity {:.2}, churn {:.2}.",

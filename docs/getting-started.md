@@ -89,6 +89,10 @@ RepoScout separates complete inventory from source-health analysis:
 
 - Every recognized format contributes file, byte, token, and line totals.
 - Marker and duplication analysis defaults to programming/build source.
+- Human duplication rankings prioritize non-redundant production-source families; full JSON
+  retains every detected raw exact/near group from the configured health corpus.
+- Composite risk uses versioned continuous factors so large files remain ordered instead of tying
+  at hard size, complexity, or churn caps.
 - HTML, CSS/SCSS, JSON, YAML, TOML, Markdown, XML, and text enter health analysis only when
   explicitly included.
 - Dependency lockfiles are skipped from repository scanning by default.

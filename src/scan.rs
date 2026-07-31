@@ -17,6 +17,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashSet};
 use std::io::IsTerminal;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -932,6 +933,7 @@ fn analyze_planning_universe(
         &BTreeMap::new(),
         cfg,
         &prepared.health_policy,
+        false,
     );
     Ok(Some(PlanningAnalysis {
         files,
@@ -1005,6 +1007,7 @@ fn assemble_report(
         &analyzed.test_regions,
         cfg,
         &prepared.health_policy,
+        production_duplication_is_complete(cfg.enabled.duplication, &analyzed.diagnostics),
     );
     let finding_catalog =
         crate::findings::build(&analyzed.files, &analyzed.duplication, &risk_entries, cfg);
@@ -1974,19 +1977,34 @@ fn aggregate(
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     cfg: &Config,
     health_policy: &HealthPolicy,
+    duplication_complete: bool,
 ) -> (Summary, Vec<RiskEntry>) {
     let mut s = Summary::default();
     let accumulated = accumulate_file_metrics(files, &mut s);
     finish_complexity_and_languages(&mut s, accumulated, cfg);
-    summarize_duplication(&mut s, dup, duplicate_coverage, cfg);
+    summarize_duplication(
+        &mut s,
+        dup,
+        duplicate_coverage,
+        test_regions,
+        cfg,
+        health_policy,
+    );
     populate_file_rankings(&mut s, files, cfg);
     let (test_presence, top_risks, all_risk_entries) =
         test_and_risk_summary(files, cfg, health_policy);
     s.test_presence = test_presence;
     s.top_risks = top_risks;
-    let source_duplication =
-        source_duplication_pct(files, duplicate_coverage, test_regions, health_policy);
-    s.assessment = build_assessment(&s, source_duplication, cfg.enabled);
+    let production_duplication = cfg.enabled.duplication.then(|| {
+        production_duplication(
+            files,
+            duplicate_coverage,
+            test_regions,
+            health_policy,
+            duplication_complete,
+        )
+    });
+    s.assessment = build_assessment(&s, production_duplication, cfg.enabled);
     (s, all_risk_entries)
 }
 
@@ -2127,7 +2145,9 @@ fn summarize_duplication(
     summary: &mut Summary,
     dup: &Duplication,
     duplicate_coverage: &DuplicateCoverage,
+    test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     cfg: &Config,
+    health_policy: &HealthPolicy,
 ) {
     let duplicated_lines = duplicate_coverage.total_lines();
     let duplicated_tokens = duplicate_coverage.total_tokens();
@@ -2196,7 +2216,14 @@ fn summarize_duplication(
         duplicated_tokens_pct: percentage(duplicated_tokens, analyzed_tokens),
         by_language: duplication_by_language,
     };
-    summary.top_duplicates = top_duplicate_blocks(dup, cfg.top);
+    summary.top_duplicates = top_duplicate_blocks(dup, cfg.top, cfg.min_dup_lines);
+    summary.top_production_duplicates = top_production_duplicate_blocks(
+        dup,
+        cfg.top,
+        cfg.min_dup_lines,
+        test_regions,
+        health_policy,
+    );
     summary.top_duplicate_findings = top_duplicate_findings(dup, cfg.top);
 }
 
@@ -2321,6 +2348,9 @@ fn test_and_risk_summary(
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| b.sloc.cmp(&a.sloc))
+            .then_with(|| b.cyclomatic.cmp(&a.cyclomatic))
+            .then_with(|| b.churn_commits.cmp(&a.churn_commits))
+            .then_with(|| a.path.cmp(&b.path))
     });
     let all_risk_entries = risk_entries.clone();
     risk_entries.truncate(cfg.top);
@@ -2335,12 +2365,13 @@ fn has_matching_test(file: &FileReport, test_stem_set: &HashSet<String>) -> bool
     test_stem_set.contains(&testcov::source_stem(path.as_ref()))
 }
 
-fn source_duplication_pct(
+fn production_duplication(
     files: &[FileReport],
     coverage: &DuplicateCoverage,
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     health_policy: &HealthPolicy,
-) -> f64 {
+    complete: bool,
+) -> ProductionDuplication {
     let source_files = files.iter().filter(|file| {
         lang::detect(&file.path)
             .is_some_and(|info| info.is_code() && health_policy.includes(&file.path, info))
@@ -2366,19 +2397,45 @@ fn source_duplication_pct(
             totals.1 + file.loc.saturating_sub(test_lines),
         )
     });
-    percentage(duplicated_lines, lines)
+    ProductionDuplication {
+        corpus: "production-source".to_string(),
+        duplicated_lines,
+        analyzed_lines: lines,
+        duplicated_pct: percentage(duplicated_lines, lines),
+        complete,
+    }
+}
+
+fn production_duplication_is_complete(
+    duplication_enabled: bool,
+    diagnostics: &ScanDiagnostics,
+) -> bool {
+    duplication_enabled
+        && !diagnostics.type2_analysis_partial
+        && diagnostics.unreadable_files == 0
+        && diagnostics.walker_errors == 0
+        && diagnostics.oversized_files == 0
+        && diagnostics.files_omitted_by_limit == 0
+        && !diagnostics.files_omitted_count_incomplete
+        && diagnostics.bytes_omitted_by_limit == 0
+        && !diagnostics.duration_limit_reached
 }
 
 fn build_assessment(
     summary: &Summary,
-    source_duplication: f64,
+    production_duplication: Option<ProductionDuplication>,
     enabled: crate::config::Enabled,
 ) -> Assessment {
     let token_budget = DEFAULT_CONTEXT_BUDGET;
     let fits_context_known = enabled.tokens;
     let readable_source_tokens = summary.source.tokens;
     let fits_context = fits_context_known && readable_source_tokens <= token_budget;
-    let cleanup_worth_complete = enabled.complexity && enabled.duplication && enabled.churn;
+    let cleanup_worth_complete = enabled.complexity
+        && enabled.duplication
+        && enabled.churn
+        && production_duplication
+            .as_ref()
+            .is_some_and(|duplication| duplication.complete);
     let mut unavailable_signals = Vec::new();
     if !enabled.tokens {
         unavailable_signals.push("tokens".to_string());
@@ -2395,10 +2452,20 @@ fn build_assessment(
 
     let mut cleanup_reasons: Vec<String> = Vec::new();
 
-    if source_duplication > 15.0 {
-        cleanup_reasons.push(format!(
-            "high source duplication ({source_duplication:.1}%)"
-        ));
+    if let Some(source_duplication) = production_duplication.as_ref()
+        && source_duplication.duplicated_pct > 15.0
+    {
+        cleanup_reasons.push(if source_duplication.complete {
+            format!(
+                "high source duplication ({:.1}%)",
+                source_duplication.duplicated_pct
+            )
+        } else {
+            format!(
+                "high observed source duplication ({:.1}%; partial evidence)",
+                source_duplication.duplicated_pct
+            )
+        });
     }
     let has_maintainability = summary.complexity.functions > 0
         || summary.complexity.approximate_files > 0
@@ -2449,6 +2516,7 @@ fn build_assessment(
         cleanup_worth,
         cleanup_worth_complete,
         unavailable_signals,
+        production_duplication,
         reasons: assessment_reasons,
     }
 }
@@ -2457,52 +2525,217 @@ fn build_assessment(
 /// the number of lines removable by de-duplicating a block, `lines * (copies
 /// - 1)`; ties break toward larger blocks and more copies. Locations are capped
 /// so the list stays compact even in `--summary` output.
-fn top_duplicate_blocks(dup: &Duplication, top: usize) -> Vec<DuplicateBlock> {
+fn top_duplicate_blocks(
+    dup: &Duplication,
+    top: usize,
+    min_new_lines: usize,
+) -> Vec<DuplicateBlock> {
+    top_duplicate_blocks_where(dup, top, min_new_lines, |_| true)
+}
+
+fn top_production_duplicate_blocks(
+    dup: &Duplication,
+    top: usize,
+    min_new_lines: usize,
+    test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
+    health_policy: &HealthPolicy,
+) -> Vec<DuplicateBlock> {
+    top_duplicate_blocks_where(dup, top, min_new_lines, |group| {
+        group
+            .instances
+            .iter()
+            .any(|instance| instance_has_production_lines(instance, test_regions, health_policy))
+    })
+}
+
+fn top_duplicate_blocks_where(
+    dup: &Duplication,
+    top: usize,
+    min_new_lines: usize,
+    mut include: impl FnMut(&CloneGroup) -> bool,
+) -> Vec<DuplicateBlock> {
     const MAX_LOCATIONS: usize = 10;
-    let mut blocks: Vec<DuplicateBlock> = dup
+    let mut candidates = dup
         .exact
         .iter()
         .chain(dup.near.iter())
-        .filter_map(|g| {
-            let copies = g.instances.len();
-            if copies < 2 {
-                return None;
-            }
-            let mut locations: Vec<String> = g
+        .filter(|group| group.instances.len() >= 2 && include(group))
+        .map(|group| {
+            let copies = group.instances.len();
+            let mut key = group
                 .instances
                 .iter()
-                .map(|i| {
-                    let ends_at_next_line_start =
-                        i.end_column == 1 && i.end_line > i.start_line && i.end_byte > i.start_byte;
-                    let end_line = if ends_at_next_line_start {
-                        i.end_line - 1
-                    } else {
-                        i.end_line
-                    };
-                    format!("{}:{}-{end_line}", i.path.display(), i.start_line)
+                .map(|instance| {
+                    format!(
+                        "{}:{}-{}",
+                        instance.path.display(),
+                        instance.start_line,
+                        occupied_end_line(instance)
+                    )
                 })
-                .collect();
-            locations.sort();
-            locations.truncate(MAX_LOCATIONS);
-            Some(DuplicateBlock {
-                lines: g.lines,
-                tokens: g.tokens,
-                similarity: g.similarity,
-                copies,
-                duplicated_lines: g.lines * (copies - 1),
-                locations,
-            })
+                .collect::<Vec<_>>();
+            key.sort();
+            DuplicateCandidate {
+                group,
+                duplicated_lines: group.lines.saturating_mul(copies.saturating_sub(1)),
+                key,
+            }
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    blocks.sort_by(|a, b| {
+    candidates.sort_by(|a, b| {
         b.duplicated_lines
             .cmp(&a.duplicated_lines)
-            .then_with(|| b.lines.cmp(&a.lines))
-            .then_with(|| b.copies.cmp(&a.copies))
+            .then_with(|| b.group.lines.cmp(&a.group.lines))
+            .then_with(|| b.group.instances.len().cmp(&a.group.instances.len()))
+            .then_with(|| a.key.cmp(&b.key))
     });
-    blocks.truncate(top);
+
+    let mut selected_coverage = BTreeMap::<PathBuf, Vec<Range<usize>>>::new();
+    let mut blocks = Vec::with_capacity(top.min(candidates.len()));
+    for candidate in candidates {
+        if blocks.len() >= top {
+            break;
+        }
+        if !blocks.is_empty()
+            && !contributes_new_duplicate_lines(candidate.group, &selected_coverage, min_new_lines)
+        {
+            continue;
+        }
+        for instance in &candidate.group.instances {
+            if let Some(range) = instance_line_range(instance) {
+                insert_line_range(
+                    selected_coverage.entry(instance.path.clone()).or_default(),
+                    range,
+                );
+            }
+        }
+
+        let copies = candidate.group.instances.len();
+        let locations = candidate
+            .key
+            .into_iter()
+            .take(MAX_LOCATIONS)
+            .collect::<Vec<_>>();
+        blocks.push(DuplicateBlock {
+            lines: candidate.group.lines,
+            tokens: candidate.group.tokens,
+            similarity: candidate.group.similarity,
+            copies,
+            duplicated_lines: candidate.duplicated_lines,
+            locations,
+        });
+    }
     blocks
+}
+
+struct DuplicateCandidate<'a> {
+    group: &'a CloneGroup,
+    duplicated_lines: usize,
+    key: Vec<String>,
+}
+
+fn contributes_new_duplicate_lines(
+    group: &CloneGroup,
+    selected: &BTreeMap<PathBuf, Vec<Range<usize>>>,
+    min_new_lines: usize,
+) -> bool {
+    group
+        .instances
+        .iter()
+        .filter(|instance| {
+            instance_line_range(instance).is_some_and(|range| {
+                longest_uncovered_run(
+                    &range,
+                    selected
+                        .get(&instance.path)
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                ) >= min_new_lines
+            })
+        })
+        .take(2)
+        .count()
+        >= 2
+}
+
+fn instance_line_range(instance: &CloneInstance) -> Option<Range<usize>> {
+    let end_line = occupied_end_line(instance);
+    (instance.start_line > 0 && instance.start_line <= end_line)
+        .then_some(instance.start_line - 1..end_line)
+}
+
+fn occupied_end_line(instance: &CloneInstance) -> usize {
+    if instance.end_column == 1
+        && instance.end_line > instance.start_line
+        && instance.end_byte > instance.start_byte
+    {
+        instance.end_line - 1
+    } else {
+        instance.end_line
+    }
+}
+
+fn longest_uncovered_run(range: &Range<usize>, covered: &[Range<usize>]) -> usize {
+    let mut cursor = range.start;
+    let mut longest = 0usize;
+    for existing in covered {
+        if existing.end <= cursor {
+            continue;
+        }
+        if existing.start >= range.end {
+            break;
+        }
+        if existing.start > cursor {
+            longest = longest.max(existing.start.min(range.end).saturating_sub(cursor));
+        }
+        cursor = cursor.max(existing.end);
+        if cursor >= range.end {
+            return longest;
+        }
+    }
+    longest.max(range.end.saturating_sub(cursor))
+}
+
+fn insert_line_range(covered: &mut Vec<Range<usize>>, mut range: Range<usize>) {
+    let first = covered.partition_point(|existing| existing.end < range.start);
+    let mut last = first;
+    while last < covered.len() && covered[last].start <= range.end {
+        range.start = range.start.min(covered[last].start);
+        range.end = range.end.max(covered[last].end);
+        last += 1;
+    }
+    covered.splice(first..last, [range]);
+}
+
+fn instance_has_production_lines(
+    instance: &CloneInstance,
+    test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
+    health_policy: &HealthPolicy,
+) -> bool {
+    let Some(info) = lang::detect(&instance.path) else {
+        return false;
+    };
+    if !info.is_code()
+        || !health_policy.includes(&instance.path, info)
+        || testcov::is_test_file(instance.path.to_string_lossy().as_ref())
+    {
+        return false;
+    }
+    let Some(range) = instance_line_range(instance) else {
+        return false;
+    };
+    let mut excluded = Vec::new();
+    for test_region in test_regions
+        .get(&instance.path)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        if test_region.start > 0 && test_region.start <= test_region.end {
+            insert_line_range(&mut excluded, test_region.start - 1..test_region.end);
+        }
+    }
+    longest_uncovered_run(&range, &excluded) > 0
 }
 
 fn top_duplicate_findings(dup: &Duplication, top: usize) -> Vec<DuplicateFindingSummary> {
@@ -2669,13 +2902,18 @@ fn rollup_by_dir(
 mod tests {
     use super::{
         analyze_source, apply_type2_diagnostics, baseline_delta, build_assessment, dir_bucket,
-        scan_profile, scan_profiles_compatible, source_duplication_pct, top_duplicate_blocks,
+        production_duplication, production_duplication_is_complete, scan_profile,
+        scan_profiles_compatible, test_and_risk_summary, top_duplicate_blocks,
+        top_production_duplicate_blocks,
     };
     use crate::config::{Config, Enabled};
     use crate::dup::{DuplicateCoverage, fuzzy::Type2Diagnostics};
     use crate::git::DiffScope;
-    use crate::model::{CloneGroup, CloneInstance, Duplication, ScanDiagnostics, Summary};
-    use std::path::Path;
+    use crate::model::{
+        CloneGroup, CloneInstance, Duplication, LineRange, ProductionDuplication, ScanDiagnostics,
+        Summary,
+    };
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn type2_limits_mark_scan_diagnostics_partial() {
@@ -2702,6 +2940,58 @@ mod tests {
         assert!(diagnostics.type2_match_limit_reached);
         assert!(diagnostics.type2_suppression_limit_reached);
         assert_eq!(diagnostics.type2_matches_skipped_during_suppression, 7);
+    }
+
+    #[test]
+    fn production_duplication_completeness_ignores_churn_only_truncation() {
+        let clean = ScanDiagnostics::default();
+        assert!(production_duplication_is_complete(true, &clean));
+        assert!(!production_duplication_is_complete(false, &clean));
+
+        let churn_only = ScanDiagnostics {
+            scan_truncated: true,
+            churn_analysis_partial: true,
+            churn_deltas_omitted: 3,
+            ..ScanDiagnostics::default()
+        };
+        assert!(production_duplication_is_complete(true, &churn_only));
+
+        for incomplete in [
+            ScanDiagnostics {
+                type2_analysis_partial: true,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                unreadable_files: 1,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                walker_errors: 1,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                oversized_files: 1,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                files_omitted_by_limit: 1,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                files_omitted_count_incomplete: true,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                bytes_omitted_by_limit: 1,
+                ..ScanDiagnostics::default()
+            },
+            ScanDiagnostics {
+                duration_limit_reached: true,
+                ..ScanDiagnostics::default()
+            },
+        ] {
+            assert!(!production_duplication_is_complete(true, &incomplete));
+        }
     }
 
     #[test]
@@ -2822,16 +3112,35 @@ mod tests {
         let mut summary = Summary::default();
         summary.test_presence.source_files = 4;
         summary.test_presence.untested_source_files = 3;
+        let evidence_at_threshold = ProductionDuplication {
+            corpus: "production-source".to_string(),
+            duplicated_lines: 15,
+            analyzed_lines: 100,
+            duplicated_pct: 15.0,
+            complete: true,
+        };
 
-        let at_threshold = build_assessment(&summary, 15.0, Enabled::default());
+        let assessment_at_threshold = build_assessment(
+            &summary,
+            Some(evidence_at_threshold.clone()),
+            Enabled::default(),
+        );
         assert!(
-            !at_threshold
+            !assessment_at_threshold
                 .reasons
                 .iter()
                 .any(|reason| reason.contains("source duplication"))
         );
 
-        let above_threshold = build_assessment(&summary, 15.1, Enabled::default());
+        let above_threshold = build_assessment(
+            &summary,
+            Some(ProductionDuplication {
+                duplicated_lines: 16,
+                duplicated_pct: 15.1,
+                ..evidence_at_threshold
+            }),
+            Enabled::default(),
+        );
         assert!(
             above_threshold
                 .reasons
@@ -2844,6 +3153,63 @@ mod tests {
                 .iter()
                 .any(|reason| reason == "many source files have no matching test file")
         );
+        let evidence = above_threshold
+            .production_duplication
+            .expect("production duplication evidence");
+        assert_eq!(evidence.corpus, "production-source");
+        assert_eq!(evidence.duplicated_lines, 16);
+        assert_eq!(evidence.analyzed_lines, 100);
+        assert!(evidence.complete);
+    }
+
+    #[test]
+    fn partial_production_duplication_remains_explicit_observed_evidence() {
+        let evidence = ProductionDuplication {
+            corpus: "production-source".to_string(),
+            duplicated_lines: 20,
+            analyzed_lines: 100,
+            duplicated_pct: 20.0,
+            complete: false,
+        };
+
+        let assessment = build_assessment(&Summary::default(), Some(evidence), Enabled::default());
+        let projected = assessment
+            .production_duplication
+            .expect("partial production duplication");
+
+        assert!(!projected.complete);
+        assert_eq!(projected.duplicated_pct, 20.0);
+        assert!(!assessment.cleanup_worth_complete);
+        assert!(
+            assessment.reasons.iter().any(
+                |reason| reason == "high observed source duplication (20.0%; partial evidence)"
+            )
+        );
+    }
+
+    #[test]
+    fn equal_risk_scores_use_the_path_as_a_stable_tie_breaker() {
+        let cfg = Config::default();
+        let health_policy = cfg.health_policy().unwrap();
+        let source = "fn choose(value: bool) -> bool { if value { true } else { false } }\n";
+        let second =
+            analyze_source(Path::new("src/zeta.rs"), source, &cfg, &health_policy, None).unwrap();
+        let first = analyze_source(
+            Path::new("src/alpha.rs"),
+            source,
+            &cfg,
+            &health_policy,
+            None,
+        )
+        .unwrap();
+
+        let (_, ranked, _) = test_and_risk_summary(&[second, first], &cfg, &health_policy);
+        let paths = ranked
+            .iter()
+            .map(|risk| risk.path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, ["src/alpha.rs", "src/zeta.rs"]);
     }
 
     #[test]
@@ -2853,7 +3219,7 @@ mod tests {
 
         summary.complexity.mi_avg = 20.0;
         assert!(
-            build_assessment(&summary, 0.0, Enabled::default())
+            build_assessment(&summary, None, Enabled::default())
                 .reasons
                 .iter()
                 .all(|reason| !reason.contains("maintainability"))
@@ -2861,7 +3227,7 @@ mod tests {
 
         summary.complexity.mi_avg = 15.0;
         assert!(
-            build_assessment(&summary, 0.0, Enabled::default())
+            build_assessment(&summary, None, Enabled::default())
                 .reasons
                 .iter()
                 .any(|reason| reason == "moderate maintainability (MI avg 15)")
@@ -2869,7 +3235,7 @@ mod tests {
 
         summary.complexity.mi_avg = 5.0;
         assert!(
-            build_assessment(&summary, 0.0, Enabled::default())
+            build_assessment(&summary, None, Enabled::default())
                 .reasons
                 .iter()
                 .any(|reason| reason == "low maintainability (MI avg 5)")
@@ -2880,7 +3246,7 @@ mod tests {
     fn assessment_does_not_claim_context_fit_when_tokens_are_disabled() {
         let assessment = build_assessment(
             &Summary::default(),
-            0.0,
+            None,
             Enabled {
                 tokens: false,
                 complexity: true,
@@ -2948,15 +3314,18 @@ mod tests {
         };
         let coverage = DuplicateCoverage::from_duplication(&duplication);
 
-        assert_eq!(
-            source_duplication_pct(
-                &[source, test],
-                &coverage,
-                &std::collections::BTreeMap::new(),
-                &health_policy,
-            ),
-            20.0
+        let evidence = production_duplication(
+            &[source, test],
+            &coverage,
+            &std::collections::BTreeMap::new(),
+            &health_policy,
+            true,
         );
+
+        assert_eq!(evidence.duplicated_lines, 2);
+        assert_eq!(evidence.analyzed_lines, 10);
+        assert_eq!(evidence.duplicated_pct, 20.0);
+        assert!(evidence.complete);
     }
 
     #[test]
@@ -3021,7 +3390,110 @@ mod tests {
             ..Duplication::default()
         };
 
-        let blocks = top_duplicate_blocks(&duplication, 10);
+        let blocks = top_duplicate_blocks(&duplication, 10, 1);
         assert_eq!(blocks[0].locations, ["a.rs:1-1", "b.rs:1-1"]);
+    }
+
+    #[test]
+    fn compact_duplicates_suppress_nested_windows_but_keep_new_contiguous_lines() {
+        let group = |lines: usize, ranges: &[(&str, usize, usize)]| CloneGroup {
+            lines,
+            tokens: lines * 3,
+            similarity: 1.0,
+            instances: ranges
+                .iter()
+                .map(|(path, start_line, end_line)| CloneInstance {
+                    path: (*path).into(),
+                    start_line: *start_line,
+                    end_line: *end_line,
+                    start_column: 1,
+                    end_column: 2,
+                    start_byte: start_line * 10,
+                    end_byte: end_line * 10,
+                    ..CloneInstance::default()
+                })
+                .collect(),
+            ..CloneGroup::default()
+        };
+        let duplication = Duplication {
+            exact: vec![
+                group(10, &[("a.rs", 1, 10), ("b.rs", 1, 10)]),
+                group(6, &[("a.rs", 8, 13), ("b.rs", 8, 13)]),
+                group(5, &[("c.rs", 1, 5), ("d.rs", 1, 5)]),
+            ],
+            near: vec![group(8, &[("a.rs", 2, 9), ("b.rs", 2, 9)])],
+            ..Duplication::default()
+        };
+        let coverage_before = DuplicateCoverage::from_duplication(&duplication);
+
+        let blocks = top_duplicate_blocks(&duplication, 10, 3);
+
+        assert_eq!(duplication.exact.len(), 3);
+        assert_eq!(duplication.near.len(), 1);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].locations, ["a.rs:1-10", "b.rs:1-10"]);
+        assert_eq!(blocks[1].locations, ["a.rs:8-13", "b.rs:8-13"]);
+        assert_eq!(blocks[2].locations, ["c.rs:1-5", "d.rs:1-5"]);
+        assert_eq!(
+            DuplicateCoverage::from_duplication(&duplication).total_lines(),
+            coverage_before.total_lines()
+        );
+    }
+
+    #[test]
+    fn production_duplicate_projection_excludes_test_only_families() {
+        let group = |lines: usize, paths: &[&str]| CloneGroup {
+            lines,
+            tokens: lines * 3,
+            similarity: 1.0,
+            instances: paths
+                .iter()
+                .map(|path| CloneInstance {
+                    path: (*path).into(),
+                    start_line: 1,
+                    end_line: lines,
+                    start_column: 1,
+                    end_column: 2,
+                    start_byte: 0,
+                    end_byte: lines * 10,
+                    ..CloneInstance::default()
+                })
+                .collect(),
+            ..CloneGroup::default()
+        };
+        let duplication = Duplication {
+            exact: vec![
+                group(12, &["tests/first.rs", "tests/second.rs"]),
+                group(10, &["src/mixed.rs", "tests/mixed.rs"]),
+                group(8, &["src/first.rs", "src/second.rs"]),
+                group(6, &["src/inline.rs", "src/inline-copy.rs"]),
+            ],
+            ..Duplication::default()
+        };
+        let test_regions = std::collections::BTreeMap::from([
+            (
+                PathBuf::from("src/inline.rs"),
+                vec![LineRange { start: 1, end: 6 }],
+            ),
+            (
+                PathBuf::from("src/inline-copy.rs"),
+                vec![LineRange { start: 1, end: 6 }],
+            ),
+        ]);
+        let health_policy = Config::default().health_policy().unwrap();
+
+        let blocks =
+            top_production_duplicate_blocks(&duplication, 10, 3, &test_regions, &health_policy);
+
+        assert_eq!(duplication.exact.len(), 4);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(
+            blocks[0].locations,
+            ["src/mixed.rs:1-10", "tests/mixed.rs:1-10"]
+        );
+        assert_eq!(
+            blocks[1].locations,
+            ["src/first.rs:1-8", "src/second.rs:1-8"]
+        );
     }
 }

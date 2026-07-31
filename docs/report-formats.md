@@ -51,7 +51,8 @@ Summary mode removes the heavy arrays while retaining:
 - `summary` and `diagnostics`;
 - bounded raw `work_scope` evidence;
 - analysis/execution profile metadata;
-- `summary.top_duplicates` and other top-N evidence; and
+- redundancy-filtered `summary.top_duplicates`, optional
+  `summary.top_production_duplicates`, and other top-N evidence; and
 - explicitly requested `context`, `directories`, `graph`, `impact`, `baseline`, or `review`
   blocks.
 
@@ -123,6 +124,25 @@ Optional blocks appear only when requested:
 
 New fields are additive and use deserialization defaults. Breaking JSON changes require a schema
 version bump.
+
+### Quality projections
+
+Risk entries in `summary.top_risks` and detailed `explain` output identify their
+`algorithm_version` and retain the raw SLOC, cyclomatic, and churn inputs. The analysis finding
+profile carries the same version so baselines do not compare scores produced by different
+algorithms.
+
+`summary.duplication` and the top-level `duplicates` block describe the configured health corpus.
+Compact `summary.top_duplicates` removes nested/substantially overlapping rankings, while
+`summary.top_production_duplicates` additionally omits test-only and Rust-inline-test-only
+families. An empty production projection is omitted from serialized output; it is not evidence
+that duplication analysis was disabled.
+
+`summary.assessment.production_duplication` is the explicit production-source coverage record. It
+contains `corpus`, `duplicated_lines`, `analyzed_lines`, `duplicated_pct`, and `complete`, and is
+absent only when duplication analysis did not run. The same record appears in `work_scope` strategy
+`2`. When `complete` is false, table and Markdown render it as partial. It is a lower bound only
+when Type-2 work was the sole gap; source discovery/read omissions can also change the denominator.
 
 The Rust contract is defined in [`src/model.rs`](../src/model.rs). The most reliable way to inspect
 real values is to emit a report from the installed binary:

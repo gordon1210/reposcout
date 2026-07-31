@@ -2,9 +2,11 @@
 
 use crate::model::{FileReport, RiskEntry, RiskExplanation};
 
-const SLOC_SATURATION: f64 = 1_000.0;
-const CYCLOMATIC_SATURATION: f64 = 100.0;
-const CHURN_SATURATION: f64 = 20.0;
+const SLOC_HALF_SATURATION: f64 = 1_000.0;
+const CYCLOMATIC_HALF_SATURATION: f64 = 100.0;
+const CHURN_HALF_SATURATION: f64 = 20.0;
+const REASON_THRESHOLD: f64 = 0.66;
+pub const ALGORITHM_VERSION: u32 = 5;
 
 pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanation {
     let sloc = file.sloc;
@@ -14,9 +16,9 @@ pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanatio
         .map(|complexity| complexity.cyclomatic)
         .unwrap_or(0);
     let churn_commits = file.churn.as_ref().map(|churn| churn.commits).unwrap_or(0);
-    let size_factor = (sloc as f64 / SLOC_SATURATION).min(1.0);
-    let complexity_factor = (cyclomatic as f64 / CYCLOMATIC_SATURATION).min(1.0);
-    let churn_factor = (churn_commits as f64 / CHURN_SATURATION).min(1.0);
+    let size_factor = half_saturation(sloc as f64, SLOC_HALF_SATURATION);
+    let complexity_factor = half_saturation(cyclomatic as f64, CYCLOMATIC_HALF_SATURATION);
+    let churn_factor = half_saturation(churn_commits as f64, CHURN_HALF_SATURATION);
     let score = (0.40 * size_factor + 0.40 * complexity_factor + 0.20 * churn_factor).min(1.0);
     // Retained in the stable JSON contract. Filename matching is useful
     // navigation evidence, but it is not measured coverage and must not alter
@@ -24,13 +26,13 @@ pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanatio
     let untested_multiplier = 1.0;
 
     let mut reasons = Vec::new();
-    if size_factor >= 0.66 {
+    if sloc as f64 / SLOC_HALF_SATURATION >= REASON_THRESHOLD {
         reasons.push("large".to_string());
     }
-    if complexity_factor >= 0.66 {
+    if cyclomatic as f64 / CYCLOMATIC_HALF_SATURATION >= REASON_THRESHOLD {
         reasons.push("complex".to_string());
     }
-    if churn_factor >= 0.66 {
+    if churn_commits as f64 / CHURN_HALF_SATURATION >= REASON_THRESHOLD {
         reasons.push("high churn".to_string());
     }
     if no_matching_test_file {
@@ -41,6 +43,7 @@ pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanatio
     }
 
     RiskExplanation {
+        algorithm_version: ALGORITHM_VERSION,
         score,
         sloc,
         cyclomatic,
@@ -54,10 +57,15 @@ pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanatio
     }
 }
 
+fn half_saturation(value: f64, anchor: f64) -> f64 {
+    value / (value + anchor)
+}
+
 pub fn entry(file: &FileReport, no_matching_test_file: bool) -> Option<RiskEntry> {
     let risk = explain(file, no_matching_test_file);
     (risk.score > 0.0).then(|| RiskEntry {
         path: file.path.to_string_lossy().into_owned(),
+        algorithm_version: ALGORITHM_VERSION,
         score: risk.score,
         sloc: risk.sloc,
         cyclomatic: risk.cyclomatic,
@@ -69,10 +77,45 @@ pub fn entry(file: &FileReport, no_matching_test_file: bool) -> Option<RiskEntry
 
 #[cfg(test)]
 mod tests {
-    use super::explain;
+    use super::{ALGORITHM_VERSION, entry, explain};
     use crate::model::{Churn, Complexity, FileReport};
     use std::collections::BTreeMap;
     use std::path::PathBuf;
+
+    #[test]
+    fn saturation_anchors_are_half_saturation_points() {
+        let risk = explain(&file_with("src/anchor.rs", 1_000, 100, 20), false);
+
+        assert_eq!(risk.size_factor, 0.5);
+        assert_eq!(risk.complexity_factor, 0.5);
+        assert_eq!(risk.churn_factor, 0.5);
+        assert_eq!(risk.score, 0.5);
+    }
+
+    #[test]
+    fn risk_remains_monotonic_above_the_former_saturation_anchors() {
+        let first = explain(&file_with("src/first.rs", 1_000, 100, 20), false);
+        let second = explain(&file_with("src/second.rs", 2_000, 200, 40), false);
+        let third = explain(&file_with("src/third.rs", 4_000, 400, 80), false);
+
+        assert!(first.score < second.score);
+        assert!(second.score < third.score);
+        assert!(third.score < 1.0);
+    }
+
+    #[test]
+    fn compact_and_detailed_risk_evidence_identify_the_algorithm() {
+        let file = representative_file();
+        let explanation = explain(&file, false);
+        let compact = entry(&file, false).expect("risk entry");
+
+        assert_eq!(ALGORITHM_VERSION, 5);
+        assert_eq!(explanation.algorithm_version, ALGORITHM_VERSION);
+        assert_eq!(compact.algorithm_version, ALGORITHM_VERSION);
+        assert_eq!(compact.sloc, explanation.sloc);
+        assert_eq!(compact.cyclomatic, explanation.cyclomatic);
+        assert_eq!(compact.churn_commits, explanation.churn_commits);
+    }
 
     #[test]
     fn missing_test_match_is_informational_and_does_not_change_risk() {
@@ -80,7 +123,7 @@ mod tests {
         let matched = explain(&file, false);
         let unmatched = explain(&file, true);
 
-        assert_eq!(matched.score, 0.5);
+        assert!((matched.score - (1.0 / 3.0)).abs() < f64::EPSILON);
         assert_eq!(unmatched.score, matched.score);
         assert_eq!(unmatched.untested_multiplier, 1.0);
         assert_eq!(unmatched.reasons, ["no matching test file"]);
@@ -99,25 +142,29 @@ mod tests {
     }
 
     fn representative_file() -> FileReport {
+        file_with("src/example.rs", 500, 50, 10)
+    }
+
+    fn file_with(path: &str, sloc: usize, cyclomatic: u32, commits: usize) -> FileReport {
         FileReport {
-            path: PathBuf::from("src/example.rs"),
+            path: PathBuf::from(path),
             language: "Rust".to_string(),
             bytes: 0,
             tokens: 0,
-            loc: 500,
-            sloc: 500,
+            loc: sloc,
+            sloc,
             comment_lines: 0,
             comment_ratio: 0.0,
             line_metrics_approximate: false,
             complexity: Some(Complexity {
-                cyclomatic: 50,
+                cyclomatic,
                 ..Complexity::default()
             }),
             imports: Vec::new(),
             markers: BTreeMap::new(),
             marker_occurrences: Vec::new(),
             churn: Some(Churn {
-                commits: 10,
+                commits,
                 ..Churn::default()
             }),
             approximate: false,

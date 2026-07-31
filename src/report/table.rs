@@ -200,7 +200,17 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
 
     // Top risks
     if !s.top_risks.is_empty() {
-        let _ = writeln!(out, "{}", header("Top risks", color));
+        let _ = writeln!(
+            out,
+            "{}",
+            header(
+                &format!(
+                    "Top risks · algorithm {}",
+                    crate::findings::RISK_ALGORITHM_VERSION
+                ),
+                color
+            )
+        );
         let mut t = new_table(vec![
             "Path", "Score", "SLOC", "Cyclo", "Avg/fn", "Churn", "Reasons",
         ]);
@@ -735,8 +745,8 @@ fn render_duplication(
     );
     let _ = writeln!(out);
 
-    if !summary.top_duplicates.is_empty() {
-        let _ = writeln!(out, "{}", header("Top duplicates", color));
+    if !summary.top_production_duplicates.is_empty() {
+        let _ = writeln!(out, "{}", header("Top production duplicates", color));
         let mut table = new_table(vec![
             "Lines",
             "Copies",
@@ -744,7 +754,7 @@ fn render_duplication(
             "Removable",
             "Locations",
         ]);
-        for duplicate in &summary.top_duplicates {
+        for duplicate in &summary.top_production_duplicates {
             table.add_row(vec![
                 thousands(duplicate.lines),
                 thousands(duplicate.copies),
