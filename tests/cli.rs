@@ -1542,11 +1542,21 @@ fn narrow_human_tables_front_truncate_paths_without_wrapping_the_suffix() {
             .any(|line| line.contains("command-globe-scene.tsx") && line.contains("31.0")),
         "hotspots should keep the filename on one row:\n{rendered}"
     );
+    let risk_row = rendered
+        .lines()
+        .find(|line| line.contains("…d-globe-scene.tsx"))
+        .unwrap_or_else(|| {
+            panic!("risk rows should keep an identifying path suffix on one row:\n{rendered}")
+        });
+    assert!(risk_row.contains("no matching test file"));
+    let risk_score = risk_row
+        .split_whitespace()
+        .nth(2)
+        .and_then(|score| score.trim().parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("risk row should contain a numeric score: {risk_row}"));
     assert!(
-        rendered.lines().any(|line| {
-            line.contains("…d-globe-scene.tsx") && line.contains("no matching test file")
-        }),
-        "risk rows should keep an identifying path suffix on one row:\n{rendered}"
+        (0.10..=0.14).contains(&risk_score),
+        "fixture risk score changed unexpectedly: {risk_row}"
     );
 }
 

@@ -2216,14 +2216,15 @@ fn summarize_duplication(
         duplicated_tokens_pct: percentage(duplicated_tokens, analyzed_tokens),
         by_language: duplication_by_language,
     };
-    summary.top_duplicates = top_duplicate_blocks(dup, cfg.top, cfg.min_dup_lines);
-    summary.top_production_duplicates = top_production_duplicate_blocks(
-        dup,
-        cfg.top,
-        cfg.min_dup_lines,
-        test_regions,
-        health_policy,
-    );
+    let duplicate_candidates = ranked_duplicate_candidates(dup);
+    summary.top_duplicates =
+        top_duplicate_blocks_where(&duplicate_candidates, cfg.top, cfg.min_dup_lines, |_| true);
+    summary.top_production_duplicates =
+        top_duplicate_blocks_where(&duplicate_candidates, cfg.top, cfg.min_dup_lines, |group| {
+            group.instances.iter().any(|instance| {
+                instance_has_production_lines(instance, test_regions, health_policy)
+            })
+        });
     summary.top_duplicate_findings = top_duplicate_findings(dup, cfg.top);
 }
 
@@ -2525,14 +2526,21 @@ fn build_assessment(
 /// the number of lines removable by de-duplicating a block, `lines * (copies
 /// - 1)`; ties break toward larger blocks and more copies. Locations are capped
 /// so the list stays compact even in `--summary` output.
+#[cfg(test)]
 fn top_duplicate_blocks(
     dup: &Duplication,
     top: usize,
     min_new_lines: usize,
 ) -> Vec<DuplicateBlock> {
-    top_duplicate_blocks_where(dup, top, min_new_lines, |_| true)
+    top_duplicate_blocks_where(
+        &ranked_duplicate_candidates(dup),
+        top,
+        min_new_lines,
+        |_| true,
+    )
 }
 
+#[cfg(test)]
 fn top_production_duplicate_blocks(
     dup: &Duplication,
     top: usize,
@@ -2540,26 +2548,24 @@ fn top_production_duplicate_blocks(
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     health_policy: &HealthPolicy,
 ) -> Vec<DuplicateBlock> {
-    top_duplicate_blocks_where(dup, top, min_new_lines, |group| {
-        group
-            .instances
-            .iter()
-            .any(|instance| instance_has_production_lines(instance, test_regions, health_policy))
-    })
+    top_duplicate_blocks_where(
+        &ranked_duplicate_candidates(dup),
+        top,
+        min_new_lines,
+        |group| {
+            group.instances.iter().any(|instance| {
+                instance_has_production_lines(instance, test_regions, health_policy)
+            })
+        },
+    )
 }
 
-fn top_duplicate_blocks_where(
-    dup: &Duplication,
-    top: usize,
-    min_new_lines: usize,
-    mut include: impl FnMut(&CloneGroup) -> bool,
-) -> Vec<DuplicateBlock> {
-    const MAX_LOCATIONS: usize = 10;
+fn ranked_duplicate_candidates(dup: &Duplication) -> Vec<DuplicateCandidate<'_>> {
     let mut candidates = dup
         .exact
         .iter()
         .chain(dup.near.iter())
-        .filter(|group| group.instances.len() >= 2 && include(group))
+        .filter(|group| group.instances.len() >= 2)
         .map(|group| {
             let copies = group.instances.len();
             let mut key = group
@@ -2590,12 +2596,24 @@ fn top_duplicate_blocks_where(
             .then_with(|| b.group.instances.len().cmp(&a.group.instances.len()))
             .then_with(|| a.key.cmp(&b.key))
     });
+    candidates
+}
 
+fn top_duplicate_blocks_where(
+    candidates: &[DuplicateCandidate<'_>],
+    top: usize,
+    min_new_lines: usize,
+    mut include: impl FnMut(&CloneGroup) -> bool,
+) -> Vec<DuplicateBlock> {
+    const MAX_LOCATIONS: usize = 10;
     let mut selected_coverage = BTreeMap::<PathBuf, Vec<Range<usize>>>::new();
     let mut blocks = Vec::with_capacity(top.min(candidates.len()));
     for candidate in candidates {
         if blocks.len() >= top {
             break;
+        }
+        if !include(candidate.group) {
+            continue;
         }
         if !blocks.is_empty()
             && !contributes_new_duplicate_lines(candidate.group, &selected_coverage, min_new_lines)
@@ -2614,8 +2632,9 @@ fn top_duplicate_blocks_where(
         let copies = candidate.group.instances.len();
         let locations = candidate
             .key
-            .into_iter()
+            .iter()
             .take(MAX_LOCATIONS)
+            .cloned()
             .collect::<Vec<_>>();
         blocks.push(DuplicateBlock {
             lines: candidate.group.lines,
@@ -2677,6 +2696,12 @@ fn occupied_end_line(instance: &CloneInstance) -> usize {
 }
 
 fn longest_uncovered_run(range: &Range<usize>, covered: &[Range<usize>]) -> usize {
+    debug_assert!(
+        covered
+            .windows(2)
+            .all(|pair| pair[0].start <= pair[1].start),
+        "covered line ranges must be sorted by start"
+    );
     let mut cursor = range.start;
     let mut longest = 0usize;
     for existing in covered {
@@ -2725,12 +2750,14 @@ fn instance_has_production_lines(
     let Some(range) = instance_line_range(instance) else {
         return false;
     };
+    let Some(test_regions) = test_regions.get(&instance.path) else {
+        return true;
+    };
+    if test_regions.is_empty() {
+        return true;
+    }
     let mut excluded = Vec::new();
-    for test_region in test_regions
-        .get(&instance.path)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-    {
+    for test_region in test_regions {
         if test_region.start > 0 && test_region.start <= test_region.end {
             insert_line_range(&mut excluded, test_region.start - 1..test_region.end);
         }
