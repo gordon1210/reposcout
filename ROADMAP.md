@@ -182,14 +182,13 @@ does not silently require or generate SCIP data. A future opt-in consumer should
 index, report its provenance/version and stale/missing coverage, and fall back to the current
 heuristic topology rather than replacing it.
 
-## Active priority: agent-efficient scope and quality tuning
+## Completed milestone: agent-efficient scope and quality tuning
 
-The next milestone improves the facts that coding agents use before choosing how deeply to inspect
+This milestone improves the facts that coding agents use before choosing how deeply to inspect
 or divide work. RepoScout supplies measurements only; it does not control an LLM, recommend a
 model, or decide whether work must be delegated.
 
-The milestone is delivered as focused pull requests and released only when the complete package is
-ready:
+The milestone is implemented as three focused slices and will be released as one complete package:
 
 1. **Raw work-scope evidence (complete):** the bounded strategy-`2` projection preserves
    repository/diff/focus inventory, production-duplication evidence, seeds, context-budget
@@ -201,10 +200,11 @@ ready:
    while a production-source projection removes test-only noise and reports explicit
    completeness. Full exact/near groups, coverage, pair/canonical findings, and detailed output
    remain unchanged and available.
-3. **Progressive skill disclosure (next):** keep the installed RepoScout skill's core workflow
-   lean and route scouting, context, change, quality, and diagnostic details through focused
-   references. The skill must document exact zero-config/configuration behavior and require user
-   approval before creating or modifying configuration.
+3. **Progressive skill disclosure (complete):** the installed RepoScout skill keeps its core
+   workflow lean and routes scouting, context, change, quality, and diagnostic details through
+   focused references. It documents exact zero-config/configuration behavior, requires user
+   approval before creating or modifying configuration, and uses a drift-checked canonical package
+   plus repository-local mirror.
 
 Concise defaults are progressive disclosure, not feature reduction. Any detail removed from a
 default projection remains available through an appropriate detailed format, option, or
@@ -640,9 +640,9 @@ promised, while the underlying diagnostic attribution can remain as an internal 
 | More confidence labels create confusion | Define each dimension narrowly, include stable reason codes, and render one short executive explanation |
 | Compatibility pressure prevents improving `--summary` | Leave existing behavior intact and make the new projection an explicit contract |
 
-This opportunity is **implemented and awaiting release**. Future changes should preserve the
-version-one boundaries, progressive-disclosure contract, and conservative confidence semantics
-documented above.
+This opportunity was **released in `v0.1.8`**. Future changes should preserve the version-one
+boundaries, progressive-disclosure contract, and conservative confidence semantics documented
+above.
 
 ## Post-0.1 evidence-gated opportunities
 

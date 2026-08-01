@@ -42,6 +42,13 @@ within their section.
 - The bundled RepoScout skill now documents exact zero-argument behavior, configuration creation
   and precedence, health selection, continuous risk evidence, raw versus production duplication,
   and the requirement to obtain user approval before creating or changing configuration.
+- Split the bundled RepoScout skill into a concise core workflow and task-specific scouting,
+  context-planning, change-analysis, quality, and diagnostics references. A canonical package,
+  deterministic repository-owned mirror, and CI drift/ownership check now keep both discovery
+  paths aligned without allowing `skills-lock.json` to overwrite the mirror.
+- The skill now runs the selected task command directly instead of spending calls on installation,
+  version, or capability preflights. A genuine missing-command failure is reported to the user
+  without installing software implicitly.
 
 ### Fixed
 
