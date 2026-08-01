@@ -70,8 +70,8 @@ Summary mode removes the heavy arrays while retaining:
 
 For requested context plans, summary mode retains selected paths, scores, reasons, structured
 evidence, budget/omission totals, and aggregate outline counts. It removes per-file declaration
-objects and sets `context.outline_details_omitted: true`; omit `--summary` when signatures are
-needed. The underlying planning analysis is unchanged.
+objects and sets `context.outline_details_omitted: true` when at least one such object was removed;
+omit `--summary` when signatures are needed. The underlying planning analysis is unchanged.
 
 Summary JSON remains valid aggregate baseline input.
 

@@ -16,9 +16,10 @@ reading decision also needs duplication or churn.
 
 Follow `context.files` in rank order and open the selected source with ordinary repository tools.
 RepoScout never embeds source bodies. Summary output keeps file-level selection evidence and
-aggregate outline counts but omits detailed declaration objects; `outline_details_omitted` makes
-that projection explicit. Drop `--summary` only when bounded declaration signatures are needed.
-An oversized explicit focus remains visible without pretending its source fits the budget.
+aggregate outline counts but omits detailed declaration objects; `outline_details_omitted` reports
+when at least one such object was removed. Drop `--summary` only when bounded declaration
+signatures are needed. An oversized explicit focus remains visible without pretending its source
+fits the budget.
 
 If only the reading decision is needed, project it before consuming the result:
 

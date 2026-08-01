@@ -194,6 +194,18 @@ mod tests {
     }
 
     #[test]
+    fn compact_context_without_symbols_does_not_claim_an_omission() {
+        let mut context = json!({
+            "files": [{"path": "README.md"}],
+            "outline_only": []
+        });
+
+        strip_context_outline_details(&mut context);
+
+        assert!(context.get("outline_details_omitted").is_none());
+    }
+
+    #[test]
     fn baseline_counts_and_ratios_have_stable_precision() {
         let count = MetricDelta {
             metric: "tokens".to_string(),
