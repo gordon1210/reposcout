@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-01
+
 ### Added
 
 - Added global `--pretty` formatting for explicitly human-inspected JSON output.

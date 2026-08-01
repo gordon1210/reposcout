@@ -222,12 +222,12 @@ contract; this is not permission to break post-1.0 reports casually.
 
 ### Compact JSON and progressive context detail
 
-**Status:** Unreleased. JSON is compact by default and `--pretty` is the explicit human-inspection
-escape hatch. `--summary` retains context budgets, omissions, ranked paths, reasons, evidence, and
-outline totals while leaving declaration objects to full JSON. The agent skill recommends
-task-specific `jq -c` projections so callers can remove unrelated blocks before they enter model
-context. This changes serialization only; context planning and the detailed analysis contract stay
-available.
+**Status:** Released in `v0.1.10`. JSON is compact by default and `--pretty` is the explicit
+human-inspection escape hatch. `--summary` retains context budgets, omissions, ranked paths,
+reasons, evidence, and outline totals while leaving declaration objects to full JSON. The agent
+skill recommends task-specific `jq -c` projections so callers can remove unrelated blocks before
+they enter model context. This changes serialization only; context planning and the detailed
+analysis contract stay available.
 
 ## Recently delivered
 
