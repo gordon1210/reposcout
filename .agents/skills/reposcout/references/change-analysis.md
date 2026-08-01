@@ -44,8 +44,8 @@ widen `summary`, `files`, or findings beyond the requested diff.
 ## Request deeper evidence only when needed
 
 Use `--impact` when the task needs direct/transitive dependents and graph coverage beyond the
-compact projection. Use detailed summary/context/impact output when declaration outlines or full
-query blocks are required.
+compact projection. Use detailed scan/context/impact output when declaration outlines or full
+query blocks are required; omit `--summary` to retain declaration objects.
 
 For finding-level comparison across both Git snapshots:
 

@@ -6,12 +6,15 @@ use crate::dup::DuplicationFormatScope;
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
 
-pub fn render(inspection: &ConfigInspection, format: ConfigOutputFormat) -> Result<String> {
+pub fn render(
+    inspection: &ConfigInspection,
+    format: ConfigOutputFormat,
+    pretty_json: bool,
+) -> Result<String> {
     match format {
         ConfigOutputFormat::Table => Ok(render_table(inspection)),
-        ConfigOutputFormat::Json => {
-            serde_json::to_string_pretty(inspection).context("failed to render configuration JSON")
-        }
+        ConfigOutputFormat::Json => super::json_string(inspection, pretty_json)
+            .context("failed to render configuration JSON"),
     }
 }
 

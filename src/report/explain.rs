@@ -10,10 +10,15 @@ use owo_colors::OwoColorize;
 use serde_json::Value;
 use std::fmt::Write as _;
 
-pub fn render(report: &ExplainReport, format: Format, color: bool) -> Result<String> {
+pub fn render(
+    report: &ExplainReport,
+    format: Format,
+    color: bool,
+    pretty_json: bool,
+) -> Result<String> {
     match format {
         Format::Table => Ok(table(report, color)),
-        Format::Json => Ok(serde_json::to_string_pretty(report)?),
+        Format::Json => Ok(super::json_string(report, pretty_json)?),
         Format::Markdown => Ok(markdown(report)),
         Format::Ndjson => {
             let mut value = serde_json::to_value(report)?;

@@ -44,8 +44,8 @@ fn projection(report: &ScanReport) -> Result<Projection<'_>> {
     })
 }
 
-pub fn json(report: &ScanReport) -> Result<String> {
-    serde_json::to_string(&projection(report)?).context("failed to render change-summary JSON")
+pub fn json(report: &ScanReport, pretty: bool) -> Result<String> {
+    super::json_string(&projection(report)?, pretty).context("failed to render change-summary JSON")
 }
 
 pub fn ndjson(report: &ScanReport) -> Result<String> {

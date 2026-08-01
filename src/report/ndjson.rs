@@ -48,7 +48,11 @@ pub fn render(report: &ScanReport, summary_only: bool) -> Result<String> {
         map.insert("graph".to_string(), serde_json::to_value(graph)?);
     }
     if let Some(context) = &report.context {
-        map.insert("context".to_string(), serde_json::to_value(context)?);
+        let mut context = serde_json::to_value(context)?;
+        if summary_only {
+            super::projection::strip_context_outline_details(&mut context);
+        }
+        map.insert("context".to_string(), context);
     }
     if let Some(baseline) = &report.baseline {
         map.insert("baseline".to_string(), serde_json::to_value(baseline)?);

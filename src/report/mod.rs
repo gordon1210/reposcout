@@ -15,6 +15,7 @@ mod work_scope;
 
 use crate::model::ScanReport;
 use anyhow::{Context, Result};
+use serde::Serialize;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,7 @@ pub struct RenderOptions {
     pub baseline_ready: bool,
     pub change_summary: bool,
     pub duplication_details: bool,
+    pub pretty_json: bool,
 }
 
 pub fn render(
@@ -70,7 +72,7 @@ pub fn render_with_options(
     if options.change_summary {
         return match format {
             Format::Table => change_summary::table(report),
-            Format::Json => change_summary::json(report),
+            Format::Json => change_summary::json(report, options.pretty_json),
             Format::Markdown => change_summary::markdown(report),
             Format::Ndjson => change_summary::ndjson(report),
             Format::Sarif | Format::Dot | Format::Mermaid => Err(anyhow::anyhow!(
@@ -80,7 +82,12 @@ pub fn render_with_options(
     }
     match format {
         Format::Table => Ok(table::render(report, color, options.duplication_details)),
-        Format::Json => json::render(report, options.summary_only, options.baseline_ready),
+        Format::Json => json::render(
+            report,
+            options.summary_only,
+            options.baseline_ready,
+            options.pretty_json,
+        ),
         Format::Markdown => Ok(markdown::render(report, options.duplication_details)),
         Format::Ndjson => ndjson::render(report, options.summary_only),
         Format::Sarif => sarif::render(report),
@@ -144,23 +151,34 @@ pub fn render_explain(
     report: &crate::model::ExplainReport,
     format: Format,
     color: bool,
+    pretty_json: bool,
 ) -> anyhow::Result<String> {
-    explain::render(report, format, color)
+    explain::render(report, format, color, pretty_json)
 }
 
 pub fn render_symbol_query(
     report: &crate::model::SymbolQueryReport,
     format: Format,
     color: bool,
+    pretty_json: bool,
 ) -> anyhow::Result<String> {
-    query::render(report, format, color)
+    query::render(report, format, color, pretty_json)
 }
 
 pub fn render_capabilities(
     report: &crate::model::CapabilitiesReport,
     format: crate::cli::ConfigOutputFormat,
+    pretty_json: bool,
 ) -> anyhow::Result<String> {
-    query::render_capabilities(report, format)
+    query::render_capabilities(report, format, pretty_json)
+}
+
+pub(crate) fn json_string<T: Serialize>(value: &T, pretty: bool) -> serde_json::Result<String> {
+    if pretty {
+        serde_json::to_string_pretty(value)
+    } else {
+        serde_json::to_string(value)
+    }
 }
 
 /// Format a byte count in a compact human-readable form.

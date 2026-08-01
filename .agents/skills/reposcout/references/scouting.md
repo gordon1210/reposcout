@@ -41,6 +41,16 @@ reposcout -f json --summary --profile full <path>
 reposcout -f json --summary --profile safe <path>
 ```
 
+When the task needs only a subset, project it before reading the command result:
+
+```sh
+reposcout -f json --summary --profile agent <path> \
+  | jq -c '{diagnostics, assessment: .summary.assessment, source: .summary.source, work_scope}'
+```
+
+Use `jq -c` with an explicit selector. Bare `jq` preserves every field and expands compact JSON
+with indentation, so it is not an output-budget strategy by itself.
+
 The `agent` profile disables duplication and churn by default. The `safe` profile additionally
 ignores project configuration and enforces conservative worker, history, discovery, context, and
 duplication settings. Explicit analyzer selection can opt an analyzer back in, but no profile
@@ -53,8 +63,10 @@ Use `--no-project-config` when only the repository-configuration trust boundary 
 
 `-f json --summary` drops heavy `files[]`, raw `duplicates`, and canonical finding arrays while
 retaining aggregates and explicitly requested context, directory, graph, impact, baseline, or
-review blocks. Compact duplicate rankings remain available when duplication ran. Use
-`--baseline-ready` only when a finding-complete compact baseline artifact is explicitly required.
+review blocks. Context retains ranked file metadata and outline totals but omits declaration
+objects; remove `--summary` when signatures are required. Compact duplicate rankings remain
+available when duplication ran. Use `--baseline-ready` only when a finding-complete compact
+baseline artifact is explicitly required.
 
 Before selecting files, inspect top-level diagnostics and `summary.assessment`. Confirm that needed
 analyzers ran, then use source-token totals, top risks, complexity violations, test presence, skip

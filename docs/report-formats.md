@@ -21,8 +21,20 @@ Choose explicitly:
 
 ```sh
 reposcout -f json .
+reposcout -f json --pretty .
 reposcout -f markdown .
 reposcout -f ndjson .
+```
+
+JSON is compact by default for machine and agent consumption. Add `--pretty` only when a human
+needs indented JSON; the flag rejects non-JSON output instead of silently doing nothing.
+
+When only part of a report answers the question, project it before passing stdout onward. Use
+`jq -c` to keep the selected result compact; bare `jq` pretty-prints again:
+
+```sh
+reposcout -f json --summary --profile agent . \
+  | jq -c '{diagnostics, assessment: .summary.assessment, work_scope}'
 ```
 
 Or infer from a known output extension:
@@ -55,6 +67,11 @@ Summary mode removes the heavy arrays while retaining:
   `summary.top_production_duplicates`, and other top-N evidence; and
 - explicitly requested `context`, `directories`, `graph`, `impact`, `baseline`, or `review`
   blocks.
+
+For requested context plans, summary mode retains selected paths, scores, reasons, structured
+evidence, budget/omission totals, and aggregate outline counts. It removes per-file declaration
+objects and sets `context.outline_details_omitted: true`; omit `--summary` when signatures are
+needed. The underlying planning analysis is unchanged.
 
 Summary JSON remains valid aggregate baseline input.
 

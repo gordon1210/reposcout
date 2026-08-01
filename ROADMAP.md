@@ -37,11 +37,11 @@ Configuration behavior was also informed by mature command-line tools:
 RepoScout now has an opt-in, deterministic context planner. Given a hard token and file budget,
 it ranks analyzed files using focus paths, same-directory siblings, supported-language graph
 relationships, matching tests, repository instructions, manifests, entry points, risk, churn,
-and complexity. Selected first-class-language files include bounded declaration outlines rather
-than source bodies. With a diff scope, changed paths seed a separate full-tree planning universe
-while the ordinary scan facts remain change-scoped. The result includes selection reasons,
-machine-readable evidence/confidence, payload/timing measurements, and bounded omission
-diagnostics.
+and complexity. Full context reports include bounded declaration outlines rather than source
+bodies; summary projections retain their counts and ranked file evidence but omit the declaration
+objects. With a diff scope, changed paths seed a separate full-tree planning universe while the
+ordinary scan facts remain change-scoped. The result includes selection reasons, machine-readable
+evidence/confidence, payload/timing measurements, and bounded omission diagnostics.
 
 This is deliberately a planning contract:
 
@@ -218,6 +218,17 @@ defaults, and compatibility tests, require stored reports and baselines to be re
 document that migration. Compatibility guarantees after that reset start with the stable 1.0
 contract; this is not permission to break post-1.0 reports casually.
 
+## Active delivery
+
+### Compact JSON and progressive context detail
+
+**Status:** Unreleased. JSON is compact by default and `--pretty` is the explicit human-inspection
+escape hatch. `--summary` retains context budgets, omissions, ranked paths, reasons, evidence, and
+outline totals while leaving declaration objects to full JSON. The agent skill recommends
+task-specific `jq -c` projections so callers can remove unrelated blocks before they enter model
+context. This changes serialization only; context planning and the detailed analysis contract stay
+available.
+
 ## Recently delivered
 
 ### Change-focused, token-efficient decision reports
@@ -318,7 +329,7 @@ reposcout --working --change-summary -f json .
 reposcout --since main --change-summary --profile safe -f json .
 
 # Request the existing detailed change-analysis blocks instead of the bounded projection.
-reposcout --working --context --impact --summary --profile agent -f json .
+reposcout --working --context --impact --profile agent -f json .
 
 # Request health findings and deep snapshot comparison explicitly.
 reposcout --since main --review=deep --profile full -f json .
@@ -535,8 +546,9 @@ to the same context planner, but that separate roadmap item is not a prerequisit
 
 #### Compatibility and integration
 
-- Invocations without `--change-summary` have byte-for-byte-equivalent report selection semantics;
-  existing fields and `--summary` behavior do not change.
+- The `v0.1.8` delivery did not change invocations without `--change-summary`. Later compact-output
+  tuning may change serialization projections while preserving the underlying facts and a full
+  detail path without `--summary`.
 - The model change is additive and does not require a `SCHEMA_VERSION` bump. It does not require an
   `ANALYZER_VERSION` bump unless implementation changes cached per-file facts.
 - Baseline compatibility remains based on the existing analysis profile. The change summary is a
@@ -563,8 +575,8 @@ Measure cold/no-cache and warm-cache runtime against the equivalent existing age
 analysis. The new projection must add no material scan-time regression; use 5% as an investigation
 threshold rather than masking noise with a generous budget. Record serialized bytes and a
 deterministic token estimate for representative fixtures. A 17-file mixed source/config/docs
-fixture should retain every changed path under the default limit while producing at least 60% fewer
-serialized bytes than the current summary/context/impact JSON and no general health rankings.
+fixture should retain every changed path under the default limit while using no more than half the
+serialized bytes of compact full-detail context/impact JSON and no general health rankings.
 
 #### Failure behavior
 
@@ -619,8 +631,8 @@ Acceptance examples:
 - **Given** more paths or gaps than the hard limits, **when** the report renders in every supported
   format, **then** priority order is deterministic, totals remain accurate, and omitted counts make
   truncation explicit.
-- **Given** the same invocation without `--change-summary`, **when** JSON is rendered, **then** the
-  established summary/context/impact contract remains unchanged.
+- **Given** the same invocation without `--change-summary`, **when** analysis runs, **then** its
+  facts remain available; compact projections may omit detail only when full JSON retains it.
 
 #### Delivery, rollback, and risks
 
@@ -638,7 +650,7 @@ promised, while the underlying diagnostic attribution can remain as an internal 
 | Path lists become large enough to defeat token savings | Use one aggregate priority budget with omitted counts and capability-advertised hard limits |
 | Validation suggestions become hallucinated commands | Require direct metadata evidence for commands; otherwise emit only a category, target, reason, and confidence |
 | More confidence labels create confusion | Define each dimension narrowly, include stable reason codes, and render one short executive explanation |
-| Compatibility pressure prevents improving `--summary` | Leave existing behavior intact and make the new projection an explicit contract |
+| Compact defaults hide useful context detail | Keep aggregate counts and omission markers in `--summary`; retain declaration objects in full JSON |
 
 This opportunity was **released in `v0.1.8`**. Future changes should preserve the version-one
 boundaries, progressive-disclosure contract, and conservative confidence semantics documented

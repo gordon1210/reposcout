@@ -28,6 +28,15 @@ For compact agent scouting, start with:
 reposcout -f json --summary --profile agent <path>
 ```
 
+When only specific decisions are needed, discard unrelated fields before stdout enters model
+context. Use a targeted compact projection, not bare `jq` (which only pretty-prints the full
+payload):
+
+```sh
+reposcout -f json --summary --profile agent <path> \
+  | jq -c '{diagnostics, assessment: .summary.assessment, work_scope}'
+```
+
 Use a bare `reposcout` only when the exact zero-argument/default behavior is requested. A terminal
 receives a human table, but captured or redirected stdout receives full JSON; read the repository
 scouting guidance before interpreting that default.

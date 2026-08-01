@@ -19,6 +19,10 @@ pub struct Cli {
     #[arg(long, value_enum, global = true, default_value_t = ErrorFormat::Text)]
     pub error_format: ErrorFormat,
 
+    /// Pretty-print JSON output instead of the compact default
+    #[arg(long, global = true)]
+    pub pretty: bool,
+
     /// Write flushed NDJSON diagnostics for slow or crashing runs
     #[arg(long, value_name = "FILE", global = true)]
     pub debug_log: Option<PathBuf>,
@@ -580,6 +584,24 @@ mod tests {
             locate.debug_log,
             Some(PathBuf::from("/tmp/reposcout-locate.jsonl"))
         );
+    }
+
+    #[test]
+    fn pretty_is_a_global_option() {
+        let scan = Cli::try_parse_from(["reposcout", "--pretty", "-f", "json", "src"]).unwrap();
+        assert!(scan.pretty);
+
+        let locate = Cli::try_parse_from([
+            "reposcout",
+            "locate",
+            "HttpClient",
+            "src",
+            "-f",
+            "json",
+            "--pretty",
+        ])
+        .unwrap();
+        assert!(locate.pretty);
     }
 
     #[test]
