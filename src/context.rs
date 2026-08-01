@@ -485,6 +485,7 @@ pub(crate) fn build_for_target(
         outline_symbols: outline_stats.symbols,
         outline_bytes: outline_stats.bytes,
         outline_omitted_symbols: outline_stats.omitted_symbols,
+        outline_details_omitted: false,
         planning_diagnostics: None,
         files: selected,
         outline_only,

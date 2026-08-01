@@ -6,10 +6,15 @@ use crate::model::{CapabilitiesReport, SymbolQueryReport};
 use anyhow::{Result, anyhow};
 use owo_colors::OwoColorize;
 
-pub fn render(report: &SymbolQueryReport, format: Format, color: bool) -> Result<String> {
+pub fn render(
+    report: &SymbolQueryReport,
+    format: Format,
+    color: bool,
+    pretty_json: bool,
+) -> Result<String> {
     match format {
         Format::Table => Ok(table(report, color)),
-        Format::Json => Ok(serde_json::to_string_pretty(report)?),
+        Format::Json => Ok(super::json_string(report, pretty_json)?),
         Format::Markdown => Ok(markdown(report)),
         Format::Ndjson => ndjson(report),
         Format::Sarif | Format::Dot | Format::Mermaid => Err(anyhow!(
@@ -21,9 +26,10 @@ pub fn render(report: &SymbolQueryReport, format: Format, color: bool) -> Result
 pub fn render_capabilities(
     report: &CapabilitiesReport,
     format: ConfigOutputFormat,
+    pretty_json: bool,
 ) -> Result<String> {
     match format {
-        ConfigOutputFormat::Json => Ok(serde_json::to_string_pretty(report)?),
+        ConfigOutputFormat::Json => Ok(super::json_string(report, pretty_json)?),
         ConfigOutputFormat::Table => {
             let mut out = format!("RepoScout {} capabilities\n", report.version);
             out.push_str(&format!(

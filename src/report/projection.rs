@@ -3,7 +3,32 @@ use crate::model::{
     DuplicateBlock, FindingRecord, FunctionComplexity, LanguageStat, MetricDelta, ScanReport,
     Summary,
 };
+use serde_json::Value;
 use std::path::Path;
+
+/// Remove declaration objects from a context plan used in a compact summary.
+/// Aggregate outline counts remain so consumers can decide whether the full
+/// report is worth requesting.
+pub(crate) fn strip_context_outline_details(context: &mut Value) {
+    let Some(context) = context.as_object_mut() else {
+        return;
+    };
+    let mut removed = false;
+    for collection in ["files", "outline_only"] {
+        let Some(entries) = context.get_mut(collection).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for entry in entries {
+            let Some(entry) = entry.as_object_mut() else {
+                continue;
+            };
+            removed |= entry.remove("symbols").is_some();
+        }
+    }
+    if removed {
+        context.insert("outline_details_omitted".to_string(), Value::Bool(true));
+    }
+}
 
 pub(crate) fn callable_cyclomatic_average(functions: &[FunctionComplexity]) -> Option<f64> {
     if functions.is_empty() {
@@ -149,7 +174,24 @@ pub(crate) fn finding_location(finding: &FindingRecord) -> String {
 mod tests {
     use super::*;
     use crate::model::FindingLocation;
+    use serde_json::json;
     use std::path::PathBuf;
+
+    #[test]
+    fn compact_context_removes_selected_and_outline_only_symbol_details() {
+        let mut context = json!({
+            "outline_symbols": 2,
+            "files": [{"path": "src/lib.rs", "symbols": [{"name": "run"}]}],
+            "outline_only": [{"path": "src/large.rs", "symbols": [{"name": "Large"}]}]
+        });
+
+        strip_context_outline_details(&mut context);
+
+        assert_eq!(context["outline_details_omitted"], true);
+        assert!(context["files"][0].get("symbols").is_none());
+        assert!(context["outline_only"][0].get("symbols").is_none());
+        assert_eq!(context["outline_symbols"], 2);
+    }
 
     #[test]
     fn baseline_counts_and_ratios_have_stable_precision() {

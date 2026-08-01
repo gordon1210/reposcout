@@ -13,7 +13,16 @@ reposcout -f json --summary --profile agent <PATH>
 
 `--summary` retains aggregate and top-N evidence while removing heavy per-file, duplicate-family,
 and canonical-finding arrays. Explicit context, directory, graph, impact, baseline, and review
-blocks remain when requested.
+blocks remain when requested, but compact context omits detailed declaration objects.
+
+If the task needs only a few decisions, select those fields before the report enters agent
+context. `jq -c` both filters and preserves compact JSON; bare `jq` only reformats the complete
+payload:
+
+```sh
+reposcout -f json --summary --profile agent <PATH> \
+  | jq -c '{diagnostics, assessment: .summary.assessment, source: .summary.source, work_scope}'
+```
 
 The most useful first-pass fields are:
 
@@ -135,9 +144,21 @@ include:
 - nearby risky code, churn, and complexity; and
 - useful same-directory context.
 
-Selected first-class-language files carry bounded, body-free declaration outlines. RepoScout
-never embeds source bodies in the plan and never exceeds the requested aggregate source-token or
-file budget.
+RepoScout computes bounded, body-free declaration outlines without embedding source bodies.
+Summary output keeps `outline_symbols`, `outline_bytes`, and omission counts but drops each
+file's `symbols` array and sets `outline_details_omitted: true`. Omit `--summary` only when the
+actual declaration signatures are needed. Neither form exceeds the requested aggregate
+source-token or file budget.
+
+Project a focused reading plan when only selection evidence is needed:
+
+```sh
+reposcout -f json --summary --profile agent \
+  --focus src/service.ts --context-budget 24000 --context-max-files 15 . \
+  | jq -c '{diagnostics, work_scope, context: (.context | {
+      budget_tokens, selected_tokens, omitted_tokens, files, omitted
+    })}'
+```
 
 Focus one or more paths:
 
@@ -147,8 +168,8 @@ reposcout -f json --summary \
 ```
 
 An oversized explicit focus may appear as `outline_only`: its source does not fit the budget, but
-its bounded declarations remain useful. Unmatched focus values stay explicit rather than becoming
-invented seeds.
+its path and selection evidence remain visible. Full JSON also carries its bounded declarations.
+Unmatched focus values stay explicit rather than becoming invented seeds.
 
 ## Plan from a change
 
@@ -181,7 +202,7 @@ Use the detailed workflow when declaration outlines, complete context data, or t
 change-scoped aggregate is needed:
 
 ```sh
-reposcout -f json --summary --profile agent \
+reposcout -f json --profile agent \
   --working --context --impact .
 ```
 

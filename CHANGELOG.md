@@ -6,6 +6,17 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added global `--pretty` formatting for explicitly human-inspected JSON output.
+
+### Changed
+
+- JSON output is compact by default. `--summary` context plans now retain ranked files, evidence,
+  budget totals, and outline counts while omitting detailed declaration objects; full JSON keeps
+  those outlines. The bundled agent skill now demonstrates task-specific `jq -c` projections so
+  callers can discard unneeded report sections before they enter model context.
+
 ## [0.1.9] - 2026-08-01
 
 ### Added

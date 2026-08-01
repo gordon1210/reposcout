@@ -1122,6 +1122,10 @@ pub struct ContextPlan {
     /// Relevant declarations dropped by per-file or aggregate outline bounds.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub outline_omitted_symbols: usize,
+    /// True when a compact report omits the retained declaration objects while
+    /// preserving their aggregate counts.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub outline_details_omitted: bool,
     /// Coverage of the separate full-tree fact universe used only by a
     /// diff-seeded plan. Primary report diagnostics remain diff-scoped.
     #[serde(default, skip_serializing_if = "Option::is_none")]

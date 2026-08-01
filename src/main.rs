@@ -166,35 +166,43 @@ fn command_output(cli: &Cli) -> Option<&Path> {
 }
 
 fn real_main(cli: Cli) -> Result<ExitCode> {
+    let pretty = cli.pretty;
     match cli {
         Cli {
             command: Some(Command::Capabilities(args)),
             ..
-        } => run_capabilities(args),
+        } => run_capabilities(args, pretty),
         Cli {
             command: Some(Command::Cache(args)),
             ..
-        } => run_cache(args),
+        } => {
+            require_json_for_pretty(pretty, false)?;
+            run_cache(args)
+        }
         Cli {
             command: Some(Command::Daemon(args)),
             ..
-        } => run_daemon(args),
+        } => {
+            require_json_for_pretty(pretty, false)?;
+            run_daemon(args)
+        }
         Cli {
             command: Some(Command::Explain(args)),
             ..
-        } => run_explain(args),
+        } => run_explain(args, pretty),
         Cli {
             command: Some(Command::Config(args)),
             ..
-        } => run_config(args),
+        } => run_config(args, pretty),
         Cli {
             command: Some(Command::Locate(args)),
             ..
-        } => run_locate(args),
+        } => run_locate(args, pretty),
         Cli {
             command: Some(Command::Update),
             ..
         } => {
+            require_json_for_pretty(pretty, false)?;
             let rendered = reposcout::update::run()?;
             write_stdout(&rendered)?;
             Ok(ExitCode::SUCCESS)
@@ -266,7 +274,7 @@ fn exit_code(code: i32) -> ExitCode {
         .unwrap_or(ExitCode::FAILURE)
 }
 
-fn run_capabilities(args: CapabilitiesArgs) -> Result<ExitCode> {
+fn run_capabilities(args: CapabilitiesArgs, pretty: bool) -> Result<ExitCode> {
     let format = args.format.unwrap_or_else(|| {
         if std::io::stdout().is_terminal() {
             ConfigOutputFormat::Table
@@ -274,12 +282,13 @@ fn run_capabilities(args: CapabilitiesArgs) -> Result<ExitCode> {
             ConfigOutputFormat::Json
         }
     });
-    let rendered = report::render_capabilities(&reposcout::query::capabilities(), format)?;
+    require_json_for_pretty(pretty, format == ConfigOutputFormat::Json)?;
+    let rendered = report::render_capabilities(&reposcout::query::capabilities(), format, pretty)?;
     write_stdout(&rendered)?;
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_config(args: ConfigArgs) -> Result<ExitCode> {
+fn run_config(args: ConfigArgs, pretty: bool) -> Result<ExitCode> {
     let mut resolved = if args.no_project_config || args.profile == ExecutionProfile::Safe {
         Config::resolve_without_project(&args.path)?
     } else {
@@ -297,7 +306,8 @@ fn run_config(args: ConfigArgs) -> Result<ExitCode> {
             ConfigOutputFormat::Json
         }
     });
-    let rendered = report::config::render(&resolved.inspection(), format)?;
+    require_json_for_pretty(pretty, format == ConfigOutputFormat::Json)?;
+    let rendered = report::config::render(&resolved.inspection(), format, pretty)?;
     write_stdout(&rendered)?;
     Ok(ExitCode::SUCCESS)
 }
@@ -345,6 +355,7 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
 }
 
 fn run_scan(cli: Cli) -> Result<ExitCode> {
+    let pretty = cli.pretty;
     let (args, sub_enabled) = split(cli);
     if args.change_summary && args.since.is_none() && !args.staged && !args.working {
         return Err(usage_error(
@@ -362,6 +373,10 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         ));
     }
     let requested_format = choose_format(args.common.format, args.common.output.as_deref());
+    require_json_for_pretty(
+        pretty,
+        args.baseline_ready || requested_format == Format::Json,
+    )?;
     if args.change_summary
         && matches!(
             requested_format,
@@ -458,6 +473,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
             "summary_only": args.summary,
             "baseline_ready": args.baseline_ready,
             "change_summary": args.change_summary,
+            "pretty_json": pretty,
         })
     });
     let rendered = report::render_with_options(
@@ -469,6 +485,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
             baseline_ready: args.baseline_ready,
             change_summary: args.change_summary,
             duplication_details: args.duplication_details,
+            pretty_json: pretty,
         },
     )?;
     debug_log::event("render_end", || {
@@ -524,7 +541,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_explain(args: ExplainArgs) -> Result<ExitCode> {
+fn run_explain(args: ExplainArgs, pretty: bool) -> Result<ExitCode> {
     if let Some(output) = args.common.output.as_deref()
         && walk::exact_path_identity(&args.file)? == walk::exact_path_identity(output)?
     {
@@ -537,6 +554,7 @@ fn run_explain(args: ExplainArgs) -> Result<ExitCode> {
     if matches!(format, Format::Dot | Format::Mermaid) {
         return Err(anyhow!("explain does not support graph-only output"));
     }
+    require_json_for_pretty(pretty, format == Format::Json)?;
 
     let profile = args.common.profile.unwrap_or(ExecutionProfile::Full);
     let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
@@ -556,7 +574,7 @@ fn run_explain(args: ExplainArgs) -> Result<ExitCode> {
     let report = reposcout::explain::run(&args.file, &cfg, &exclusions)?;
     let color =
         format == Format::Table && args.common.output.is_none() && std::io::stdout().is_terminal();
-    let rendered = report::render_explain(&report, format, color)?;
+    let rendered = report::render_explain(&report, format, color, pretty)?;
     match args.common.output.as_deref() {
         Some(path) => std::fs::write(path, rendered.as_bytes())?,
         None => write_stdout(&rendered)?,
@@ -564,7 +582,7 @@ fn run_explain(args: ExplainArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_locate(args: LocateArgs) -> Result<ExitCode> {
+fn run_locate(args: LocateArgs, pretty: bool) -> Result<ExitCode> {
     if let Some(output) = args.common.output.as_deref()
         && walk::exact_path_identity(&args.path)? == walk::exact_path_identity(output)?
     {
@@ -576,6 +594,7 @@ fn run_locate(args: LocateArgs) -> Result<ExitCode> {
             "locate supports table, JSON, Markdown, or NDJSON output"
         ));
     }
+    require_json_for_pretty(pretty, format == Format::Json)?;
 
     let profile = args.common.profile.unwrap_or(ExecutionProfile::Full);
     let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
@@ -605,7 +624,7 @@ fn run_locate(args: LocateArgs) -> Result<ExitCode> {
     )?;
     let color =
         format == Format::Table && args.common.output.is_none() && std::io::stdout().is_terminal();
-    let rendered = report::render_symbol_query(&report, format, color)?;
+    let rendered = report::render_symbol_query(&report, format, color, pretty)?;
     match args.common.output.as_deref() {
         Some(path) => std::fs::write(path, rendered.as_bytes())?,
         None => write_stdout(&rendered)?,
@@ -628,6 +647,13 @@ fn write_stdout(rendered: &str) -> Result<()> {
             return Ok(());
         }
         return Err(error.into());
+    }
+    Ok(())
+}
+
+fn require_json_for_pretty(pretty: bool, json_output: bool) -> Result<()> {
+    if pretty && !json_output {
+        return Err(usage_error("--pretty requires JSON output"));
     }
     Ok(())
 }

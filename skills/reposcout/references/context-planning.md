@@ -15,8 +15,20 @@ likely neighbors. For an untrusted checkout, retain `--profile safe`; use `full`
 reading decision also needs duplication or churn.
 
 Follow `context.files` in rank order and open the selected source with ordinary repository tools.
-RepoScout never embeds source bodies. First-class files can carry bounded declaration outlines;
-an oversized explicit focus may retain an outline without pretending its source fits the budget.
+RepoScout never embeds source bodies. Summary output keeps file-level selection evidence and
+aggregate outline counts but omits detailed declaration objects; `outline_details_omitted` makes
+that projection explicit. Drop `--summary` only when bounded declaration signatures are needed.
+An oversized explicit focus remains visible without pretending its source fits the budget.
+
+If only the reading decision is needed, project it before consuming the result:
+
+```sh
+reposcout -f json --summary --profile agent \
+  --focus <file-or-directory> --context-budget 24000 --context-max-files 15 <scan-root> \
+  | jq -c '{diagnostics, work_scope, context: (.context | {
+      budget_tokens, selected_tokens, omitted_tokens, files, omitted
+    })}'
+```
 
 ## Read `work_scope` before the file list
 

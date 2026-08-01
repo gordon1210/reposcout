@@ -1083,7 +1083,6 @@ fn context_plan_projects_bounded_body_free_symbol_outlines() {
     let report = run_json(&[
         "-f",
         "json",
-        "--summary",
         "--context",
         "--only",
         "tokens",
@@ -1110,6 +1109,27 @@ fn context_plan_projects_bounded_body_free_symbol_outlines() {
             .contains("secret_body")
             && !symbol["reasons"].as_array().unwrap().is_empty()
     }));
+
+    let summary = run_json(&[
+        "-f",
+        "json",
+        "--summary",
+        "--context",
+        "--only",
+        "tokens",
+        dir.path().to_str().unwrap(),
+    ]);
+    let compact_context = &summary["context"];
+    assert_eq!(compact_context["outline_symbols"], symbols.len());
+    assert_eq!(compact_context["outline_details_omitted"], true);
+    assert!(
+        compact_context["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file.get("symbols").is_none()),
+        "summary context must not retain declaration detail objects"
+    );
 }
 
 #[test]
@@ -1875,6 +1895,58 @@ fn summary_flag_omits_heavy_arrays() {
     assert!(brief["summary"]["files"].as_u64().unwrap() >= 5);
     assert!(brief["summary"]["tokens"].as_u64().unwrap() > 0);
     assert_eq!(brief["schema_version"], "1.0");
+}
+
+#[test]
+fn json_is_compact_by_default_and_pretty_only_when_requested() {
+    let mut compact = reposcout_command();
+    compact.args([
+        "-f",
+        "json",
+        "--only",
+        "tokens",
+        "--no-cache",
+        "--quiet",
+        &fixture(),
+    ]);
+    let compact =
+        String::from_utf8(compact.assert().success().get_output().stdout.clone()).unwrap();
+    assert_eq!(compact.trim_end().lines().count(), 1);
+    serde_json::from_str::<Value>(&compact).unwrap();
+
+    let mut pretty = reposcout_command();
+    pretty.args([
+        "-f",
+        "json",
+        "--pretty",
+        "--only",
+        "tokens",
+        "--no-cache",
+        "--quiet",
+        &fixture(),
+    ]);
+    let pretty = String::from_utf8(pretty.assert().success().get_output().stdout.clone()).unwrap();
+    assert!(pretty.lines().count() > 1);
+    assert!(pretty.starts_with("{\n  \"schema_version\""));
+    serde_json::from_str::<Value>(&pretty).unwrap();
+}
+
+#[test]
+fn pretty_rejects_non_json_output() {
+    let mut command = reposcout_command();
+    command.args([
+        "-f",
+        "table",
+        "--pretty",
+        "--no-cache",
+        "--quiet",
+        &fixture(),
+    ]);
+    command
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains("--pretty requires JSON output"));
 }
 
 #[test]
@@ -5545,7 +5617,6 @@ fn change_summary_is_materially_smaller_than_detailed_change_analysis() {
         "-f",
         "json",
         "--working",
-        "--summary",
         "--context",
         "--impact",
         "--profile",
@@ -5571,9 +5642,11 @@ fn change_summary_is_materially_smaller_than_detailed_change_analysis() {
 
     assert_eq!(concise_report["change_summary"]["changed"]["total"], 17);
     assert_eq!(concise_report["change_summary"]["changed"]["shown"], 17);
+    // Both JSON contracts are compact by default; the dedicated decision
+    // projection must still cost no more than half of detailed change output.
     assert!(
-        concise_bytes.len() * 100 <= detailed_bytes.len() * 40,
-        "expected at least 60% fewer bytes; detailed={}, concise={}",
+        concise_bytes.len() * 2 <= detailed_bytes.len(),
+        "expected at least 50% fewer bytes; detailed={}, concise={}",
         detailed_bytes.len(),
         concise_bytes.len()
     );

@@ -45,6 +45,7 @@ table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 | `--profile <full\|agent\|safe>` | Select the execution profile | `full` |
 | `--no-project-config` | Ignore repository-owned configuration | off |
 | `--error-format <text\|json>` | Render failures as text or one JSON stderr object | `text` |
+| `--pretty` | Pretty-print JSON instead of the compact default | off |
 | `--debug-log <FILE>` | Write immediately flushed NDJSON diagnostics | off |
 | `--only <LIST>` | Run only named analyzers | all |
 | `--exclude <GLOB>` | Extend configured discovery exclusions; repeatable | — |
