@@ -1947,6 +1947,23 @@ fn pretty_rejects_non_json_output() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains("--pretty requires JSON output"));
+
+    let mut baseline = reposcout_command();
+    baseline.args([
+        "-f",
+        "table",
+        "--baseline-ready",
+        "--pretty",
+        "--no-cache",
+        "--quiet",
+        &fixture(),
+    ]);
+    baseline
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "--baseline-ready requires JSON output",
+        ));
 }
 
 #[test]

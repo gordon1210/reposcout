@@ -373,10 +373,18 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         ));
     }
     let requested_format = choose_format(args.common.format, args.common.output.as_deref());
-    require_json_for_pretty(
-        pretty,
-        args.baseline_ready || requested_format == Format::Json,
-    )?;
+    if args.baseline_ready
+        && let Some(format) = args.common.format
+        && format != OutputFormat::Json
+    {
+        return Err(anyhow!("--baseline-ready requires JSON output"));
+    }
+    let format = if args.baseline_ready {
+        Format::Json
+    } else {
+        requested_format
+    };
+    require_json_for_pretty(pretty, format == Format::Json)?;
     if args.change_summary
         && matches!(
             requested_format,
@@ -452,17 +460,6 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
     let exclusions = command_exclusions(args.common.output.as_deref());
     let report = scan::run_with_exclusions(&args.path, &cfg, &exclusions)?;
 
-    if args.baseline_ready
-        && let Some(format) = args.common.format
-        && format != OutputFormat::Json
-    {
-        return Err(anyhow!("--baseline-ready requires JSON output"));
-    }
-    let format = if args.baseline_ready {
-        Format::Json
-    } else {
-        requested_format
-    };
     let color = matches!(format, Format::Table)
         && args.common.output.is_none()
         && std::io::stdout().is_terminal();

@@ -146,9 +146,9 @@ include:
 
 RepoScout computes bounded, body-free declaration outlines without embedding source bodies.
 Summary output keeps `outline_symbols`, `outline_bytes`, and omission counts but drops each
-file's `symbols` array and sets `outline_details_omitted: true`. Omit `--summary` only when the
-actual declaration signatures are needed. Neither form exceeds the requested aggregate
-source-token or file budget.
+file's `symbols` array. `outline_details_omitted: true` appears only when at least one declaration
+object was actually removed. Omit `--summary` only when the actual declaration signatures are
+needed. Neither form exceeds the requested aggregate source-token or file budget.
 
 Project a focused reading plan when only selection evidence is needed:
 
