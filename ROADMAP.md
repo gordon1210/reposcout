@@ -188,7 +188,7 @@ This milestone improves the facts that coding agents use before choosing how dee
 or divide work. RepoScout supplies measurements only; it does not control an LLM, recommend a
 model, or decide whether work must be delegated.
 
-The milestone is implemented as three focused slices and will be released as one complete package:
+The milestone was implemented as three focused slices and released together in `v0.1.9`:
 
 1. **Raw work-scope evidence (complete):** the bounded strategy-`2` projection preserves
    repository/diff/focus inventory, production-duplication evidence, seeds, context-budget

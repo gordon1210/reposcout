@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-01
+
 ### Added
 
 - Added a versioned, bounded `work_scope` block to ordinary, summary, change-summary, and NDJSON
