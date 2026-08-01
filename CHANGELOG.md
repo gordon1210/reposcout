@@ -45,6 +45,8 @@ within their section.
 
 ### Fixed
 
+- Keep pre-1.0 duplicate rankings visible in human renderers and label risk rankings with the
+  algorithm version recorded by the report instead of the version compiled into the renderer.
 - Treat Rust imports that stay within the current source file as resolved graph facts. Inline test
   modules no longer create false unresolved-import diagnostics or fall back to spurious parent
   module edges, while genuinely missing module paths remain visible.

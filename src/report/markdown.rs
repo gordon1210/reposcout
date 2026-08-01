@@ -2,8 +2,8 @@
 
 use crate::model::{ScanDiagnostics, ScanReport};
 use crate::report::projection::{
-    file_cyclomatic_average, finding_location, human_test_signal, metric_delta_display,
-    metric_label, source_language_rollup,
+    file_cyclomatic_average, finding_location, human_duplicate_projection, human_risk_heading,
+    human_test_signal, metric_delta_display, metric_label, source_language_rollup,
 };
 use crate::report::{
     dup_locations, human_bytes, markdown_code_span, markdown_table_code_span, markdown_table_text,
@@ -213,11 +213,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
 
     // Top risks
     if !s.top_risks.is_empty() {
-        let _ = writeln!(
-            out,
-            "## Top risks · algorithm {}",
-            crate::findings::RISK_ALGORITHM_VERSION
-        );
+        let _ = writeln!(out, "## {}", human_risk_heading(report));
         let _ = writeln!(out);
         let _ = writeln!(
             out,
@@ -729,15 +725,16 @@ fn render_duplication(out: &mut String, report: &ScanReport, duplication_details
     );
     let _ = writeln!(out);
 
-    if !summary.top_production_duplicates.is_empty() {
-        let _ = writeln!(out, "## Top production duplicates");
+    let (title, duplicates) = human_duplicate_projection(summary);
+    if !duplicates.is_empty() {
+        let _ = writeln!(out, "## {title}");
         let _ = writeln!(out);
         let _ = writeln!(
             out,
             "| Lines | Copies | Similarity | Removable | Locations |"
         );
         let _ = writeln!(out, "|--:|--:|---|--:|---|");
-        for duplicate in &summary.top_production_duplicates {
+        for duplicate in duplicates {
             let _ = writeln!(
                 out,
                 "| {} | {} | {} | {} | {} |",
