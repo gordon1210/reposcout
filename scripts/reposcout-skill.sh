@@ -33,7 +33,7 @@ assert_route() {
     exit 1
   fi
 
-  reference_count=$(grep -o "references/$expected" "$canonical/SKILL.md" | wc -l | tr -d ' ')
+  reference_count=$(grep -F -o "references/$expected" "$canonical/SKILL.md" | wc -l | tr -d ' ')
   if [ "$reference_count" -ne 1 ]; then
     echo "references/$expected must appear exactly once in the core skill" >&2
     exit 1
@@ -77,6 +77,10 @@ case "$mode" in
     ;;
   check)
     check_canonical
+    if [ ! -d "$mirror" ]; then
+      echo "RepoScout skill mirror is missing; run scripts/reposcout-skill.sh sync" >&2
+      exit 1
+    fi
     if ! diff -ru "$canonical" "$mirror"; then
       echo "RepoScout skill mirror is stale; run scripts/reposcout-skill.sh sync" >&2
       exit 1
