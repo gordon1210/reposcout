@@ -113,17 +113,29 @@ pnpm lint:fix:frontend      # apply ESLint and Prettier fixes across frontend pa
 pnpm build:web              # type-check + production dashboard build
 pnpm test:web               # dashboard Vitest suite
 pnpm build:landing          # type-check + production landing-page build
+./scripts/reposcout-skill.sh sync   # refresh the repository-local skill mirror
+./scripts/reposcout-skill.sh check  # validate routing and reject mirror drift
 ```
+
+Edit the canonical skill under `skills/reposcout`; never edit `.agents/skills/reposcout`
+independently. The repository owns that mirror, so `reposcout` must not be listed in
+`skills-lock.json` as an externally managed installation.
 
 ## Repository layout
 
 ```
 CHANGELOG.md          User-visible changes in reverse chronological order.
+.agents/skills/reposcout/
+                      Deterministic repository-local mirror of the bundled agent skill.
 apps/
   web/                React dashboard for the live daemon.
   landing/            Bespoke public RepoScout landing page.
 packages/
   eslint-config/      Shared flat ESLint configuration for both frontend apps.
+scripts/
+  reposcout-skill.sh  Synchronizes and validates the bundled skill mirror.
+skills/
+  reposcout/          Canonical distributable agent skill and focused references.
 src/
   main.rs            CLI entry: scan/query/explain dispatch, profiles, gates, output/errors,
                      and debug-session lifecycle.

@@ -89,6 +89,8 @@ npx skills add gordon1210/reposcout --skill reposcout
 
 The `reposcout` binary must already be available on `PATH`.
 Update an existing skill installation separately with `npx skills update reposcout`.
+The skill keeps its core workflow concise and loads focused scouting, context-planning,
+change-analysis, quality, or diagnostic guidance only when the task needs it.
 
 ## Quick start
 

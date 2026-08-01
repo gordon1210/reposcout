@@ -23,11 +23,16 @@ pnpm lint:frontend
 pnpm build:web
 pnpm test:web
 pnpm build:landing
+./scripts/reposcout-skill.sh check
 ```
 
 Use the smallest relevant validation while developing, then run the complete applicable checks
 before submitting a pull request. See the [development guide](docs/development.md) for the
 repository layout, stable contracts, and common commands.
+
+The distributable agent skill lives in `skills/reposcout`. After changing it, run
+`./scripts/reposcout-skill.sh sync` to refresh `.agents/skills/reposcout`, then run the check above.
+Do not edit the generated mirror independently.
 
 ## Pull requests
 

@@ -31,12 +31,6 @@
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
       "computedHash": "66e8a50c83c3c724fcfe0769701b665c56cec220cc4f49cc1aee8bdfc07de94a"
     },
-    "reposcout": {
-      "source": "gordon1210/reposcout",
-      "sourceType": "github",
-      "skillPath": "skills/reposcout/SKILL.md",
-      "computedHash": "8dfaa63fa7b515e9089d99f451901f8d4aa7c9983774600ecbbeac8b3a2233cb"
-    },
     "tdd": {
       "source": "mattpocock/skills",
       "sourceType": "github",

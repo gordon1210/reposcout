@@ -45,6 +45,19 @@ Production modules are capped at cyclomatic complexity 20 and 900 non-blank, non
 Tests retain correctness and formatting checks while opting out of size, complexity, strict
 assertion, and development-only React rules.
 
+## Agent skill
+
+`skills/reposcout` is the canonical distributable skill. `.agents/skills/reposcout` is a
+deterministic repository-local mirror and must not be edited independently. Because the repository
+owns this mirror, `reposcout` must not appear as an externally managed entry in `skills-lock.json`.
+
+```sh
+./scripts/reposcout-skill.sh sync   # refresh the mirror after canonical changes
+./scripts/reposcout-skill.sh check  # validate routing and reject mirror drift
+```
+
+Skill CI runs the check whenever the canonical package, mirror, sync script, or workflow changes.
+
 ## Tests and fixtures
 
 Integration tests live in `tests/` and run the compiled CLI against bounded fixtures.
