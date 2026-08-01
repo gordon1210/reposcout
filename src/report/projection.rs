@@ -1,5 +1,8 @@
 use crate::lang;
-use crate::model::{FindingRecord, FunctionComplexity, LanguageStat, MetricDelta, ScanReport};
+use crate::model::{
+    DuplicateBlock, FindingRecord, FunctionComplexity, LanguageStat, MetricDelta, ScanReport,
+    Summary,
+};
 use std::path::Path;
 
 pub(crate) fn callable_cyclomatic_average(functions: &[FunctionComplexity]) -> Option<f64> {
@@ -24,6 +27,39 @@ pub(crate) fn file_cyclomatic_average(report: &ScanReport, path: &Path) -> Optio
         .complexity
         .as_ref()?;
     callable_cyclomatic_average(&complexity.functions)
+}
+
+pub(crate) fn human_risk_heading(report: &ScanReport) -> String {
+    let version = report
+        .summary
+        .top_risks
+        .iter()
+        .map(|risk| risk.algorithm_version)
+        .find(|version| *version > 0)
+        .or_else(|| {
+            report
+                .analysis_profile
+                .as_ref()?
+                .findings
+                .as_ref()
+                .map(|findings| findings.risk_algorithm_version)
+                .filter(|version| *version > 0)
+        });
+    match version {
+        Some(version) => format!("Top risks · algorithm {version}"),
+        None => "Top risks · algorithm unknown".to_string(),
+    }
+}
+
+pub(crate) fn human_duplicate_projection(summary: &Summary) -> (&'static str, &[DuplicateBlock]) {
+    if summary.assessment.production_duplication.is_some() {
+        (
+            "Top production duplicates",
+            &summary.top_production_duplicates,
+        )
+    } else {
+        ("Top duplicates", &summary.top_duplicates)
+    }
 }
 
 /// Keep human reports source-first while preserving one honest rollup for the

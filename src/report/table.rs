@@ -3,8 +3,8 @@
 
 use crate::model::{ScanDiagnostics, ScanReport};
 use crate::report::projection::{
-    file_cyclomatic_average, finding_location, human_test_signal, metric_delta_display,
-    metric_label, source_language_rollup,
+    file_cyclomatic_average, finding_location, human_duplicate_projection, human_risk_heading,
+    human_test_signal, metric_delta_display, metric_label, source_language_rollup,
 };
 use crate::report::{
     dup_locations, human_bytes, similarity_label, terminal_text, thousands, thousands_u64,
@@ -200,17 +200,7 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
 
     // Top risks
     if !s.top_risks.is_empty() {
-        let _ = writeln!(
-            out,
-            "{}",
-            header(
-                &format!(
-                    "Top risks · algorithm {}",
-                    crate::findings::RISK_ALGORITHM_VERSION
-                ),
-                color
-            )
-        );
+        let _ = writeln!(out, "{}", header(&human_risk_heading(report), color));
         let mut t = new_table(vec![
             "Path", "Score", "SLOC", "Cyclo", "Avg/fn", "Churn", "Reasons",
         ]);
@@ -745,8 +735,9 @@ fn render_duplication(
     );
     let _ = writeln!(out);
 
-    if !summary.top_production_duplicates.is_empty() {
-        let _ = writeln!(out, "{}", header("Top production duplicates", color));
+    let (title, duplicates) = human_duplicate_projection(summary);
+    if !duplicates.is_empty() {
+        let _ = writeln!(out, "{}", header(title, color));
         let mut table = new_table(vec![
             "Lines",
             "Copies",
@@ -754,7 +745,7 @@ fn render_duplication(
             "Removable",
             "Locations",
         ]);
-        for duplicate in &summary.top_production_duplicates {
+        for duplicate in duplicates {
             table.add_row(vec![
                 thousands(duplicate.lines),
                 thousands(duplicate.copies),

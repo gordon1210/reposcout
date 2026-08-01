@@ -210,6 +210,14 @@ Concise defaults are progressive disclosure, not feature reduction. Any detail r
 default projection remains available through an appropriate detailed format, option, or
 configuration path.
 
+### Planned 1.0 compatibility reset
+
+Until the `1.0.0` release, additive defaults and narrowly detected renderer fallbacks keep useful
+pre-1.0 reports and baselines readable. The `1.0.0` release must remove pre-1.0-only fallbacks,
+defaults, and compatibility tests, require stored reports and baselines to be regenerated, and
+document that migration. Compatibility guarantees after that reset start with the stable 1.0
+contract; this is not permission to break post-1.0 reports casually.
+
 ## Recently delivered
 
 ### Change-focused, token-efficient decision reports

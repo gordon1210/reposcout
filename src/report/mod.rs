@@ -309,6 +309,43 @@ pub(crate) fn dup_locations(locations: &[String], copies: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{
+        DuplicateBlock, Duplication, FindingCatalog, FindingProfile, ProductionDuplication,
+        RiskEntry, ScanDiagnostics, ScanProfile, ScanReport, Summary,
+    };
+    use std::path::PathBuf;
+
+    fn report_with_summary(summary: Summary) -> ScanReport {
+        ScanReport {
+            schema_version: crate::model::SCHEMA_VERSION.to_string(),
+            root: PathBuf::from("/repo"),
+            target: PathBuf::from("/repo"),
+            generated_at: "2026-01-01T00:00:00Z".to_string(),
+            encoding: "o200k_base".to_string(),
+            analysis_profile: None,
+            execution: Default::default(),
+            finding_catalog: FindingCatalog::default(),
+            summary,
+            work_scope: None,
+            files: Vec::new(),
+            duplicates: Duplication::default(),
+            directories: Vec::new(),
+            baseline: None,
+            graph: None,
+            context: None,
+            diagnostics: ScanDiagnostics::default(),
+            impact: None,
+            change_summary: None,
+            review: None,
+        }
+    }
+
+    fn human_renderings(report: &ScanReport) -> [String; 2] {
+        [
+            render(report, Format::Table, false, false, false).unwrap(),
+            render(report, Format::Markdown, false, false, false).unwrap(),
+        ]
+    }
 
     #[test]
     fn terminal_text_exposes_controls() {
@@ -334,5 +371,60 @@ mod tests {
     fn only_one_is_labeled_exact() {
         assert_eq!(similarity_label(1.0), "exact");
         assert_eq!(similarity_label(0.9999), "99%");
+    }
+
+    #[test]
+    fn human_reports_fall_back_only_for_legacy_duplicate_projections() {
+        let duplicate = DuplicateBlock {
+            lines: 4,
+            tokens: 12,
+            similarity: 1.0,
+            copies: 2,
+            duplicated_lines: 4,
+            locations: vec!["legacy/a.rs:1-4".to_string(), "legacy/b.rs:1-4".to_string()],
+        };
+        let mut legacy = report_with_summary(Summary {
+            top_duplicates: vec![duplicate.clone()],
+            ..Summary::default()
+        });
+
+        for rendered in human_renderings(&legacy) {
+            assert!(rendered.contains("Top duplicates"));
+            assert!(rendered.contains("legacy/a.rs:1-4"));
+        }
+
+        legacy.summary.assessment.production_duplication = Some(ProductionDuplication {
+            corpus: "production-source".to_string(),
+            complete: true,
+            ..ProductionDuplication::default()
+        });
+        for rendered in human_renderings(&legacy) {
+            assert!(!rendered.contains("Top duplicates"));
+            assert!(!rendered.contains("legacy/a.rs:1-4"));
+        }
+    }
+
+    #[test]
+    fn human_reports_label_the_risk_algorithm_recorded_by_the_report() {
+        let mut report = report_with_summary(Summary {
+            top_risks: vec![RiskEntry {
+                path: "legacy.rs".to_string(),
+                score: 0.75,
+                ..RiskEntry::default()
+            }],
+            ..Summary::default()
+        });
+        report.analysis_profile = Some(ScanProfile {
+            findings: Some(FindingProfile {
+                risk_algorithm_version: 4,
+                ..FindingProfile::default()
+            }),
+            ..ScanProfile::default()
+        });
+
+        for rendered in human_renderings(&report) {
+            assert!(rendered.contains("Top risks · algorithm 4"));
+            assert!(!rendered.contains("Top risks · algorithm 5"));
+        }
     }
 }
