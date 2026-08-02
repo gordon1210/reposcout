@@ -152,8 +152,10 @@ algorithms.
 `summary.duplication` and the top-level `duplicates` block describe the configured health corpus.
 Compact `summary.top_duplicates` removes nested/substantially overlapping rankings, while
 `summary.top_production_duplicates` additionally omits test-only and Rust-inline-test-only
-families. An empty production projection is omitted from serialized output; it is not evidence
-that duplication analysis was disabled.
+families. A retained instance must contain at least `min_dup_lines` contiguous non-test lines, so
+whitespace between adjacent inline tests cannot make a test-only family production-relevant. An
+empty production projection is omitted from serialized output; it is not evidence that
+duplication analysis was disabled.
 
 `summary.assessment.production_duplication` is the explicit production-source coverage record. It
 contains `corpus`, `duplicated_lines`, `analyzed_lines`, `duplicated_pct`, and `complete`, and is

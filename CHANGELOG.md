@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+### Fixed
+
+- Exclude conventional Rust split test modules named `tests.rs` from production-source
+  duplication evidence. Compact production duplicate rankings now also require at least
+  `min_dup_lines` contiguous non-test lines, preventing whitespace between adjacent inline tests
+  from making a test-only family appear production-relevant.
+
 ## [0.1.10] - 2026-08-01
 
 ### Added

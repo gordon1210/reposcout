@@ -454,6 +454,55 @@ mod tests {
 }
 
 #[test]
+fn split_rust_test_modules_do_not_inflate_source_duplication_assessment() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src/first")).unwrap();
+    std::fs::create_dir_all(dir.path().join("src/second")).unwrap();
+    std::fs::write(
+        dir.path().join("reposcout.toml"),
+        "min_dup_tokens = 8\nmin_dup_lines = 3\nnear_dup_min_similarity = 1.0\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("src/lib.rs"),
+        "pub fn production(value: usize) -> usize { value.saturating_add(1) }\n",
+    )
+    .unwrap();
+    let tests = r"
+use super::*;
+
+fn fixture_values() -> Vec<i32> {
+    vec![2, 3, 5, 7, 11, 13]
+}
+
+#[test]
+fn accepts_known_values() {
+    let values = fixture_values();
+    assert_eq!(values.iter().sum::<i32>(), 41);
+    assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
+}
+";
+    std::fs::write(dir.path().join("src/first/tests.rs"), tests).unwrap();
+    std::fs::write(dir.path().join("src/second/tests.rs"), tests).unwrap();
+
+    let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
+    assert!(
+        report["summary"]["duplication"]["duplicated_pct"]
+            .as_f64()
+            .unwrap()
+            > 0.0,
+        "fixture must retain raw duplication evidence"
+    );
+    let production = &report["summary"]["assessment"]["production_duplication"];
+    assert_eq!(production["duplicated_lines"], 0);
+    assert_eq!(production["duplicated_pct"], 0.0);
+    assert!(
+        report["summary"].get("top_production_duplicates").is_none(),
+        "split test modules must not enter the production projection"
+    );
+}
+
+#[test]
 fn tiny_single_file_scan_is_not_labeled_high_risk() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("tiny.rs");
