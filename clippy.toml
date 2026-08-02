@@ -1,0 +1,12 @@
+# Keep production code compact enough to review locally and load selectively
+# into an agent context. Test code follows the same structural thresholds, but
+# may use assertion-oriented failure helpers.
+too-many-lines-threshold = 100
+too-many-arguments-threshold = 7
+max-fn-params-bools = 2
+excessive-nesting-threshold = 6
+
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-unwrap-in-tests = true
+allow-unwrap-types = ["std::fmt::Result"]
