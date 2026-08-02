@@ -6,6 +6,11 @@ use crate::dup::DuplicationFormatScope;
 use anyhow::{Context, Result};
 use std::fmt::Write as _;
 
+/// Render inspectable configuration as a human table or JSON.
+///
+/// # Errors
+///
+/// Returns an error when JSON serialization fails.
 pub fn render(
     inspection: &ConfigInspection,
     format: ConfigOutputFormat,
@@ -18,6 +23,10 @@ pub fn render(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "configuration inspection exhaustively renders provenance and every file-configurable field as one stable diagnostic contract"
+)]
 fn render_table(inspection: &ConfigInspection) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "RepoScout configuration");

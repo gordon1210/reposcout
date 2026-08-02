@@ -133,6 +133,7 @@ pub enum HealthInclude {
 }
 
 impl HealthInclude {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Html => "html",
@@ -147,6 +148,7 @@ impl HealthInclude {
         }
     }
 
+    #[must_use]
     pub fn language_name(self) -> &'static str {
         match self {
             Self::Html => "HTML",
@@ -178,6 +180,7 @@ pub struct LangInfo {
 }
 
 impl LangInfo {
+    #[must_use]
     pub fn is_first_class(&self) -> bool {
         self.first_class.is_some()
     }
@@ -186,6 +189,7 @@ impl LangInfo {
     /// complexity. Prose, data, markup and style languages (Markdown, JSON,
     /// YAML, TOML, HTML, CSS, XML, …) return `false` so we don't compute
     /// meaningless cyclomatic/Halstead numbers over non-code text.
+    #[must_use]
     pub fn is_code(&self) -> bool {
         self.first_class.is_some()
             || matches!(
@@ -207,6 +211,7 @@ impl LangInfo {
 
     /// Whether this format belongs to the concise, source-first health corpus.
     /// Build recipes participate even though they do not receive complexity.
+    #[must_use]
     pub fn is_source(&self) -> bool {
         is_source_name(self.name)
     }
@@ -215,12 +220,14 @@ impl LangInfo {
 /// Classify a serialized language name without requiring a representative
 /// path. Reporters use this to present source rows and one compact content
 /// rollup from the same policy as the analyzers.
+#[must_use]
 pub fn is_source_name(name: &str) -> bool {
     SOURCE_LANGUAGE_NAMES.contains(&name)
 }
 
 /// Decide whether a recognized format enters health analysis.
 /// Inventory metrics deliberately do not use this policy.
+#[must_use]
 pub fn included_in_health(info: &LangInfo, scope: HealthScope, includes: &[HealthInclude]) -> bool {
     scope == HealthScope::All
         || info.is_source()
@@ -278,7 +285,84 @@ const DOCKERFILE: LangInfo = lang!("Dockerfile", None, ["#"], []);
 const MAKEFILE: LangInfo = lang!("Makefile", None, ["#"], []);
 const TEXT: LangInfo = lang!("Text", None, [], []);
 
+const EXTENSION_LANGUAGES: &[(&str, &LangInfo)] = &[
+    ("bash", &SHELL),
+    ("c", &C),
+    ("c++", &CPP),
+    ("cc", &CPP),
+    ("cjs", &JAVASCRIPT),
+    ("cpp", &CPP),
+    ("cs", &CSHARP),
+    ("css", &CSS),
+    ("ctp", &PHP),
+    ("cts", &TYPESCRIPT),
+    ("cxx", &CPP),
+    ("engine", &PHP),
+    ("go", &GO),
+    ("h", &CHEADER),
+    ("hh", &CHEADER),
+    ("hpp", &CHEADER),
+    ("hs", &HASKELL),
+    ("htm", &HTML),
+    ("html", &HTML),
+    ("hxx", &CHEADER),
+    ("inc", &PHP),
+    ("install", &PHP),
+    ("java", &JAVA),
+    ("js", &JAVASCRIPT),
+    ("json", &JSON),
+    ("jsonc", &JSON),
+    ("jsx", &JAVASCRIPT),
+    ("kt", &KOTLIN),
+    ("kts", &KOTLIN),
+    ("lua", &LUA),
+    ("markdown", &MARKDOWN),
+    ("md", &MARKDOWN),
+    ("mjs", &JAVASCRIPT),
+    ("module", &PHP),
+    ("mts", &TYPESCRIPT),
+    ("php", &PHP),
+    ("php3", &PHP),
+    ("php4", &PHP),
+    ("php5", &PHP),
+    ("php7", &PHP),
+    ("php8", &PHP),
+    ("phps", &PHP),
+    ("phpt", &PHP),
+    ("phtml", &PHP),
+    ("profile", &PHP),
+    ("py", &PYTHON),
+    ("pyi", &PYTHON),
+    ("pyw", &PYTHON),
+    ("rb", &RUBY),
+    ("rs", &RUST),
+    ("sass", &SCSS),
+    ("sc", &SCALA),
+    ("scala", &SCALA),
+    ("scss", &SCSS),
+    ("sh", &SHELL),
+    ("sql", &SQL),
+    ("swift", &SWIFT),
+    ("theme", &PHP),
+    ("toml", &TOML_L),
+    ("ts", &TYPESCRIPT),
+    ("tsx", &TSX),
+    ("txt", &TEXT),
+    ("xml", &XML),
+    ("yaml", &YAML),
+    ("yml", &YAML),
+    ("zsh", &SHELL),
+];
+
+fn detect_extension(extension: &str) -> Option<&'static LangInfo> {
+    let index = EXTENSION_LANGUAGES
+        .binary_search_by(|(candidate, _)| candidate.cmp(&extension))
+        .ok()?;
+    Some(EXTENSION_LANGUAGES[index].1)
+}
+
 /// Detect a language from a file path (by extension, then by file name).
+#[must_use]
 pub fn detect(path: &Path) -> Option<&'static LangInfo> {
     if path
         .file_name()
@@ -288,42 +372,8 @@ pub fn detect(path: &Path) -> Option<&'static LangInfo> {
         return Some(&DOCKERFILE);
     }
 
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        let info = match ext.to_ascii_lowercase().as_str() {
-            "rs" => &RUST,
-            "py" | "pyi" | "pyw" => &PYTHON,
-            "js" | "mjs" | "cjs" | "jsx" => &JAVASCRIPT,
-            "ts" | "mts" | "cts" => &TYPESCRIPT,
-            "tsx" => &TSX,
-            "go" => &GO,
-            "c" => &C,
-            "h" => &CHEADER,
-            "cc" | "cpp" | "cxx" | "c++" => &CPP,
-            "hh" | "hpp" | "hxx" => &CHEADER,
-            "cs" => &CSHARP,
-            "java" => &JAVA,
-            "kt" | "kts" => &KOTLIN,
-            "swift" => &SWIFT,
-            "rb" => &RUBY,
-            "php" | "php3" | "php4" | "php5" | "php7" | "php8" | "phps" | "phtml" | "phpt"
-            | "ctp" | "inc" | "module" | "install" | "theme" | "profile" | "engine" => &PHP,
-            "sh" | "bash" | "zsh" => &SHELL,
-            "scala" | "sc" => &SCALA,
-            "hs" => &HASKELL,
-            "lua" => &LUA,
-            "sql" => &SQL,
-            "html" | "htm" => &HTML,
-            "css" => &CSS,
-            "scss" | "sass" => &SCSS,
-            "json" | "jsonc" => &JSON,
-            "yaml" | "yml" => &YAML,
-            "toml" => &TOML_L,
-            "md" | "markdown" => &MARKDOWN,
-            "xml" => &XML,
-            "txt" => &TEXT,
-            _ => return None,
-        };
-        return Some(info);
+    if let Some(extension) = path.extension().and_then(|extension| extension.to_str()) {
+        return detect_extension(&extension.to_ascii_lowercase());
     }
 
     match path.file_name().and_then(|n| n.to_str()) {
@@ -337,6 +387,16 @@ pub fn detect(path: &Path) -> Option<&'static LangInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_language_table_is_sorted_and_unique() {
+        assert!(
+            EXTENSION_LANGUAGES
+                .windows(2)
+                .all(|pair| pair[0].0 < pair[1].0),
+            "extension lookup requires a strictly sorted table"
+        );
+    }
 
     #[test]
     fn source_and_optional_health_formats_partition_recognized_formats() {

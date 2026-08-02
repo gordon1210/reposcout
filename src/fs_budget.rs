@@ -8,6 +8,8 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Instant;
 
+use crate::numeric::{u64_to_usize, usize_to_u64};
+
 /// Default maximum size for a single ignore rule file.
 pub const DEFAULT_MAX_IGNORE_FILE_BYTES: u64 = 1024 * 1024;
 /// Default maximum number of non-empty pattern lines per ignore file.
@@ -27,6 +29,7 @@ pub struct ReadBudget {
 }
 
 impl ReadBudget {
+    #[must_use]
     pub fn new(
         max_file_bytes: u64,
         max_total_bytes: u64,
@@ -41,10 +44,12 @@ impl ReadBudget {
         }
     }
 
+    #[must_use]
     pub fn from_limits(max_file_bytes: u64, max_total_bytes: u64, max_files: usize) -> Self {
         Self::new(max_file_bytes, max_total_bytes, max_files, None)
     }
 
+    #[must_use]
     pub fn exhausted(&self) -> bool {
         self.remaining_files == 0
             || self.remaining_total_bytes == 0
@@ -89,6 +94,7 @@ impl Default for IgnoreLimits {
 }
 
 /// True only for non-symlink regular files.
+#[must_use]
 pub fn is_regular_file(path: &Path) -> bool {
     match fs::symlink_metadata(path) {
         Ok(metadata) => metadata.is_file() && !metadata.file_type().is_symlink(),
@@ -108,9 +114,8 @@ pub fn read_text(path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
         return ReadOutcome::BudgetExceeded;
     }
 
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(_) => return ReadOutcome::Unreadable,
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return ReadOutcome::Unreadable;
     };
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return ReadOutcome::NotRegularFile;
@@ -128,7 +133,7 @@ pub fn read_text(path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
         Ok(bytes) => {
             // Charge the budget for every successful byte read, including invalid
             // UTF-8. Otherwise hostile non-UTF-8 blobs can bypass total/file caps.
-            let len = bytes.len() as u64;
+            let len = usize_to_u64(bytes.len());
             budget.consume(len);
             match String::from_utf8(bytes) {
                 Ok(content) => ReadOutcome::Content(content),
@@ -141,16 +146,21 @@ pub fn read_text(path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
 }
 
 /// Read a regular file with a single-file size cap (no shared total budget).
+#[must_use]
 pub fn read_text_limited(path: &Path, max_file_bytes: u64) -> ReadOutcome {
     let mut budget = ReadBudget::from_limits(max_file_bytes, max_file_bytes, 1);
     read_text(path, &mut budget)
 }
 
 /// Read raw bytes from a regular file with a size ceiling.
+///
+/// # Errors
+///
+/// Returns a [`ReadOutcome`] error when the path is unreadable, is not a
+/// regular non-symlink file, or exceeds `max_file_bytes`.
 pub fn read_bytes_limited(path: &Path, max_file_bytes: u64) -> Result<Vec<u8>, ReadOutcome> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(_) => return Err(ReadOutcome::Unreadable),
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return Err(ReadOutcome::Unreadable);
     };
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(ReadOutcome::NotRegularFile);
@@ -163,13 +173,18 @@ pub fn read_bytes_limited(path: &Path, max_file_bytes: u64) -> Result<Vec<u8>, R
 }
 
 /// Load an ignore file, enforce size/line limits, and reject symlinks.
+///
+/// # Errors
+///
+/// Returns a [`ReadOutcome`] error when the file cannot be read within the
+/// supplied byte, line-count, or line-length limits.
 pub fn read_ignore_file(path: &Path, limits: IgnoreLimits) -> Result<String, ReadOutcome> {
-    let content = match read_text_limited(path, limits.max_file_bytes) {
-        ReadOutcome::Content(content) => content,
-        other => return Err(other),
+    let outcome = read_text_limited(path, limits.max_file_bytes);
+    let ReadOutcome::Content(content) = outcome else {
+        return Err(outcome);
     };
 
-    let mut kept = String::with_capacity(content.len().min(limits.max_file_bytes as usize));
+    let mut kept = String::with_capacity(content.len().min(u64_to_usize(limits.max_file_bytes)));
     let mut patterns = 0usize;
     for line in content.lines() {
         let trimmed = line.trim();
@@ -177,7 +192,7 @@ pub fn read_ignore_file(path: &Path, limits: IgnoreLimits) -> Result<String, Rea
             continue;
         }
         if trimmed.len() > limits.max_line_bytes {
-            return Err(ReadOutcome::Oversized(trimmed.len() as u64));
+            return Err(ReadOutcome::Oversized(usize_to_u64(trimmed.len())));
         }
         patterns = patterns.saturating_add(1);
         if patterns > limits.max_lines {
@@ -237,7 +252,7 @@ fn open_nofollow(path: &Path) -> Result<File, ReadOutcome> {
         {
             Ok(file) => {
                 // Defend against racey replacement: require a regular file handle.
-                if file.metadata().map(|meta| meta.is_file()).unwrap_or(false) {
+                if file.metadata().is_ok_and(|meta| meta.is_file()) {
                     Ok(file)
                 } else {
                     Err(ReadOutcome::NotRegularFile)
@@ -268,6 +283,11 @@ fn open_nofollow(path: &Path) -> Result<File, ReadOutcome> {
 /// Rejects an existing symlink target and uses owner-only permissions where the
 /// platform supports them. Permission failures are propagated so callers cannot
 /// silently leave a world-readable cache artifact behind.
+///
+/// # Errors
+///
+/// Returns an error when the destination has no parent, an existing target is
+/// a symlink, permissions cannot be secured, or the atomic write/rename fails.
 pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let Some(parent) = path.parent() else {
         return Err(std::io::Error::new(
@@ -343,6 +363,7 @@ pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write as _;
     use std::io::Write;
 
     #[test]
@@ -396,7 +417,7 @@ mod tests {
         let path = dir.path().join(".gitignore");
         let mut body = String::new();
         for index in 0..10 {
-            body.push_str(&format!("pattern-{index}\n"));
+            let _ = writeln!(body, "pattern-{index}");
         }
         fs::write(&path, body).unwrap();
         let limits = IgnoreLimits {

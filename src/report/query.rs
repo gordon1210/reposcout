@@ -5,7 +5,14 @@ use crate::cli::ConfigOutputFormat;
 use crate::model::{CapabilitiesReport, SymbolQueryReport};
 use anyhow::{Result, anyhow};
 use owo_colors::OwoColorize;
+use std::fmt::Write as _;
 
+/// Render a symbol-query report.
+///
+/// # Errors
+///
+/// Returns an error when the requested format is unsupported or serialization
+/// fails.
 pub fn render(
     report: &SymbolQueryReport,
     format: Format,
@@ -23,6 +30,11 @@ pub fn render(
     }
 }
 
+/// Render capability discovery as a human table or JSON.
+///
+/// # Errors
+///
+/// Returns an error when JSON serialization fails.
 pub fn render_capabilities(
     report: &CapabilitiesReport,
     format: ConfigOutputFormat,
@@ -32,72 +44,70 @@ pub fn render_capabilities(
         ConfigOutputFormat::Json => Ok(super::json_string(report, pretty_json)?),
         ConfigOutputFormat::Table => {
             let mut out = format!("RepoScout {} capabilities\n", report.version);
-            out.push_str(&format!(
-                "Default: {} via {}\n",
+            let _ = writeln!(
+                out,
+                "Default: {} via {}",
                 report.default_operation, report.default_invocation
-            ));
-            out.push_str(&format!("Commands: {}\n", report.commands.join(", ")));
-            out.push_str(&format!("Formats: {}\n", report.output_formats.join(", ")));
-            out.push_str(&format!(
-                "Symbol query formats: {}\n",
+            );
+            let _ = writeln!(out, "Commands: {}", report.commands.join(", "));
+            let _ = writeln!(out, "Formats: {}", report.output_formats.join(", "));
+            let _ = writeln!(
+                out,
+                "Symbol query formats: {}",
                 report.symbol_query_formats.join(", ")
-            ));
-            out.push_str(&format!(
-                "Symbol kinds: {}\n",
-                report.symbol_kinds.join(", ")
-            ));
-            out.push_str(&format!(
-                "Profiles: {}\n",
-                report.execution_profiles.join(", ")
-            ));
-            out.push_str(&format!(
-                "Daemon profiles: {}\n",
+            );
+            let _ = writeln!(out, "Symbol kinds: {}", report.symbol_kinds.join(", "));
+            let _ = writeln!(out, "Profiles: {}", report.execution_profiles.join(", "));
+            let _ = writeln!(
+                out,
+                "Daemon profiles: {}",
                 report.daemon_profiles.join(", ")
-            ));
-            out.push_str(&format!(
-                "First-class languages: {}\n",
+            );
+            let _ = writeln!(
+                out,
+                "First-class languages: {}",
                 report.first_class_languages.join(", ")
-            ));
-            out.push_str(&format!(
-                "Default health corpus: {}\n",
+            );
+            let _ = writeln!(
+                out,
+                "Default health corpus: {}",
                 report.default_health_languages.join(", ")
-            ));
-            out.push_str(&format!(
-                "Opt-in health formats: {}\n",
+            );
+            let _ = writeln!(
+                out,
+                "Opt-in health formats: {}",
                 report.optional_health_formats.join(", ")
-            ));
-            out.push_str(&format!(
-                "Health scopes: {}\n",
-                report.health_scopes.join(", ")
-            ));
+            );
+            let _ = writeln!(out, "Health scopes: {}", report.health_scopes.join(", "));
             if !report.health_exclude_flag.is_empty() {
-                out.push_str(&format!(
-                    "Health path exclusions: {}\n",
+                let _ = writeln!(
+                    out,
+                    "Health path exclusions: {}",
                     report.health_exclude_flag
-                ));
+                );
             }
-            out.push_str(&format!(
-                "Machine interfaces: {}\n",
+            let _ = writeln!(
+                out,
+                "Machine interfaces: {}",
                 report.machine_interfaces.join(", ")
-            ));
-            out.push_str(&format!(
-                "Error formats: {}\n",
-                report.error_formats.join(", ")
-            ));
-            out.push_str(&format!(
-                "Change summary: {} (formats: {}; paths <= {}, gaps <= {}, validations <= {})\n",
+            );
+            let _ = writeln!(out, "Error formats: {}", report.error_formats.join(", "));
+            let _ = writeln!(
+                out,
+                "Change summary: {} (formats: {}; paths <= {}, gaps <= {}, validations <= {})",
                 report.change_summary.flag,
                 report.change_summary.formats.join(", "),
                 report.change_summary.max_path_entries,
                 report.change_summary.max_gap_entries,
                 report.change_summary.max_validations
-            ));
-            out.push_str(&format!(
-                "Work scope: strategy {} (paths <= {}, components <= {})\n",
+            );
+            let _ = writeln!(
+                out,
+                "Work scope: strategy {} (paths <= {}, components <= {})",
                 report.work_scope.strategy_version,
                 report.work_scope.max_path_entries,
                 report.work_scope.max_components
-            ));
+            );
             Ok(out)
         }
     }
@@ -113,22 +123,23 @@ fn table(report: &SymbolQueryReport, color: bool) -> String {
         if report.truncated { " (truncated)" } else { "" }
     );
     if color {
-        out.push_str(&format!("{}\n", title.bold().cyan()));
+        let _ = writeln!(out, "{}", title.bold().cyan());
     } else {
-        out.push_str(&format!("{title}\n"));
+        let _ = writeln!(out, "{title}");
     }
     for item in &report.matches {
         let location = format!("{}:{}", item.path.display(), item.line);
-        out.push_str(&format!(
-            "{}  {:<10} {:<10} {}{}\n",
+        let _ = writeln!(
+            out,
+            "{}  {:<10} {:<10} {}{}",
             terminal_text(&location),
             terminal_text(&item.language),
             terminal_text(&item.kind),
             terminal_text(&item.name),
             if item.exported { "  [exported]" } else { "" }
-        ));
+        );
         if !item.signature.is_empty() {
-            out.push_str(&format!("  {}\n", terminal_text(&item.signature)));
+            let _ = writeln!(out, "  {}", terminal_text(&item.signature));
         }
     }
     out
@@ -150,14 +161,15 @@ fn markdown(report: &SymbolQueryReport) -> String {
     out.push_str("|---|---|---|---|---|\n");
     for item in &report.matches {
         let location = format!("{}:{}", item.path.display(), item.line);
-        out.push_str(&format!(
-            "| {} | {} | {} | {} | {} |\n",
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {} | {} |",
             markdown_table_code_span(&location),
             markdown_table_text(&item.language),
             markdown_table_text(&item.kind),
             markdown_table_code_span(&item.name),
             item.exported
-        ));
+        );
     }
     out
 }

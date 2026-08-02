@@ -6,6 +6,7 @@ use crate::lang::FirstClass;
 use tree_sitter::{Language, Parser, Tree};
 
 /// Return the tree-sitter `Language` for a first-class language.
+#[must_use]
 pub fn language(fc: FirstClass) -> Language {
     match fc {
         FirstClass::Rust => tree_sitter_rust::LANGUAGE.into(),
@@ -20,6 +21,7 @@ pub fn language(fc: FirstClass) -> Language {
 
 /// Parse `source` into a tree-sitter `Tree`, or `None` if the language could
 /// not be configured or parsing failed.
+#[must_use]
 pub fn parse(fc: FirstClass, source: &str) -> Option<Tree> {
     let mut parser = Parser::new();
     parser.set_language(&language(fc)).ok()?;

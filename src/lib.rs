@@ -14,6 +14,7 @@ pub mod graph;
 pub mod lang;
 pub mod metrics;
 pub mod model;
+mod numeric;
 pub mod parse;
 mod php;
 pub mod query;

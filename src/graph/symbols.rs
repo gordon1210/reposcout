@@ -72,7 +72,7 @@ struct SourceContext {
 }
 
 impl Collector {
-    pub fn source_facts(
+    pub(super) fn source_facts(
         language: FirstClass,
         path: &str,
         content: &str,
@@ -86,34 +86,44 @@ impl Collector {
         }
     }
 
-    pub fn add_facts(&mut self, facts: SourceFacts) {
+    pub(super) fn add_facts(&mut self, facts: SourceFacts) {
         self.declarations.extend(facts.declarations);
         self.relations.extend(facts.relations);
     }
 
-    pub fn add_source(&mut self, language: FirstClass, path: &str, content: &str, root: Node<'_>) {
-        let context = SourceContext::new(language, path, content, root);
+    pub(super) fn add_source(
+        &mut self,
+        language: FirstClass,
+        path: &str,
+        content: &str,
+        root: Node<'_>,
+    ) {
+        let source_context = SourceContext::new(language, path, content, root);
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
             match language {
-                FirstClass::Php => self.extract_php(node, content, &context),
-                FirstClass::JavaScript => self.extract_javascript(node, content, &context),
+                FirstClass::Php => self.extract_php(node, content, &source_context),
+                FirstClass::JavaScript => self.extract_javascript(node, content, &source_context),
                 FirstClass::TypeScript | FirstClass::Tsx => {
-                    self.extract_typescript(node, content, &context);
+                    self.extract_typescript(node, content, &source_context);
                 }
-                FirstClass::Python => self.extract_python(node, content, &context),
-                FirstClass::Rust => self.extract_rust(node, content, &context),
-                FirstClass::Go => self.extract_go(node, content, &context),
+                FirstClass::Python => self.extract_python(node, content, &source_context),
+                FirstClass::Rust => self.extract_rust(node, content, &source_context),
+                FirstClass::Go => self.extract_go(node, content, &source_context),
             }
             for index in (0..node.named_child_count()).rev() {
-                if let Some(child) = node.named_child(index as u32) {
+                if let Some(child) = node.named_child(crate::numeric::usize_to_u32(index)) {
                     stack.push(child);
                 }
             }
         }
     }
 
-    pub fn finish(self) -> SymbolTopology {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "symbol finalization performs one deterministic declaration-index, relation-resolution, and fan-count projection pass"
+    )]
+    pub(super) fn finish(self) -> SymbolTopology {
         let mut qualified = HashMap::<(&str, String), Vec<usize>>::new();
         let mut simple = HashMap::<(&str, String), Vec<usize>>::new();
         let mut by_id = HashMap::<String, usize>::new();
@@ -137,7 +147,7 @@ impl Collector {
 
         let mut unresolved_relations = 0usize;
         let mut unresolved_by_path = HashMap::<String, usize>::new();
-        let mut resolved = BTreeMap::<(String, String, String), String>::new();
+        let mut resolved_edges = BTreeMap::<(String, String, String), String>::new();
         for relation in self.relations {
             let source = match &relation.source {
                 RelationSource::Declaration(id) => {
@@ -168,7 +178,7 @@ impl Collector {
             }
             let source_id = self.declarations[source].id.clone();
             let target_id = self.declarations[target].id.clone();
-            resolved
+            resolved_edges
                 .entry((source_id, target_id, relation.relation))
                 .and_modify(|current| {
                     if resolver_rank(resolver) < resolver_rank(current) {
@@ -181,7 +191,7 @@ impl Collector {
         let mut fan_in = HashMap::<String, usize>::new();
         let mut fan_out = HashMap::<String, usize>::new();
         let mut retained = HashSet::<String>::new();
-        let edges = resolved
+        let edges = resolved_edges
             .into_iter()
             .map(|((source, target, relation), resolver)| {
                 *fan_out.entry(source.clone()).or_default() += 1;
@@ -232,23 +242,26 @@ impl Collector {
         &mut self,
         node: Node<'_>,
         content: &str,
-        context: &SourceContext,
+        source_context: &SourceContext,
         kind: &str,
     ) -> Option<String> {
         let name = node_text(node.child_by_field_name("name")?, content)?;
-        let qualified_name = qualify_declaration(&name, context);
+        let qualified_name = qualify_declaration(&name, source_context);
         let line = node.start_position().row + 1;
-        let id = format!("{}#L{}:{}:{}", context.path, line, kind, qualified_name);
+        let id = format!(
+            "{}#L{}:{}:{}",
+            source_context.path, line, kind, qualified_name
+        );
         self.declarations.push(Declaration {
             id: id.clone(),
             name,
             qualified_name,
             kind: kind.to_string(),
-            path: context.path.clone(),
-            language: context.language.clone(),
-            family: context.family.to_string(),
+            path: source_context.path.clone(),
+            language: source_context.language.clone(),
+            family: source_context.family.to_string(),
             line,
-            scope: context.scope.clone(),
+            scope: source_context.scope.clone(),
         });
         Some(id)
     }
@@ -258,7 +271,7 @@ impl Collector {
         source: RelationSource,
         target: String,
         relation: &str,
-        context: &SourceContext,
+        source_context: &SourceContext,
     ) {
         if clean_reference(&target).is_empty() {
             return;
@@ -267,15 +280,33 @@ impl Collector {
             source,
             target,
             relation: relation.to_string(),
-            path: context.path.clone(),
-            family: context.family.to_string(),
-            scope: context.scope.clone(),
-            namespace: context.namespace.clone(),
-            aliases: context.aliases.clone(),
+            path: source_context.path.clone(),
+            family: source_context.family.to_string(),
+            scope: source_context.scope.clone(),
+            namespace: source_context.namespace.clone(),
+            aliases: source_context.aliases.clone(),
         });
     }
 
-    fn extract_php(&mut self, node: Node<'_>, content: &str, context: &SourceContext) {
+    fn add_named_relations(
+        &mut self,
+        declaration_id: &str,
+        node: Node<'_>,
+        content: &str,
+        relation: &'static str,
+        source_context: &SourceContext,
+    ) {
+        for target in named_reference_children(node, content) {
+            self.add_relation(
+                RelationSource::Declaration(declaration_id.to_string()),
+                target,
+                relation,
+                source_context,
+            );
+        }
+    }
+
+    fn extract_php(&mut self, node: Node<'_>, content: &str, source_context: &SourceContext) {
         let (kind, base_relation, interface_relation) = match node.kind() {
             "class_declaration" => ("class", Some("extends"), Some("implements")),
             "interface_declaration" => ("interface", Some("extends"), None),
@@ -283,7 +314,7 @@ impl Collector {
             "enum_declaration" => ("enum", None, Some("implements")),
             _ => return,
         };
-        let Some(id) = self.add_declaration(node, content, context, kind) else {
+        let Some(id) = self.add_declaration(node, content, source_context, kind) else {
             return;
         };
         let mut cursor = node.walk();
@@ -299,18 +330,23 @@ impl Collector {
                         RelationSource::Declaration(id.clone()),
                         target,
                         relation,
-                        context,
+                        source_context,
                     );
                 }
             }
         }
     }
 
-    fn extract_javascript(&mut self, node: Node<'_>, content: &str, context: &SourceContext) {
+    fn extract_javascript(
+        &mut self,
+        node: Node<'_>,
+        content: &str,
+        source_context: &SourceContext,
+    ) {
         if node.kind() != "class_declaration" {
             return;
         }
-        let Some(id) = self.add_declaration(node, content, context, "class") else {
+        let Some(id) = self.add_declaration(node, content, source_context, "class") else {
             return;
         };
         if let Some(heritage) = child_of_kind(node, "class_heritage") {
@@ -319,19 +355,24 @@ impl Collector {
                     RelationSource::Declaration(id.clone()),
                     target,
                     "extends",
-                    context,
+                    source_context,
                 );
             }
         }
     }
 
-    fn extract_typescript(&mut self, node: Node<'_>, content: &str, context: &SourceContext) {
+    fn extract_typescript(
+        &mut self,
+        node: Node<'_>,
+        content: &str,
+        source_context: &SourceContext,
+    ) {
         let kind = match node.kind() {
             "class_declaration" => "class",
             "interface_declaration" => "interface",
             _ => return,
         };
-        let Some(id) = self.add_declaration(node, content, context, kind) else {
+        let Some(id) = self.add_declaration(node, content, source_context, kind) else {
             return;
         };
         let mut cursor = node.walk();
@@ -340,43 +381,29 @@ impl Collector {
                 "class_heritage" => {
                     let mut heritage_cursor = child.walk();
                     for clause in child.named_children(&mut heritage_cursor) {
-                        let relation = match clause.kind() {
+                        let Some(relation) = (match clause.kind() {
                             "extends_clause" => Some("extends"),
                             "implements_clause" => Some("implements"),
                             _ => None,
+                        }) else {
+                            continue;
                         };
-                        if let Some(relation) = relation {
-                            for target in named_reference_children(clause, content) {
-                                self.add_relation(
-                                    RelationSource::Declaration(id.clone()),
-                                    target,
-                                    relation,
-                                    context,
-                                );
-                            }
-                        }
+                        self.add_named_relations(&id, clause, content, relation, source_context);
                     }
                 }
                 "extends_type_clause" => {
-                    for target in named_reference_children(child, content) {
-                        self.add_relation(
-                            RelationSource::Declaration(id.clone()),
-                            target,
-                            "extends",
-                            context,
-                        );
-                    }
+                    self.add_named_relations(&id, child, content, "extends", source_context);
                 }
                 _ => {}
             }
         }
     }
 
-    fn extract_python(&mut self, node: Node<'_>, content: &str, context: &SourceContext) {
+    fn extract_python(&mut self, node: Node<'_>, content: &str, source_context: &SourceContext) {
         if node.kind() != "class_definition" {
             return;
         }
-        let Some(id) = self.add_declaration(node, content, context, "class") else {
+        let Some(id) = self.add_declaration(node, content, source_context, "class") else {
             return;
         };
         let Some(superclasses) = node.child_by_field_name("superclasses") else {
@@ -387,12 +414,12 @@ impl Collector {
                 RelationSource::Declaration(id.clone()),
                 target,
                 "extends",
-                context,
+                source_context,
             );
         }
     }
 
-    fn extract_rust(&mut self, node: Node<'_>, content: &str, context: &SourceContext) {
+    fn extract_rust(&mut self, node: Node<'_>, content: &str, source_context: &SourceContext) {
         let kind = match node.kind() {
             "struct_item" => Some("struct"),
             "enum_item" => Some("enum"),
@@ -401,7 +428,7 @@ impl Collector {
             _ => None,
         };
         if let Some(kind) = kind {
-            let Some(id) = self.add_declaration(node, content, context, kind) else {
+            let Some(id) = self.add_declaration(node, content, source_context, kind) else {
                 return;
             };
             if node.kind() == "trait_item"
@@ -412,7 +439,7 @@ impl Collector {
                         RelationSource::Declaration(id.clone()),
                         target,
                         "extends",
-                        context,
+                        source_context,
                     );
                 }
             }
@@ -435,11 +462,11 @@ impl Collector {
             RelationSource::Reference(source),
             target,
             "implements",
-            context,
+            source_context,
         );
     }
 
-    fn extract_go(&mut self, node: Node<'_>, content: &str, context: &SourceContext) {
+    fn extract_go(&mut self, node: Node<'_>, content: &str, source_context: &SourceContext) {
         if node.kind() != "type_spec" {
             return;
         }
@@ -451,7 +478,7 @@ impl Collector {
             "struct_type" => "struct",
             _ => "type",
         };
-        let Some(id) = self.add_declaration(node, content, context, kind) else {
+        let Some(id) = self.add_declaration(node, content, source_context, kind) else {
             return;
         };
         let mut stack = vec![type_node];
@@ -472,12 +499,12 @@ impl Collector {
                     RelationSource::Declaration(id.clone()),
                     target,
                     "embeds",
-                    context,
+                    source_context,
                 );
                 continue;
             }
             for index in (0..candidate.named_child_count()).rev() {
-                if let Some(child) = candidate.named_child(index as u32) {
+                if let Some(child) = candidate.named_child(crate::numeric::usize_to_u32(index)) {
                     stack.push(child);
                 }
             }
@@ -610,7 +637,7 @@ fn source_aliases(language: FirstClass, root: Node<'_>, content: &str) -> HashMa
             );
         }
         for index in (0..node.named_child_count()).rev() {
-            if let Some(child) = node.named_child(index as u32) {
+            if let Some(child) = node.named_child(crate::numeric::usize_to_u32(index)) {
                 stack.push(child);
             }
         }
@@ -629,7 +656,7 @@ fn php_namespace(root: Node<'_>, content: &str) -> String {
             return clean_reference(&name);
         }
         for index in (0..node.named_child_count()).rev() {
-            if let Some(child) = node.named_child(index as u32) {
+            if let Some(child) = node.named_child(crate::numeric::usize_to_u32(index)) {
                 stack.push(child);
             }
         }
@@ -637,14 +664,14 @@ fn php_namespace(root: Node<'_>, content: &str) -> String {
     String::new()
 }
 
-fn qualify_declaration(name: &str, context: &SourceContext) -> String {
-    if !context.namespace.is_empty() {
-        return join_qualified(context.family, &context.namespace, name);
+fn qualify_declaration(name: &str, source_context: &SourceContext) -> String {
+    if !source_context.namespace.is_empty() {
+        return join_qualified(source_context.family, &source_context.namespace, name);
     }
-    match context.family {
-        "python" => join_qualified("python", &python_module(&context.path), name),
-        "rust" => join_qualified("rust", &context.scope.replace('/', "::"), name),
-        "go" => join_qualified("go", &context.scope, name),
+    match source_context.family {
+        "python" => join_qualified("python", &python_module(&source_context.path), name),
+        "rust" => join_qualified("rust", &source_context.scope.replace('/', "::"), name),
+        "go" => join_qualified("go", &source_context.scope, name),
         _ => name.to_string(),
     }
 }
@@ -678,12 +705,10 @@ fn named_reference_children(node: Node<'_>, content: &str) -> Vec<String> {
             if let Some(value) = node_text(child, content) {
                 references.insert(value);
             }
-        } else if matches!(
+        } else if !matches!(
             child.kind(),
             "type_arguments" | "type_parameters" | "keyword_argument" | "comment"
-        ) {
-            continue;
-        } else if matches!(
+        ) && matches!(
             child.kind(),
             "argument_list"
                 | "base_clause"

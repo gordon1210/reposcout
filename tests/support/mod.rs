@@ -1,2 +1,2 @@
-pub mod command;
-pub mod dup_languages;
+pub(crate) mod command;
+pub(crate) mod dup_languages;

@@ -10,11 +10,12 @@ use crate::model::{
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-pub const STRATEGY_VERSION: u32 = 1;
-pub const MAX_PATH_ENTRIES: usize = 100;
-pub const MAX_GAP_ENTRIES: usize = 25;
-pub const MAX_VALIDATIONS: usize = 10;
+pub(crate) const STRATEGY_VERSION: u32 = 1;
+pub(crate) const MAX_PATH_ENTRIES: usize = 100;
+pub(crate) const MAX_GAP_ENTRIES: usize = 25;
+pub(crate) const MAX_VALIDATIONS: usize = 10;
 
+#[derive(Clone, Copy)]
 pub(crate) struct Inputs<'a> {
     pub scope: &'a str,
     pub changed: &'a HashSet<PathBuf>,
@@ -26,6 +27,10 @@ pub(crate) struct Inputs<'a> {
     pub discovery_diagnostics: &'a ScanDiagnostics,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "change-summary construction is one deterministic bounded projection whose shared path budget and confidence evidence must stay in visible order"
+)]
 pub(crate) fn build(inputs: Inputs<'_>) -> ChangeSummary {
     let mut changed_paths = inputs
         .changed
@@ -38,9 +43,7 @@ pub(crate) fn build(inputs: Inputs<'_>) -> ChangeSummary {
 
     let graph_eligible = changed_paths
         .iter()
-        .filter(|path| {
-            lang::detect(Path::new(path)).is_some_and(|language| language.is_first_class())
-        })
+        .filter(|path| lang::detect(Path::new(path)).is_some_and(lang::LangInfo::is_first_class))
         .cloned()
         .collect::<HashSet<_>>();
     let graph_covered: HashSet<String> = inputs
@@ -66,7 +69,7 @@ pub(crate) fn build(inputs: Inputs<'_>) -> ChangeSummary {
     let changed_sources = changed_paths
         .iter()
         .filter(|path| {
-            lang::detect(Path::new(path)).is_some_and(|language| language.is_code())
+            lang::detect(Path::new(path)).is_some_and(lang::LangInfo::is_code)
                 && !testcov::is_test_file(path)
         })
         .cloned()
@@ -540,7 +543,10 @@ fn diagnostics_incomplete(diagnostics: &ScanDiagnostics) -> bool {
     diagnostics.scan_truncated || diagnostics.walker_errors > 0
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "confidence combines independent coverage dimensions whose names are clearer at the call site than in a positional tuple"
+)]
 fn executive_confidence(
     observed: &str,
     discovery: &str,

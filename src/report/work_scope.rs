@@ -14,6 +14,16 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
     let _ = writeln!(out, "{heading}");
     kv(out, "Basis", &scope.basis.join(" + "));
     kv(out, "Primary inventory", &table_inventory(scope));
+    table_production_duplication(out, scope);
+    table_seeds(out, scope);
+    table_context(out, scope);
+    table_impact(out, scope);
+    table_structure(out, scope);
+    table_confidence(out, scope);
+    let _ = writeln!(out);
+}
+
+fn table_production_duplication(out: &mut String, scope: &WorkScope) {
     if let Some(production) = &scope.production_duplication {
         kv(
             out,
@@ -32,6 +42,9 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
             ),
         );
     }
+}
+
+fn table_seeds(out: &mut String, scope: &WorkScope) {
     if let Some(seeds) = &scope.seeds {
         if let Some(focus) = &seeds.focus {
             let mut details = format!(
@@ -46,7 +59,7 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
                 .map(|path| terminal_text(path))
                 .collect::<Vec<_>>();
             if !paths.is_empty() {
-                details.push_str(&format!(" · {}", paths.join(", ")));
+                let _ = write!(details, " · {}", paths.join(", "));
             }
             append_omission(&mut details, focus.omitted);
             kv(out, "Focus seeds", &details);
@@ -59,7 +72,8 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
                 if changes.total == 1 { "" } else { "s" }
             );
             if !changes.paths.is_empty() {
-                details.push_str(&format!(
+                let _ = write!(
+                    details,
                     " · {}",
                     changes
                         .paths
@@ -67,12 +81,15 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
                         .map(|path| terminal_text(path))
                         .collect::<Vec<_>>()
                         .join(", ")
-                ));
+                );
             }
             append_omission(&mut details, changes.omitted);
             kv(out, "Change seeds", &details);
         }
     }
+}
+
+fn table_context(out: &mut String, scope: &WorkScope) {
     if let Some(context) = &scope.context {
         kv(
             out,
@@ -107,6 +124,9 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
             );
         }
     }
+}
+
+fn table_impact(out: &mut String, scope: &WorkScope) {
     if let Some(impact) = &scope.impact {
         let tests = if impact.matching_tests_known {
             format!("{} matching tests", thousands(impact.matching_tests))
@@ -125,6 +145,9 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
             ),
         );
     }
+}
+
+fn table_structure(out: &mut String, scope: &WorkScope) {
     if let Some(structure) = &scope.structure {
         kv(
             out,
@@ -159,6 +182,9 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
             kv(out, &format!("Component {}", index + 1), &details);
         }
     }
+}
+
+fn table_confidence(out: &mut String, scope: &WorkScope) {
     if coverage_has_gaps(&scope.confidence.primary) {
         render_coverage_table(out, "Primary coverage", &scope.confidence.primary);
     }
@@ -192,13 +218,22 @@ pub(crate) fn table(out: &mut String, scope: &WorkScope, color: bool) {
             &scope.confidence.unavailable_signals.join(", "),
         );
     }
-    let _ = writeln!(out);
 }
 
 pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
     let _ = writeln!(out, "## Work scope\n");
     let _ = writeln!(out, "- Basis: {}", markdown_text(&scope.basis.join(" + ")));
     let _ = writeln!(out, "- Primary inventory: {}", markdown_inventory(scope));
+    markdown_production_duplication(out, scope);
+    markdown_seeds(out, scope);
+    markdown_context(out, scope);
+    markdown_impact(out, scope);
+    markdown_structure(out, scope);
+    markdown_confidence(out, scope);
+    let _ = writeln!(out);
+}
+
+fn markdown_production_duplication(out: &mut String, scope: &WorkScope) {
     if let Some(production) = &scope.production_duplication {
         let _ = writeln!(
             out,
@@ -214,6 +249,9 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
             }
         );
     }
+}
+
+fn markdown_seeds(out: &mut String, scope: &WorkScope) {
     if let Some(seeds) = &scope.seeds {
         if let Some(focus) = &seeds.focus {
             let paths = focus
@@ -257,6 +295,9 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
             );
         }
     }
+}
+
+fn markdown_context(out: &mut String, scope: &WorkScope) {
     if let Some(context) = &scope.context {
         let _ = writeln!(
             out,
@@ -285,6 +326,9 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
             );
         }
     }
+}
+
+fn markdown_impact(out: &mut String, scope: &WorkScope) {
     if let Some(impact) = &scope.impact {
         let tests = if impact.matching_tests_known {
             format!("{} matching tests", thousands(impact.matching_tests))
@@ -301,6 +345,9 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
             markdown_text(&tests)
         );
     }
+}
+
+fn markdown_structure(out: &mut String, scope: &WorkScope) {
     if let Some(structure) = &scope.structure {
         let _ = writeln!(
             out,
@@ -334,6 +381,9 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
             );
         }
     }
+}
+
+fn markdown_confidence(out: &mut String, scope: &WorkScope) {
     if coverage_has_gaps(&scope.confidence.primary) {
         render_coverage_markdown(out, "Primary coverage", &scope.confidence.primary);
     }
@@ -364,26 +414,28 @@ pub(crate) fn markdown(out: &mut String, scope: &WorkScope) {
             markdown_text(&scope.confidence.unavailable_signals.join(", "))
         );
     }
-    let _ = writeln!(out);
 }
 
 fn render_coverage_table(out: &mut String, label: &str, coverage: &WorkScopeCoverage) {
     let mut value = coverage_inventory_table(coverage);
-    value.push_str(&format!(
+    let _ = write!(
+        value,
         " · {} unsupported · {} unreadable · {} walker errors",
         thousands(coverage.unsupported_files),
         thousands(coverage.unreadable_files),
         thousands(coverage.walker_errors)
-    ));
+    );
     if coverage.oversized_files > 0 {
-        value.push_str(&format!(
+        let _ = write!(
+            value,
             " · {} oversized ({})",
             thousands(coverage.oversized_files),
             human_bytes(coverage.oversized_bytes)
-        ));
+        );
     }
     if coverage.files_omitted_by_limit > 0 {
-        value.push_str(&format!(
+        let _ = write!(
+            value,
             " · {}{} limit omissions ({})",
             if coverage.omitted_count_incomplete {
                 "at least "
@@ -392,7 +444,7 @@ fn render_coverage_table(out: &mut String, label: &str, coverage: &WorkScopeCove
             },
             thousands(coverage.files_omitted_by_limit),
             human_bytes(coverage.bytes_omitted_by_limit)
-        ));
+        );
     }
     if coverage.duration_limit_reached {
         value.push_str(" · duration limit reached");
@@ -527,7 +579,7 @@ fn coverage_inventory_markdown(coverage: &WorkScopeCoverage) -> String {
 
 fn append_omission(value: &mut String, omitted: usize) {
     if omitted > 0 {
-        value.push_str(&format!(" · {} omitted", thousands(omitted)));
+        let _ = write!(value, " · {} omitted", thousands(omitted));
     }
 }
 

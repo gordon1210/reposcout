@@ -60,7 +60,7 @@ fn tokenize_tree(root: Node<'_>, source: &str) -> Vec<Token> {
     tokens
 }
 
-fn collect_tree_tokens(node: Node<'_>, source: &str, map: &SourceMap, out: &mut Vec<Token>) {
+fn collect_tree_tokens(node: Node<'_>, source: &str, map: &SourceMap<'_>, out: &mut Vec<Token>) {
     if node.is_missing() || node.end_byte() <= node.start_byte() {
         return;
     }
@@ -100,7 +100,7 @@ fn has_interpolation_child(node: Node<'_>) -> bool {
     })
 }
 
-fn push_gap(tokens: &mut Vec<Token>, source: &str, map: &SourceMap, start: usize, end: usize) {
+fn push_gap(tokens: &mut Vec<Token>, source: &str, map: &SourceMap<'_>, start: usize, end: usize) {
     let Some(text) = source.get(start..end) else {
         return;
     };
@@ -174,6 +174,10 @@ fn literal_kind(kind: &str, text: &str) -> Option<LiteralKind> {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fallback lexer is a single ordered scanner state machine where rule precedence must remain visible"
+)]
 fn tokenize_generic(source: &str, info: Option<&LangInfo>) -> Vec<Token> {
     let map = SourceMap::new(source);
     let mut tokens = Vec::new();
@@ -185,7 +189,7 @@ fn tokenize_generic(source: &str, info: Option<&LangInfo>) -> Vec<Token> {
         };
 
         if ch.is_whitespace() {
-            let end = take_while(source, i, |c| c.is_whitespace());
+            let end = take_while(source, i, char::is_whitespace);
             tokens.push(make_token(
                 TokenKind::Whitespace,
                 &source[i..end],
@@ -277,8 +281,7 @@ fn tokenize_generic(source: &str, info: Option<&LangInfo>) -> Vec<Token> {
         }
 
         let end = matching_operator(source, i)
-            .map(|operator| i + operator.len())
-            .unwrap_or_else(|| i + ch.len_utf8());
+            .map_or_else(|| i + ch.len_utf8(), |operator| i + operator.len());
         let text = &source[i..end];
         let kind = if is_punctuation(text) {
             TokenKind::Punctuation
@@ -429,7 +432,7 @@ fn take_while(source: &str, start: usize, predicate: impl Fn(char) -> bool) -> u
     i
 }
 
-fn make_token(kind: TokenKind, text: &str, start: usize, end: usize, map: &SourceMap) -> Token {
+fn make_token(kind: TokenKind, text: &str, start: usize, end: usize, map: &SourceMap<'_>) -> Token {
     let (line, start_column) = map.location(start);
     let (end_line, end_column) = map.location(end);
     Token {

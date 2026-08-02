@@ -10,6 +10,12 @@ use owo_colors::OwoColorize;
 use serde_json::Value;
 use std::fmt::Write as _;
 
+/// Render a focused file explanation.
+///
+/// # Errors
+///
+/// Returns an error when the requested format is unsupported or serialization
+/// fails.
 pub fn render(
     report: &ExplainReport,
     format: Format,
@@ -32,6 +38,10 @@ pub fn render(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the focused table renderer is a linear user-facing section contract with no branching business logic"
+)]
 fn table(report: &ExplainReport, color: bool) -> String {
     let mut out = String::new();
     let title = format!(
@@ -184,6 +194,10 @@ fn table(report: &ExplainReport, color: bool) -> String {
     out
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the focused Markdown renderer mirrors the compact table sections in one readable output contract"
+)]
 fn markdown(report: &ExplainReport) -> String {
     let mut out = String::new();
     let _ = writeln!(

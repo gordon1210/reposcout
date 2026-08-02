@@ -13,9 +13,9 @@ use crate::model::{
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-pub const STRATEGY_VERSION: u32 = 2;
-pub const MAX_PATH_ENTRIES: usize = 25;
-pub const MAX_COMPONENTS: usize = 10;
+pub(crate) const STRATEGY_VERSION: u32 = 2;
+pub(crate) const MAX_PATH_ENTRIES: usize = 25;
+pub(crate) const MAX_COMPONENTS: usize = 10;
 
 pub(crate) struct Inputs<'a> {
     pub summary: &'a Summary,
@@ -27,15 +27,14 @@ pub(crate) struct Inputs<'a> {
     pub changed: &'a HashSet<PathBuf>,
 }
 
-pub(crate) fn build(inputs: Inputs<'_>) -> WorkScope {
+pub(crate) fn build(inputs: &Inputs<'_>) -> WorkScope {
     let mut path_budget = PathBudget::new(MAX_PATH_ENTRIES);
     let focus = project_focus(inputs.context, &mut path_budget);
     let changes = project_changes(inputs.diff_scope, inputs.changed, &mut path_budget);
     let paths_omitted = focus
         .as_ref()
-        .map(|focus| focus.omitted)
-        .unwrap_or(0)
-        .saturating_add(changes.as_ref().map(|changes| changes.omitted).unwrap_or(0));
+        .map_or(0, |focus| focus.omitted)
+        .saturating_add(changes.as_ref().map_or(0, |changes| changes.omitted));
     let seeds = (focus.is_some() || changes.is_some()).then_some(WorkScopeSeeds {
         focus,
         changes,
@@ -207,7 +206,7 @@ fn project_impact(
         seed_files: changed.len(),
         graph_eligible_seed_files: changed
             .iter()
-            .filter(|path| lang::detect(path).is_some_and(|language| language.is_first_class()))
+            .filter(|path| lang::detect(path).is_some_and(lang::LangInfo::is_first_class))
             .count(),
         graph_covered_seed_files: impact.graph_changed_files.len(),
         direct_dependents: impact.direct_dependents.len(),
@@ -426,7 +425,7 @@ mod tests {
 
     #[test]
     fn repository_scope_uses_primary_inventory_without_inventing_optional_analysis() {
-        let scope = build(Inputs {
+        let scope = build(&Inputs {
             summary: &summary(),
             diagnostics: &diagnostics(),
             context: None,
@@ -444,7 +443,7 @@ mod tests {
             .production_duplication
             .expect("production duplication evidence");
         assert_eq!(production.corpus, "production-source");
-        assert_eq!(production.duplicated_pct, 10.0);
+        assert!((production.duplicated_pct - 10.0).abs() < f64::EPSILON);
         assert!(production.complete);
         assert!(scope.seeds.is_none());
         assert!(scope.context.is_none());
@@ -464,18 +463,18 @@ mod tests {
                 .collect(),
             ..ContextPlan::default()
         };
-        let changed = (0..10)
+        let changed_paths = (0..10)
             .map(|index| PathBuf::from(format!("src/changed-{index}.rs")))
             .collect::<HashSet<_>>();
 
-        let scope = build(Inputs {
+        let scope = build(&Inputs {
             summary: &summary(),
             diagnostics: &diagnostics(),
             context: Some(&context),
             graph: None,
             impact: None,
             diff_scope: Some("working"),
-            changed: &changed,
+            changed: &changed_paths,
         });
         let seeds = scope.seeds.expect("seed facts");
         let focus = seeds.focus.expect("focus facts");
@@ -510,11 +509,14 @@ mod tests {
             direct_dependents: 4,
             transitive_dependents: 6,
             matching_tests: 2,
-            files: vec![Default::default(), Default::default()],
+            files: vec![
+                crate::model::ContextFile::default(),
+                crate::model::ContextFile::default(),
+            ],
             ..ContextPlan::default()
         };
 
-        let scope = build(Inputs {
+        let scope = build(&Inputs {
             summary: &summary(),
             diagnostics: &diagnostics(),
             context: Some(&context),
@@ -578,7 +580,7 @@ mod tests {
             ..ContextPlan::default()
         };
 
-        let scope = build(Inputs {
+        let scope = build(&Inputs {
             summary: &summary(),
             diagnostics: &diagnostics(),
             context: Some(&context),

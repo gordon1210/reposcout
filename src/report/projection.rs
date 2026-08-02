@@ -3,6 +3,7 @@ use crate::model::{
     DuplicateBlock, FindingRecord, FunctionComplexity, LanguageStat, MetricDelta, ScanReport,
     Summary,
 };
+use crate::numeric::{u64_to_f64, usize_to_f64};
 use serde_json::Value;
 use std::path::Path;
 
@@ -35,13 +36,11 @@ pub(crate) fn callable_cyclomatic_average(functions: &[FunctionComplexity]) -> O
         return None;
     }
 
-    Some(
-        functions
-            .iter()
-            .map(|function| function.cyclomatic as u64)
-            .sum::<u64>() as f64
-            / functions.len() as f64,
-    )
+    let cyclomatic_total = functions
+        .iter()
+        .map(|function| u64::from(function.cyclomatic))
+        .sum::<u64>();
+    Some(u64_to_f64(cyclomatic_total) / usize_to_f64(functions.len()))
 }
 
 pub(crate) fn file_cyclomatic_average(report: &ScanReport, path: &Path) -> Option<f64> {

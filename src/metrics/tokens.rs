@@ -13,6 +13,12 @@ pub struct TokenCounter {
 }
 
 impl TokenCounter {
+    /// Build a counter for a supported canonical encoding or alias.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `encoding` is unknown or the selected tokenizer
+    /// vocabulary cannot be initialized.
     pub fn new(encoding: &str) -> Result<Self> {
         let (bpe, name) = match encoding.to_ascii_lowercase().as_str() {
             "o200k_base" | "o200k" => (o200k_base()?, "o200k_base"),
@@ -29,13 +35,15 @@ impl TokenCounter {
         })
     }
 
-    /// Canonical encoding name (e.g. "o200k_base").
+    /// Canonical encoding name (e.g. "`o200k_base`").
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Count tokens in `text`, ignoring special-token semantics so arbitrary
     /// source code never errors.
+    #[must_use]
     pub fn count(&self, text: &str) -> usize {
         self.bpe.encode_ordinary(text).len()
     }

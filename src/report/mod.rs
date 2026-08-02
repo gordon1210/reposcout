@@ -16,6 +16,7 @@ mod work_scope;
 use crate::model::ScanReport;
 use anyhow::{Context, Result};
 use serde::Serialize;
+use std::fmt::Write as _;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,35 +30,29 @@ pub enum Format {
     Mermaid,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Projection {
+    #[default]
+    Full,
+    Summary,
+    BaselineReady,
+    ChangeSummary,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderOptions {
-    pub summary_only: bool,
-    pub baseline_ready: bool,
-    pub change_summary: bool,
+    pub projection: Projection,
     pub duplication_details: bool,
     pub pretty_json: bool,
 }
 
+/// Render a scan report in the selected human or machine format.
+///
+/// # Errors
+///
+/// Returns an error when the selected projection and format are incompatible,
+/// report paths cannot be represented safely, or serialization fails.
 pub fn render(
-    report: &ScanReport,
-    format: Format,
-    color: bool,
-    summary_only: bool,
-    duplication_details: bool,
-) -> Result<String> {
-    render_with_options(
-        report,
-        format,
-        color,
-        RenderOptions {
-            summary_only,
-            duplication_details,
-            ..RenderOptions::default()
-        },
-    )
-}
-
-pub fn render_with_options(
     report: &ScanReport,
     format: Format,
     color: bool,
@@ -69,7 +64,7 @@ pub fn render_with_options(
     ) {
         validate_machine_paths(report)?;
     }
-    if options.change_summary {
+    if options.projection == Projection::ChangeSummary {
         return match format {
             Format::Table => change_summary::table(report),
             Format::Json => change_summary::json(report, options.pretty_json),
@@ -82,14 +77,9 @@ pub fn render_with_options(
     }
     match format {
         Format::Table => Ok(table::render(report, color, options.duplication_details)),
-        Format::Json => json::render(
-            report,
-            options.summary_only,
-            options.baseline_ready,
-            options.pretty_json,
-        ),
+        Format::Json => json::render(report, options.projection, options.pretty_json),
         Format::Markdown => Ok(markdown::render(report, options.duplication_details)),
-        Format::Ndjson => ndjson::render(report, options.summary_only),
+        Format::Ndjson => ndjson::render(report, options.projection == Projection::Summary),
         Format::Sarif => sarif::render(report),
         Format::Dot => report
             .graph
@@ -112,14 +102,14 @@ fn validate_machine_paths(report: &ScanReport) -> Result<()> {
             report
                 .context
                 .iter()
-                .flat_map(|context| context.focus.iter().map(|path| path.as_path())),
+                .flat_map(|context| context.focus.iter().map(std::path::PathBuf::as_path)),
         )
-        .chain(
-            report
-                .context
+        .chain(report.context.iter().flat_map(|context| {
+            context
+                .changed_files
                 .iter()
-                .flat_map(|context| context.changed_files.iter().map(|path| path.as_path())),
-        )
+                .map(std::path::PathBuf::as_path)
+        }))
         .chain(
             report
                 .context
@@ -147,29 +137,44 @@ fn validate_machine_paths(report: &ScanReport) -> Result<()> {
     Ok(())
 }
 
+/// Render a focused file explanation.
+///
+/// # Errors
+///
+/// Returns an error when the format is unsupported or serialization fails.
 pub fn render_explain(
     report: &crate::model::ExplainReport,
     format: Format,
     color: bool,
     pretty_json: bool,
-) -> anyhow::Result<String> {
+) -> Result<String> {
     explain::render(report, format, color, pretty_json)
 }
 
+/// Render a symbol-query report.
+///
+/// # Errors
+///
+/// Returns an error when the format is unsupported or serialization fails.
 pub fn render_symbol_query(
     report: &crate::model::SymbolQueryReport,
     format: Format,
     color: bool,
     pretty_json: bool,
-) -> anyhow::Result<String> {
+) -> Result<String> {
     query::render(report, format, color, pretty_json)
 }
 
+/// Render machine-discoverable `RepoScout` capabilities.
+///
+/// # Errors
+///
+/// Returns an error when serialization fails.
 pub fn render_capabilities(
     report: &crate::model::CapabilitiesReport,
     format: crate::cli::ConfigOutputFormat,
     pretty_json: bool,
-) -> anyhow::Result<String> {
+) -> Result<String> {
     query::render_capabilities(report, format, pretty_json)
 }
 
@@ -184,7 +189,7 @@ pub(crate) fn json_string<T: Serialize>(value: &T, pretty: bool) -> serde_json::
 /// Format a byte count in a compact human-readable form.
 pub(crate) fn human_bytes(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut v = bytes as f64;
+    let mut v = crate::numeric::u64_to_f64(bytes);
     let mut u = 0;
     while v >= 1024.0 && u < UNITS.len() - 1 {
         v /= 1024.0;
@@ -199,15 +204,15 @@ pub(crate) fn human_bytes(bytes: u64) -> String {
 
 /// Format a large integer with thousands separators.
 pub(crate) fn thousands(n: usize) -> String {
-    thousands_digits(n.to_string())
+    thousands_digits(&n.to_string())
 }
 
 /// Format a large 64-bit integer with thousands separators.
 pub(crate) fn thousands_u64(n: u64) -> String {
-    thousands_digits(n.to_string())
+    thousands_digits(&n.to_string())
 }
 
-fn thousands_digits(s: String) -> String {
+fn thousands_digits(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     let bytes = s.as_bytes();
     let len = bytes.len();
@@ -223,10 +228,10 @@ fn thousands_digits(s: String) -> String {
 /// Render a clone-group similarity: exact clones (1.0) read "exact", near
 /// duplicates as a floored percentage (never 100%, since only exact clones are).
 pub(crate) fn similarity_label(similarity: f64) -> String {
-    if similarity == 1.0 {
+    if (similarity - 1.0).abs() < f64::EPSILON {
         "exact".to_string()
     } else {
-        format!("{}%", (similarity * 100.0).floor() as i64)
+        format!("{:.0}%", (similarity * 100.0).floor())
     }
 }
 
@@ -242,7 +247,6 @@ pub(crate) fn terminal_text(value: &str) -> String {
             '\u{08}' => out.push_str("\\b"),
             '\u{0c}' => out.push_str("\\f"),
             ch if ch.is_control() => {
-                use std::fmt::Write as _;
                 let _ = write!(out, "\\u{{{:x}}}", ch as u32);
             }
             ch => out.push(ch),
@@ -271,7 +275,7 @@ pub(crate) fn markdown_text(value: &str) -> String {
     out
 }
 
-/// Render an arbitrary string as a CommonMark code span, selecting a delimiter
+/// Render an arbitrary string as a `CommonMark` code span, selecting a delimiter
 /// longer than every backtick run in the value.
 pub(crate) fn markdown_code_span(value: &str) -> String {
     let value = terminal_text(value);
@@ -301,7 +305,6 @@ pub(crate) fn sarif_uri_text(path: &str) -> Result<String> {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/') {
             out.push(byte as char);
         } else {
-            use std::fmt::Write as _;
             write!(out, "%{byte:02X}")?;
         }
     }
@@ -319,7 +322,7 @@ pub(crate) fn dup_locations(locations: &[String], copies: usize) -> String {
     let mut out = shown.join(", ");
     let remaining = copies.saturating_sub(shown.len());
     if remaining > 0 {
-        out.push_str(&format!(" (+{remaining} more)"));
+        let _ = write!(out, " (+{remaining} more)");
     }
     out
 }
@@ -341,7 +344,7 @@ mod tests {
             generated_at: "2026-01-01T00:00:00Z".to_string(),
             encoding: "o200k_base".to_string(),
             analysis_profile: None,
-            execution: Default::default(),
+            execution: crate::model::ExecutionMetadata::default(),
             finding_catalog: FindingCatalog::default(),
             summary,
             work_scope: None,
@@ -360,8 +363,8 @@ mod tests {
 
     fn human_renderings(report: &ScanReport) -> [String; 2] {
         [
-            render(report, Format::Table, false, false, false).unwrap(),
-            render(report, Format::Markdown, false, false, false).unwrap(),
+            render(report, Format::Table, false, RenderOptions::default()).unwrap(),
+            render(report, Format::Markdown, false, RenderOptions::default()).unwrap(),
         ]
     }
 

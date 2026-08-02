@@ -6,6 +6,16 @@ use crate::report::{sarif_uri, sarif_uri_text, similarity_label};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
+/// Render scan or review findings as a SARIF 2.1.0 document.
+///
+/// # Errors
+///
+/// Returns an error when a report path cannot be represented as a SARIF URI or
+/// the document cannot be serialized.
+#[expect(
+    clippy::too_many_lines,
+    reason = "SARIF assembly keeps rule registration and the corresponding result projections adjacent for contract auditing"
+)]
 pub fn render(report: &ScanReport) -> Result<String> {
     if let Some(review) = &report.review {
         return render_review(review);

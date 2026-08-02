@@ -62,6 +62,7 @@ impl Default for ChurnLimits {
 }
 
 impl ChurnLimits {
+    #[must_use]
     pub fn with_max_commits(max_commits: usize) -> Self {
         Self {
             max_commits,
@@ -78,6 +79,7 @@ pub struct ChurnCollection {
     pub deltas_omitted: usize,
 }
 
+#[must_use]
 pub fn collect(root: &Path, files: &[PathBuf], max_commits: usize) -> HashMap<PathBuf, Churn> {
     let limits = ChurnLimits::with_max_commits(max_commits);
     let mut cache = ChurnCache::for_repo(root, false, limits.max_cache_bytes);
@@ -87,6 +89,7 @@ pub fn collect(root: &Path, files: &[PathBuf], max_commits: usize) -> HashMap<Pa
 /// Collect churn while reusing immutable commit events and exact result views
 /// from the OS cache. The frozen [`collect`] adapter remains uncached for
 /// library callers and deterministic tests.
+#[must_use]
 pub fn collect_with_cache(
     root: &Path,
     files: &[PathBuf],
@@ -146,9 +149,8 @@ fn collect_impl_with_native(
     native_git: &NativeGit,
 ) -> (ChurnCollection, CollectStats) {
     let mut stats = CollectStats::default();
-    let repo = match Repository::discover(root) {
-        Ok(repo) => repo,
-        Err(_) => return (ChurnCollection::default(), stats),
+    let Ok(repo) = Repository::discover(root) else {
+        return (ChurnCollection::default(), stats);
     };
 
     let wanted: HashSet<PathBuf> = files.iter().cloned().collect();
@@ -156,9 +158,8 @@ fn collect_impl_with_native(
         return (ChurnCollection::default(), stats);
     }
 
-    let head = match repo.head().and_then(|head| head.peel_to_commit()) {
-        Ok(head) => head,
-        Err(_) => return (ChurnCollection::default(), stats),
+    let Ok(head) = repo.head().and_then(|head| head.peel_to_commit()) else {
+        return (ChurnCollection::default(), stats);
     };
     let history = history_fingerprint(&repo);
     // Oversized .git/shallow or grafts can blow past resource caps; do not load
@@ -186,160 +187,38 @@ fn collect_impl_with_native(
         cache.load_events(&history.state);
     }
 
-    let mut acc: HashMap<PathBuf, Acc> = HashMap::new();
-    let mut aliases: HashMap<PathBuf, HashSet<PathBuf>> = wanted
+    let Some((oids, mut complete)) = walk_history_oids(&repo, head.id(), limits, &mut stats) else {
+        return (ChurnCollection::default(), stats);
+    };
+    let merge_oids = merge_commit_oids(&repo, &oids);
+    let uncached = uncached_event_oids(&oids, &merge_oids, cache);
+    let streamed_events = collect_streamed_events(
+        &repo,
+        &uncached,
+        limits,
+        native_git,
+        &mut stats,
+        &mut complete,
+    );
+    let aliases = wanted
         .iter()
         .cloned()
         .map(|path| (path.clone(), HashSet::from([path])))
         .collect();
-    let mut revwalk = match repo.revwalk() {
-        Ok(revwalk) => revwalk,
-        Err(_) => return (ChurnCollection::default(), stats),
+    let mut processor = HistoryProcessor {
+        repo: &repo,
+        limits,
+        cache,
+        use_event_cache,
+        merge_oids: &merge_oids,
+        streamed_events,
+        aliases,
+        acc: HashMap::new(),
+        stats: &mut stats,
+        complete,
     };
-    if revwalk.push(head.id()).is_err() {
-        return (ChurnCollection::default(), stats);
-    }
-    // Rename aliases must be discovered from children before their parents,
-    // even when commit timestamps are skewed or identical.
-    let _ = revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME);
-
-    let mut walked = 0usize;
-    let mut complete = true;
-    let mut oids = Vec::new();
-    for oid in revwalk {
-        if limits
-            .deadline
-            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
-        {
-            complete = false;
-            stats.partial = true;
-            break;
-        }
-        if limits.max_commits > 0 && walked >= limits.max_commits {
-            break;
-        }
-        let oid = match oid {
-            Ok(oid) => oid,
-            Err(_) => {
-                complete = false;
-                continue;
-            }
-        };
-        walked += 1;
-
-        oids.push(oid);
-    }
-
-    let merge_oids = oids
-        .iter()
-        .copied()
-        .filter(|oid| {
-            repo.find_commit(*oid)
-                .is_ok_and(|commit| commit.parent_count() > 1)
-        })
-        .collect::<HashSet<_>>();
-    let uncached = oids
-        .iter()
-        .copied()
-        .filter(|oid| !merge_oids.contains(oid) && cache.event(&oid.to_string()).is_none())
-        .collect::<Vec<_>>();
-    let mut streamed_events = if uncached.is_empty() {
-        HashMap::new()
-    } else {
-        match native_git.collect_events(&repo, &uncached, limits) {
-            Ok((events, stream_stats)) => {
-                stats.native_batches += usize::from(!events.is_empty());
-                stats.native_events += events.len();
-                stats.partial |= stream_stats.partial;
-                stats.deltas_omitted = stats
-                    .deltas_omitted
-                    .saturating_add(stream_stats.deltas_omitted);
-                if stream_stats.partial {
-                    complete = false;
-                }
-                events
-            }
-            Err(_) => {
-                stats.native_fallbacks += 1;
-                if limits.skip_libgit2_fallback {
-                    stats.partial = true;
-                    complete = false;
-                }
-                HashMap::new()
-            }
-        }
-    };
-
-    for oid in oids {
-        if limits
-            .deadline
-            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
-        {
-            complete = false;
-            stats.partial = true;
-            break;
-        }
-        if stats.total_deltas >= limits.max_total_deltas {
-            complete = false;
-            stats.partial = true;
-            break;
-        }
-        let oid_string = oid.to_string();
-        let mut event = if merge_oids.contains(&oid) {
-            let Some(commit) = repo.find_commit(oid).ok() else {
-                complete = false;
-                continue;
-            };
-            // The branch commit already carries the authored change. Counting
-            // the merge's first-parent diff as another touch inflates churn.
-            commit_event(&commit, oid, Vec::new(), true)
-        } else if let Some(event) = cache.event(&oid_string).cloned() {
-            stats.event_hits += 1;
-            event
-        } else if let Some(event) = streamed_events.remove(&oid_string) {
-            event
-        } else if limits.skip_libgit2_fallback {
-            // Avoid materializing unbounded libgit2 diffs under the safe profile.
-            complete = false;
-            stats.partial = true;
-            continue;
-        } else {
-            let Some(event) = analyze_commit(&repo, oid, &aliases, limits, &mut stats) else {
-                complete = false;
-                continue;
-            };
-            event
-        };
-
-        // Rename similarity via libgit2 materializes a full tree-diff and is
-        // unbounded. Never run it under the safe profile or after we already
-        // truncated; surface incomplete rename tracking as partial instead.
-        let needs_rename =
-            !event.renames_resolved && event_needs_rename_resolution(&event.deltas, &aliases);
-        if needs_rename {
-            if limits.skip_libgit2_fallback || stats.partial {
-                complete = false;
-                stats.partial = true;
-            } else if let Some(resolved) = resolve_commit_renames(&repo, oid, limits, &mut stats) {
-                event = resolved;
-            }
-        }
-
-        // Apply all resource limits once to the final event (including cache hits
-        // and any rename-resolved payload) before accounting or caching.
-        if !enforce_event_limits(&mut event, limits, &mut stats) {
-            complete = false;
-        }
-        // Only cache events that survived within the active limits.
-        if use_event_cache && !stats.partial {
-            cache.put_event(event.clone());
-        }
-        apply_event(&event, &mut aliases, &mut acc);
-        if stats.partial && stats.total_deltas >= limits.max_total_deltas {
-            break;
-        }
-    }
-
+    processor.process(oids);
+    let (acc, complete) = processor.finish();
     let churn = finish_churn(acc);
     if use_event_cache && complete && !stats.partial {
         cache.put_view(view_identity, &churn);
@@ -355,6 +234,198 @@ fn collect_impl_with_native(
         },
         stats,
     )
+}
+
+fn walk_history_oids(
+    repo: &Repository,
+    head: git2::Oid,
+    limits: &ChurnLimits,
+    stats: &mut CollectStats,
+) -> Option<(Vec<git2::Oid>, bool)> {
+    let mut revwalk = repo.revwalk().ok()?;
+    revwalk.push(head).ok()?;
+    // Rename aliases must be discovered from children before their parents,
+    // even when commit timestamps are skewed or identical.
+    let _ = revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME);
+    let mut oids = Vec::new();
+    let mut complete = true;
+    for oid in revwalk {
+        if limits
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            complete = false;
+            stats.partial = true;
+            break;
+        }
+        if limits.max_commits > 0 && oids.len() >= limits.max_commits {
+            break;
+        }
+        match oid {
+            Ok(oid) => oids.push(oid),
+            Err(_) => complete = false,
+        }
+    }
+    Some((oids, complete))
+}
+
+fn merge_commit_oids(repo: &Repository, oids: &[git2::Oid]) -> HashSet<git2::Oid> {
+    oids.iter()
+        .copied()
+        .filter(|oid| {
+            repo.find_commit(*oid)
+                .is_ok_and(|commit| commit.parent_count() > 1)
+        })
+        .collect()
+}
+
+fn uncached_event_oids(
+    oids: &[git2::Oid],
+    merge_oids: &HashSet<git2::Oid>,
+    cache: &ChurnCache,
+) -> Vec<git2::Oid> {
+    oids.iter()
+        .copied()
+        .filter(|oid| !merge_oids.contains(oid) && cache.event(&oid.to_string()).is_none())
+        .collect()
+}
+
+fn collect_streamed_events(
+    repo: &Repository,
+    uncached: &[git2::Oid],
+    limits: &ChurnLimits,
+    native_git: &NativeGit,
+    stats: &mut CollectStats,
+    complete: &mut bool,
+) -> HashMap<String, CommitEvent> {
+    if uncached.is_empty() {
+        return HashMap::new();
+    }
+    let Ok((events, stream_stats)) = native_git.collect_events(repo, uncached, limits) else {
+        stats.native_fallbacks = stats.native_fallbacks.saturating_add(1);
+        if limits.skip_libgit2_fallback {
+            stats.partial = true;
+            *complete = false;
+        }
+        return HashMap::new();
+    };
+    stats.native_batches = stats
+        .native_batches
+        .saturating_add(usize::from(!events.is_empty()));
+    stats.native_events = stats.native_events.saturating_add(events.len());
+    stats.partial |= stream_stats.partial;
+    stats.deltas_omitted = stats
+        .deltas_omitted
+        .saturating_add(stream_stats.deltas_omitted);
+    if stream_stats.partial {
+        *complete = false;
+    }
+    events
+}
+
+struct HistoryProcessor<'a> {
+    repo: &'a Repository,
+    limits: &'a ChurnLimits,
+    cache: &'a mut ChurnCache,
+    use_event_cache: bool,
+    merge_oids: &'a HashSet<git2::Oid>,
+    streamed_events: HashMap<String, CommitEvent>,
+    aliases: HashMap<PathBuf, HashSet<PathBuf>>,
+    acc: HashMap<PathBuf, Acc>,
+    stats: &'a mut CollectStats,
+    complete: bool,
+}
+
+impl HistoryProcessor<'_> {
+    fn process(&mut self, oids: Vec<git2::Oid>) {
+        for oid in oids {
+            if self.limit_reached() {
+                break;
+            }
+            let Some(mut event) = self.event_for(oid) else {
+                continue;
+            };
+            self.resolve_renames(oid, &mut event);
+            if !enforce_event_limits(&mut event, self.limits, self.stats) {
+                self.complete = false;
+            }
+            if self.use_event_cache && !self.stats.partial {
+                self.cache.put_event(event.clone());
+            }
+            apply_event(&event, &mut self.aliases, &mut self.acc);
+            if self.stats.partial && self.stats.total_deltas >= self.limits.max_total_deltas {
+                break;
+            }
+        }
+    }
+
+    fn limit_reached(&mut self) -> bool {
+        let deadline_reached = self
+            .limits
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline);
+        let delta_limit_reached = self.stats.total_deltas >= self.limits.max_total_deltas;
+        if deadline_reached || delta_limit_reached {
+            self.complete = false;
+            self.stats.partial = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn event_for(&mut self, oid: git2::Oid) -> Option<CommitEvent> {
+        let oid_string = oid.to_string();
+        if self.merge_oids.contains(&oid) {
+            let Some(commit) = self.repo.find_commit(oid).ok() else {
+                self.complete = false;
+                return None;
+            };
+            // The branch commit already carries the authored change. Counting
+            // the merge's first-parent diff as another touch inflates churn.
+            return Some(commit_event(&commit, oid, Vec::new(), true));
+        }
+        if let Some(event) = self.cache.event(&oid_string).cloned() {
+            self.stats.event_hits = self.stats.event_hits.saturating_add(1);
+            return Some(event);
+        }
+        if let Some(event) = self.streamed_events.remove(&oid_string) {
+            return Some(event);
+        }
+        if self.limits.skip_libgit2_fallback {
+            // Avoid materializing unbounded libgit2 diffs under the safe profile.
+            self.complete = false;
+            self.stats.partial = true;
+            return None;
+        }
+        let event = analyze_commit(self.repo, oid, &self.aliases, self.limits, self.stats);
+        if event.is_none() {
+            self.complete = false;
+        }
+        event
+    }
+
+    fn resolve_renames(&mut self, oid: git2::Oid, event: &mut CommitEvent) {
+        let needed =
+            !event.renames_resolved && event_needs_rename_resolution(&event.deltas, &self.aliases);
+        if !needed {
+            return;
+        }
+        // Rename similarity via libgit2 materializes a full tree-diff and is
+        // unbounded. Never run it under the safe profile or after truncation.
+        if self.limits.skip_libgit2_fallback || self.stats.partial {
+            self.complete = false;
+            self.stats.partial = true;
+        } else if let Some(resolved) =
+            resolve_commit_renames(self.repo, oid, self.limits, self.stats)
+        {
+            *event = resolved;
+        }
+    }
+
+    fn finish(self) -> (HashMap<PathBuf, Acc>, bool) {
+        (self.acc, self.complete)
+    }
 }
 
 fn analyze_commit(
@@ -620,9 +691,7 @@ fn history_fingerprint(repo: &Repository) -> HistoryFingerprint {
     let grafts = read_git_meta_bounded(&repo.path().join("info/grafts"));
     let cacheable = shallow.is_some() && grafts.is_some();
     let mut state = Vec::with_capacity(
-        shallow.as_ref().map(|bytes| bytes.len()).unwrap_or(0)
-            + grafts.as_ref().map(|bytes| bytes.len()).unwrap_or(0)
-            + 16,
+        shallow.as_ref().map_or(0, Vec::len) + grafts.as_ref().map_or(0, Vec::len) + 16,
     );
     match &shallow {
         Some(bytes) => state.extend_from_slice(bytes),
@@ -651,8 +720,6 @@ fn read_git_meta_bounded(path: &Path) -> Option<Vec<u8>> {
                 Some(Vec::new())
             }
         }
-        Err(crate::fs_budget::ReadOutcome::NotRegularFile)
-        | Err(crate::fs_budget::ReadOutcome::Oversized(_)) => None,
         Err(_) => None,
     }
 }
@@ -674,6 +741,11 @@ pub enum DiffScope {
 }
 
 /// Resolve the exact Git tree used as the base of a diff-scoped scan.
+///
+/// # Errors
+///
+/// Returns an error when `root` is not in a Git repository or the requested
+/// reference, `HEAD`, or tree cannot be resolved.
 pub fn diff_base_tree_id(root: &Path, scope: &DiffScope) -> Result<Option<String>> {
     let repo = Repository::discover(root)
         .map_err(|e| anyhow::anyhow!("diff-scoped scan requires a git repository: {e}"))?;
@@ -697,6 +769,11 @@ pub fn diff_base_tree_id(root: &Path, scope: &DiffScope) -> Result<Option<String
 
 /// Returns repo-relative paths of files touched by the given diff scope.
 /// Errors if `root` is not inside a git repository.
+///
+/// # Errors
+///
+/// Returns an error when the repository, selected reference, base tree, or
+/// requested Git diff cannot be resolved.
 pub fn changed_files(root: &Path, scope: &DiffScope) -> Result<HashSet<PathBuf>> {
     changed_files_with_base(root, scope, None)
 }
@@ -727,6 +804,11 @@ pub(crate) fn changed_files_with_base(
 }
 
 /// Return changed files with precise old/new physical-line ranges.
+///
+/// # Errors
+///
+/// Returns an error when the repository, selected reference, base tree, rename
+/// detection, or line-level Git diff cannot be resolved.
 pub fn changed_lines(root: &Path, scope: &DiffScope) -> Result<Vec<ReviewChangedFile>> {
     changed_lines_with_base(root, scope, None)
 }
@@ -871,306 +953,4 @@ fn push_line(ranges: &mut Vec<LineRange>, line: usize) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::churn_cache::ChurnCache;
-    use super::native_churn::NativeGit;
-    use super::{
-        ChurnLimits, DiffScope, changed_files_with_base, collect, collect_impl_with_native,
-        diff_base_tree_id,
-    };
-    use git2::Repository;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
-    fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
-        let mut index = repo.index().unwrap();
-        index
-            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
-            .unwrap();
-        index.write().unwrap();
-        let tree_id = index.write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let signature = git2::Signature::now("reposcout tests", "tests@example.com").unwrap();
-        let parent = repo.head().ok().and_then(|head| head.peel_to_commit().ok());
-        let parents = parent.iter().collect::<Vec<_>>();
-        repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            message,
-            &tree,
-            &parents,
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn collect_git_churn_for_repo_files() {
-        if Repository::discover(".").is_err() {
-            return;
-        }
-
-        let files = [
-            PathBuf::from("src/main.rs"),
-            PathBuf::from("src/git.rs"),
-            PathBuf::from("does/not/exist.rs"),
-        ];
-        let churn = collect(Path::new("."), &files, 0);
-
-        let main = churn
-            .get(Path::new("src/main.rs"))
-            .expect("src/main.rs should be present in git history");
-        assert!(main.commits >= 1);
-        assert!(main.authors >= 1);
-        assert!(main.last_commit.is_some());
-        assert!(!churn.contains_key(Path::new("does/not/exist.rs")));
-    }
-
-    #[test]
-    fn churn_follows_file_history_across_renames() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        let old = dir.path().join("old.rs");
-        let new = dir.path().join("new.rs");
-        fs::write(&old, "fn value() -> i32 { 1 }\n").unwrap();
-        commit_all(&repo, "add old");
-        fs::write(&old, "fn value() -> i32 { 2 }\n").unwrap();
-        commit_all(&repo, "modify old");
-        fs::rename(&old, &new).unwrap();
-        commit_all(&repo, "rename old to new");
-
-        let churn = collect(dir.path(), &[PathBuf::from("new.rs")], 0);
-        assert_eq!(churn[Path::new("new.rs")].commits, 3);
-    }
-
-    #[test]
-    fn churn_does_not_double_count_a_change_and_its_merge_commit() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        let source = dir.path().join("lib.rs");
-        fs::write(&source, "fn value() -> i32 { 1 }\n").unwrap();
-        let root = commit_all(&repo, "root");
-        let main_ref = repo.head().unwrap().name().unwrap().to_string();
-
-        let root_commit = repo.find_commit(root).unwrap();
-        repo.branch("feature", &root_commit, false).unwrap();
-        drop(root_commit);
-        repo.set_head("refs/heads/feature").unwrap();
-        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
-            .unwrap();
-        fs::write(&source, "fn value() -> i32 { 2 }\n").unwrap();
-        let feature = commit_all(&repo, "feature change");
-
-        repo.set_head(&main_ref).unwrap();
-        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
-            .unwrap();
-        fs::write(dir.path().join("other.rs"), "fn other() {}\n").unwrap();
-        let main = commit_all(&repo, "main change");
-
-        fs::write(&source, "fn value() -> i32 { 2 }\n").unwrap();
-        let mut index = repo.index().unwrap();
-        index
-            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
-            .unwrap();
-        index.write().unwrap();
-        let tree_id = index.write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let signature = git2::Signature::now("reposcout tests", "tests@example.com").unwrap();
-        let main_parent = repo.find_commit(main).unwrap();
-        let feature_parent = repo.find_commit(feature).unwrap();
-        repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            "merge feature",
-            &tree,
-            &[&main_parent, &feature_parent],
-        )
-        .unwrap();
-
-        let churn = collect(dir.path(), &[PathBuf::from("lib.rs")], 0);
-        assert_eq!(churn[Path::new("lib.rs")].commits, 2);
-    }
-
-    #[test]
-    fn native_git_stream_matches_libgit2_fallback() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        let old = dir.path().join("old.rs");
-        let new = dir.path().join("new.rs");
-        let other = dir.path().join("other.rs");
-        fs::write(&old, "fn value() -> i32 { 1 }\n").unwrap();
-        fs::write(&other, "fn other() {}\n").unwrap();
-        commit_all(&repo, "add files");
-        fs::write(&old, "fn value() -> i32 { 2 }\n").unwrap();
-        commit_all(&repo, "modify old");
-        fs::rename(&old, &new).unwrap();
-        commit_all(&repo, "rename old to new");
-        let wanted = [PathBuf::from("new.rs"), PathBuf::from("other.rs")];
-
-        let mut native_cache =
-            ChurnCache::for_repo(dir.path(), false, ChurnLimits::default().max_cache_bytes);
-        let (native_result, native_stats) = collect_impl_with_native(
-            dir.path(),
-            &wanted,
-            &ChurnLimits::with_max_commits(0),
-            &mut native_cache,
-            &NativeGit::default(),
-        );
-        let mut fallback_cache =
-            ChurnCache::for_repo(dir.path(), false, ChurnLimits::default().max_cache_bytes);
-        let (fallback_result, fallback_stats) = collect_impl_with_native(
-            dir.path(),
-            &wanted,
-            &ChurnLimits::with_max_commits(0),
-            &mut fallback_cache,
-            &NativeGit::with_executable(dir.path().join("missing-git")),
-        );
-
-        assert_eq!(
-            serde_json::to_value(native_result.churn).unwrap(),
-            serde_json::to_value(fallback_result.churn).unwrap()
-        );
-        assert_eq!(native_stats.native_batches, 1);
-        assert_eq!(native_stats.native_events, 2);
-        assert_eq!(native_stats.native_fallbacks, 0);
-        assert_eq!(fallback_stats.native_fallbacks, 1);
-        assert_eq!(fallback_stats.tree_diffs, 3);
-    }
-
-    #[test]
-    fn churn_only_probes_renames_when_a_tracked_addition_can_be_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        let source = dir.path().join("lib.rs");
-        fs::write(&source, "fn value() -> i32 { 1 }\n").unwrap();
-        commit_all(&repo, "add");
-        fs::write(&source, "fn value() -> i32 { 2 }\n").unwrap();
-        commit_all(&repo, "modify once");
-        fs::write(&source, "fn value() -> i32 { 3 }\n").unwrap();
-        commit_all(&repo, "modify twice");
-
-        let mut cache =
-            ChurnCache::for_repo(dir.path(), false, ChurnLimits::default().max_cache_bytes);
-        let missing_git = dir.path().join("missing-git");
-        let (churn_result, stats) = collect_impl_with_native(
-            dir.path(),
-            &[PathBuf::from("lib.rs")],
-            &ChurnLimits::with_max_commits(0),
-            &mut cache,
-            &NativeGit::with_executable(missing_git),
-        );
-
-        assert_eq!(churn_result.churn[Path::new("lib.rs")].commits, 3);
-        assert_eq!(stats.tree_diffs, 3);
-        assert_eq!(stats.rename_probes, 0);
-        assert_eq!(stats.native_fallbacks, 1);
-    }
-
-    #[test]
-    fn churn_cache_reuses_views_and_only_diffs_new_commits() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache_dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        let old = dir.path().join("old.rs");
-        let new = dir.path().join("new.rs");
-        fs::write(&old, "fn value() -> i32 { 1 }\n").unwrap();
-        commit_all(&repo, "add old");
-        fs::write(&old, "fn value() -> i32 { 2 }\n").unwrap();
-        commit_all(&repo, "modify old");
-        fs::rename(&old, &new).unwrap();
-        commit_all(&repo, "rename old to new");
-        let wanted = [PathBuf::from("new.rs")];
-
-        let mut cold_cache = ChurnCache::for_test(cache_dir.path());
-        let (cold_result, cold_stats) = collect_impl_with_native(
-            dir.path(),
-            &wanted,
-            &ChurnLimits::with_max_commits(0),
-            &mut cold_cache,
-            &NativeGit::default(),
-        );
-        assert_eq!(cold_result.churn[Path::new("new.rs")].commits, 3);
-        assert_eq!(cold_stats.tree_diffs, 2);
-        assert_eq!(cold_stats.rename_probes, 1);
-        assert_eq!(cold_stats.native_batches, 1);
-        assert_eq!(cold_stats.native_events, 2);
-        assert_eq!(cold_stats.native_fallbacks, 0);
-        assert_eq!(cold_stats.event_hits, 0);
-        assert_eq!(cold_stats.view_hits, 0);
-
-        let mut warm_cache = ChurnCache::for_test(cache_dir.path());
-        let (warm_result, warm_stats) = collect_impl_with_native(
-            dir.path(),
-            &wanted,
-            &ChurnLimits::with_max_commits(0),
-            &mut warm_cache,
-            &NativeGit::default(),
-        );
-        assert_eq!(warm_result.churn[Path::new("new.rs")].commits, 3);
-        assert_eq!(warm_stats.tree_diffs, 0);
-        assert_eq!(warm_stats.view_hits, 1);
-
-        fs::write(&new, "fn value() -> i32 { 3 }\n").unwrap();
-        commit_all(&repo, "modify new");
-        let mut advanced_cache = ChurnCache::for_test(cache_dir.path());
-        let (advanced_result, advanced_stats) = collect_impl_with_native(
-            dir.path(),
-            &wanted,
-            &ChurnLimits::with_max_commits(0),
-            &mut advanced_cache,
-            &NativeGit::default(),
-        );
-        assert_eq!(advanced_result.churn[Path::new("new.rs")].commits, 4);
-        assert_eq!(advanced_stats.tree_diffs, 0);
-        assert_eq!(advanced_stats.native_batches, 1);
-        assert_eq!(advanced_stats.native_events, 1);
-        assert_eq!(advanced_stats.event_hits, 3);
-        assert_eq!(advanced_stats.rename_probes, 0);
-        assert_eq!(advanced_stats.view_hits, 0);
-
-        let mut capped_cache = ChurnCache::for_test(cache_dir.path());
-        let (capped_result, capped_stats) = collect_impl_with_native(
-            dir.path(),
-            &wanted,
-            &ChurnLimits::with_max_commits(2),
-            &mut capped_cache,
-            &NativeGit::default(),
-        );
-        assert_eq!(capped_result.churn[Path::new("new.rs")].commits, 2);
-        assert_eq!(capped_stats.tree_diffs, 0);
-        assert_eq!(capped_stats.event_hits, 2);
-        assert_eq!(capped_stats.view_hits, 0);
-    }
-
-    #[test]
-    fn diff_base_uses_resolved_tree_identity() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        fs::write(dir.path().join("lib.rs"), "fn value() {}\n").unwrap();
-        commit_all(&repo, "initial");
-
-        let head = diff_base_tree_id(dir.path(), &DiffScope::Since("HEAD".to_string())).unwrap();
-        let working = diff_base_tree_id(dir.path(), &DiffScope::Working).unwrap();
-        assert_eq!(head, working);
-        assert!(head.is_some());
-    }
-
-    #[test]
-    fn changed_files_can_reuse_a_previously_resolved_base_tree() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = Repository::init(dir.path()).unwrap();
-        let source = dir.path().join("lib.rs");
-        fs::write(&source, "fn value() -> u8 { 1 }\n").unwrap();
-        commit_all(&repo, "first");
-        let base = diff_base_tree_id(dir.path(), &DiffScope::Working)
-            .unwrap()
-            .unwrap();
-        fs::write(&source, "fn value() -> u8 { 2 }\n").unwrap();
-        commit_all(&repo, "second");
-
-        let changed =
-            changed_files_with_base(dir.path(), &DiffScope::Working, Some(&base)).unwrap();
-        assert!(changed.contains(Path::new("lib.rs")));
-    }
-}
+mod tests;

@@ -45,7 +45,7 @@ pub enum ErrorFormat {
 pub enum Command {
     /// Describe stable commands, formats, profiles, and language coverage
     Capabilities(CapabilitiesArgs),
-    /// Inspect or clear RepoScout's OS-managed caches
+    /// Inspect or clear `RepoScout`'s OS-managed caches
     Cache(CacheArgs),
     /// Token counts only
     Tokens(ScanArgs),
@@ -87,7 +87,7 @@ pub struct CacheClearArgs {
     #[arg(conflicts_with = "all")]
     pub path: Option<PathBuf>,
 
-    /// Clear every cache managed by RepoScout
+    /// Clear every cache managed by `RepoScout`
     #[arg(long)]
     pub all: bool,
 }
@@ -167,6 +167,10 @@ pub enum DaemonProfile {
 }
 
 #[derive(Args, Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Clap presence-only switches are independent boolean CLI inputs, not a programmatic options interface"
+)]
 pub struct CommonArgs {
     /// Output format [default: table on a TTY, else json]
     #[arg(short, long, value_enum)]
@@ -185,7 +189,7 @@ pub struct CommonArgs {
     #[arg(long)]
     pub no_project_config: bool,
 
-    /// tiktoken encoding (o200k_base or cl100k_base)
+    /// tiktoken encoding (`o200k_base` or `cl100k_base`)
     #[arg(long)]
     pub encoding: Option<String>,
 
@@ -271,6 +275,7 @@ pub enum ExecutionProfile {
 }
 
 impl ExecutionProfile {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Full => "full",
@@ -319,6 +324,10 @@ pub struct LocateArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Clap presence-only switches are independent boolean CLI inputs, not a programmatic options interface"
+)]
 pub struct ScanArgs {
     /// Path to scan (repo root, subdirectory, or file)
     #[arg(default_value = ".")]
@@ -482,6 +491,7 @@ pub enum GraphDirection {
 }
 
 impl GraphDirection {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Dependencies => "dependencies",

@@ -27,6 +27,13 @@ const MAX_XZ_MEMORY_BYTES: u64 = 96 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 256;
 const MAX_TAR_STREAM_BYTES: u64 = MAX_UNPACKED_BYTES + ((MAX_ARCHIVE_ENTRIES as u64 + 1) * 1024);
 
+/// Update the current installer-managed executable to the latest release.
+///
+/// # Errors
+///
+/// Returns an error when the installer receipt is absent or invalid, release
+/// metadata or assets cannot be fetched and verified, or the executable cannot
+/// be replaced safely.
 pub fn run() -> Result<String> {
     let loaded = load_receipt()?;
     let executable = validate_receipt(&loaded.receipt, &loaded.path)?;
@@ -45,8 +52,7 @@ pub fn run() -> Result<String> {
 
     install_release(&client, loaded, &latest, &latest_version, &executable)?;
     Ok(format!(
-        "Updated RepoScout from {} to {}.\n",
-        current_version, latest_version
+        "Updated RepoScout from {current_version} to {latest_version}.\n"
     ))
 }
 
@@ -405,14 +411,14 @@ impl<R: Read> Read for ReadLimit<R> {
             return match self.inner.read(&mut probe)? {
                 0 => Ok(0),
                 _ => Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
+                    ErrorKind::InvalidData,
                     "decompressed archive exceeds the extraction limit",
                 )),
             };
         }
 
-        let allowed = usize::try_from(self.remaining.min(buffer.len() as u64))
-            .expect("the read limit never exceeds the destination buffer");
+        let allowed = usize::try_from(self.remaining)
+            .map_or(buffer.len(), |remaining| remaining.min(buffer.len()));
         let read = self.inner.read(&mut buffer[..allowed])?;
         self.remaining = self.remaining.saturating_sub(read as u64);
         Ok(read)
@@ -461,7 +467,7 @@ fn extract_release_binary(archive: &[u8], output: &mut fs::File) -> Result<()> {
         if entry.size() > MAX_BINARY_BYTES {
             bail!("the RepoScout release binary exceeds the extraction limit");
         }
-        let copied = std::io::copy(&mut entry.by_ref().take(MAX_BINARY_BYTES + 1), output)
+        let copied = io::copy(&mut entry.by_ref().take(MAX_BINARY_BYTES + 1), output)
             .context("could not extract the RepoScout release binary")?;
         if copied > MAX_BINARY_BYTES {
             bail!("the RepoScout release binary exceeds the extraction limit");
@@ -632,12 +638,12 @@ mod tests {
 
     #[test]
     fn decompressed_stream_limit_counts_actual_bytes_read() {
-        let mut reader = ReadLimit::new(std::io::Cursor::new(b"abcde"), 4);
+        let mut reader = ReadLimit::new(io::Cursor::new(b"abcde"), 4);
         let mut actual = Vec::new();
 
         let error = reader.read_to_end(&mut actual).unwrap_err();
 
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
         assert_eq!(actual, b"abcd");
     }
 }

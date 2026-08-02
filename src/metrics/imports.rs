@@ -14,6 +14,7 @@ use crate::{lang::FirstClass, php};
 use std::collections::HashSet;
 use tree_sitter::{Node, Tree};
 
+#[must_use]
 pub fn extract(fc: FirstClass, content: &str, tree: &Tree) -> Vec<String> {
     let mut imports = Vec::new();
     let mut seen = HashSet::new();
@@ -212,8 +213,7 @@ fn is_require_or_import_call(node: Node<'_>, content: &str) -> bool {
     node.child_by_field_name("function")
         .or_else(|| node.child(0))
         .and_then(|function| function.utf8_text(content.as_bytes()).ok())
-        .map(|text| matches!(text.trim(), "require" | "import"))
-        .unwrap_or(false)
+        .is_some_and(|text| matches!(text.trim(), "require" | "import"))
 }
 
 fn first_direct_string_argument(node: Node<'_>, content: &str) -> Option<String> {

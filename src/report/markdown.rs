@@ -1,6 +1,7 @@
 //! Markdown report — good for pasting into PRs, issues, or agent context.
 
 use crate::model::{ScanDiagnostics, ScanReport};
+use crate::numeric::usize_to_f64;
 use crate::report::projection::{
     file_cyclomatic_average, finding_location, human_duplicate_projection, human_risk_heading,
     human_test_signal, metric_delta_display, metric_label, source_language_rollup,
@@ -12,9 +13,9 @@ use crate::report::{
 use std::fmt::Write as _;
 use std::path::Path;
 
+#[must_use]
 pub fn render(report: &ScanReport, duplication_details: bool) -> String {
     let mut out = String::new();
-    let s = &report.summary;
 
     let _ = writeln!(
         out,
@@ -38,6 +39,24 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
     render_complexity(&mut out, report);
 
     render_duplication(&mut out, report, duplication_details);
+
+    render_markers_symbols_and_skips(&mut out, report);
+    render_languages_and_token_files(&mut out, report);
+    render_hotspots(&mut out, report);
+    render_assessment_and_tests(&mut out, report);
+    render_top_risks(&mut out, report);
+    render_context(&mut out, report);
+    render_directories(&mut out, report);
+    render_baseline(&mut out, report);
+    render_review(&mut out, report);
+    render_graph(&mut out, report);
+    render_impact(&mut out, report);
+
+    out
+}
+
+fn render_markers_symbols_and_skips(out: &mut String, report: &ScanReport) {
+    let s = &report.summary;
 
     if !s.markers.is_empty() {
         let markers: Vec<String> = s
@@ -81,6 +100,10 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         }
         let _ = writeln!(out);
     }
+}
+
+fn render_languages_and_token_files(out: &mut String, report: &ScanReport) {
+    let s = &report.summary;
 
     if !s.languages.is_empty() {
         let _ = writeln!(out, "## Source languages");
@@ -89,7 +112,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         let _ = writeln!(out, "|---|--:|--:|--:|--:|");
         for l in source_language_rollup(&s.languages) {
             let cpct = if l.loc > 0 {
-                l.comment_lines as f64 / l.loc as f64 * 100.0
+                usize_to_f64(l.comment_lines) / usize_to_f64(l.loc) * 100.0
             } else {
                 0.0
             };
@@ -121,6 +144,10 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         }
         let _ = writeln!(out);
     }
+}
+
+fn render_hotspots(out: &mut String, report: &ScanReport) {
+    let s = &report.summary;
 
     if !s.top_hotspots.is_empty() {
         let _ = writeln!(out, "## Hotspots (churn × complexity)");
@@ -129,8 +156,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         let _ = writeln!(out, "|---|--:|--:|--:|--:|");
         for h in &s.top_hotspots {
             let average = file_cyclomatic_average(report, &h.path)
-                .map(|average| format!("{average:.1}"))
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), |average| format!("{average:.1}"));
             let _ = writeln!(
                 out,
                 "| {} | {} | {} | {} | {:.0} |",
@@ -143,75 +169,75 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         }
         let _ = writeln!(out);
     }
+}
 
-    // Assessment
-    {
-        let a = &s.assessment;
-        let _ = writeln!(out, "## Assessment");
-        let _ = writeln!(out);
+fn render_assessment_and_tests(out: &mut String, report: &ScanReport) {
+    let s = &report.summary;
+
+    let a = &s.assessment;
+    let _ = writeln!(out, "## Assessment");
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "- Context: **{}** (budget {})",
+        if !a.fits_context_known {
+            "unknown"
+        } else if a.fits_context {
+            "fits"
+        } else {
+            "exceeds"
+        },
+        thousands(a.token_budget)
+    );
+    let _ = writeln!(
+        out,
+        "- Cleanup worth: **{}**{}",
+        markdown_text(&a.cleanup_worth),
+        if a.cleanup_worth_complete {
+            ""
+        } else {
+            " (partial evidence)"
+        }
+    );
+    if !a.unavailable_signals.is_empty() {
         let _ = writeln!(
             out,
-            "- Context: **{}** (budget {})",
-            if !a.fits_context_known {
-                "unknown"
-            } else if a.fits_context {
-                "fits"
-            } else {
-                "exceeds"
-            },
-            thousands(a.token_budget)
+            "- Unavailable signals: {}",
+            markdown_text(&a.unavailable_signals.join(", "))
         );
-        let _ = writeln!(
-            out,
-            "- Cleanup worth: **{}**{}",
-            markdown_text(&a.cleanup_worth),
-            if a.cleanup_worth_complete {
-                ""
-            } else {
-                " (partial evidence)"
-            }
-        );
-        if !a.unavailable_signals.is_empty() {
-            let _ = writeln!(
-                out,
-                "- Unavailable signals: {}",
-                markdown_text(&a.unavailable_signals.join(", "))
-            );
-        }
-        for r in &a.reasons {
-            let _ = writeln!(out, "  - {}", markdown_text(r));
-        }
-        let _ = writeln!(out);
     }
+    for reason in &a.reasons {
+        let _ = writeln!(out, "  - {}", markdown_text(reason));
+    }
+    let _ = writeln!(out);
 
-    // Test presence
-    {
-        let tp = &s.test_presence;
-        let _ = writeln!(out, "## Test filename matching");
-        let _ = writeln!(out);
-        let _ = writeln!(out, "- Test files: **{}**", thousands(tp.test_files));
+    let tp = &s.test_presence;
+    let _ = writeln!(out, "## Test filename matching");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "- Test files: **{}**", thousands(tp.test_files));
+    let _ = writeln!(
+        out,
+        "- Source files: **{}**, without a matching test filename: **{}**",
+        thousands(tp.source_files),
+        thousands(tp.untested_source_files)
+    );
+    if !tp.untested_samples.is_empty() {
+        let samples: Vec<String> = tp
+            .untested_samples
+            .iter()
+            .map(|path| markdown_code_span(path))
+            .collect();
         let _ = writeln!(
             out,
-            "- Source files: **{}**, without a matching test filename: **{}**",
-            thousands(tp.source_files),
-            thousands(tp.untested_source_files)
+            "- Samples without a matching test filename: {}",
+            samples.join(", ")
         );
-        if !tp.untested_samples.is_empty() {
-            let samples: Vec<String> = tp
-                .untested_samples
-                .iter()
-                .map(|p| markdown_code_span(p))
-                .collect();
-            let _ = writeln!(
-                out,
-                "- Samples without a matching test filename: {}",
-                samples.join(", ")
-            );
-        }
-        let _ = writeln!(out);
     }
+    let _ = writeln!(out);
+}
 
-    // Top risks
+fn render_top_risks(out: &mut String, report: &ScanReport) {
+    let s = &report.summary;
     if !s.top_risks.is_empty() {
         let _ = writeln!(out, "## {}", human_risk_heading(report));
         let _ = writeln!(out);
@@ -222,8 +248,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         let _ = writeln!(out, "|---|--:|--:|--:|--:|--:|---|");
         for r in &s.top_risks {
             let average = file_cyclomatic_average(report, Path::new(&r.path))
-                .map(|average| format!("{average:.1}"))
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), |average| format!("{average:.1}"));
             let _ = writeln!(
                 out,
                 "| {} | {:.2} | {} | {} | {} | {} | {} |",
@@ -244,10 +269,9 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         }
         let _ = writeln!(out);
     }
+}
 
-    render_context(&mut out, report);
-
-    // By directory
+fn render_directories(out: &mut String, report: &ScanReport) {
     if !report.directories.is_empty() {
         let _ = writeln!(out, "## By directory");
         let _ = writeln!(out);
@@ -272,15 +296,6 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
         }
         let _ = writeln!(out);
     }
-
-    render_baseline(&mut out, report);
-
-    render_review(&mut out, report);
-
-    render_graph(&mut out, report);
-    render_impact(&mut out, report);
-
-    out
 }
 
 fn render_baseline(out: &mut String, report: &ScanReport) {
@@ -335,6 +350,10 @@ fn render_baseline(out: &mut String, report: &ScanReport) {
     let _ = writeln!(out);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "context rendering follows the serialized plan fields in a fixed human-readable order"
+)]
 fn render_context(out: &mut String, report: &ScanReport) {
     let Some(context) = &report.context else {
         return;
@@ -473,7 +492,7 @@ fn render_overview(out: &mut String, report: &ScanReport) {
         thousands(summary.source.sloc)
     );
     let source_comment_ratio = if summary.source.loc > 0 {
-        summary.source.comment_lines as f64 / summary.source.loc as f64
+        usize_to_f64(summary.source.comment_lines) / usize_to_f64(summary.source.loc)
     } else {
         0.0
     };
@@ -496,6 +515,10 @@ fn render_overview(out: &mut String, report: &ScanReport) {
     render_scan_diagnostics(out, diagnostics);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "diagnostic rendering exhaustively presents every bounded-scan signal in one ordered section"
+)]
 fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
     if diagnostics.unsupported_files == 0
         && diagnostics.unreadable_files == 0
@@ -699,6 +722,10 @@ fn render_complexity(out: &mut String, report: &ScanReport) {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "duplication rendering keeps summary, coverage, truncation, and optional detail ordering together as one output contract"
+)]
 fn render_duplication(out: &mut String, report: &ScanReport, duplication_details: bool) {
     let summary = &report.summary;
     let duplication = &summary.duplication;
@@ -919,7 +946,16 @@ fn render_graph(out: &mut String, report: &ScanReport) {
     let Some(graph) = &report.graph else {
         return;
     };
+    render_graph_summary(out, graph);
+    render_graph_metadata(out, graph);
+    render_focused_graph_files(out, graph);
+    render_graph_cycles(out, graph);
+    render_top_depended(out, graph);
+    render_most_dependent(out, graph);
+    render_graph_orphans(out, graph);
+}
 
+fn render_graph_summary(out: &mut String, graph: &crate::model::DepGraph) {
     let _ = writeln!(out, "## Dependency graph (heuristic first-class languages)");
     let _ = writeln!(out);
     let languages = if graph.languages.is_empty() {
@@ -952,7 +988,9 @@ fn render_graph(out: &mut String, report: &ScanReport) {
         thousands(graph.config_errors)
     );
     let _ = writeln!(out);
+}
 
+fn render_graph_metadata(out: &mut String, graph: &crate::model::DepGraph) {
     if !graph.config_files.is_empty() {
         let _ = writeln!(
             out,
@@ -997,7 +1035,9 @@ fn render_graph(out: &mut String, report: &ScanReport) {
     {
         let _ = writeln!(out);
     }
+}
 
+fn render_focused_graph_files(out: &mut String, graph: &crate::model::DepGraph) {
     if !graph.focus.is_empty() && !graph.files.is_empty() {
         let _ = writeln!(out, "### Focused graph files");
         let _ = writeln!(out);
@@ -1015,7 +1055,9 @@ fn render_graph(out: &mut String, report: &ScanReport) {
         }
         let _ = writeln!(out);
     }
+}
 
+fn render_graph_cycles(out: &mut String, graph: &crate::model::DepGraph) {
     if !graph.cycles.is_empty() {
         let _ = writeln!(out, "### Import cycles");
         let _ = writeln!(out);
@@ -1027,7 +1069,9 @@ fn render_graph(out: &mut String, report: &ScanReport) {
         }
         let _ = writeln!(out);
     }
+}
 
+fn render_top_depended(out: &mut String, graph: &crate::model::DepGraph) {
     if !graph.top_depended.is_empty() {
         let _ = writeln!(out, "### Most depended-upon");
         let _ = writeln!(out);
@@ -1043,7 +1087,9 @@ fn render_graph(out: &mut String, report: &ScanReport) {
         }
         let _ = writeln!(out);
     }
+}
 
+fn render_most_dependent(out: &mut String, graph: &crate::model::DepGraph) {
     if !graph.most_dependent.is_empty() {
         let _ = writeln!(out, "### Most dependent");
         let _ = writeln!(out);
@@ -1059,7 +1105,9 @@ fn render_graph(out: &mut String, report: &ScanReport) {
         }
         let _ = writeln!(out);
     }
+}
 
+fn render_graph_orphans(out: &mut String, graph: &crate::model::DepGraph) {
     if !graph.orphans.is_empty() {
         let _ = writeln!(out, "### Orphans (dead-code candidates)");
         let _ = writeln!(out);
@@ -1115,40 +1163,4 @@ fn render_impact(out: &mut String, report: &ScanReport) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::render_scan_diagnostics;
-    use crate::model::ScanDiagnostics;
-
-    #[test]
-    fn partial_type2_analysis_is_visible_in_markdown_diagnostics() {
-        let diagnostics = ScanDiagnostics {
-            type2_analysis_partial: true,
-            type2_pools_truncated: 1,
-            type2_seed_pairs_skipped: 42,
-            type2_match_limit_reached: true,
-            ..ScanDiagnostics::default()
-        };
-        let mut out = String::new();
-
-        render_scan_diagnostics(&mut out, &diagnostics);
-
-        assert!(out.contains("Type-2 analysis is **partial**"));
-        assert!(out.contains("42 candidate seed pairs"));
-        assert!(out.contains("match buffer limit was reached"));
-    }
-
-    #[test]
-    fn incomplete_omission_counts_are_labeled_as_lower_bounds() {
-        let diagnostics = ScanDiagnostics {
-            files_omitted_by_limit: 1,
-            files_omitted_count_incomplete: true,
-            scan_truncated: true,
-            ..ScanDiagnostics::default()
-        };
-        let mut out = String::new();
-
-        render_scan_diagnostics(&mut out, &diagnostics);
-
-        assert!(out.contains("at least 1 (traversal stopped before an exact count)"));
-    }
-}
+mod tests;

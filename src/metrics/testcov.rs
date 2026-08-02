@@ -8,16 +8,16 @@ use tree_sitter::{Node, Tree};
 ///
 /// Attribute nodes are inspected instead of raw source text so examples in
 /// comments and strings cannot mark a source file as tested.
+#[must_use]
 pub fn has_inline_rust_tests(content: &str, tree: &Tree) -> bool {
     let mut stack = vec![tree.root_node()];
     while let Some(node) = stack.pop() {
         if node.kind() == "attribute" && is_test_attribute(node, content) {
             return true;
         }
-        for index in (0..node.named_child_count()).rev() {
-            if let Some(child) = node.named_child(index as u32) {
-                stack.push(child);
-            }
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            stack.push(child);
         }
     }
     false
@@ -28,6 +28,7 @@ pub fn has_inline_rust_tests(content: &str, tree: &Tree) -> bool {
 /// Direct `#[cfg(test)]` items and test functions are included. Compound
 /// conditions are conservatively retained because they may also compile in a
 /// production configuration.
+#[must_use]
 pub fn inline_rust_test_regions(content: &str, tree: &Tree) -> Vec<LineRange> {
     let mut ranges = Vec::new();
     let mut stack = vec![tree.root_node()];
@@ -41,10 +42,9 @@ pub fn inline_rust_test_regions(content: &str, tree: &Tree) -> Vec<LineRange> {
                 end: item.end_position().row + 1,
             });
         }
-        for index in (0..node.named_child_count()).rev() {
-            if let Some(child) = node.named_child(index as u32) {
-                stack.push(child);
-            }
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            stack.push(child);
         }
     }
     merge_line_ranges(ranges)
@@ -165,7 +165,8 @@ fn merge_line_ranges(mut ranges: Vec<LineRange>) -> Vec<LineRange> {
 /// - the filename stem starts with `test_`, ends with `_test`, or the filename
 ///   contains `.test.` or `.spec.`; OR
 /// - the filename ends with `_spec.rb`; OR
-/// - a PHP filename follows PHPUnit's `SomethingTest.php` convention.
+/// - a PHP filename follows `PHPUnit`'s `SomethingTest.php` convention.
+#[must_use]
 pub fn is_test_file(rel_path: &str) -> bool {
     let normalized = rel_path.replace('\\', "/");
 
@@ -209,6 +210,7 @@ pub fn is_test_file(rel_path: &str) -> bool {
 /// removed, while package prefixes and nested directories are retained.
 /// Examples: `Foo.ts` → `"foo"`, `packages/web/src/api/Foo.ts` →
 /// `"packages/web/api/foo"`.
+#[must_use]
 pub fn source_stem(rel_path: &str) -> String {
     let mut components = stem_components(rel_path);
     strip_layout_components(&mut components, false);
@@ -228,6 +230,7 @@ pub fn source_stem(rel_path: &str) -> String {
 ///
 /// The raw stem is always the first element; duplicates are removed while
 /// preserving order.
+#[must_use]
 pub fn test_stem_keys(rel_path: &str) -> Vec<String> {
     let normalized = rel_path.replace('\\', "/");
     let filename = normalized.rsplit('/').next().unwrap_or(&normalized);
@@ -336,11 +339,9 @@ fn strip_layout_components(components: &mut Vec<String>, is_test: bool) {
         })
     });
 
-    let test_layout = test_layout.flatten().filter(|test_index| {
-        source_layout
-            .map(|source_index| *test_index > source_index)
-            .unwrap_or(true)
-    });
+    let test_layout = test_layout
+        .flatten()
+        .filter(|test_index| source_layout.is_none_or(|source_index| *test_index > source_index));
 
     let mut remove: Vec<usize> = [source_layout, test_layout].into_iter().flatten().collect();
     remove.sort_unstable_by(|a, b| b.cmp(a));
@@ -459,7 +460,7 @@ fn also_non_test_build() {}
 
     #[test]
     fn rust_test_regions_only_include_test_only_items() {
-        let source = r#"
+        let source = r"
 pub fn production() {}
 
 #[cfg(any(test, unix))]
@@ -470,7 +471,7 @@ mod tests {
     #[test]
     fn works() {}
 }
-"#;
+";
         let tree = parse::parse(FirstClass::Rust, source).unwrap();
         let ranges = inline_rust_test_regions(source, &tree);
 

@@ -125,6 +125,12 @@ pub struct LocateOptions {
     pub limit: usize,
 }
 
+/// Locate declarations matching a qualified or simple symbol name.
+///
+/// # Errors
+///
+/// Returns an error for an empty or invalid query, or when repository
+/// discovery and per-file declaration analysis cannot complete.
 pub fn locate(
     target: &Path,
     cfg: &Config,
@@ -144,17 +150,7 @@ pub fn locate(
     // Declaration lookup needs no whole-repository duplication or Git walk.
     // Keep the configured per-file profile so this query can reuse ordinary
     // scan entries instead of replacing them with a query-only cache profile.
-    let mut query_config = cfg.clone();
-    query_config.enabled.duplication = false;
-    query_config.enabled.churn = false;
-    query_config.context = false;
-    query_config.by_dir = None;
-    query_config.diff_scope = None;
-    query_config.baseline_path = None;
-    query_config.graph = false;
-    query_config.graph_focus.clear();
-    query_config.impact = false;
-    query_config.review = None;
+    let query_config = declaration_query_config(cfg);
 
     let artifacts = scan::run_with_artifacts(
         target,
@@ -232,12 +228,27 @@ pub fn locate(
             .files
             .iter()
             .filter(|file| {
-                crate::lang::detect(&file.path).is_some_and(|language| language.is_first_class())
+                crate::lang::detect(&file.path).is_some_and(super::lang::LangInfo::is_first_class)
             })
             .count(),
         execution: artifacts.report.execution,
         matches,
     })
+}
+
+fn declaration_query_config(cfg: &Config) -> Config {
+    let mut query_config = cfg.clone();
+    query_config.enabled.duplication = false;
+    query_config.enabled.churn = false;
+    query_config.context = false;
+    query_config.by_dir = None;
+    query_config.diff_scope = None;
+    query_config.baseline_path = None;
+    query_config.graph = false;
+    query_config.graph_focus.clear();
+    query_config.impact = false;
+    query_config.review = None;
+    query_config
 }
 
 fn normalize_filter(value: Option<&str>) -> Option<String> {

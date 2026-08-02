@@ -14,6 +14,12 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// Review canonical findings against one Git diff scope.
+///
+/// # Errors
+///
+/// Returns an error when health policy compilation, snapshot loading, or deep
+/// finding comparison cannot complete within the configured repository limits.
 pub fn run(
     root: &Path,
     cfg: &Config,
@@ -120,11 +126,12 @@ fn catalog(
         )
         .duplication
     } else {
-        Default::default()
+        crate::model::Duplication::default()
     };
     crate::findings::build(&files, &duplication, &[], cfg)
 }
 
+#[must_use]
 pub fn filter_lines(
     catalog: &FindingCatalog,
     changed_files: Vec<ReviewChangedFile>,
@@ -237,6 +244,10 @@ fn finding_intersects(
     matches(&finding.primary_location) || finding.related_locations.iter().any(matches)
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "every FindingChange is constructed with a finding on at least one side"
+)]
 fn review_change(change: &FindingChange) -> ReviewFinding {
     let finding = change
         .after
