@@ -15,6 +15,7 @@ on:
       - rust-toolchain
       - rust-toolchain.toml
       - rustfmt.toml
+      - scripts/check-rust-file-size.sh
       - src/**
       - tests/**
   pull_request:
@@ -36,6 +37,7 @@ on:
       - rust-toolchain
       - rust-toolchain.toml
       - rustfmt.toml
+      - scripts/check-rust-file-size.sh
       - src/**
       - tests/**
   schedule:
@@ -83,6 +85,9 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --check
+
+      - name: Report oversized Rust source files
+        run: ./scripts/check-rust-file-size.sh
 
       - name: Lint
         run: cargo clippy --locked --all-targets -- -D warnings
