@@ -77,7 +77,7 @@ full-suite command.
 - Do not run an unbounded RepoScout scan or benchmark against a large external repository without
   explicit user authorization. Prefer a focused target and bounded history for routine checks.
 - Record the exact session/PID for every manually authorized resource-intensive command and monitor it. If
-  it unexpectedly runs longer than 60 seconds, exceeds 1 GiB RSS, or spawns more than one
+  it unexpectedly runs longer than 180 seconds, exceeds 1 GiB RSS, or spawns more than one
   RepoScout CLI child, stop only that recorded agent-owned session immediately and report what
   happened. Do not let it continue merely to complete a checklist.
 - If resource-intensive validation is stopped by a guardrail, run the smallest relevant targeted
