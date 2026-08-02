@@ -60,6 +60,7 @@ pub(crate) fn analyze(fc: FirstClass, content: &str, tree: &Tree) -> SymbolAnaly
 
 /// Count structural symbols in `tree` for `fc`.  `content` is the source text
 /// used to resolve identifier names for export detection.
+#[must_use]
 pub fn count(fc: FirstClass, content: &str, tree: &Tree) -> SymbolCounts {
     let src = content.as_bytes();
     let root = tree.root_node();
@@ -120,51 +121,13 @@ fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
 
 fn declaration_kind(fc: FirstClass, node: Node<'_>) -> Option<(OutlineKind, Node<'_>)> {
     let kind = match fc {
-        FirstClass::Rust => match node.kind() {
-            "function_item" | "function_signature_item" => callable_kind(node),
-            "struct_item" | "union_item" | "type_item" => OutlineKind::Type,
-            "enum_item" => OutlineKind::Enum,
-            "trait_item" => OutlineKind::Trait,
-            _ => return None,
-        },
-        FirstClass::Python => match node.kind() {
-            "function_definition" => callable_kind(node),
-            "class_definition" => OutlineKind::Class,
-            _ => return None,
-        },
-        FirstClass::JavaScript => match node.kind() {
-            "function_declaration" | "generator_function_declaration" => OutlineKind::Function,
-            "method_definition" => OutlineKind::Method,
-            "class_declaration" => OutlineKind::Class,
-            "variable_declarator" if variable_callable(node) => OutlineKind::Function,
-            _ => return None,
-        },
-        FirstClass::TypeScript | FirstClass::Tsx => match node.kind() {
-            "function_declaration" | "generator_function_declaration" => OutlineKind::Function,
-            "method_definition" | "method_signature" => OutlineKind::Method,
-            "class_declaration" => OutlineKind::Class,
-            "interface_declaration" => OutlineKind::Interface,
-            "type_alias_declaration" => OutlineKind::Type,
-            "enum_declaration" => OutlineKind::Enum,
-            "variable_declarator" if variable_callable(node) => OutlineKind::Function,
-            _ => return None,
-        },
-        FirstClass::Go => match node.kind() {
-            "function_declaration" => OutlineKind::Function,
-            "method_declaration" => OutlineKind::Method,
-            "type_spec" | "type_alias" => OutlineKind::Type,
-            _ => return None,
-        },
-        FirstClass::Php => match node.kind() {
-            "function_definition" => OutlineKind::Function,
-            "method_declaration" => OutlineKind::Method,
-            "class_declaration" => OutlineKind::Class,
-            "interface_declaration" => OutlineKind::Interface,
-            "trait_declaration" => OutlineKind::Trait,
-            "enum_declaration" => OutlineKind::Enum,
-            _ => return None,
-        },
-    };
+        FirstClass::Rust => rust_declaration_kind(node),
+        FirstClass::Python => python_declaration_kind(node),
+        FirstClass::JavaScript => javascript_declaration_kind(node),
+        FirstClass::TypeScript | FirstClass::Tsx => typescript_declaration_kind(node),
+        FirstClass::Go => go_declaration_kind(node),
+        FirstClass::Php => php_declaration_kind(node),
+    }?;
     let declaration = if fc == FirstClass::Python {
         node.parent()
             .filter(|parent| parent.kind() == "decorated_definition")
@@ -173,6 +136,68 @@ fn declaration_kind(fc: FirstClass, node: Node<'_>) -> Option<(OutlineKind, Node
         node
     };
     Some((kind, declaration))
+}
+
+fn rust_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "function_item" | "function_signature_item" => Some(callable_kind(node)),
+        "struct_item" | "union_item" | "type_item" => Some(OutlineKind::Type),
+        "enum_item" => Some(OutlineKind::Enum),
+        "trait_item" => Some(OutlineKind::Trait),
+        _ => None,
+    }
+}
+
+fn python_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "function_definition" => Some(callable_kind(node)),
+        "class_definition" => Some(OutlineKind::Class),
+        _ => None,
+    }
+}
+
+fn javascript_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "function_declaration" | "generator_function_declaration" => Some(OutlineKind::Function),
+        "method_definition" => Some(OutlineKind::Method),
+        "class_declaration" => Some(OutlineKind::Class),
+        "variable_declarator" if variable_callable(node) => Some(OutlineKind::Function),
+        _ => None,
+    }
+}
+
+fn typescript_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "function_declaration" | "generator_function_declaration" => Some(OutlineKind::Function),
+        "method_definition" | "method_signature" => Some(OutlineKind::Method),
+        "class_declaration" => Some(OutlineKind::Class),
+        "interface_declaration" => Some(OutlineKind::Interface),
+        "type_alias_declaration" => Some(OutlineKind::Type),
+        "enum_declaration" => Some(OutlineKind::Enum),
+        "variable_declarator" if variable_callable(node) => Some(OutlineKind::Function),
+        _ => None,
+    }
+}
+
+fn go_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "function_declaration" => Some(OutlineKind::Function),
+        "method_declaration" => Some(OutlineKind::Method),
+        "type_spec" | "type_alias" => Some(OutlineKind::Type),
+        _ => None,
+    }
+}
+
+fn php_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "function_definition" => Some(OutlineKind::Function),
+        "method_declaration" => Some(OutlineKind::Method),
+        "class_declaration" => Some(OutlineKind::Class),
+        "interface_declaration" => Some(OutlineKind::Interface),
+        "trait_declaration" => Some(OutlineKind::Trait),
+        "enum_declaration" => Some(OutlineKind::Enum),
+        _ => None,
+    }
 }
 
 fn variable_callable(node: Node<'_>) -> bool {
@@ -366,8 +391,8 @@ fn javascript_declaration_is_public(
             | "generator_function_declaration"
             | "method_definition"
             | "class_declaration"
-            | "internal_module" => return false,
-            "program" => return false,
+            | "internal_module"
+            | "program" => return false,
             _ => parent = candidate.parent(),
         }
     }
@@ -486,8 +511,7 @@ fn signature_text(fc: FirstClass, node: Node<'_>, content: &str) -> String {
                 .children(&mut cursor)
                 .filter(|child| child.kind() == ":")
                 .last()
-                .map(|colon| colon.end_byte())
-                .unwrap_or_else(|| body.start_byte())
+                .map_or_else(|| body.start_byte(), |colon| colon.end_byte())
         } else {
             body.start_byte()
         };
@@ -510,10 +534,9 @@ fn walk<F: FnMut(Node<'_>)>(root: Node<'_>, mut visit: F) {
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         visit(node);
-        for i in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(i as u32) {
-                stack.push(child);
-            }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
         }
     }
 }
@@ -561,19 +584,13 @@ fn count_python(root: Node<'_>, src: &[u8]) -> SymbolCounts {
     walk(root, |node| match node.kind() {
         "function_definition" => {
             counts.functions += 1;
-            if name_text(node, src)
-                .map(|n| !n.starts_with('_'))
-                .unwrap_or(false)
-            {
+            if name_text(node, src).is_some_and(|n| !n.starts_with('_')) {
                 counts.exports += 1;
             }
         }
         "class_definition" => {
             counts.types += 1;
-            if name_text(node, src)
-                .map(|n| !n.starts_with('_'))
-                .unwrap_or(false)
-            {
+            if name_text(node, src).is_some_and(|n| !n.starts_with('_')) {
                 counts.exports += 1;
             }
         }
@@ -626,8 +643,7 @@ fn count_go(root: Node<'_>, src: &[u8]) -> SymbolCounts {
             counts.functions += 1;
             if name_text(node, src)
                 .and_then(|n| n.chars().next())
-                .map(|c| c.is_uppercase())
-                .unwrap_or(false)
+                .is_some_and(char::is_uppercase)
             {
                 counts.exports += 1;
             }
@@ -636,8 +652,7 @@ fn count_go(root: Node<'_>, src: &[u8]) -> SymbolCounts {
             counts.types += 1;
             if name_text(node, src)
                 .and_then(|n| n.chars().next())
-                .map(|c| c.is_uppercase())
-                .unwrap_or(false)
+                .is_some_and(char::is_uppercase)
             {
                 counts.exports += 1;
             }
@@ -684,23 +699,23 @@ mod tests {
         let samples = [
             (
                 FirstClass::Rust,
-                r#"
+                r"
 pub fn run() {}
 pub struct Service;
 pub enum State { Ready }
 pub trait Runner { fn execute(&self); }
 impl Runner for Service { fn execute(&self) {} }
-"#,
+",
             ),
             (
                 FirstClass::TypeScript,
-                r#"
+                r"
 export class Client { request(): void {} }
 export interface Transport { send(): void; }
 export type Identifier = string;
 export enum Mode { Fast }
 export function connect(): void {}
-"#,
+",
             ),
         ];
         let mut actual = BTreeSet::new();
@@ -728,11 +743,11 @@ export function connect(): void {}
 
     #[test]
     fn rust_basic_counts() {
-        let src = r#"
+        let src = r"
 pub fn public_func() {}
 fn private_func() {}
 pub struct MyStruct {}
-"#;
+";
         let tree = parse::parse(FirstClass::Rust, src).unwrap();
         let counts = count(FirstClass::Rust, src, &tree);
         assert_eq!(counts.functions, 2, "two functions");
@@ -742,12 +757,12 @@ pub struct MyStruct {}
 
     #[test]
     fn typescript_interface_and_export() {
-        let src = r#"
+        let src = r"
 export interface Foo {
     bar: string;
 }
 function baz() {}
-"#;
+";
         let tree = parse::parse(FirstClass::TypeScript, src).unwrap();
         let counts = count(FirstClass::TypeScript, src, &tree);
         assert!(counts.types >= 1, "interface should count as a type");
@@ -756,14 +771,14 @@ function baz() {}
 
     #[test]
     fn go_grouped_types_are_counted_individually() {
-        let src = r#"
+        let src = r"
 package sample
 type (
     Exported struct{}
     internal int
     Alias = string
 )
-"#;
+";
         let tree = parse::parse(FirstClass::Go, src).unwrap();
         let counts = count(FirstClass::Go, src, &tree);
 
@@ -773,7 +788,7 @@ type (
 
     #[test]
     fn php_counts_named_symbols_and_public_api() {
-        let src = r#"<?php
+        let src = r"<?php
 function helper(): void {}
 
 interface Runner { public function run(): void; }
@@ -783,7 +798,7 @@ final class Service implements Runner {
     public function run(): void {}
     private function secret(): void {}
 }
-"#;
+";
         let tree = parse::parse(FirstClass::Php, src).unwrap();
         let analysis = analyze(FirstClass::Php, src, &tree);
 
@@ -806,7 +821,7 @@ final class Service implements Runner {
 
     #[test]
     fn rust_outlines_keep_headers_and_drop_bodies() {
-        let src = r#"
+        let src = r"
 pub struct Request {
     pub value: String,
 }
@@ -815,7 +830,7 @@ pub fn execute(request: Request) -> usize {
     let secret_body = request.value.len();
     secret_body
 }
-"#;
+";
         let tree = parse::parse(FirstClass::Rust, src).unwrap();
         let analysis = analyze(FirstClass::Rust, src, &tree);
 

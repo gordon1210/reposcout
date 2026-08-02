@@ -4,10 +4,32 @@
 //! without requiring them to open each file to discover they are auto-generated
 //! or vendored noise.
 
+const GENERATED_SUFFIXES: &[&str] = &[
+    ".pb.go",
+    "_pb2.py",
+    ".pb.cc",
+    ".pb.h",
+    ".g.dart",
+    ".freezed.dart",
+    ".designer.cs",
+    ".generated.ts",
+];
+const VENDORED_DIRS: &[&str] = &[
+    "vendor",
+    "node_modules",
+    "third_party",
+    "third-party",
+    "dist",
+    "build",
+    ".next",
+    "out",
+];
+
 /// Return a reason string if `rel_path`/`content` looks like a file an agent
 /// should skip, or `None` if it appears to be hand-authored source code.
 ///
 /// Checks are applied in priority order: minified → generated → vendored.
+#[must_use]
 pub fn skip_hint(rel_path: &str, content: &str) -> Option<String> {
     // 1. Minified: .min. filename, very long lines, or high average line length.
     let filename = rel_path.rsplit('/').next().unwrap_or(rel_path);
@@ -22,23 +44,13 @@ pub fn skip_hint(rel_path: &str, content: &str) -> Option<String> {
     }
     if line_count > 1 {
         let total: usize = lines.iter().map(|l| l.len()).sum();
-        if total as f64 / line_count as f64 > 250.0 {
+        if total > line_count.saturating_mul(250) {
             return Some("minified".to_string());
         }
     }
 
     // 2. Generated: header keywords in the first 5 non-empty lines, or a
     //    well-known generated-file extension.
-    const GENERATED_SUFFIXES: &[&str] = &[
-        ".pb.go",
-        "_pb2.py",
-        ".pb.cc",
-        ".pb.h",
-        ".g.dart",
-        ".freezed.dart",
-        ".designer.cs",
-        ".generated.ts",
-    ];
     for suffix in GENERATED_SUFFIXES {
         if rel_path.ends_with(suffix) {
             return Some("generated".to_string());
@@ -53,16 +65,6 @@ pub fn skip_hint(rel_path: &str, content: &str) -> Option<String> {
     // 3. Vendored: a well-known vendor/build directory appears as a whole path
     //    component. Matching whole segments avoids false positives like
     //    `rebuild/` (contains "build") or `layout/` (contains "out").
-    const VENDORED_DIRS: &[&str] = &[
-        "vendor",
-        "node_modules",
-        "third_party",
-        "third-party",
-        "dist",
-        "build",
-        ".next",
-        "out",
-    ];
     let normalized = rel_path.replace('\\', "/");
     let mut components: Vec<&str> = normalized.split('/').collect();
     components.pop(); // drop the filename; only directory components count

@@ -13,10 +13,12 @@ pub struct MarkerScan {
     pub occurrences: Vec<MarkerOccurrence>,
 }
 
+#[must_use]
 pub fn scan(content: &str, markers: &[String]) -> BTreeMap<String, usize> {
     scan_detailed(content, markers).counts
 }
 
+#[must_use]
 pub fn scan_detailed(content: &str, markers: &[String]) -> MarkerScan {
     scan_ranges(content, markers, std::iter::once(0..content.len()))
 }
@@ -28,18 +30,20 @@ pub fn scan_detailed(content: &str, markers: &[String]) -> MarkerScan {
 /// sitter still exposes intact comments around most syntax errors, so a
 /// partially malformed file remains useful without treating identifiers or
 /// string literals as annotations.
+#[must_use]
 pub fn scan_detailed_in_tree(content: &str, markers: &[String], tree: &Tree) -> MarkerScan {
     let mut ranges = Vec::new();
     collect_comment_ranges(tree.root_node(), &mut ranges);
     ranges.sort_unstable_by_key(|range| range.start);
-    scan_ranges(content, markers, ranges.into_iter())
+    scan_ranges(content, markers, ranges)
 }
 
 fn scan_ranges(
     content: &str,
     markers: &[String],
-    ranges: impl Iterator<Item = Range<usize>> + Clone,
+    ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> MarkerScan {
+    let ranges = ranges.into_iter().collect::<Vec<_>>();
     let mut counts = BTreeMap::new();
     let mut occurrences = Vec::new();
     let mut ordinals: BTreeMap<(String, String), usize> = BTreeMap::new();
@@ -55,7 +59,7 @@ fn scan_ranges(
             continue;
         }
         let positions = ranges
-            .clone()
+            .iter()
             .flat_map(|range| {
                 word_positions(&content[range.clone()], marker)
                     .map(move |position| range.start + position)
@@ -69,8 +73,7 @@ fn scan_ranges(
             let line_start = line_starts[line_index];
             let line_end = content[position..]
                 .find('\n')
-                .map(|offset| position + offset)
-                .unwrap_or(content.len());
+                .map_or(content.len(), |offset| position + offset);
             let normalized = content[line_start..line_end]
                 .split_whitespace()
                 .collect::<Vec<_>>()

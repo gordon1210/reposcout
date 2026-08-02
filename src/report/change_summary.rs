@@ -44,18 +44,18 @@ fn projection(report: &ScanReport) -> Result<Projection<'_>> {
     })
 }
 
-pub fn json(report: &ScanReport, pretty: bool) -> Result<String> {
+pub(super) fn json(report: &ScanReport, pretty: bool) -> Result<String> {
     super::json_string(&projection(report)?, pretty).context("failed to render change-summary JSON")
 }
 
-pub fn ndjson(report: &ScanReport) -> Result<String> {
+pub(super) fn ndjson(report: &ScanReport) -> Result<String> {
     let mut rendered = serde_json::to_string(&projection(report)?)
         .context("failed to render change-summary NDJSON")?;
     rendered.push('\n');
     Ok(rendered)
 }
 
-pub fn table(report: &ScanReport) -> Result<String> {
+pub(super) fn table(report: &ScanReport) -> Result<String> {
     let projection = projection(report)?;
     let summary = projection.change_summary;
     let mut out = String::new();
@@ -124,7 +124,7 @@ pub fn table(report: &ScanReport) -> Result<String> {
     Ok(out)
 }
 
-pub fn markdown(report: &ScanReport) -> Result<String> {
+pub(super) fn markdown(report: &ScanReport) -> Result<String> {
     let projection = projection(report)?;
     let summary = projection.change_summary;
     let mut out = String::new();

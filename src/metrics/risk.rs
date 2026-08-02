@@ -1,6 +1,7 @@
 //! Composite file-risk scoring shared by summaries and `explain`.
 
 use crate::model::{FileReport, RiskEntry, RiskExplanation};
+use crate::numeric::usize_to_f64;
 
 const SLOC_HALF_SATURATION: f64 = 1_000.0;
 const CYCLOMATIC_HALF_SATURATION: f64 = 100.0;
@@ -8,17 +9,19 @@ const CHURN_HALF_SATURATION: f64 = 20.0;
 const REASON_THRESHOLD: f64 = 0.66;
 pub const ALGORITHM_VERSION: u32 = 5;
 
+#[must_use]
 pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanation {
     let sloc = file.sloc;
     let cyclomatic = file
         .complexity
         .as_ref()
-        .map(|complexity| complexity.cyclomatic)
-        .unwrap_or(0);
-    let churn_commits = file.churn.as_ref().map(|churn| churn.commits).unwrap_or(0);
-    let size_factor = half_saturation(sloc as f64, SLOC_HALF_SATURATION);
-    let complexity_factor = half_saturation(cyclomatic as f64, CYCLOMATIC_HALF_SATURATION);
-    let churn_factor = half_saturation(churn_commits as f64, CHURN_HALF_SATURATION);
+        .map_or(0, |complexity| complexity.cyclomatic);
+    let churn_commits = file.churn.as_ref().map_or(0, |churn| churn.commits);
+    let sloc_metric = usize_to_f64(sloc);
+    let churn_metric = usize_to_f64(churn_commits);
+    let size_factor = half_saturation(sloc_metric, SLOC_HALF_SATURATION);
+    let complexity_factor = half_saturation(f64::from(cyclomatic), CYCLOMATIC_HALF_SATURATION);
+    let churn_factor = half_saturation(churn_metric, CHURN_HALF_SATURATION);
     let score = (0.40 * size_factor + 0.40 * complexity_factor + 0.20 * churn_factor).min(1.0);
     // Retained in the stable JSON contract. Filename matching is useful
     // navigation evidence, but it is not measured coverage and must not alter
@@ -26,13 +29,13 @@ pub fn explain(file: &FileReport, no_matching_test_file: bool) -> RiskExplanatio
     let untested_multiplier = 1.0;
 
     let mut reasons = Vec::new();
-    if sloc as f64 / SLOC_HALF_SATURATION >= REASON_THRESHOLD {
+    if sloc_metric / SLOC_HALF_SATURATION >= REASON_THRESHOLD {
         reasons.push("large".to_string());
     }
-    if cyclomatic as f64 / CYCLOMATIC_HALF_SATURATION >= REASON_THRESHOLD {
+    if f64::from(cyclomatic) / CYCLOMATIC_HALF_SATURATION >= REASON_THRESHOLD {
         reasons.push("complex".to_string());
     }
-    if churn_commits as f64 / CHURN_HALF_SATURATION >= REASON_THRESHOLD {
+    if churn_metric / CHURN_HALF_SATURATION >= REASON_THRESHOLD {
         reasons.push("high churn".to_string());
     }
     if no_matching_test_file {
@@ -61,6 +64,7 @@ fn half_saturation(value: f64, anchor: f64) -> f64 {
     value / (value + anchor)
 }
 
+#[must_use]
 pub fn entry(file: &FileReport, no_matching_test_file: bool) -> Option<RiskEntry> {
     let risk = explain(file, no_matching_test_file);
     (risk.score > 0.0).then(|| RiskEntry {
@@ -86,10 +90,10 @@ mod tests {
     fn saturation_anchors_are_half_saturation_points() {
         let risk = explain(&file_with("src/anchor.rs", 1_000, 100, 20), false);
 
-        assert_eq!(risk.size_factor, 0.5);
-        assert_eq!(risk.complexity_factor, 0.5);
-        assert_eq!(risk.churn_factor, 0.5);
-        assert_eq!(risk.score, 0.5);
+        assert!((risk.size_factor - 0.5).abs() < f64::EPSILON);
+        assert!((risk.complexity_factor - 0.5).abs() < f64::EPSILON);
+        assert!((risk.churn_factor - 0.5).abs() < f64::EPSILON);
+        assert!((risk.score - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -124,8 +128,8 @@ mod tests {
         let unmatched = explain(&file, true);
 
         assert!((matched.score - (1.0 / 3.0)).abs() < f64::EPSILON);
-        assert_eq!(unmatched.score, matched.score);
-        assert_eq!(unmatched.untested_multiplier, 1.0);
+        assert!((unmatched.score - matched.score).abs() < f64::EPSILON);
+        assert!((unmatched.untested_multiplier - 1.0).abs() < f64::EPSILON);
         assert_eq!(unmatched.reasons, ["no matching test file"]);
     }
 

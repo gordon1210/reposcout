@@ -31,6 +31,7 @@ struct GroupAcc {
     instances: BTreeMap<(PathBuf, usize, usize), CloneInstance>,
 }
 
+#[must_use]
 pub fn detect(inputs: &[DupInput], min_tokens: usize) -> Vec<CloneGroup> {
     let prepared = prepare(inputs, DetectionOptions::default());
     detect_prepared(inputs, &prepared, min_tokens)

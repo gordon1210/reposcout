@@ -16,6 +16,7 @@ pub struct LineStats {
     pub approximate: bool,
 }
 
+#[must_use]
 pub fn measure(lang: &LangInfo, content: &str, tree: Option<&Tree>) -> LineStats {
     if lang.first_class.is_some()
         && let Some(tree) = tree
@@ -75,10 +76,9 @@ fn collect_comment_ranges(root: Node<'_>, ranges: &mut Vec<(usize, usize)>) {
             ranges.push((node.start_byte(), node.end_byte()));
             continue;
         }
-        for index in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(index as u32) {
-                stack.push(child);
-            }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
         }
     }
 }

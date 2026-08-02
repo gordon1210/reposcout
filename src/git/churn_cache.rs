@@ -57,7 +57,7 @@ pub(super) struct ViewIdentity {
 }
 
 impl ViewIdentity {
-    pub fn new(
+    pub(super) fn new(
         head: String,
         history_state: String,
         limits: &super::ChurnLimits,
@@ -119,14 +119,14 @@ pub(super) struct ChurnCache {
 }
 
 impl ChurnCache {
-    pub fn for_repo(root: &Path, enabled: bool, max_cache_bytes: u64) -> Self {
+    pub(super) fn for_repo(root: &Path, enabled: bool, max_cache_bytes: u64) -> Self {
         let Some(base) = cache_directory(root) else {
             return Self::disabled();
         };
-        Self::at(base, enabled, max_cache_bytes.max(1))
+        Self::at(&base, enabled, max_cache_bytes.max(1))
     }
 
-    fn at(base: PathBuf, enabled: bool, max_cache_bytes: u64) -> Self {
+    fn at(base: &Path, enabled: bool, max_cache_bytes: u64) -> Self {
         if !enabled {
             return Self::disabled();
         }
@@ -151,8 +151,8 @@ impl ChurnCache {
     }
 
     #[cfg(test)]
-    pub fn for_test(base: &Path) -> Self {
-        Self::at(base.to_path_buf(), true, DEFAULT_MAX_CACHE_FILE_BYTES)
+    pub(super) fn for_test(base: &Path) -> Self {
+        Self::at(base, true, DEFAULT_MAX_CACHE_FILE_BYTES)
     }
 
     fn disabled() -> Self {
@@ -169,7 +169,7 @@ impl ChurnCache {
         }
     }
 
-    pub fn get_view(&mut self, identity: &ViewIdentity) -> Option<HashMap<PathBuf, Churn>> {
+    pub(super) fn get_view(&mut self, identity: &ViewIdentity) -> Option<HashMap<PathBuf, Churn>> {
         if !self.enabled {
             return None;
         }
@@ -188,7 +188,7 @@ impl ChurnCache {
         Some(results)
     }
 
-    pub fn put_view(&mut self, identity: ViewIdentity, churn: &HashMap<PathBuf, Churn>) {
+    pub(super) fn put_view(&mut self, identity: ViewIdentity, churn: &HashMap<PathBuf, Churn>) {
         if !self.enabled {
             return;
         }
@@ -206,7 +206,7 @@ impl ChurnCache {
         self.views_dirty = true;
     }
 
-    pub fn load_events(&mut self, history_state: &str) {
+    pub(super) fn load_events(&mut self, history_state: &str) {
         if !self.enabled || self.events.is_some() {
             return;
         }
@@ -225,11 +225,11 @@ impl ChurnCache {
         self.events = Some(events);
     }
 
-    pub fn event(&self, oid: &str) -> Option<&CommitEvent> {
+    pub(super) fn event(&self, oid: &str) -> Option<&CommitEvent> {
         self.events.as_ref()?.get(oid)
     }
 
-    pub fn put_event(&mut self, event: CommitEvent) {
+    pub(super) fn put_event(&mut self, event: CommitEvent) {
         if !self.enabled {
             return;
         }
@@ -239,7 +239,7 @@ impl ChurnCache {
         self.events_dirty = true;
     }
 
-    pub fn save(&mut self) {
+    pub(super) fn save(&mut self) {
         if !self.enabled {
             return;
         }
@@ -391,14 +391,14 @@ mod path {
     use super::{Path, PathBuf, decode_os_string, encode_path};
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(value: &Path, serializer: S) -> Result<S::Ok, S::Error>
+    pub(super) fn serialize<S>(value: &Path, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         serializer.serialize_str(&encode_path(value))
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -413,14 +413,18 @@ mod optional_path {
     use super::{PathBuf, decode_os_string, encode_path};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(value: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+    #[expect(
+        clippy::ref_option,
+        reason = "serde's serialize_with interface passes the complete optional field by shared reference"
+    )]
+    pub(super) fn serialize<S>(value: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         value.as_deref().map(encode_path).serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
     where
         D: Deserializer<'de>,
     {

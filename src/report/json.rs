@@ -1,19 +1,21 @@
 //! JSON output — the stable, agent-friendly representation.
 
+use super::Projection;
 use crate::model::ScanReport;
 use anyhow::{Context, Result};
 
 /// Render the report as compact JSON unless `pretty` is requested. When
-/// `summary_only` is set, the heavy
+/// [`Projection::Summary`] is selected, the heavy
 /// default per-file (`files`) and duplicate (`duplicates`) arrays are dropped.
 /// Explicitly requested analysis blocks remain present: compactness must not
 /// silently erase the answer to a graph, impact, or directory query.
-pub fn render(
-    report: &ScanReport,
-    summary_only: bool,
-    baseline_ready: bool,
-    pretty: bool,
-) -> Result<String> {
+///
+/// # Errors
+///
+/// Returns an error when the report cannot be projected or serialized.
+pub fn render(report: &ScanReport, projection: Projection, pretty: bool) -> Result<String> {
+    let summary_only = projection == Projection::Summary;
+    let baseline_ready = projection == Projection::BaselineReady;
     if summary_only || baseline_ready {
         let mut value = serde_json::to_value(report).context("failed to serialize scan report")?;
         if let Some(obj) = value.as_object_mut() {

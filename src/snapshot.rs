@@ -26,7 +26,9 @@ pub(crate) struct SourceSnapshot {
 
 impl SourceSnapshot {
     #[cfg(test)]
-    pub fn from_sources(sources: impl IntoIterator<Item = (PathBuf, String)>) -> SourceSnapshot {
+    pub(crate) fn from_sources(
+        sources: impl IntoIterator<Item = (PathBuf, String)>,
+    ) -> SourceSnapshot {
         SourceSnapshot {
             sources: sources.into_iter().collect(),
             unreadable_files: 0,
@@ -39,7 +41,7 @@ impl SourceSnapshot {
         }
     }
 
-    pub fn worktree(
+    pub(crate) fn worktree(
         root: &Path,
         cfg: &Config,
         exclusions: &[PathBuf],
@@ -83,7 +85,7 @@ impl SourceSnapshot {
         Ok(snapshot)
     }
 
-    pub fn base(
+    pub(crate) fn base(
         root: &Path,
         cfg: &Config,
         scope: &DiffScope,
@@ -123,7 +125,7 @@ impl SourceSnapshot {
         )
     }
 
-    pub fn current(
+    pub(crate) fn current(
         root: &Path,
         cfg: &Config,
         scope: &DiffScope,
@@ -142,7 +144,7 @@ impl SourceSnapshot {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Path, &str)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Path, &str)> {
         self.sources
             .iter()
             .map(|(path, content)| (path.as_path(), content.as_str()))
@@ -178,12 +180,9 @@ impl SourceSnapshot {
                 stopped_at_limit = true;
                 return TreeWalkResult::Abort;
             }
-            let name = match entry.name() {
-                Ok(name) => name,
-                Err(_) => {
-                    snapshot.unreadable_files += 1;
-                    return TreeWalkResult::Ok;
-                }
+            let Ok(name) = entry.name() else {
+                snapshot.unreadable_files += 1;
+                return TreeWalkResult::Ok;
             };
             let path = PathBuf::from(directory).join(name);
             if !filter.allows(&path) {
@@ -314,6 +313,10 @@ impl SourceSnapshot {
 }
 
 #[cfg(unix)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the shared platform interface is fallible on non-Unix systems where Git paths must be UTF-8"
+)]
 fn git_path(bytes: &[u8]) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStringExt;
 
@@ -485,8 +488,7 @@ fn load_bounded_ignore(path: &Path, limits: IgnoreLimits) -> Option<Gitignore> {
     let content = fs_budget::read_ignore_file(path, limits).ok()?;
     let mut builder = GitignoreBuilder::new(
         path.parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from(".")),
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
     );
     for line in content.lines() {
         let _ = builder.add_line(Some(path.to_path_buf()), line);

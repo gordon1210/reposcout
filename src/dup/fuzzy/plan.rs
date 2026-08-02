@@ -23,7 +23,7 @@ pub(super) struct PlanDiagnostics {
 }
 
 impl PlanDiagnostics {
-    pub fn seed_pairs_skipped(self) -> u64 {
+    pub(super) fn seed_pairs_skipped(self) -> u64 {
         self.seed_pairs_total
             .saturating_sub(self.seed_pairs_selected)
     }
@@ -35,7 +35,7 @@ pub(super) struct CandidatePlan<'a> {
 }
 
 impl<'a> CandidatePlan<'a> {
-    pub fn build(
+    pub(super) fn build(
         index: &'a HashMap<(u64, u64), Vec<Occurrence>>,
         max_seed_pairs: u64,
         rare_first: bool,

@@ -18,6 +18,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::ffi::OsStr;
+use std::fmt::Write as _;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -135,6 +136,12 @@ struct ApiError {
     error: String,
 }
 
+/// Run the local dashboard daemon until shutdown.
+///
+/// # Errors
+///
+/// Returns an error when the async runtime, listener, authentication token,
+/// initial scan, file watcher, or HTTP server cannot be initialized or run.
 pub fn run(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -145,6 +152,10 @@ pub fn run(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
     result
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "daemon startup is one linear ownership transfer across listener, token, watcher, scan task, and graceful shutdown resources"
+)]
 async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
     // Non-loopback remains explicit: plain HTTP is not safe on shared networks.
     if !options.host.is_loopback() && !options.allow_insecure_remote {
@@ -347,6 +358,11 @@ fn request_has_valid_token(request: &Request, expected: &str, loopback: bool) ->
 }
 
 /// Public path used by local tooling (e.g. the Vite proxy) to load the token.
+///
+/// # Errors
+///
+/// Returns an error when the platform exposes no suitable runtime or cache
+/// directory for the daemon token.
 pub fn daemon_token_path(port: u16) -> Result<PathBuf> {
     let dirs = directories::ProjectDirs::from("", "", "reposcout").ok_or_else(|| {
         anyhow!("the platform does not expose a runtime directory for the daemon token file")
@@ -385,8 +401,7 @@ fn write_token_file_atomic(path: &Path, token: &str) -> Result<()> {
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
+            .map_or(0, |d| d.as_nanos())
     ));
 
     // Create the temporary file without following a final symlink component.
@@ -459,7 +474,11 @@ fn generate_token() -> Result<String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes)
         .map_err(|error| anyhow!("failed to draw daemon token entropy: {error}"))?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+    let mut token = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(token, "{byte:02x}");
+    }
+    Ok(token)
 }
 
 fn allowed_request_authority(request: &Request, loopback: bool) -> bool {
@@ -542,7 +561,7 @@ async fn repository_graph(
                 source_facts: snapshot.graph_facts.clone(),
                 resolver_configs: snapshot.resolver_configs.clone(),
             },
-            snapshot.graph_limits.clone(),
+            snapshot.graph_limits,
         )
     };
 
@@ -649,7 +668,10 @@ async fn wait_for_shutdown(mut shutdown: watch::Receiver<bool>) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the scan task owns distinct Tokio channels and shared state with different borrow and move semantics"
+)]
 async fn scan_loop(
     target: PathBuf,
     cfg: Config,
@@ -888,8 +910,8 @@ mod tests {
             scan_finished_at: None,
             error: None,
             report: None,
-            graph_facts: Default::default(),
-            resolver_configs: Default::default(),
+            graph_facts: std::collections::BTreeMap::default(),
+            resolver_configs: std::collections::BTreeMap::default(),
             graph_limits: crate::graph::GraphReadLimits::default(),
         };
         let json = serde_json::to_value(snapshot).unwrap();
@@ -914,8 +936,8 @@ mod tests {
                 scan_finished_at: None,
                 error: None,
                 report: None,
-                graph_facts: Default::default(),
-                resolver_configs: Default::default(),
+                graph_facts: std::collections::BTreeMap::default(),
+                resolver_configs: std::collections::BTreeMap::default(),
                 graph_limits: crate::graph::GraphReadLimits::default(),
             })),
             graph_cache: Arc::new(Mutex::new(None)),
@@ -947,8 +969,8 @@ mod tests {
                 scan_finished_at: None,
                 error: None,
                 report: None,
-                graph_facts: Default::default(),
-                resolver_configs: Default::default(),
+                graph_facts: std::collections::BTreeMap::default(),
+                resolver_configs: std::collections::BTreeMap::default(),
                 graph_limits: crate::graph::GraphReadLimits::default(),
             })),
             graph_cache: Arc::new(Mutex::new(None)),
@@ -1013,8 +1035,8 @@ mod tests {
                 scan_finished_at: None,
                 error: None,
                 report: Some(report),
-                graph_facts: std::collections::BTreeMap::new(),
-                resolver_configs: Default::default(),
+                graph_facts: std::collections::BTreeMap::default(),
+                resolver_configs: std::collections::BTreeMap::default(),
                 graph_limits: crate::graph::GraphReadLimits::default(),
             })),
             graph_cache: Arc::new(Mutex::new(None)),

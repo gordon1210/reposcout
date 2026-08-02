@@ -30,13 +30,17 @@ impl Default for NativeGit {
 
 impl NativeGit {
     #[cfg(test)]
-    pub fn with_executable(executable: impl Into<OsString>) -> Self {
+    pub(super) fn with_executable(executable: impl Into<OsString>) -> Self {
         Self {
             executable: Some(executable.into()),
         }
     }
 
-    pub fn collect_events(
+    #[expect(
+        clippy::too_many_lines,
+        reason = "native Git process ownership, watchdog coordination, stream parsing, and cleanup form one failure-safe lifecycle"
+    )]
+    pub(super) fn collect_events(
         &self,
         repo: &Repository,
         oids: &[Oid],
@@ -94,7 +98,7 @@ impl NativeGit {
         let child_id = child.id();
         let watchdog_deadline = limits.deadline.unwrap_or_else(|| {
             Instant::now()
-                .checked_add(Duration::from_secs(300))
+                .checked_add(Duration::from_mins(5))
                 .unwrap_or_else(Instant::now)
         });
         let (watch_tx, watch_rx) = std::sync::mpsc::channel::<()>();
@@ -137,12 +141,12 @@ impl NativeGit {
         if stats.partial || timed_out {
             let _ = child.kill();
         }
-        let status = child.wait().context("failed to wait for native Git")?;
+        let exit_status = child.wait().context("failed to wait for native Git")?;
         let written = writer
             .join()
             .map_err(|_| anyhow::anyhow!("native Git input writer panicked"))?;
-        if !stats.partial && !status.success() {
-            bail!("native Git exited with {status}");
+        if !stats.partial && !exit_status.success() {
+            bail!("native Git exited with {exit_status}");
         }
         // Writer may fail after kill; ignore write errors once we already partial.
         if !stats.partial {
@@ -158,11 +162,24 @@ impl NativeGit {
     }
 }
 
+#[cfg_attr(
+    unix,
+    expect(
+        unsafe_code,
+        reason = "POSIX process termination requires libc::kill for the child process watchdog"
+    )
+)]
 fn kill_process(pid: u32) -> std::io::Result<()> {
     #[cfg(unix)]
     {
+        let pid = libc::pid_t::try_from(pid).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "child process ID does not fit libc::pid_t",
+            )
+        })?;
         // SAFETY: pid comes from a child we spawned in this process.
-        let rc = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        let rc = unsafe { libc::kill(pid, libc::SIGKILL) };
         if rc == 0 {
             Ok(())
         } else {
@@ -217,131 +234,183 @@ fn prepare_commits(repo: &Repository, oids: &[Oid]) -> Result<Vec<NativeCommit>>
 }
 
 fn parse_stream(
-    mut reader: impl BufRead,
+    reader: impl BufRead,
     commits: &[NativeCommit],
     limits: &ChurnLimits,
 ) -> Result<(Vec<CommitEvent>, NativeStreamStats)> {
-    let mut events = Vec::with_capacity(commits.len());
-    let mut stats = NativeStreamStats::default();
-    let mut total_deltas = 0usize;
-    let started = Instant::now();
-    let hard_timeout = limits
-        .deadline
-        .map(|deadline| deadline.saturating_duration_since(started))
-        .unwrap_or(Duration::from_secs(300));
+    StreamParser::new(reader, limits).parse(commits)
+}
 
-    for commit in commits {
-        if Instant::now().duration_since(started) >= hard_timeout
-            || limits
+enum DeltaRead {
+    End,
+    Skip,
+    Delta(CachedDelta),
+}
+
+struct StreamParser<'a, R> {
+    reader: R,
+    limits: &'a ChurnLimits,
+    stats: NativeStreamStats,
+    total_deltas: usize,
+    started: Instant,
+    hard_timeout: Duration,
+}
+
+impl<'a, R: BufRead> StreamParser<'a, R> {
+    fn new(reader: R, limits: &'a ChurnLimits) -> Self {
+        let started = Instant::now();
+        let hard_timeout = limits.deadline.map_or(Duration::from_mins(5), |deadline| {
+            deadline.saturating_duration_since(started)
+        });
+        Self {
+            reader,
+            limits,
+            stats: NativeStreamStats::default(),
+            total_deltas: 0,
+            started,
+            hard_timeout,
+        }
+    }
+
+    fn parse(mut self, commits: &[NativeCommit]) -> Result<(Vec<CommitEvent>, NativeStreamStats)> {
+        let mut events = Vec::with_capacity(commits.len());
+        for commit in commits {
+            if self.stop_before_commit() {
+                break;
+            }
+            let Some(event) = self.read_event(commit)? else {
+                break;
+            };
+            events.push(event);
+            if self.stats.partial {
+                break;
+            }
+        }
+        if !self.stats.partial && !self.reader.fill_buf()?.is_empty() {
+            bail!("native Git returned trailing diff data");
+        }
+        Ok((events, self.stats))
+    }
+
+    fn stop_before_commit(&mut self) -> bool {
+        let stop = self.timed_out()
+            || self.total_deltas >= self.limits.max_total_deltas
+            || self.stats.output_bytes >= self.limits.max_output_bytes;
+        if stop {
+            self.stats.partial = true;
+        }
+        stop
+    }
+
+    fn timed_out(&self) -> bool {
+        Instant::now().duration_since(self.started) >= self.hard_timeout
+            || self
+                .limits
                 .deadline
                 .is_some_and(|deadline| Instant::now() >= deadline)
-        {
-            stats.partial = true;
-            break;
-        }
-        if total_deltas >= limits.max_total_deltas {
-            stats.partial = true;
-            break;
-        }
-        if stats.output_bytes >= limits.max_output_bytes {
-            stats.partial = true;
-            break;
-        }
+    }
 
+    fn read_event(&mut self, commit: &NativeCommit) -> Result<Option<CommitEvent>> {
         let expected_header = commit.header();
         let mut actual_header = Vec::with_capacity(expected_header.len());
         let header_read = read_until_budget(
-            &mut reader,
+            &mut self.reader,
             b'\n',
             &mut actual_header,
-            limits.max_output_bytes.saturating_sub(stats.output_bytes),
+            self.limits
+                .max_output_bytes
+                .saturating_sub(self.stats.output_bytes),
         )?;
-        stats.output_bytes = stats.output_bytes.saturating_add(header_read);
+        self.stats.output_bytes = self.stats.output_bytes.saturating_add(header_read);
         if actual_header != expected_header {
-            if stats.output_bytes >= limits.max_output_bytes {
-                stats.partial = true;
-                break;
+            if self.stats.output_bytes >= self.limits.max_output_bytes {
+                self.stats.partial = true;
+                return Ok(None);
             }
             bail!("native Git returned an unexpected diff header");
         }
-
-        let mut deltas = Vec::new();
-        loop {
-            if Instant::now().duration_since(started) >= hard_timeout
-                || limits
-                    .deadline
-                    .is_some_and(|deadline| Instant::now() >= deadline)
-            {
-                stats.partial = true;
-                break;
-            }
-            if stats.output_bytes >= limits.max_output_bytes {
-                stats.partial = true;
-                break;
-            }
-            if total_deltas.saturating_add(deltas.len()) >= limits.max_total_deltas
-                || deltas.len() >= limits.max_deltas_per_commit
-            {
-                // Drain remaining deltas for this commit without retaining them.
-                if drain_commit_deltas(&mut reader, limits, &mut stats)? {
-                    break;
-                }
-                stats.partial = true;
-                break;
-            }
-
-            let available = reader.fill_buf()?;
-            if available.is_empty() || !available[0].is_ascii_uppercase() {
-                break;
-            }
-            let status = read_nul_field_budgeted(&mut reader, limits, &mut stats)?;
-            if stats.partial {
-                break;
-            }
-            let path_bytes = read_nul_field_budgeted(&mut reader, limits, &mut stats)?;
-            if stats.partial {
-                break;
-            }
-            if path_bytes.len() > limits.max_path_bytes {
-                stats.partial = true;
-                stats.deltas_omitted = stats.deltas_omitted.saturating_add(1);
-                continue;
-            }
-            let path = path_from_git(path_bytes)?;
-            let kind = match status.first().copied() {
-                Some(b'A') => DeltaKind::Added,
-                Some(b'D') => DeltaKind::Deleted,
-                Some(b'M' | b'T' | b'U' | b'X' | b'B') => DeltaKind::Other,
-                _ => bail!("native Git returned an unsupported status"),
-            };
-            let (old_path, new_path) = match kind {
-                DeltaKind::Added => (None, Some(path)),
-                DeltaKind::Deleted => (Some(path), None),
-                DeltaKind::Other => (Some(path.clone()), Some(path)),
-                DeltaKind::Renamed => unreachable!("rename detection is disabled in the stream"),
-            };
-            deltas.push(CachedDelta {
-                kind,
-                old_path,
-                new_path,
-            });
-        }
-        total_deltas = total_deltas.saturating_add(deltas.len());
-        events.push(CommitEvent {
+        let deltas = self.read_deltas()?;
+        self.total_deltas = self.total_deltas.saturating_add(deltas.len());
+        Ok(Some(CommitEvent {
             oid: commit.oid.clone(),
             author: commit.author.clone(),
             seconds: commit.seconds,
             deltas,
             renames_resolved: false,
-        });
-        if stats.partial {
-            break;
+        }))
+    }
+
+    fn read_deltas(&mut self) -> Result<Vec<CachedDelta>> {
+        let mut deltas = Vec::new();
+        loop {
+            if self.timed_out() {
+                self.stats.partial = true;
+                break;
+            }
+            if self.stats.output_bytes >= self.limits.max_output_bytes {
+                self.stats.partial = true;
+                break;
+            }
+            if self.total_deltas.saturating_add(deltas.len()) >= self.limits.max_total_deltas
+                || deltas.len() >= self.limits.max_deltas_per_commit
+            {
+                // Drain remaining deltas for this commit without retaining them.
+                if drain_commit_deltas(&mut self.reader, self.limits, &mut self.stats)? {
+                    break;
+                }
+                self.stats.partial = true;
+                break;
+            }
+            match self.read_delta()? {
+                DeltaRead::End => break,
+                DeltaRead::Skip => {}
+                DeltaRead::Delta(delta) => deltas.push(delta),
+            }
         }
+        Ok(deltas)
     }
-    if !stats.partial && !reader.fill_buf()?.is_empty() {
-        bail!("native Git returned trailing diff data");
+
+    fn read_delta(&mut self) -> Result<DeltaRead> {
+        let available = self.reader.fill_buf()?;
+        if available.is_empty() || !available[0].is_ascii_uppercase() {
+            return Ok(DeltaRead::End);
+        }
+        let status = read_nul_field_budgeted(&mut self.reader, self.limits, &mut self.stats)?;
+        if self.stats.partial {
+            return Ok(DeltaRead::End);
+        }
+        let path_bytes = read_nul_field_budgeted(&mut self.reader, self.limits, &mut self.stats)?;
+        if self.stats.partial {
+            return Ok(DeltaRead::End);
+        }
+        if path_bytes.len() > self.limits.max_path_bytes {
+            self.stats.partial = true;
+            self.stats.deltas_omitted = self.stats.deltas_omitted.saturating_add(1);
+            return Ok(DeltaRead::Skip);
+        }
+        let path = path_from_git(path_bytes)?;
+        let kind = delta_kind(&status)?;
+        let (old_path, new_path) = match kind {
+            DeltaKind::Added => (None, Some(path)),
+            DeltaKind::Deleted => (Some(path), None),
+            DeltaKind::Other => (Some(path.clone()), Some(path)),
+            DeltaKind::Renamed => unreachable!("rename detection is disabled in the stream"),
+        };
+        Ok(DeltaRead::Delta(CachedDelta {
+            kind,
+            old_path,
+            new_path,
+        }))
     }
-    Ok((events, stats))
+}
+
+fn delta_kind(status: &[u8]) -> Result<DeltaKind> {
+    match status.first().copied() {
+        Some(b'A') => Ok(DeltaKind::Added),
+        Some(b'D') => Ok(DeltaKind::Deleted),
+        Some(b'M' | b'T' | b'U' | b'X' | b'B') => Ok(DeltaKind::Other),
+        _ => bail!("native Git returned an unsupported status"),
+    }
 }
 
 fn drain_commit_deltas(
@@ -402,7 +471,7 @@ fn read_until_budget(
         if available.is_empty() {
             return Ok(total);
         }
-        let take = (max_bytes - total) as usize;
+        let take = crate::numeric::u64_to_usize(max_bytes - total);
         let end = available.len().min(take);
         if let Some(pos) = available[..end].iter().position(|&b| b == delimiter) {
             out.extend_from_slice(&available[..=pos]);
@@ -424,6 +493,10 @@ fn read_until_budget(
 }
 
 #[cfg(unix)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the shared cross-platform interface can reject invalid path encoding on Windows"
+)]
 fn path_from_git(bytes: Vec<u8>) -> Result<PathBuf> {
     use std::os::unix::ffi::OsStringExt;
     Ok(PathBuf::from(OsString::from_vec(bytes)))

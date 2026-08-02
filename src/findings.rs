@@ -5,6 +5,7 @@ use crate::model::{
     CloneGroup, Duplication, FileReport, FindingCatalog, FindingChange, FindingChangeCounts,
     FindingDelta, FindingLocation, FindingRecord, RiskEntry,
 };
+use crate::numeric::usize_to_f64;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ pub const RISK_THRESHOLD: f64 = 0.7;
 
 /// Project analyzer outputs into one complete, deterministically ordered
 /// finding catalog.
+#[must_use]
 pub fn build(
     files: &[FileReport],
     duplication: &Duplication,
@@ -52,10 +54,10 @@ pub fn build(
                     },
                     related_locations: Vec::new(),
                     metrics: BTreeMap::from([
-                        ("cyclomatic".to_string(), function.cyclomatic as f64),
-                        ("cognitive".to_string(), function.cognitive as f64),
-                        ("max_nesting".to_string(), function.max_nesting as f64),
-                        ("threshold".to_string(), cfg.max_complexity as f64),
+                        ("cyclomatic".to_string(), f64::from(function.cyclomatic)),
+                        ("cognitive".to_string(), f64::from(function.cognitive)),
+                        ("max_nesting".to_string(), f64::from(function.max_nesting)),
+                        ("threshold".to_string(), f64::from(cfg.max_complexity)),
                     ]),
                 });
             }
@@ -102,9 +104,12 @@ pub fn build(
             related_locations: Vec::new(),
             metrics: BTreeMap::from([
                 ("score".to_string(), risk.score),
-                ("sloc".to_string(), risk.sloc as f64),
-                ("cyclomatic".to_string(), risk.cyclomatic as f64),
-                ("churn_commits".to_string(), risk.churn_commits as f64),
+                ("sloc".to_string(), usize_to_f64(risk.sloc)),
+                ("cyclomatic".to_string(), f64::from(risk.cyclomatic)),
+                (
+                    "churn_commits".to_string(),
+                    usize_to_f64(risk.churn_commits),
+                ),
             ]),
         });
     }
@@ -127,6 +132,7 @@ pub fn build(
 }
 
 /// Compare two compatible catalogs, returning only observable changes.
+#[must_use]
 pub fn compare(before: &FindingCatalog, after: &FindingCatalog) -> FindingDelta {
     if before.version != after.version || before.version == 0 {
         return unavailable("finding catalog versions do not match");
@@ -226,6 +232,7 @@ pub fn compare(before: &FindingCatalog, after: &FindingCatalog) -> FindingDelta 
 
 /// Rebase path-sensitive identities across Git-detected renames before a deep
 /// review comparison. Saved baselines deliberately do not call this.
+#[must_use]
 pub fn remap_renames(
     catalog: &FindingCatalog,
     changed_files: &[crate::model::ReviewChangedFile],
@@ -312,6 +319,10 @@ fn change_rank(state: &str) -> u8 {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "every FindingChange is constructed with a record on at least one side of the comparison"
+)]
 fn change_finding(change: &FindingChange) -> &FindingRecord {
     change
         .after
@@ -347,9 +358,9 @@ fn add_duplicate_findings(findings: &mut Vec<FindingRecord>, kind: &str, groups:
             primary_location: clone_location(primary),
             related_locations: group.instances.iter().skip(1).map(clone_location).collect(),
             metrics: BTreeMap::from([
-                ("copies".to_string(), copies as f64),
-                ("removable_lines".to_string(), removable_lines as f64),
-                ("tokens".to_string(), group.tokens as f64),
+                ("copies".to_string(), usize_to_f64(copies)),
+                ("removable_lines".to_string(), usize_to_f64(removable_lines)),
+                ("tokens".to_string(), usize_to_f64(group.tokens)),
                 ("similarity".to_string(), group.similarity),
             ]),
         });

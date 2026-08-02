@@ -53,6 +53,11 @@ impl Session {
     ///
     /// The file must not exist: diagnostics should never truncate an earlier
     /// log (or an accidentally selected source file).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the requested log cannot be created securely or
+    /// the initialized session cannot be registered.
     pub fn start(path: Option<&Path>) -> Result<Self> {
         let Some(path) = path else {
             return Ok(Self {
@@ -127,7 +132,7 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop_heartbeat();
-        if self.enabled && !self.finished && !std::thread::panicking() {
+        if self.enabled && !self.finished && !thread::panicking() {
             event("session_end", || json!({ "outcome": "interrupted" }));
         }
     }
@@ -151,8 +156,9 @@ where
     let Some(logger) = LOGGER.get() else {
         return;
     };
-    if let Err(error) = logger.write_event(name, data(), false) {
-        logger.warn(error);
+    let data = data();
+    if let Err(error) = logger.write_event(name, &data, false) {
+        logger.warn(&error);
     }
 }
 
@@ -178,8 +184,8 @@ fn install_panic_hook() {
                 "location": location,
                 "backtrace": Backtrace::force_capture().to_string(),
             });
-            if let Err(error) = logger.write_event("panic", data, true) {
-                logger.warn(error);
+            if let Err(error) = logger.write_event("panic", &data, true) {
+                logger.warn(&error);
             }
         }
         previous(info);
@@ -187,7 +193,7 @@ fn install_panic_hook() {
 }
 
 impl DebugLogger {
-    fn write_event(&self, name: &str, data: Value, emergency: bool) -> std::io::Result<()> {
+    fn write_event(&self, name: &str, data: &Value, emergency: bool) -> std::io::Result<()> {
         if emergency {
             match self.writer.try_lock() {
                 Ok(mut writer) => self.write_locked(&mut writer, name, data, true),
@@ -201,7 +207,7 @@ impl DebugLogger {
             let mut writer = self
                 .writer
                 .lock()
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.write_locked(&mut writer, name, data, false)
         }
     }
@@ -210,7 +216,7 @@ impl DebugLogger {
         &self,
         writer: &mut BufWriter<File>,
         name: &str,
-        data: Value,
+        data: &Value,
         sync: bool,
     ) -> std::io::Result<()> {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
@@ -226,7 +232,7 @@ impl DebugLogger {
         Ok(())
     }
 
-    fn write_fallback(&self, name: &str, data: Value) -> std::io::Result<()> {
+    fn write_fallback(&self, name: &str, data: &Value) -> std::io::Result<()> {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
         let record = self.record(sequence, name, data);
         let mut file = OpenOptions::new().append(true).open(&self.path)?;
@@ -238,19 +244,19 @@ impl DebugLogger {
         file.sync_data()
     }
 
-    fn record(&self, sequence: u64, name: &str, data: Value) -> Value {
+    fn record(&self, sequence: u64, name: &str, data: &Value) -> Value {
         json!({
             "schema_version": DEBUG_LOG_SCHEMA_VERSION,
             "timestamp": chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             "elapsed_ms": u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
             "sequence": sequence,
-            "thread": format!("{:?}", std::thread::current().id()),
+            "thread": format!("{:?}", thread::current().id()),
             "event": name,
             "data": data,
         })
     }
 
-    fn warn(&self, error: std::io::Error) {
+    fn warn(&self, error: &std::io::Error) {
         if !self.warned.swap(true, Ordering::Relaxed) {
             eprintln!(
                 "reposcout: warning: failed to write debug log {}: {error}",
@@ -266,7 +272,7 @@ impl DebugLogger {
         let mut activity = self
             .activity
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *activity = Some(Activity {
             event: name.to_string(),
             sequence,
@@ -279,7 +285,7 @@ impl DebugLogger {
         let activity = self
             .activity
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (last_event, last_event_sequence, quiet_for_ms) =
             activity.as_ref().map_or((None, None, now), |activity| {
                 (
@@ -303,7 +309,7 @@ impl Heartbeat {
         match thread::Builder::new()
             .name("reposcout-debug-heartbeat".to_string())
             .spawn(move || {
-                heartbeat_loop(receiver, HEARTBEAT_INTERVAL, || {
+                heartbeat_loop(&receiver, HEARTBEAT_INTERVAL, || {
                     event("heartbeat", || {
                         LOGGER
                             .get()
@@ -328,7 +334,7 @@ impl Heartbeat {
     }
 }
 
-fn heartbeat_loop(receiver: Receiver<()>, interval: Duration, mut heartbeat: impl FnMut()) {
+fn heartbeat_loop(receiver: &Receiver<()>, interval: Duration, mut heartbeat: impl FnMut()) {
     loop {
         match receiver.recv_timeout(interval) {
             Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
@@ -376,7 +382,7 @@ mod tests {
         let (stop, receiver) = mpsc::sync_channel(1);
         let (observed, wait_for_tick) = mpsc::sync_channel(1);
         let handle = thread::spawn(move || {
-            heartbeat_loop(receiver, Duration::from_millis(5), || {
+            heartbeat_loop(&receiver, Duration::from_millis(5), || {
                 let _ = observed.try_send(());
             });
         });

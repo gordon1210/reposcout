@@ -8,6 +8,11 @@ use serde_json::Value;
 /// `summary` (kind = "summary"); unless `summary_only`, one line per file
 /// follows (kind = "file"), then one precise duplicate finding per line
 /// (kind = "finding"). Compact, one object per line.
+///
+/// # Errors
+///
+/// Returns an error when a report section cannot be serialized as the required
+/// JSON object or line.
 pub fn render(report: &ScanReport, summary_only: bool) -> Result<String> {
     let mut lines: Vec<String> = Vec::new();
 

@@ -10,11 +10,13 @@
 use crate::lang::{FirstClass, LangInfo};
 use crate::metrics::lines::LineStats;
 use crate::model::{Complexity, FunctionComplexity, Halstead};
+use crate::numeric::{usize_to_f64, usize_to_u32};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Tree};
 
 /// Analyze complexity for one file. Returns metrics and whether they are
 /// approximate (heuristic fallback used because no grammar was available).
+#[must_use]
 pub fn analyze(
     lang: &LangInfo,
     content: &str,
@@ -38,221 +40,19 @@ pub fn analyze(
 /// `MI = max(0, (171 - 5.2*ln(HV) - 0.23*CC - 16.2*ln(SLOC)) * 100 / 171)`
 ///
 /// Microsoft computes its current source-based metric from logical operations.
-/// RepoScout uses nonblank, non-comment SLOC as the closest cross-language
+/// `RepoScout` uses nonblank, non-comment SLOC as the closest cross-language
 /// source-level proxy.
+#[must_use]
 pub fn maintainability_index(halstead: &Halstead, cyclomatic: u32, lines: &LineStats) -> f64 {
     let hv = halstead.volume.max(1.0);
-    let cc = cyclomatic as f64;
-    let sloc = (lines.sloc.max(1)) as f64;
+    let cc = f64::from(cyclomatic);
+    let sloc = usize_to_f64(lines.sloc.max(1));
     let raw = 171.0 - 5.2 * hv.ln() - 0.23 * cc - 16.2 * sloc.ln();
     ((raw.max(0.0) / 171.0) * 100.0).min(100.0)
 }
 
-#[derive(Clone, Copy)]
-struct LangConfig {
-    function_kinds: &'static [&'static str],
-    decision_kinds: &'static [&'static str],
-    case_kinds: &'static [&'static str],
-    cognitive_structure_kinds: &'static [&'static str],
-    nesting_kinds: &'static [&'static str],
-    else_clause_kinds: &'static [&'static str],
-    jump_kinds: &'static [&'static str],
-}
-
-#[derive(Default)]
-struct ScopeMetrics {
-    decision_points: u32,
-    cognitive: u32,
-    max_nesting: u32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TokenClass {
-    Operator,
-    Operand,
-}
-
-const RUST_FUNCTIONS: &[&str] = &["function_item", "closure_expression"];
-const RUST_DECISIONS: &[&str] = &[
-    "if_expression",
-    "while_expression",
-    "while_let_expression",
-    "for_expression",
-    "loop_expression",
-];
-const RUST_CASES: &[&str] = &["match_arm"];
-const RUST_COGNITIVE: &[&str] = &[
-    "if_expression",
-    "while_expression",
-    "while_let_expression",
-    "for_expression",
-    "loop_expression",
-    "match_expression",
-];
-const RUST_NESTING: &[&str] = RUST_COGNITIVE;
-const RUST_ELSE: &[&str] = &[];
-const RUST_JUMPS: &[&str] = &["break_expression", "continue_expression"];
-
-const PY_FUNCTIONS: &[&str] = &["function_definition", "lambda"];
-const PY_DECISIONS: &[&str] = &[
-    "if_statement",
-    "elif_clause",
-    "for_statement",
-    "while_statement",
-    "except_clause",
-    "conditional_expression",
-    "for_in_clause",
-    "if_clause",
-];
-const PY_CASES: &[&str] = &["case_clause"];
-const PY_COGNITIVE: &[&str] = &[
-    "if_statement",
-    "for_statement",
-    "while_statement",
-    "except_clause",
-    "conditional_expression",
-    "match_statement",
-    "for_in_clause",
-    "if_clause",
-];
-const PY_NESTING: &[&str] = PY_COGNITIVE;
-const PY_ELSE: &[&str] = &["elif_clause", "else_clause"];
-const PY_JUMPS: &[&str] = &[];
-
-const JS_FUNCTIONS: &[&str] = &[
-    "function_declaration",
-    "function_expression",
-    "function",
-    "arrow_function",
-    "method_definition",
-    "generator_function_declaration",
-    "generator_function",
-];
-const JS_DECISIONS: &[&str] = &[
-    "if_statement",
-    "for_statement",
-    "for_in_statement",
-    "for_of_statement",
-    "while_statement",
-    "do_statement",
-    "catch_clause",
-    "ternary_expression",
-    "assignment_pattern",
-    "object_assignment_pattern",
-    "optional_chain",
-];
-const JS_CASES: &[&str] = &["switch_case"];
-const JS_COGNITIVE: &[&str] = &[
-    "if_statement",
-    "for_statement",
-    "for_in_statement",
-    "for_of_statement",
-    "while_statement",
-    "do_statement",
-    "catch_clause",
-    "ternary_expression",
-    "switch_statement",
-];
-const JS_NESTING: &[&str] = JS_COGNITIVE;
-const JS_ELSE: &[&str] = &["else_clause"];
-const JS_JUMPS: &[&str] = &["break_statement", "continue_statement"];
-
-const GO_FUNCTIONS: &[&str] = &["function_declaration", "method_declaration", "func_literal"];
-const GO_DECISIONS: &[&str] = &["if_statement", "for_statement"];
-const GO_CASES: &[&str] = &["expression_case", "type_case", "communication_case"];
-const GO_COGNITIVE: &[&str] = &[
-    "if_statement",
-    "for_statement",
-    "switch_statement",
-    "expression_switch_statement",
-    "type_switch_statement",
-    "select_statement",
-];
-const GO_NESTING: &[&str] = GO_COGNITIVE;
-const GO_ELSE: &[&str] = &[];
-const GO_JUMPS: &[&str] = &["branch_statement"];
-
-const PHP_FUNCTIONS: &[&str] = &[
-    "function_definition",
-    "method_declaration",
-    "anonymous_function",
-    "arrow_function",
-];
-const PHP_DECISIONS: &[&str] = &[
-    "if_statement",
-    "else_if_clause",
-    "for_statement",
-    "foreach_statement",
-    "while_statement",
-    "do_statement",
-    "catch_clause",
-    "conditional_expression",
-];
-const PHP_CASES: &[&str] = &["case_statement", "match_conditional_expression"];
-const PHP_COGNITIVE: &[&str] = &[
-    "if_statement",
-    "for_statement",
-    "foreach_statement",
-    "while_statement",
-    "do_statement",
-    "catch_clause",
-    "conditional_expression",
-    "switch_statement",
-    "match_expression",
-];
-const PHP_NESTING: &[&str] = PHP_COGNITIVE;
-const PHP_ELSE: &[&str] = &["else_if_clause", "else_clause"];
-const PHP_JUMPS: &[&str] = &["break_statement", "continue_statement"];
-
-fn config(fc: FirstClass) -> LangConfig {
-    match fc {
-        FirstClass::Rust => LangConfig {
-            function_kinds: RUST_FUNCTIONS,
-            decision_kinds: RUST_DECISIONS,
-            case_kinds: RUST_CASES,
-            cognitive_structure_kinds: RUST_COGNITIVE,
-            nesting_kinds: RUST_NESTING,
-            else_clause_kinds: RUST_ELSE,
-            jump_kinds: RUST_JUMPS,
-        },
-        FirstClass::Python => LangConfig {
-            function_kinds: PY_FUNCTIONS,
-            decision_kinds: PY_DECISIONS,
-            case_kinds: PY_CASES,
-            cognitive_structure_kinds: PY_COGNITIVE,
-            nesting_kinds: PY_NESTING,
-            else_clause_kinds: PY_ELSE,
-            jump_kinds: PY_JUMPS,
-        },
-        FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx => LangConfig {
-            function_kinds: JS_FUNCTIONS,
-            decision_kinds: JS_DECISIONS,
-            case_kinds: JS_CASES,
-            cognitive_structure_kinds: JS_COGNITIVE,
-            nesting_kinds: JS_NESTING,
-            else_clause_kinds: JS_ELSE,
-            jump_kinds: JS_JUMPS,
-        },
-        FirstClass::Go => LangConfig {
-            function_kinds: GO_FUNCTIONS,
-            decision_kinds: GO_DECISIONS,
-            case_kinds: GO_CASES,
-            cognitive_structure_kinds: GO_COGNITIVE,
-            nesting_kinds: GO_NESTING,
-            else_clause_kinds: GO_ELSE,
-            jump_kinds: GO_JUMPS,
-        },
-        FirstClass::Php => LangConfig {
-            function_kinds: PHP_FUNCTIONS,
-            decision_kinds: PHP_DECISIONS,
-            case_kinds: PHP_CASES,
-            cognitive_structure_kinds: PHP_COGNITIVE,
-            nesting_kinds: PHP_NESTING,
-            else_clause_kinds: PHP_ELSE,
-            jump_kinds: PHP_JUMPS,
-        },
-    }
-}
+mod languages;
+use languages::{LangConfig, ScopeMetrics, TokenClass, config};
 
 fn analyze_ast(fc: FirstClass, content: &str, tree: &Tree) -> Complexity {
     let cfg = config(fc);
@@ -288,8 +88,8 @@ fn analyze_ast(fc: FirstClass, content: &str, tree: &Tree) -> Complexity {
     }
 }
 
-fn analyze_scope<'a>(
-    root: Node<'a>,
+fn analyze_scope(
+    root: Node<'_>,
     fc: FirstClass,
     cfg: &LangConfig,
     content: &str,
@@ -346,7 +146,7 @@ fn analyze_scope<'a>(
         };
 
         for i in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(i as u32) {
+            if let Some(child) = node.child(usize_to_u32(i)) {
                 stack.push((child, child_nesting));
             }
         }
@@ -355,8 +155,8 @@ fn analyze_scope<'a>(
     metrics
 }
 
-fn collect_functions<'a>(
-    root: Node<'a>,
+fn collect_functions(
+    root: Node<'_>,
     fc: FirstClass,
     cfg: &LangConfig,
     content: &str,
@@ -369,13 +169,13 @@ fn collect_functions<'a>(
             nodes.push(node);
         }
         for i in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(i as u32) {
+            if let Some(child) = node.child(usize_to_u32(i)) {
                 stack.push(child);
             }
         }
     }
 
-    nodes.sort_by_key(|node| node.start_byte());
+    nodes.sort_by_key(Node::start_byte);
     let mut occurrences: HashMap<String, usize> = HashMap::new();
     nodes
         .into_iter()
@@ -418,7 +218,7 @@ fn directly_calls(root: Node<'_>, cfg: &LangConfig, content: &str, name: &str) -
             return true;
         }
         for index in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(index as u32) {
+            if let Some(child) = node.child(usize_to_u32(index)) {
                 stack.push(child);
             }
         }
@@ -638,7 +438,7 @@ fn count_boolean_operators(node: Node<'_>, fc: FirstClass, content: &str) -> u32
             count = count.saturating_add(1);
         }
         for i in (0..current.child_count()).rev() {
-            if let Some(child) = current.child(i as u32) {
+            if let Some(child) = current.child(usize_to_u32(i)) {
                 stack.push(child);
             }
         }
@@ -672,7 +472,7 @@ fn collect_boolean_ops_in_order(
             ops.push(op);
         }
         for i in (0..current.child_count()).rev() {
-            if let Some(child) = current.child(i as u32) {
+            if let Some(child) = current.child(usize_to_u32(i)) {
                 stack.push(child);
             }
         }
@@ -838,11 +638,7 @@ fn parent_binding_name(node: Node<'_>, content: &str) -> Option<String> {
 }
 
 fn is_callable_kind(kind: &str) -> bool {
-    RUST_FUNCTIONS.contains(&kind)
-        || PY_FUNCTIONS.contains(&kind)
-        || JS_FUNCTIONS.contains(&kind)
-        || GO_FUNCTIONS.contains(&kind)
-        || PHP_FUNCTIONS.contains(&kind)
+    languages::is_function_kind(kind)
 }
 
 fn named_field_text(node: Node<'_>, field: &str, content: &str) -> Option<String> {
@@ -853,7 +649,7 @@ fn named_field_text(node: Node<'_>, field: &str, content: &str) -> Option<String
 
 fn first_child_text_of_kind(node: Node<'_>, kind: &str, content: &str) -> Option<String> {
     for i in 0..node.child_count() {
-        let child = node.child(i as u32)?;
+        let child = node.child(usize_to_u32(i))?;
         if child.kind() == kind {
             let text = node_text(child, content).trim();
             if !text.is_empty() {
@@ -891,7 +687,7 @@ fn halstead_from_ast(root: Node<'_>, content: &str) -> Halstead {
             }
         } else {
             for i in (0..node.child_count()).rev() {
-                if let Some(child) = node.child(i as u32) {
+                if let Some(child) = node.child(usize_to_u32(i)) {
                     stack.push(child);
                 }
             }
@@ -1026,16 +822,17 @@ fn analyze_heuristic(content: &str) -> Complexity {
 }
 
 /// Language-agnostic cyclomatic approximation: 1 + number of decision points.
+#[must_use]
 pub fn heuristic_cyclomatic(content: &str) -> u32 {
     const KEYWORDS: &[&str] = &[
         "if", "for", "while", "case", "catch", "elif", "when", "and", "or",
     ];
     let mut count = 1u32;
     for kw in KEYWORDS {
-        count += count_word(content, kw) as u32;
+        count = count.saturating_add(usize_to_u32(count_word(content, kw)));
     }
     for op in ["&&", "||", "?"] {
-        count += content.matches(op).count() as u32;
+        count = count.saturating_add(usize_to_u32(content.matches(op).count()));
     }
     count
 }
@@ -1077,7 +874,7 @@ fn heuristic_max_nesting(content: &str) -> u32 {
         }
     }
 
-    (max_indent_depth as u32).max(max_brace_depth)
+    usize_to_u32(max_indent_depth).max(max_brace_depth)
 }
 
 fn halstead_heuristic(content: &str) -> Halstead {
@@ -1132,10 +929,10 @@ fn finish_halstead(
     let volume = if vocabulary <= 1 || length == 0 {
         0.0
     } else {
-        length as f64 * (vocabulary as f64).log2()
+        usize_to_f64(length) * usize_to_f64(vocabulary).log2()
     };
-    let difficulty = (distinct_operators as f64 / 2.0)
-        * (total_operands as f64 / distinct_operands.max(1) as f64);
+    let difficulty = (usize_to_f64(distinct_operators) / 2.0)
+        * (usize_to_f64(total_operands) / usize_to_f64(distinct_operands.max(1)));
     let effort = difficulty * volume;
 
     Halstead {
@@ -1160,18 +957,11 @@ fn is_operator_pair(a: char, b: char) -> bool {
         (a, b),
         ('&', '&')
             | ('|', '|')
-            | ('=', '=')
-            | ('!', '=')
-            | ('<', '=')
-            | ('>', '=')
-            | ('+', '=')
-            | ('-', '=')
-            | ('*', '=')
-            | ('/', '=')
-            | ('%', '=')
-            | ('-', '>')
-            | ('=', '>')
-            | (':', '=')
+            | (
+                '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | ':',
+                '='
+            )
+            | ('-' | '=', '>')
             | (':', ':')
     )
 }
@@ -1223,350 +1013,4 @@ fn is_word_byte(b: u8) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lang::{FirstClass, detect};
-    use crate::parse::parse;
-    use std::path::Path;
-
-    fn lines(src: &str) -> LineStats {
-        LineStats {
-            loc: src.lines().count(),
-            sloc: src.lines().filter(|line| !line.trim().is_empty()).count(),
-            comment_lines: 0,
-            blank_lines: src.lines().filter(|line| line.trim().is_empty()).count(),
-            approximate: false,
-        }
-    }
-
-    fn analyze_first_class(path: &str, fc: FirstClass, src: &str) -> Complexity {
-        let lang = detect(Path::new(path)).expect("language should be detected");
-        let tree = parse(fc, src).expect("snippet should parse");
-        let (complexity, approximate) = analyze(lang, src, Some(&tree), &lines(src));
-        assert!(!approximate);
-        complexity
-    }
-
-    #[test]
-    fn rust_ast_complexity_counts_decisions_and_function() {
-        let src = r#"
-fn sample(a: bool, b: bool, xs: Vec<i32>) {
-    if a && b {}
-    if a {}
-    for x in xs { if x > 1 {} }
-}
-"#;
-        let complexity = analyze_first_class("x.rs", FirstClass::Rust, src);
-        assert_eq!(complexity.cyclomatic, 6);
-        assert_eq!(complexity.functions.len(), 1);
-        assert_eq!(complexity.functions[0].name, "sample");
-        assert_eq!(complexity.functions[0].cyclomatic, 6);
-        assert!(complexity.functions[0].cognitive >= 5);
-        assert_eq!(complexity.max_nesting, 2);
-        assert!(complexity.halstead.length > 0);
-        assert!(complexity.maintainability_index > 0.0);
-    }
-
-    #[test]
-    fn python_ast_complexity_counts_elif_except_and_boolean_sequence() {
-        let src = r#"
-def sample(a, b, xs):
-    if a and b:
-        pass
-    elif a:
-        pass
-    try:
-        for x in xs:
-            pass
-    except ValueError:
-        pass
-"#;
-        let complexity = analyze_first_class("x.py", FirstClass::Python, src);
-        assert_eq!(complexity.cyclomatic, 6);
-        assert_eq!(complexity.functions[0].name, "sample");
-        assert_eq!(complexity.functions[0].cyclomatic, 6);
-        assert!(complexity.functions[0].cognitive >= 5);
-        assert_eq!(complexity.max_nesting, 1);
-    }
-
-    #[test]
-    fn javascript_ast_complexity_counts_switch_case_ternary_and_arrow_function() {
-        let src = r#"
-const sample = (a, b, x) => {
-  if (a || b) { return x ? 1 : 2; }
-  switch (x) { case 1: return 1; default: return 0; }
-};
-"#;
-        let complexity = analyze_first_class("x.js", FirstClass::JavaScript, src);
-        assert_eq!(complexity.cyclomatic, 5);
-        assert_eq!(complexity.functions.len(), 1);
-        assert_eq!(complexity.functions[0].name, "sample");
-        assert_eq!(complexity.functions[0].cyclomatic, 5);
-        assert!(complexity.functions[0].cognitive >= 4);
-    }
-
-    #[test]
-    fn go_ast_complexity_counts_for_switch_case_and_boolean_operator() {
-        let src = r#"
-package main
-func sample(a bool, b bool, x int) int {
-    if a && b { return 1 }
-    for i := 0; i < x; i++ { }
-    switch x { case 1: return 1; default: return 0 }
-    return 0
-}
-"#;
-        let complexity = analyze_first_class("x.go", FirstClass::Go, src);
-        assert_eq!(complexity.cyclomatic, 5);
-        assert_eq!(complexity.functions.len(), 1);
-        assert_eq!(complexity.functions[0].name, "sample");
-        assert_eq!(complexity.functions[0].cyclomatic, 5);
-        assert!(complexity.functions[0].cognitive >= 4);
-    }
-
-    #[test]
-    fn php_ast_complexity_counts_functions_methods_closures_and_modern_paths() {
-        let src = r#"<?php
-function classify(bool $a, bool $b, array $items): int {
-    if ($a && $b) {
-        foreach ($items as $item) {
-            if ($item > 0) return $item;
-        }
-    } elseif ($a) {
-        return 1;
-    }
-    return $a ?? false ? 1 : 0;
-}
-
-final class Service {
-    public function run(int $value): int {
-        return match ($value) {
-            1, 2 => 1,
-            default => 0,
-        };
-    }
-}
-
-$chooser = fn (bool $value) => $value ? 1 : 0;
-$worker = function (bool $value): int {
-    while ($value) break;
-    return 0;
-};
-"#;
-        let complexity = analyze_first_class("x.php", FirstClass::Php, src);
-
-        assert_eq!(
-            complexity
-                .functions
-                .iter()
-                .map(|function| function.name.as_str())
-                .collect::<Vec<_>>(),
-            ["classify", "run", "chooser", "worker"]
-        );
-        assert!(complexity.functions[0].cyclomatic >= 7);
-        assert_eq!(complexity.functions[1].cyclomatic, 2);
-        assert_eq!(complexity.functions[2].cyclomatic, 2);
-        assert_eq!(complexity.functions[3].cyclomatic, 2);
-        assert!(complexity.max_nesting >= 2);
-    }
-
-    #[test]
-    fn rust_binding_match_arms_are_catch_alls() {
-        let src = r#"
-fn classify(value: Option<i32>) {
-    match value {
-        Some(1) => {},
-        other => {},
-    }
-}
-"#;
-        let complexity = analyze_first_class("x.rs", FirstClass::Rust, src);
-        assert_eq!(complexity.functions[0].cyclomatic, 2);
-    }
-
-    #[test]
-    fn python_unguarded_capture_case_is_a_catch_all() {
-        let src = r#"
-def classify(value):
-    match value:
-        case 1:
-            pass
-        case other:
-            pass
-"#;
-        let complexity = analyze_first_class("x.py", FirstClass::Python, src);
-        assert_eq!(complexity.functions[0].cyclomatic, 2);
-    }
-
-    #[test]
-    fn python_guarded_capture_case_is_a_decision() {
-        let src = r#"
-def classify(value):
-    match value:
-        case other if other > 0:
-            pass
-"#;
-        let complexity = analyze_first_class("x.py", FirstClass::Python, src);
-        // One path for the case and another for its guard.
-        assert_eq!(complexity.functions[0].cyclomatic, 3);
-    }
-
-    #[test]
-    fn anonymous_callable_scopes_are_separate_and_binding_named() {
-        let cases = [
-            (
-                "x.rs",
-                FirstClass::Rust,
-                "fn outer() {\n    let chooser = |x: bool| if x { 1 } else { 0 };\n}\n",
-            ),
-            (
-                "x.py",
-                FirstClass::Python,
-                "def outer():\n    chooser = lambda x: 1 if x else 0\n",
-            ),
-            (
-                "x.go",
-                FirstClass::Go,
-                "package main\nfunc outer() {\n    chooser := func(x bool) int { if x { return 1 }; return 0 }\n    _ = chooser\n}\n",
-            ),
-            (
-                "x.php",
-                FirstClass::Php,
-                "<?php\nfunction outer(): void {\n    $chooser = fn (bool $x) => $x ? 1 : 0;\n}\n",
-            ),
-        ];
-
-        for (path, language, source) in cases {
-            let complexity = analyze_first_class(path, language, source);
-            assert_eq!(complexity.functions.len(), 2, "{path}");
-            assert_eq!(complexity.functions[0].name, "outer", "{path}");
-            assert_eq!(complexity.functions[0].cyclomatic, 1, "{path}");
-            assert_eq!(complexity.functions[1].name, "chooser", "{path}");
-            assert_eq!(complexity.functions[1].cyclomatic, 2, "{path}");
-        }
-    }
-
-    #[test]
-    fn file_cyclomatic_is_the_sum_of_independent_function_scopes() {
-        let complexity =
-            analyze_first_class("x.rs", FirstClass::Rust, "fn first() {}\nfn second() {}\n");
-
-        assert_eq!(complexity.cyclomatic, 2);
-        assert_eq!(
-            complexity.cyclomatic,
-            complexity
-                .functions
-                .iter()
-                .map(|function| function.cyclomatic)
-                .sum::<u32>()
-        );
-    }
-
-    #[test]
-    fn python_comprehension_clauses_create_control_flow_paths() {
-        let complexity = analyze_first_class(
-            "x.py",
-            FirstClass::Python,
-            "def positives(values):\n    return [value for value in values if value > 0]\n",
-        );
-
-        assert_eq!(complexity.functions[0].cyclomatic, 3);
-        assert_eq!(complexity.functions[0].cognitive, 2);
-    }
-
-    #[test]
-    fn javascript_modern_short_circuit_paths_match_eslint_rules() {
-        let source = r#"
-function sample(input = {}) {
-  input ||= {};
-  return input?.first?.second ?? null;
-}
-"#;
-        let complexity = analyze_first_class("x.js", FirstClass::JavaScript, source);
-
-        // Base path, default parameter, logical assignment, two optional
-        // properties, and nullish coalescing.
-        assert_eq!(complexity.functions[0].cyclomatic, 6);
-    }
-
-    #[test]
-    fn direct_recursion_increments_cognitive_complexity() {
-        let source = r#"
-fn factorial(value: u32) -> u32 {
-    if value == 0 { 1 } else { value * factorial(value - 1) }
-}
-"#;
-        let complexity = analyze_first_class("x.rs", FirstClass::Rust, source);
-
-        assert_eq!(complexity.functions[0].cyclomatic, 2);
-        assert_eq!(complexity.functions[0].cognitive, 3);
-    }
-
-    #[test]
-    fn php_self_method_recursion_is_cognitive_but_other_receivers_are_not() {
-        let source = r#"<?php
-final class Tree {
-    public function walk(int $depth, Tree $other): int {
-        if ($depth <= 0) return 0;
-        $other->walk($depth - 1, $other);
-        return $this->walk($depth - 1, $other);
-    }
-}
-"#;
-        let complexity = analyze_first_class("x.php", FirstClass::Php, source);
-
-        assert_eq!(complexity.functions[0].cyclomatic, 2);
-        assert_eq!(complexity.functions[0].cognitive, 2);
-    }
-
-    #[test]
-    fn halstead_arithmetic_matches_reference_equations() {
-        let halstead = finish_halstead(25, 12, 46, 26);
-
-        assert_eq!(halstead.vocabulary, 37);
-        assert_eq!(halstead.length, 72);
-        assert!((halstead.volume - 375.080_642_325_284_43).abs() < 1e-9);
-        assert!((halstead.difficulty - 27.083_333_333_333_332).abs() < 1e-9);
-        assert!((halstead.effort - 10_158.434_062_976_452).abs() < 1e-9);
-    }
-
-    #[test]
-    fn maintainability_index_matches_microsoft_normalized_formula() {
-        let halstead = Halstead {
-            volume: 100.0,
-            ..Halstead::default()
-        };
-        let stats = LineStats {
-            loc: 60,
-            sloc: 50,
-            comment_lines: 10,
-            blank_lines: 0,
-            approximate: false,
-        };
-
-        let value = maintainability_index(&halstead, 10, &stats);
-        assert!((value - 47.589_673_885_921_606).abs() < 1e-12);
-
-        let without_comments = LineStats {
-            comment_lines: 0,
-            ..stats
-        };
-        assert_eq!(
-            value,
-            maintainability_index(&halstead, 10, &without_comments)
-        );
-    }
-
-    #[test]
-    fn heuristic_fallback_is_marked_approximate_and_populates_halstead() {
-        let lang = detect(Path::new("x.java")).expect("generic language should be detected");
-        let src = "if (a && b) { for (x in y) { call(); } }";
-        let (complexity, approximate) = analyze(lang, src, None, &lines(src));
-        assert!(approximate);
-        assert_eq!(complexity.cyclomatic, 4);
-        assert_eq!(complexity.cognitive, 3);
-        assert!(complexity.max_nesting > 0);
-        assert!(complexity.halstead.length > 0);
-        assert!(complexity.functions.is_empty());
-    }
-}
+mod tests;

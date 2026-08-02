@@ -4,12 +4,12 @@ use std::io;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
-pub struct LanguageFixtureManifest {
+pub(crate) struct LanguageFixtureManifest {
     pub language: Vec<LanguageFixture>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct LanguageFixture {
+pub(crate) struct LanguageFixture {
     pub name: String,
     pub slug: String,
     pub filename: String,
@@ -18,14 +18,14 @@ pub struct LanguageFixture {
     pub near_b: String,
 }
 
-pub fn language_fixtures() -> Vec<LanguageFixture> {
+pub(crate) fn language_fixtures() -> Vec<LanguageFixture> {
     let source = include_str!("../fixtures/dup_languages.toml");
     toml::from_str::<LanguageFixtureManifest>(source)
         .expect("duplication language fixture manifest must be valid TOML")
         .language
 }
 
-pub fn materialize_fixture_tree(root: &Path) -> io::Result<()> {
+pub(crate) fn materialize_fixture_tree(root: &Path) -> io::Result<()> {
     fs::write(
         root.join("reposcout.toml"),
         "min_dup_tokens = 8\nmin_dup_lines = 3\nnear_dup_min_similarity = 0.85\n",

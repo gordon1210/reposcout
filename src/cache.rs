@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Mutex,
+    Mutex, MutexGuard, PoisonError,
     atomic::{AtomicUsize, Ordering},
 };
 use xxhash_rust::xxh3::xxh3_64;
@@ -74,6 +74,7 @@ pub enum CacheKind {
 }
 
 impl CacheKind {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Analysis => "analysis",
@@ -129,6 +130,7 @@ pub struct AnalysisProfile {
 }
 
 impl AnalysisProfile {
+    #[must_use]
     pub fn from_config(cfg: &Config) -> Self {
         let markers = if cfg.enabled.markers {
             canonical_markers(&cfg.markers)
@@ -165,6 +167,10 @@ impl AnalysisProfile {
         }
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "AnalysisProfile contains only primitives and collections that JSON serialization cannot reject"
+    )]
     fn cache_key(&self) -> String {
         let profile = serde_json::to_string(self)
             .expect("analysis profiles contain only serializable primitives");
@@ -203,7 +209,8 @@ fn canonical_markers(markers: &[String]) -> Vec<String> {
 }
 
 impl Cache {
-    pub fn open(root: &Path, enabled: bool, profile: AnalysisProfile) -> Self {
+    #[must_use]
+    pub fn open(root: &Path, enabled: bool, profile: &AnalysisProfile) -> Self {
         let key = profile.cache_key();
         let path = cache_path(root);
         // Without an OS cache directory there is no safe place to persist
@@ -238,10 +245,7 @@ impl Cache {
             return None;
         };
         self.hits.fetch_add(1, Ordering::Relaxed);
-        self.fresh
-            .lock()
-            .unwrap()
-            .insert(rel.to_string(), entry.clone());
+        self.fresh_entries().insert(rel.to_string(), entry.clone());
         Some(CachedAnalysis {
             report: entry.report.clone(),
             test_regions: entry.test_regions.clone(),
@@ -262,7 +266,7 @@ impl Cache {
         if !self.enabled {
             return;
         }
-        self.fresh.lock().unwrap().insert(
+        self.fresh_entries().insert(
             rel.to_string(),
             Entry {
                 hash,
@@ -274,11 +278,17 @@ impl Cache {
         );
     }
 
+    /// Persist all entries observed by this cache instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cache cannot be serialized or atomically
+    /// written to the operating system's cache directory.
     pub fn save(&self, prune_unseen: bool) -> Result<()> {
         if !self.enabled {
             return Ok(());
         }
-        let fresh = std::mem::take(&mut *self.fresh.lock().unwrap());
+        let fresh = std::mem::take(&mut *self.fresh_entries());
         let entries = if prune_unseen {
             fresh
         } else {
@@ -316,11 +326,20 @@ impl Cache {
             self.enrichments.fetch_add(1, Ordering::Relaxed);
         }
     }
+
+    fn fresh_entries(&self) -> MutexGuard<'_, HashMap<String, Entry>> {
+        self.fresh.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 /// Clear both analysis and Git-history caches for the scan root containing
 /// `target`. A subpath inside a Git repository maps to the same root cache as a
 /// full repository scan; standalone paths retain their own scan identity.
+///
+/// # Errors
+///
+/// Returns an error when `target` cannot be resolved or a matching cache path
+/// cannot be inspected or removed.
 pub fn clear_for_target(target: &Path) -> Result<CacheClearResult> {
     let root = scan_root(target)?;
     let mut checked = Vec::new();
@@ -343,8 +362,13 @@ pub fn clear_for_target(target: &Path) -> Result<CacheClearResult> {
     })
 }
 
-/// Clear every cache stored in RepoScout's OS-managed application cache
+/// Clear every cache stored in `RepoScout`'s OS-managed application cache
 /// directory.
+///
+/// # Errors
+///
+/// Returns an error when the platform has no application cache directory or
+/// when that directory cannot be inspected or removed.
 pub fn clear_all() -> Result<CacheClearResult> {
     let path = cache_directory().context(
         "the platform does not expose a RepoScout cache directory; clear a specific PATH instead",
@@ -443,6 +467,7 @@ mod tests {
     use crate::model::{FileReport, LineRange, SymbolOutline};
     use std::collections::{BTreeMap, HashMap};
     use std::path::PathBuf;
+    use std::sync::{Mutex, atomic::AtomicUsize};
 
     fn report(path: &str) -> FileReport {
         FileReport {
@@ -675,10 +700,10 @@ mod tests {
             path: path.clone(),
             key: "test-key".to_string(),
             loaded: loaded.clone(),
-            fresh: Default::default(),
-            hits: Default::default(),
-            misses: Default::default(),
-            enrichments: Default::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
         };
         cache.put("new.rs", 2, &report("new.rs"), &[], None, None);
         cache.save(false).unwrap();
@@ -692,10 +717,10 @@ mod tests {
             path,
             key: "test-key".to_string(),
             loaded,
-            fresh: Default::default(),
-            hits: Default::default(),
-            misses: Default::default(),
-            enrichments: Default::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
         };
         cache.put("new.rs", 2, &report("new.rs"), &[], None, None);
         cache.save(true).unwrap();
@@ -713,11 +738,11 @@ mod tests {
             enabled: true,
             path: dir.path().join("cache.json"),
             key: "test-key".to_string(),
-            loaded: Default::default(),
-            fresh: Default::default(),
-            hits: Default::default(),
-            misses: Default::default(),
-            enrichments: Default::default(),
+            loaded: HashMap::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
         };
         let outline = SymbolOutline {
             name: "PublicValue".to_string(),
@@ -742,10 +767,10 @@ mod tests {
             path: cache.path.clone(),
             key: "test-key".to_string(),
             loaded: load(&cache.path, "test-key").unwrap(),
-            fresh: Default::default(),
-            hits: Default::default(),
-            misses: Default::default(),
-            enrichments: Default::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
         };
         let cached = loaded.get("lib.rs", 42).unwrap();
 
@@ -766,11 +791,11 @@ mod tests {
             enabled: true,
             path: dir.path().join("cache.json"),
             key: "test-key".to_string(),
-            loaded: Default::default(),
-            fresh: Default::default(),
-            hits: Default::default(),
-            misses: Default::default(),
-            enrichments: Default::default(),
+            loaded: HashMap::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
         };
         let facts = crate::graph::extract_source_facts(
             crate::lang::FirstClass::Rust,
@@ -785,10 +810,10 @@ mod tests {
             path: cache.path.clone(),
             key: "test-key".to_string(),
             loaded: load(&cache.path, "test-key").unwrap(),
-            fresh: Default::default(),
-            hits: Default::default(),
-            misses: Default::default(),
-            enrichments: Default::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
         };
         let cached = loaded.get("lib.rs", 42).unwrap();
 
@@ -835,7 +860,7 @@ mod tests {
         let cache = Cache::open(
             dir.path(),
             true,
-            AnalysisProfile::from_config(&Config::default()),
+            &AnalysisProfile::from_config(&Config::default()),
         );
         if cache.stats().enabled {
             assert!(

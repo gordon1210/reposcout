@@ -6,6 +6,7 @@ use crate::debug_log;
 use crate::fs_budget::{self, ReadOutcome};
 use crate::lang;
 use anyhow::{Context, Result};
+use ignore::DirEntry;
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 use std::collections::HashSet;
@@ -78,6 +79,32 @@ pub struct Discovered {
     pub duration_limit_reached: bool,
 }
 
+struct DiscoveryPaths {
+    target: PathBuf,
+    root: PathBuf,
+    report_base: Option<PathBuf>,
+    exclusions: HashSet<PathBuf>,
+}
+
+#[derive(Default)]
+struct DiscoveryStats {
+    observed_files: usize,
+    accepted_bytes: u64,
+    walker_errors: usize,
+    oversized_files: usize,
+    oversized_bytes: u64,
+    files_omitted_by_limit: usize,
+    files_omitted_count_incomplete: bool,
+    bytes_omitted_by_limit: u64,
+    scan_truncated: bool,
+    duration_limit_reached: bool,
+}
+
+enum WalkControl {
+    Continue,
+    Stop,
+}
+
 pub(crate) enum BoundedText {
     Content(String),
     Oversized(u64),
@@ -96,17 +123,28 @@ pub(crate) fn read_text_bounded(path: &Path, max_bytes: u64) -> BoundedText {
 }
 
 /// Locate the git working-tree root containing `target`, if any.
+#[must_use]
 pub fn git_root(target: &Path) -> Option<PathBuf> {
     let repo = git2::Repository::discover(target).ok()?;
-    repo.workdir().map(|p| p.to_path_buf())
+    repo.workdir().map(Path::to_path_buf)
 }
 
 /// Walk `target`, honoring configuration (gitignore, hidden files, excludes).
+///
+/// # Errors
+///
+/// Returns an error when the target cannot be resolved or the configured
+/// walker and resource limits cannot be initialized.
 pub fn discover(target: &Path, cfg: &Config) -> Result<Discovered> {
     discover_with_exclusions(target, cfg, &[])
 }
 
 /// Walk `target`, omitting files whose filesystem identities exactly match an exclusion.
+///
+/// # Errors
+///
+/// Returns an error when the target or an exclusion cannot be resolved, or the
+/// configured walker and resource limits cannot be initialized.
 pub fn discover_with_exclusions(
     target: &Path,
     cfg: &Config,
@@ -127,6 +165,31 @@ pub(crate) fn discover_with_exclusions_until(
     exclusions: &[PathBuf],
     deadline: Option<Instant>,
 ) -> Result<Discovered> {
+    let paths = resolve_discovery_paths(target, exclusions)?;
+    let builder = build_walker(&paths.target, cfg)?;
+    let (mut files, stats) = collect_files(&builder, &paths, cfg, deadline);
+    files.sort_by(|left, right| {
+        left.report_path
+            .cmp(&right.report_path)
+            .then_with(|| left.absolute_path.cmp(&right.absolute_path))
+    });
+    Ok(Discovered {
+        root: paths.root,
+        target: paths.target,
+        files,
+        observed_files: stats.observed_files,
+        walker_errors: stats.walker_errors,
+        oversized_files: stats.oversized_files,
+        oversized_bytes: stats.oversized_bytes,
+        files_omitted_by_limit: stats.files_omitted_by_limit,
+        files_omitted_count_incomplete: stats.files_omitted_count_incomplete,
+        bytes_omitted_by_limit: stats.bytes_omitted_by_limit,
+        scan_truncated: stats.scan_truncated,
+        duration_limit_reached: stats.duration_limit_reached,
+    })
+}
+
+fn resolve_discovery_paths(target: &Path, exclusions: &[PathBuf]) -> Result<DiscoveryPaths> {
     let target = target
         .canonicalize()
         .with_context(|| format!("path not found: {}", target.display()))?;
@@ -136,12 +199,18 @@ pub(crate) fn discover_with_exclusions_until(
         .collect::<Result<HashSet<_>>>()?;
     let repo_root = git_root(&target);
     let root = repo_root.clone().unwrap_or_else(|| target.clone());
-    let report_base = repo_root
-        .as_deref()
-        .or_else(|| target.is_dir().then_some(&target));
+    let report_base = repo_root.or_else(|| target.is_dir().then(|| target.clone()));
+    Ok(DiscoveryPaths {
+        target,
+        root,
+        report_base,
+        exclusions,
+    })
+}
 
+fn build_walker(target: &Path, cfg: &Config) -> Result<WalkBuilder> {
     let load_repo_ignores = cfg.load_repository_ignores && cfg.respect_gitignore;
-    let mut builder = WalkBuilder::new(&target);
+    let mut builder = WalkBuilder::new(target);
     builder
         .hidden(!cfg.include_hidden)
         .git_ignore(load_repo_ignores)
@@ -165,132 +234,135 @@ pub(crate) fn discover_with_exclusions_until(
     exclude_globs.extend(cfg.extra_excludes.iter().map(|pat| format!("!{pat}")));
 
     if !exclude_globs.is_empty() {
-        let mut ob = OverrideBuilder::new(&target);
+        let mut ob = OverrideBuilder::new(target);
         for glob in &exclude_globs {
             ob.add(glob)
                 .with_context(|| format!("invalid exclude glob: {glob}"))?;
         }
         builder.overrides(ob.build().context("building exclude overrides")?);
     }
+    Ok(builder)
+}
 
+fn collect_files(
+    builder: &WalkBuilder,
+    paths: &DiscoveryPaths,
+    cfg: &Config,
+    deadline: Option<Instant>,
+) -> (Vec<DiscoveredFile>, DiscoveryStats) {
     let mut files = Vec::new();
-    let mut observed_files = 0usize;
-    let mut accepted_bytes = 0u64;
-    let mut walker_errors = 0usize;
-    let mut oversized_files = 0usize;
-    let mut oversized_bytes = 0u64;
-    let mut files_omitted_by_limit = 0usize;
-    let mut files_omitted_count_incomplete = false;
-    let mut bytes_omitted_by_limit = 0u64;
-    let mut scan_truncated = false;
-    let mut duration_limit_reached = false;
+    let mut stats = DiscoveryStats::default();
     for result in builder.build() {
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            duration_limit_reached = true;
-            scan_truncated = true;
-            files_omitted_count_incomplete = true;
+            stats.duration_limit_reached = true;
+            stats.scan_truncated = true;
+            stats.files_omitted_count_incomplete = true;
             break;
         }
-        let entry = match result {
-            Ok(e) => e,
-            Err(_) => {
-                walker_errors += 1;
-                continue;
-            }
+        let Ok(entry) = result else {
+            stats.walker_errors = stats.walker_errors.saturating_add(1);
+            continue;
         };
-        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-            let absolute_path = entry.into_path();
-            if exclusions.contains(&absolute_path) {
-                continue;
-            }
-            observed_files = observed_files.saturating_add(1);
-            if observed_files > cfg.max_files {
-                files_omitted_by_limit = files_omitted_by_limit.saturating_add(1);
-                files_omitted_count_incomplete = true;
-                scan_truncated = true;
-                break;
-            }
-            let report_path = match report_base {
-                Some(base) => absolute_path
-                    .strip_prefix(base)
-                    .ok()
-                    .filter(|path| !path.as_os_str().is_empty())
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| fallback_report_path(&absolute_path)),
-                None => fallback_report_path(&absolute_path),
-            };
-            if lang::detect(&report_path).is_some() {
-                match std::fs::symlink_metadata(&absolute_path) {
-                    Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
-                        let bytes = metadata.len();
-                        if bytes > cfg.max_file_bytes {
-                            oversized_files = oversized_files.saturating_add(1);
-                            oversized_bytes = oversized_bytes.saturating_add(bytes);
-                            scan_truncated = true;
-                            continue;
-                        }
-                        if accepted_bytes.saturating_add(bytes) > cfg.max_total_bytes {
-                            files_omitted_by_limit = files_omitted_by_limit.saturating_add(1);
-                            bytes_omitted_by_limit = bytes_omitted_by_limit.saturating_add(bytes);
-                            scan_truncated = true;
-                            continue;
-                        }
-                        accepted_bytes = accepted_bytes.saturating_add(bytes);
-                    }
-                    Ok(_) => {
-                        // Symlinks and non-regular files are never analyzed.
-                        walker_errors = walker_errors.saturating_add(1);
-                        continue;
-                    }
-                    Err(_) => {
-                        walker_errors = walker_errors.saturating_add(1);
-                        continue;
-                    }
-                }
-            }
-            files.push(DiscoveredFile {
-                absolute_path,
-                report_path,
-            });
-            if debug_log::enabled() && (files.len() == 1 || files.len().is_multiple_of(1_000)) {
-                let latest = files
-                    .last()
-                    .expect("a discovered file was just appended")
-                    .report_path
-                    .to_string_lossy();
-                debug_log::event("discovery_progress", || {
-                    serde_json::json!({
-                        "files": files.len(),
-                        "latest_path": latest.as_ref(),
-                        "walker_errors": walker_errors,
-                    })
-                });
-            }
+        if entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file())
+            && matches!(
+                process_file(entry, paths, cfg, &mut files, &mut stats),
+                WalkControl::Stop
+            )
+        {
+            break;
         }
     }
-    files.sort_by(|a, b| {
-        a.report_path
-            .cmp(&b.report_path)
-            .then_with(|| a.absolute_path.cmp(&b.absolute_path))
-    });
+    (files, stats)
+}
 
-    Ok(Discovered {
-        root,
-        target,
-        files,
-        observed_files,
-        walker_errors,
-        oversized_files,
-        oversized_bytes,
-        files_omitted_by_limit,
-        files_omitted_count_incomplete,
-        bytes_omitted_by_limit,
-        scan_truncated,
-        duration_limit_reached,
-    })
+fn process_file(
+    entry: DirEntry,
+    paths: &DiscoveryPaths,
+    cfg: &Config,
+    files: &mut Vec<DiscoveredFile>,
+    stats: &mut DiscoveryStats,
+) -> WalkControl {
+    let absolute_path = entry.into_path();
+    if paths.exclusions.contains(&absolute_path) {
+        return WalkControl::Continue;
+    }
+    stats.observed_files = stats.observed_files.saturating_add(1);
+    if stats.observed_files > cfg.max_files {
+        stats.files_omitted_by_limit = stats.files_omitted_by_limit.saturating_add(1);
+        stats.files_omitted_count_incomplete = true;
+        stats.scan_truncated = true;
+        return WalkControl::Stop;
+    }
+    let report_path = report_path(&absolute_path, paths.report_base.as_deref());
+    if lang::detect(&report_path).is_some() && !accept_recognized_file(&absolute_path, cfg, stats) {
+        return WalkControl::Continue;
+    }
+    log_discovery_progress(
+        files.len().saturating_add(1),
+        &report_path,
+        stats.walker_errors,
+    );
+    files.push(DiscoveredFile {
+        absolute_path,
+        report_path,
+    });
+    WalkControl::Continue
+}
+
+fn report_path(absolute: &Path, base: Option<&Path>) -> PathBuf {
+    base.and_then(|base| absolute.strip_prefix(base).ok())
+        .filter(|path| !path.as_os_str().is_empty())
+        .map_or_else(|| fallback_report_path(absolute), Path::to_path_buf)
+}
+
+fn accept_recognized_file(path: &Path, cfg: &Config, stats: &mut DiscoveryStats) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        stats.walker_errors = stats.walker_errors.saturating_add(1);
+        return false;
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        stats.walker_errors = stats.walker_errors.saturating_add(1);
+        return false;
+    }
+    let bytes = metadata.len();
+    if bytes > cfg.max_file_bytes {
+        stats.oversized_files = stats.oversized_files.saturating_add(1);
+        stats.oversized_bytes = stats.oversized_bytes.saturating_add(bytes);
+        stats.scan_truncated = true;
+        return false;
+    }
+    if stats.accepted_bytes.saturating_add(bytes) > cfg.max_total_bytes {
+        stats.files_omitted_by_limit = stats.files_omitted_by_limit.saturating_add(1);
+        stats.bytes_omitted_by_limit = stats.bytes_omitted_by_limit.saturating_add(bytes);
+        stats.scan_truncated = true;
+        return false;
+    }
+    stats.accepted_bytes = stats.accepted_bytes.saturating_add(bytes);
+    true
+}
+
+fn log_discovery_progress(count: usize, path: &Path, walker_errors: usize) {
+    if !debug_log::enabled() || (count != 1 && !count.is_multiple_of(1_000)) {
+        return;
+    }
+    let latest = path.to_string_lossy();
+    debug_log::event("discovery_progress", || {
+        serde_json::json!({
+            "files": count,
+            "latest_path": latest.as_ref(),
+            "walker_errors": walker_errors,
+        })
+    });
 }
 
 /// Resolve an existing or future path to the exact identity used by discovery.
+///
+/// # Errors
+///
+/// Returns an error when the path or its nearest existing parent cannot be
+/// resolved to a stable filesystem identity.
 pub fn exact_path_identity(path: &Path) -> Result<PathBuf> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
@@ -323,6 +395,11 @@ pub fn exact_path_identity(path: &Path) -> Result<PathBuf> {
 /// This exists for diff impact: a file deleted by the selected diff has no
 /// filesystem entry to walk, but it still has a stable repo-relative identity
 /// and may have importers worth reporting.
+///
+/// # Errors
+///
+/// Returns an error when the missing path has no resolvable ancestor or cannot
+/// be mapped to a containing Git worktree.
 pub fn discover_missing_file(target: &Path) -> Result<Discovered> {
     let absolute = if target.is_absolute() {
         target.to_path_buf()
@@ -375,8 +452,7 @@ pub fn discover_missing_file(target: &Path) -> Result<Discovered> {
 
 fn fallback_report_path(path: &Path) -> PathBuf {
     path.file_name()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("scan-target"))
+        .map_or_else(|| PathBuf::from("scan-target"), PathBuf::from)
 }
 
 #[cfg(test)]

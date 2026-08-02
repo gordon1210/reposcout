@@ -12,6 +12,7 @@ use reposcout::model::Summary;
 use reposcout::report::{self, Format};
 use reposcout::scan;
 use reposcout::walk;
+use std::fmt::Write as _;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -171,7 +172,7 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
         Cli {
             command: Some(Command::Capabilities(args)),
             ..
-        } => run_capabilities(args, pretty),
+        } => run_capabilities(&args, pretty),
         Cli {
             command: Some(Command::Cache(args)),
             ..
@@ -189,11 +190,11 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
         Cli {
             command: Some(Command::Explain(args)),
             ..
-        } => run_explain(args, pretty),
+        } => run_explain(&args, pretty),
         Cli {
             command: Some(Command::Config(args)),
             ..
-        } => run_config(args, pretty),
+        } => run_config(&args, pretty),
         Cli {
             command: Some(Command::Locate(args)),
             ..
@@ -235,11 +236,12 @@ fn run_cache(args: CacheArgs) -> Result<ExitCode> {
         reposcout::cache::CacheClearScope::ScanRoot(root) => {
             let mut output = format!("Cleared RepoScout cache for {}:\n", root.display());
             for location in &result.removed {
-                output.push_str(&format!(
-                    "  {}: {}\n",
+                let _ = writeln!(
+                    output,
+                    "  {}: {}",
                     location.kind.label(),
                     location.path.display()
-                ));
+                );
             }
             output
         }
@@ -269,12 +271,10 @@ fn print_json_error(category: &str, message: &str, code: i32) {
 }
 
 fn exit_code(code: i32) -> ExitCode {
-    u8::try_from(code)
-        .map(ExitCode::from)
-        .unwrap_or(ExitCode::FAILURE)
+    u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
 }
 
-fn run_capabilities(args: CapabilitiesArgs, pretty: bool) -> Result<ExitCode> {
+fn run_capabilities(args: &CapabilitiesArgs, pretty: bool) -> Result<ExitCode> {
     let format = args.format.unwrap_or_else(|| {
         if std::io::stdout().is_terminal() {
             ConfigOutputFormat::Table
@@ -288,7 +288,7 @@ fn run_capabilities(args: CapabilitiesArgs, pretty: bool) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_config(args: ConfigArgs, pretty: bool) -> Result<ExitCode> {
+fn run_config(args: &ConfigArgs, pretty: bool) -> Result<ExitCode> {
     let mut resolved = if args.no_project_config || args.profile == ExecutionProfile::Safe {
         Config::resolve_without_project(&args.path)?
     } else {
@@ -357,12 +357,37 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
 fn run_scan(cli: Cli) -> Result<ExitCode> {
     let pretty = cli.pretty;
     let (args, sub_enabled) = split(cli);
+    let format = validate_scan_request(&args, sub_enabled.is_some(), pretty)?;
+    let cfg = resolve_scan_config(&args, sub_enabled)?;
+    log_configuration("scan", &args.path, &cfg);
+
+    let fail_conditions = args
+        .fail_on
+        .as_deref()
+        .map(|expr| parse_fail_on(expr, cfg.enabled))
+        .transpose()?
+        .unwrap_or_default();
+
+    validate_scan_output_path(&args)?;
+    let exclusions = command_exclusions(args.common.output.as_deref());
+    let report = scan::run_with_exclusions(&args.path, &cfg, &exclusions)?;
+    let rendered = render_scan_output(&report, &args, format, pretty)?;
+    write_scan_output(&args, &rendered)?;
+
+    if scan_gate_failed(&args, &fail_conditions, &report) {
+        Ok(ExitCode::from(2))
+    } else {
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
+fn validate_scan_request(args: &ScanArgs, subcommand: bool, pretty: bool) -> Result<Format> {
     if args.change_summary && args.since.is_none() && !args.staged && !args.working {
         return Err(usage_error(
             "--change-summary requires exactly one of --since, --staged, or --working",
         ));
     }
-    if args.change_summary && sub_enabled.is_some() {
+    if args.change_summary && subcommand {
         return Err(usage_error(
             "--change-summary is available only on the default scan command",
         ));
@@ -395,11 +420,6 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
             "--change-summary supports table, JSON, Markdown, or NDJSON output",
         ));
     }
-    let cli_requested_context = args.context
-        || args.context_budget.is_some()
-        || args.context_max_files.is_some()
-        || !args.focus.is_empty()
-        || args.change_summary;
     if args
         .graph_depth
         .is_some_and(|depth| depth > reposcout::query::MAX_GRAPH_DEPTH)
@@ -410,9 +430,19 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         ));
     }
 
-    if sub_enabled.is_some() && !args.only.is_empty() {
+    if subcommand && !args.only.is_empty() {
         return Err(anyhow!("--only cannot be used with an analyzer subcommand"));
     }
+
+    Ok(format)
+}
+
+fn resolve_scan_config(args: &ScanArgs, sub_enabled: Option<Enabled>) -> Result<Config> {
+    let cli_requested_context = args.context
+        || args.context_budget.is_some()
+        || args.context_max_files.is_some()
+        || !args.focus.is_empty()
+        || args.change_summary;
 
     let profile = args.common.profile.unwrap_or(if args.change_summary {
         ExecutionProfile::Agent
@@ -425,7 +455,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         Config::load(&args.path)?
     };
     apply_execution_profile(&mut cfg, profile);
-    apply_overrides(&mut cfg, &args);
+    apply_overrides(&mut cfg, args);
     enforce_absolute_limits(&mut cfg);
     if let Some(en) = sub_enabled {
         cfg.enabled = en;
@@ -443,23 +473,24 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         }
         cfg.context = false;
     }
-    log_configuration("scan", &args.path, &cfg);
+    Ok(cfg)
+}
 
-    let fail_conditions = args
-        .fail_on
-        .as_deref()
-        .map(|expr| parse_fail_on(expr, cfg.enabled))
-        .transpose()?
-        .unwrap_or_default();
-
+fn validate_scan_output_path(args: &ScanArgs) -> Result<()> {
     if let Some(output) = args.common.output.as_deref()
         && walk::exact_path_identity(&args.path)? == walk::exact_path_identity(output)?
     {
         return Err(anyhow!("output path cannot be the scan target"));
     }
-    let exclusions = command_exclusions(args.common.output.as_deref());
-    let report = scan::run_with_exclusions(&args.path, &cfg, &exclusions)?;
+    Ok(())
+}
 
+fn render_scan_output(
+    report: &reposcout::model::ScanReport,
+    args: &ScanArgs,
+    format: Format,
+    pretty: bool,
+) -> Result<String> {
     let color = matches!(format, Format::Table)
         && args.common.output.is_none()
         && std::io::stdout().is_terminal();
@@ -473,14 +504,21 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
             "pretty_json": pretty,
         })
     });
-    let rendered = report::render_with_options(
-        &report,
+    let projection = if args.change_summary {
+        report::Projection::ChangeSummary
+    } else if args.baseline_ready {
+        report::Projection::BaselineReady
+    } else if args.summary {
+        report::Projection::Summary
+    } else {
+        report::Projection::Full
+    };
+    let rendered = report::render(
+        report,
         format,
         color,
         report::RenderOptions {
-            summary_only: args.summary,
-            baseline_ready: args.baseline_ready,
-            change_summary: args.change_summary,
+            projection,
             duplication_details: args.duplication_details,
             pretty_json: pretty,
         },
@@ -491,54 +529,47 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
             "bytes": rendered.len(),
         })
     });
+    Ok(rendered)
+}
 
+fn write_scan_output(args: &ScanArgs, rendered: &str) -> Result<()> {
     let output_started = Instant::now();
     debug_log::event("output_start", || {
         serde_json::json!({
             "destination": args
                 .common
                 .output
-                .as_deref()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "stdout".to_string()),
+                .as_deref().map_or_else(|| "stdout".to_string(), |path| path.to_string_lossy().into_owned()),
             "bytes": rendered.len(),
         })
     });
     match args.common.output.as_deref() {
         Some(path) => std::fs::write(path, rendered.as_bytes())?,
-        None => write_stdout(&rendered)?,
+        None => write_stdout(rendered)?,
     }
     debug_log::event("output_end", || {
         serde_json::json!({
             "duration_ms": u64::try_from(output_started.elapsed().as_millis()).unwrap_or(u64::MAX),
         })
     });
-
-    if evaluate_fail_on(&fail_conditions, &report.summary) {
-        return Ok(ExitCode::from(2));
-    }
-    if args.fail_on_regression
-        && report
-            .baseline
-            .as_ref()
-            .map(|b| b.regressed)
-            .unwrap_or(false)
-    {
-        return Ok(ExitCode::from(2));
-    }
-    if args.fail_on_review
-        && report
-            .review
-            .as_ref()
-            .map(|review| review.fails_gate())
-            .unwrap_or(false)
-    {
-        return Ok(ExitCode::from(2));
-    }
-    Ok(ExitCode::SUCCESS)
+    Ok(())
 }
 
-fn run_explain(args: ExplainArgs, pretty: bool) -> Result<ExitCode> {
+fn scan_gate_failed(
+    args: &ScanArgs,
+    fail_conditions: &[FailCondition],
+    report: &reposcout::model::ScanReport,
+) -> bool {
+    evaluate_fail_on(fail_conditions, &report.summary)
+        || (args.fail_on_regression && report.baseline.as_ref().is_some_and(|b| b.regressed))
+        || (args.fail_on_review
+            && report
+                .review
+                .as_ref()
+                .is_some_and(reposcout::model::ReviewReport::fails_gate))
+}
+
+fn run_explain(args: &ExplainArgs, pretty: bool) -> Result<ExitCode> {
     if let Some(output) = args.common.output.as_deref()
         && walk::exact_path_identity(&args.file)? == walk::exact_path_identity(output)?
     {
@@ -743,6 +774,15 @@ fn split(cli: Cli) -> (ScanArgs, Option<Enabled>) {
 
 fn apply_overrides(cfg: &mut Config, args: &ScanArgs) {
     apply_common_overrides(cfg, &args.common);
+    apply_report_overrides(cfg, args);
+    apply_graph_overrides(cfg, args);
+    apply_context_overrides(cfg, args);
+    cfg.impact = args.impact || args.change_summary;
+    cfg.change_summary = args.change_summary;
+    cfg.review = args.review;
+}
+
+fn apply_report_overrides(cfg: &mut Config, args: &ScanArgs) {
     if let Some(t) = args.top {
         cfg.top = t;
     }
@@ -759,8 +799,11 @@ fn apply_overrides(cfg: &mut Config, args: &ScanArgs) {
     } else {
         None
     };
-    cfg.baseline_path = args.baseline.clone();
+    cfg.baseline_path.clone_from(&args.baseline);
     cfg.fail_on_regression = args.fail_on_regression;
+}
+
+fn apply_graph_overrides(cfg: &mut Config, args: &ScanArgs) {
     cfg.graph = args.graph
         || !args.graph_focus.is_empty()
         || args.graph_depth.is_some()
@@ -776,13 +819,16 @@ fn apply_overrides(cfg: &mut Config, args: &ScanArgs) {
             .and_then(Path::extension)
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| matches!(extension, "dot" | "gv" | "mmd" | "mermaid"));
-    cfg.graph_focus = args.graph_focus.clone();
+    cfg.graph_focus.clone_from(&args.graph_focus);
     if let Some(depth) = args.graph_depth {
         cfg.graph_depth = depth;
     }
     if let Some(direction) = args.graph_direction {
         cfg.graph_direction = direction;
     }
+}
+
+fn apply_context_overrides(cfg: &mut Config, args: &ScanArgs) {
     if args.context
         || args.change_summary
         || args.context_budget.is_some()
@@ -800,15 +846,12 @@ fn apply_overrides(cfg: &mut Config, args: &ScanArgs) {
     if let Some(max_files) = args.context_max_files {
         cfg.context_max_files = max_files;
     }
-    cfg.context_focus = args.focus.clone();
-    cfg.impact = args.impact || args.change_summary;
-    cfg.change_summary = args.change_summary;
-    cfg.review = args.review;
+    cfg.context_focus.clone_from(&args.focus);
 }
 
 fn apply_common_overrides(cfg: &mut Config, args: &CommonArgs) {
     if let Some(encoding) = &args.encoding {
-        cfg.encoding = encoding.clone();
+        cfg.encoding.clone_from(encoding);
     }
     if let Some(jobs) = args.jobs {
         cfg.jobs = jobs.max(1);
@@ -1105,8 +1148,9 @@ fn validate_metric_availability(key: &str, enabled: Enabled) -> Result<()> {
 
 fn evaluate_fail_on(conditions: &[FailCondition], summary: &Summary) -> bool {
     conditions.iter().any(|condition| {
-        let lhs = metric_value(&condition.key, summary)
-            .expect("validated --fail-on metric must have a summary value");
+        let Some(lhs) = metric_value(&condition.key, summary) else {
+            return false;
+        };
         match condition.comparison {
             Comparison::Greater => lhs > condition.threshold,
             Comparison::Less => lhs < condition.threshold,
@@ -1119,16 +1163,24 @@ fn evaluate_fail_on(conditions: &[FailCondition], summary: &Summary) -> bool {
 
 fn metric_value(key: &str, s: &Summary) -> Option<f64> {
     Some(match key {
-        "max-cyclomatic" => s.complexity.cyclomatic_max as f64,
+        "max-cyclomatic" => f64::from(s.complexity.cyclomatic_max),
         "avg-cyclomatic" => s.complexity.cyclomatic_avg,
-        "max-cognitive" => s.complexity.cognitive_max as f64,
+        "max-cognitive" => f64::from(s.complexity.cognitive_max),
         "avg-cognitive" => s.complexity.cognitive_avg,
         "min-mi" | "min-maintainability" => s.complexity.mi_min,
         "avg-mi" | "avg-maintainability" => s.complexity.mi_avg,
         "duplicated-pct" => s.duplication.duplicated_pct,
-        "tokens" => s.tokens as f64,
-        "files" => s.files as f64,
-        "sloc" => s.sloc as f64,
+        "tokens" => usize_to_metric(s.tokens),
+        "files" => usize_to_metric(s.files),
+        "sloc" => usize_to_metric(s.sloc),
         _ => return None,
     })
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "gate thresholds are approximate metrics and repository counters cannot exceed representable practical ranges"
+)]
+fn usize_to_metric(value: usize) -> f64 {
+    value as f64
 }

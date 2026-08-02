@@ -4,6 +4,7 @@ use crate::model::DepGraph;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
+#[must_use]
 pub fn dot(graph: &DepGraph) -> String {
     let ids = node_ids(graph);
     let mut out = String::from(
@@ -34,6 +35,7 @@ pub fn dot(graph: &DepGraph) -> String {
     out
 }
 
+#[must_use]
 pub fn mermaid(graph: &DepGraph) -> String {
     let ids = node_ids(graph);
     let mut out = String::from("flowchart LR\n");

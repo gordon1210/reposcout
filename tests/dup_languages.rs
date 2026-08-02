@@ -1,3 +1,10 @@
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "integration tests intentionally fail immediately when fixtures or assertions are invalid"
+)]
+
 mod support;
 
 use reposcout::dup::{DupInput, exact, fuzzy};
@@ -48,7 +55,11 @@ fn every_language_fixture_has_actionable_exact_and_type2_detection() {
             })
             .unwrap_or_else(|| panic!("{} must yield an exact clone", case.name));
         assert!(exact_group.tokens >= MIN_TOKENS, "{}", case.name);
-        assert_eq!(exact_group.similarity, 1.0, "{}", case.name);
+        assert!(
+            (exact_group.similarity - 1.0).abs() < f64::EPSILON,
+            "{}",
+            case.name
+        );
         assert!(
             exact_group
                 .instances

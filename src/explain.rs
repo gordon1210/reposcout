@@ -12,6 +12,13 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::overrides::{Override, OverrideBuilder};
 use std::path::{Component, Path, PathBuf};
 
+/// Build a repository-aware explanation for one requested file.
+///
+/// # Errors
+///
+/// Returns an error when the requested path cannot be resolved, repository
+/// discovery fails, configuration-owned ignore rules are invalid, or the
+/// surrounding repository scan cannot complete.
 pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainReport> {
     let requested = resolve_path(file)?;
     let repository_path = rebase_onto_repository(&requested)?;
@@ -23,34 +30,34 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
         Some(root) => first_symlink_component_from(&absolute, root)?,
         None => first_symlink_component(&absolute)?,
     };
-    let root = match known_root {
-        Some(root) => root,
-        None => {
-            let anchor = match symlink.as_deref() {
-                Some(path) => path
-                    .parent()
-                    .context("symbolic link path has no parent")?
-                    .canonicalize()
-                    .with_context(|| format!("failed to resolve parent of {}", file.display()))?,
-                None => existing_anchor(&absolute)?,
-            };
-            walk::git_root(&anchor)
-                .unwrap_or(anchor)
+    let root = if let Some(root) = known_root {
+        root
+    } else {
+        let anchor = match symlink.as_deref() {
+            Some(path) => path
+                .parent()
+                .context("symbolic link path has no parent")?
                 .canonicalize()
-                .with_context(|| format!("failed to resolve scan root for {}", file.display()))?
-        }
+                .with_context(|| format!("failed to resolve parent of {}", file.display()))?,
+            None => existing_anchor(&absolute)?,
+        };
+        walk::git_root(&anchor)
+            .unwrap_or(anchor)
+            .canonicalize()
+            .with_context(|| format!("failed to resolve scan root for {}", file.display()))?
     };
     let path = absolute
         .strip_prefix(&root)
         .ok()
         .filter(|path| !path.as_os_str().is_empty())
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| {
-            absolute
-                .file_name()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("scan-target"))
-        });
+        .map_or_else(
+            || {
+                absolute
+                    .file_name()
+                    .map_or_else(|| PathBuf::from("scan-target"), PathBuf::from)
+            },
+            Path::to_path_buf,
+        );
     let discovery =
         discovery_explanation(&absolute, symlink.as_deref(), &root, &path, cfg, exclusions)?;
     let artifacts = scan::run_with_artifacts(
@@ -163,10 +170,10 @@ fn discovery_explanation(
             ));
         }
         let rule = exclusion_rule(absolute, root, path, cfg, exclusions)?;
-        let reason = rule
-            .as_ref()
-            .map(|rule| format!("excluded by {} pattern `{}`", rule.kind, rule.pattern))
-            .unwrap_or_else(|| "excluded by repository discovery policy".to_string());
+        let reason = rule.as_ref().map_or_else(
+            || "excluded by repository discovery policy".to_string(),
+            |rule| format!("excluded by {} pattern `{}`", rule.kind, rule.pattern),
+        );
         return Ok(discovery("ignored", &reason, rule));
     }
     if lang::detect(path).is_none() {
@@ -252,10 +259,10 @@ fn exclusion_rule(
             if let ignore::Match::Ignore(glob) = global.matched(absolute, false) {
                 return Ok(Some(rule(
                     "gitignore",
-                    &glob
-                        .from()
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_else(|| "global gitignore".to_string()),
+                    &glob.from().map_or_else(
+                        || "global gitignore".to_string(),
+                        |path| path.display().to_string(),
+                    ),
                     glob.original(),
                 )));
             }
@@ -290,7 +297,7 @@ fn local_ignore_rule(
     let parent = absolute.parent()?;
     let relative_parent = parent.strip_prefix(root).ok()?;
     let mut directory = root.to_path_buf();
-    let mut matched = None;
+    let mut matched_rule = None;
     let mut directories = vec![directory.clone()];
     for component in relative_parent.components() {
         if let Component::Normal(component) = component {
@@ -322,12 +329,12 @@ fn local_ignore_rule(
             for line in content.lines() {
                 let _ = builder.add_line(Some(source.clone()), line);
             }
-            let Ok(matcher) = builder.build() else {
+            let Ok(ignore_matcher) = builder.build() else {
                 continue;
             };
-            match matcher.matched_path_or_any_parents(absolute, false) {
+            match ignore_matcher.matched_path_or_any_parents(absolute, false) {
                 ignore::Match::Ignore(glob) => {
-                    matched = Some(rule(
+                    matched_rule = Some(rule(
                         if *name == ".reposcoutignore" {
                             "reposcoutignore"
                         } else {
@@ -337,12 +344,12 @@ fn local_ignore_rule(
                         glob.original(),
                     ));
                 }
-                ignore::Match::Whitelist(_) => matched = None,
+                ignore::Match::Whitelist(_) => matched_rule = None,
                 ignore::Match::None => {}
             }
         }
     }
-    matched
+    matched_rule
 }
 
 fn info_exclude_rule(absolute: &Path, root: &Path, cfg: &Config) -> Result<Option<ExclusionRule>> {
@@ -398,7 +405,7 @@ fn testing_context(
             ..TestExplanation::default()
         };
     };
-    if !lang::detect(path).is_some_and(|language| language.is_code()) {
+    if !lang::detect(path).is_some_and(lang::LangInfo::is_code) {
         return TestExplanation {
             classification: "non-code".to_string(),
             ..TestExplanation::default()
