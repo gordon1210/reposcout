@@ -397,6 +397,14 @@ fn source_duplication_excludes_test_files() {
         None,
     )
     .unwrap();
+    let split_test_module = analyze_source(
+        Path::new("src/example/tests.rs"),
+        &content,
+        &cfg,
+        &health_policy,
+        None,
+    )
+    .unwrap();
     let instance = |path: &str, end_line: usize| CloneInstance {
         path: path.into(),
         start_line: 1,
@@ -410,6 +418,7 @@ fn source_duplication_excludes_test_files() {
             instances: vec![
                 instance("src/example.rs", 2),
                 instance("tests/example.rs", 10),
+                instance("src/example/tests.rs", 10),
             ],
             ..CloneGroup::default()
         }],
@@ -418,7 +427,7 @@ fn source_duplication_excludes_test_files() {
     let coverage = DuplicateCoverage::from_duplication(&duplication);
 
     let evidence = production_duplication(
-        &[source, test],
+        &[source, test, split_test_module],
         &coverage,
         &std::collections::BTreeMap::new(),
         &health_policy,
@@ -598,4 +607,50 @@ fn production_duplicate_projection_excludes_test_only_families() {
         blocks[1].locations,
         ["src/first.rs:1-8", "src/second.rs:1-8"]
     );
+}
+
+#[test]
+fn production_duplicate_projection_requires_actionable_non_test_span() {
+    let instance = |path: &str| CloneInstance {
+        path: path.into(),
+        start_line: 1,
+        end_line: 8,
+        start_column: 1,
+        end_column: 2,
+        start_byte: 0,
+        end_byte: 80,
+        ..CloneInstance::default()
+    };
+    let duplication = Duplication {
+        exact: vec![CloneGroup {
+            lines: 8,
+            tokens: 24,
+            similarity: 1.0,
+            instances: vec![instance("src/first.rs"), instance("src/second.rs")],
+            ..CloneGroup::default()
+        }],
+        ..Duplication::default()
+    };
+    let test_regions = std::collections::BTreeMap::from([
+        (
+            PathBuf::from("src/first.rs"),
+            vec![
+                LineRange { start: 1, end: 3 },
+                LineRange { start: 5, end: 8 },
+            ],
+        ),
+        (
+            PathBuf::from("src/second.rs"),
+            vec![
+                LineRange { start: 1, end: 3 },
+                LineRange { start: 5, end: 8 },
+            ],
+        ),
+    ]);
+    let health_policy = Config::default().health_policy().unwrap();
+
+    let blocks =
+        top_production_duplicate_blocks(&duplication, 10, 3, &test_regions, &health_policy);
+
+    assert!(blocks.is_empty());
 }

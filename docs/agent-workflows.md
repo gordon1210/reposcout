@@ -82,7 +82,8 @@ Start with the smallest decision-ready projections:
    test files and direct Rust inline-test regions, preserves duplicated/analyzed line counts, and
    says whether the result is complete.
 2. Use `summary.top_production_duplicates` for the first production blocks to inspect. Its
-   redundancy filter suppresses nested/substantially overlapping rankings; it does not change raw
+   redundancy filter suppresses nested/substantially overlapping rankings, and a family needs at
+   least one instance with `min_dup_lines` contiguous non-test lines; neither rule changes raw
    detector output.
 3. Use `summary.top_duplicates` when test/content relationships in the complete configured health
    corpus matter. Request full JSON or `--dup-details` only when every raw group, pair, or precise

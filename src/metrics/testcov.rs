@@ -164,6 +164,8 @@ fn merge_line_ranges(mut ranges: Vec<LineRange>) -> Vec<LineRange> {
 ///   is one of `tests`, `test`, `__tests__`, `spec`, or `specs`; OR
 /// - the filename stem starts with `test_`, ends with `_test`, or the filename
 ///   contains `.test.` or `.spec.`; OR
+/// - a Rust filename is exactly `tests.rs`, the conventional name for a split
+///   test-only module; OR
 /// - the filename ends with `_spec.rb`; OR
 /// - a PHP filename follows `PHPUnit`'s `SomethingTest.php` convention.
 #[must_use]
@@ -181,6 +183,10 @@ pub fn is_test_file(rel_path: &str) -> bool {
 
     let filename = normalized.rsplit('/').next().unwrap_or(&normalized);
     let lower = filename.to_lowercase();
+
+    if lower == "tests.rs" {
+        return true;
+    }
 
     let stem = if let Some(pos) = lower.rfind('.') {
         &lower[..pos]
@@ -395,6 +401,12 @@ mod tests {
         assert!(is_test_file("foo_test.go"));
         assert!(is_test_file("foo_test.py"));
         assert!(is_test_file("foo_test.rs"));
+    }
+
+    #[test]
+    fn detects_rust_split_test_module_filename() {
+        assert!(is_test_file("src/metrics/complexity/tests.rs"));
+        assert!(is_test_file("src/tests.rs"));
     }
 
     #[test]

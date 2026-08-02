@@ -360,10 +360,12 @@ Metric semantics worth knowing:
   `locations` (`path:start-end`). The first block is retained; a later block must add at least
   `min_dup_lines` contiguous uncovered lines in at least two instances relative to already
   selected blocks. `summary.top_production_duplicates` applies the same compact filter after
-  excluding test-only and direct Rust-inline-test-only families; table/Markdown use this
-  production projection by default. A mixed production/test family remains visible. These are
-  projections only: never delete or rewrite raw exact/near groups, coverage, canonical findings,
-  or pair findings when changing their redundancy policy. Groups whose largest instance spans
+  excluding conventional test files (including Rust split modules named `tests.rs`) and direct
+  Rust-inline-test-only families. An instance intersecting inline-test regions must retain at
+  least `min_dup_lines` contiguous non-test lines; table/Markdown use this production projection
+  by default. A mixed production/test family remains visible. These are projections only: never
+  delete or rewrite raw exact/near groups, coverage, canonical findings, or pair findings when
+  changing their redundancy policy. Groups whose largest instance spans
   fewer than `min_dup_lines` lines (default 3) are dropped, so a single dense line that merely
   exceeds `min_dup_tokens` no longer shows up as a "clone". Instances that physically
   overlap another instance in the same file are pruned before grouping (a "copy" that

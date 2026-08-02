@@ -273,7 +273,12 @@ pub(super) fn summarize_duplication(
     summary.top_production_duplicates =
         top_duplicate_blocks_where(&duplicate_candidates, cfg.top, cfg.min_dup_lines, |group| {
             group.instances.iter().any(|instance| {
-                instance_has_production_lines(instance, test_regions, health_policy)
+                instance_has_production_lines(
+                    instance,
+                    test_regions,
+                    health_policy,
+                    cfg.min_dup_lines,
+                )
             })
         });
     summary.top_duplicate_findings = top_duplicate_findings(dup, cfg.top);

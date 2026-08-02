@@ -35,7 +35,7 @@ pub(super) fn top_production_duplicate_blocks(
         min_new_lines,
         |group| {
             group.instances.iter().any(|instance| {
-                instance_has_production_lines(instance, test_regions, health_policy)
+                instance_has_production_lines(instance, test_regions, health_policy, min_new_lines)
             })
         },
     )
@@ -218,6 +218,7 @@ pub(super) fn instance_has_production_lines(
     instance: &CloneInstance,
     test_regions: &BTreeMap<PathBuf, Vec<LineRange>>,
     health_policy: &HealthPolicy,
+    minimum_lines: usize,
 ) -> bool {
     let Some(info) = lang::detect(&instance.path) else {
         return false;
@@ -231,11 +232,12 @@ pub(super) fn instance_has_production_lines(
     let Some(range) = instance_line_range(instance) else {
         return false;
     };
+    let minimum_lines = minimum_lines.max(1);
     let Some(test_regions) = test_regions.get(&instance.path) else {
-        return true;
+        return range.end.saturating_sub(range.start) >= minimum_lines;
     };
     if test_regions.is_empty() {
-        return true;
+        return range.end.saturating_sub(range.start) >= minimum_lines;
     }
     let mut excluded = Vec::new();
     for test_region in test_regions {
@@ -243,7 +245,7 @@ pub(super) fn instance_has_production_lines(
             insert_line_range(&mut excluded, test_region.start - 1..test_region.end);
         }
     }
-    longest_uncovered_run(&range, &excluded) > 0
+    longest_uncovered_run(&range, &excluded) >= minimum_lines
 }
 
 pub(super) fn top_duplicate_findings(

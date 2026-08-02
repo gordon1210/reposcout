@@ -113,9 +113,11 @@ add at least `min_dup_lines` contiguous uncovered lines in at least two instance
 nested or substantially overlapping blocks without changing the detector result.
 
 `summary.top_production_duplicates` applies the same compact ranking to families that touch
-production source. Families found only in conventional test files or direct Rust `#[cfg(test)]`
-regions are omitted; a mixed production/test family remains visible. Table and Markdown reports
-use this production projection by default.
+production source. Families found only in conventional test files (including Rust split modules
+named `tests.rs`) or direct Rust `#[cfg(test)]` regions are omitted. An instance intersecting an
+inline-test region must retain at least `min_dup_lines` contiguous non-test lines to count as
+production; a mixed production/test family remains visible. Table and Markdown reports use this
+production projection by default.
 
 Full JSON retains every exact/near group in `duplicates`, stable pair findings, precise locations,
 and union coverage. `--dup-details` expands human reports from the same raw pair findings. Compact

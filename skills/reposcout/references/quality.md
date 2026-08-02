@@ -39,9 +39,10 @@ cross-tool or cross-language equivalents.
 
 Inspect `summary.assessment.production_duplication` and
 `summary.top_production_duplicates` first for product-code cleanup. Production evidence excludes
-conventional test files and direct Rust inline-test regions. Use `summary.top_duplicates`, full
-`duplicates`, or `--dup-details` only when the complete configured health corpus or precise raw
-families matter.
+conventional test files, Rust split test modules named `tests.rs`, and direct Rust inline-test
+regions. A compact production instance must retain at least `min_dup_lines` contiguous non-test
+lines. Use `summary.top_duplicates`, full `duplicates`, or `--dup-details` only when the complete
+configured health corpus or precise raw families matter.
 
 Compact lists suppress substantially overlapping groups; they do not delete detector evidence.
 Coverage uses physical-line/token unions, so exact/near overlap is not double-counted. A mixed
