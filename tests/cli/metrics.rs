@@ -312,6 +312,22 @@ fn fail_on_passes_when_condition_not_met() {
     cmd.assert().success();
 }
 
+#[test]
+fn fail_on_accepts_and_evaluates_every_supported_metric_name() {
+    let mut cmd = reposcout_command();
+    cmd.args([
+        "--no-cache",
+        "--quiet",
+        "-f",
+        "json",
+        "--fail-on",
+        "max-cyclomatic>1000000,avg-cyclomatic>1000000,max-cognitive>1000000,avg-cognitive>1000000,min-mi<-1,min-maintainability<-1,avg-mi>1000000,avg-maintainability>1000000,duplicated-pct>101,tokens>1000000000,files>1000000,sloc>1000000000",
+        &fixture(),
+    ]);
+
+    cmd.assert().success();
+}
+
 fn basenames(v: &Value) -> Vec<String> {
     v["files"]
         .as_array()

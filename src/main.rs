@@ -1,3 +1,5 @@
+mod fail_gate;
+
 use anyhow::{Result, anyhow};
 use clap::{Parser, error::ErrorKind};
 use reposcout::cli::{
@@ -8,7 +10,6 @@ use reposcout::cli::{
 use reposcout::config::{Config, Enabled};
 use reposcout::debug_log;
 use reposcout::lang::{HealthInclude, HealthScope};
-use reposcout::model::Summary;
 use reposcout::report::{self, Format};
 use reposcout::scan;
 use reposcout::walk;
@@ -357,14 +358,15 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
 fn run_scan(cli: Cli) -> Result<ExitCode> {
     let pretty = cli.pretty;
     let (args, sub_enabled) = split(cli);
-    let format = validate_scan_request(&args, sub_enabled.is_some(), pretty)?;
+    validate_scan_request(&args, sub_enabled.is_some())?;
+    let format = resolve_scan_format(&args, pretty)?;
     let cfg = resolve_scan_config(&args, sub_enabled)?;
     log_configuration("scan", &args.path, &cfg);
 
     let fail_conditions = args
         .fail_on
         .as_deref()
-        .map(|expr| parse_fail_on(expr, cfg.enabled))
+        .map(|expr| fail_gate::parse(expr, cfg.enabled))
         .transpose()?
         .unwrap_or_default();
 
@@ -381,7 +383,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
     }
 }
 
-fn validate_scan_request(args: &ScanArgs, subcommand: bool, pretty: bool) -> Result<Format> {
+fn validate_scan_request(args: &ScanArgs, subcommand: bool) -> Result<()> {
     if args.change_summary && args.since.is_none() && !args.staged && !args.working {
         return Err(usage_error(
             "--change-summary requires exactly one of --since, --staged, or --working",
@@ -395,29 +397,6 @@ fn validate_scan_request(args: &ScanArgs, subcommand: bool, pretty: bool) -> Res
     if args.change_summary && args.baseline_ready {
         return Err(usage_error(
             "--change-summary cannot be combined with --baseline-ready",
-        ));
-    }
-    let requested_format = choose_format(args.common.format, args.common.output.as_deref());
-    if args.baseline_ready
-        && let Some(format) = args.common.format
-        && format != OutputFormat::Json
-    {
-        return Err(anyhow!("--baseline-ready requires JSON output"));
-    }
-    let format = if args.baseline_ready {
-        Format::Json
-    } else {
-        requested_format
-    };
-    require_json_for_pretty(pretty, format == Format::Json)?;
-    if args.change_summary
-        && matches!(
-            requested_format,
-            Format::Sarif | Format::Dot | Format::Mermaid
-        )
-    {
-        return Err(usage_error(
-            "--change-summary supports table, JSON, Markdown, or NDJSON output",
         ));
     }
     if args
@@ -434,7 +413,29 @@ fn validate_scan_request(args: &ScanArgs, subcommand: bool, pretty: bool) -> Res
         return Err(anyhow!("--only cannot be used with an analyzer subcommand"));
     }
 
-    Ok(format)
+    Ok(())
+}
+
+fn resolve_scan_format(args: &ScanArgs, pretty: bool) -> Result<Format> {
+    let requested = choose_format(args.common.format, args.common.output.as_deref());
+    if args.baseline_ready
+        && let Some(format) = args.common.format
+        && format != OutputFormat::Json
+    {
+        return Err(anyhow!("--baseline-ready requires JSON output"));
+    }
+    let resolved = if args.baseline_ready {
+        Format::Json
+    } else {
+        requested
+    };
+    require_json_for_pretty(pretty, resolved == Format::Json)?;
+    if args.change_summary && matches!(requested, Format::Sarif | Format::Dot | Format::Mermaid) {
+        return Err(usage_error(
+            "--change-summary supports table, JSON, Markdown, or NDJSON output",
+        ));
+    }
+    Ok(resolved)
 }
 
 fn resolve_scan_config(args: &ScanArgs, sub_enabled: Option<Enabled>) -> Result<Config> {
@@ -557,10 +558,10 @@ fn write_scan_output(args: &ScanArgs, rendered: &str) -> Result<()> {
 
 fn scan_gate_failed(
     args: &ScanArgs,
-    fail_conditions: &[FailCondition],
+    fail_conditions: &[fail_gate::FailCondition],
     report: &reposcout::model::ScanReport,
 ) -> bool {
-    evaluate_fail_on(fail_conditions, &report.summary)
+    fail_gate::evaluate(fail_conditions, &report.summary)
         || (args.fail_on_regression && report.baseline.as_ref().is_some_and(|b| b.regressed))
         || (args.fail_on_review
             && report
@@ -1061,126 +1062,4 @@ fn choose_format(explicit: Option<OutputFormat>, output: Option<&Path>) -> Forma
     } else {
         Format::Json
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Comparison {
-    GreaterOrEqual,
-    LessOrEqual,
-    Equal,
-    Greater,
-    Less,
-}
-
-#[derive(Debug)]
-struct FailCondition {
-    key: String,
-    comparison: Comparison,
-    threshold: f64,
-}
-
-fn parse_fail_on(expr: &str, enabled: Enabled) -> Result<Vec<FailCondition>> {
-    expr.split(',')
-        .map(str::trim)
-        .filter(|condition| !condition.is_empty())
-        .map(|condition| parse_fail_condition(condition, enabled))
-        .collect()
-}
-
-fn parse_fail_condition(condition: &str, enabled: Enabled) -> Result<FailCondition> {
-    let operators = [
-        (">=", Comparison::GreaterOrEqual),
-        ("<=", Comparison::LessOrEqual),
-        ("==", Comparison::Equal),
-        (">", Comparison::Greater),
-        ("<", Comparison::Less),
-    ];
-    let (key, comparison, rhs) = operators
-        .iter()
-        .find_map(|(operator, comparison)| {
-            condition
-                .split_once(operator)
-                .map(|(key, rhs)| (key.trim(), *comparison, rhs.trim()))
-        })
-        .ok_or_else(|| {
-            anyhow!("invalid --fail-on condition '{condition}' (expected key OP number)")
-        })?;
-
-    let threshold: f64 = rhs
-        .parse()
-        .map_err(|_| anyhow!("invalid number in --fail-on '{condition}'"))?;
-    if !threshold.is_finite() {
-        return Err(anyhow!("invalid number in --fail-on '{condition}'"));
-    }
-    validate_metric_availability(key, enabled)?;
-
-    Ok(FailCondition {
-        key: key.to_string(),
-        comparison,
-        threshold,
-    })
-}
-
-fn validate_metric_availability(key: &str, enabled: Enabled) -> Result<()> {
-    let requirement = match key {
-        "max-cyclomatic"
-        | "avg-cyclomatic"
-        | "max-cognitive"
-        | "avg-cognitive"
-        | "min-mi"
-        | "min-maintainability"
-        | "avg-mi"
-        | "avg-maintainability" => Some((enabled.complexity, "complexity")),
-        "duplicated-pct" => Some((enabled.duplication, "duplication")),
-        "tokens" => Some((enabled.tokens, "tokens")),
-        "files" | "sloc" => None,
-        _ => return Err(anyhow!("unknown --fail-on key '{key}'")),
-    };
-    if let Some((available, analyzer)) = requirement
-        && !available
-    {
-        return Err(anyhow!(
-            "--fail-on metric {key} requires the {analyzer} analyzer"
-        ));
-    }
-    Ok(())
-}
-
-fn evaluate_fail_on(conditions: &[FailCondition], summary: &Summary) -> bool {
-    conditions.iter().any(|condition| {
-        let Some(lhs) = metric_value(&condition.key, summary) else {
-            return false;
-        };
-        match condition.comparison {
-            Comparison::Greater => lhs > condition.threshold,
-            Comparison::Less => lhs < condition.threshold,
-            Comparison::GreaterOrEqual => lhs >= condition.threshold,
-            Comparison::LessOrEqual => lhs <= condition.threshold,
-            Comparison::Equal => (lhs - condition.threshold).abs() < f64::EPSILON,
-        }
-    })
-}
-
-fn metric_value(key: &str, s: &Summary) -> Option<f64> {
-    Some(match key {
-        "max-cyclomatic" => f64::from(s.complexity.cyclomatic_max),
-        "avg-cyclomatic" => s.complexity.cyclomatic_avg,
-        "max-cognitive" => f64::from(s.complexity.cognitive_max),
-        "avg-cognitive" => s.complexity.cognitive_avg,
-        "min-mi" | "min-maintainability" => s.complexity.mi_min,
-        "avg-mi" | "avg-maintainability" => s.complexity.mi_avg,
-        "duplicated-pct" => s.duplication.duplicated_pct,
-        "tokens" => usize_to_metric(s.tokens),
-        "files" => usize_to_metric(s.files),
-        "sloc" => usize_to_metric(s.sloc),
-        _ => return None,
-    })
-}
-
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "gate thresholds are approximate metrics and repository counters cannot exceed representable practical ranges"
-)]
-fn usize_to_metric(value: usize) -> f64 {
-    value as f64
 }
