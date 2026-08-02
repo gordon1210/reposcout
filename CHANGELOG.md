@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-02
+
 ### Fixed
 
 - Exclude conventional Rust split test modules named `tests.rs` from production-source
