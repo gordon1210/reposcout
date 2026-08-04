@@ -191,7 +191,7 @@ pub(super) fn analyze_cross_file_metrics(
             .filter_map(|file| {
                 let included = lang::detect(&file.report.path)
                     .is_some_and(|info| prepared.health_policy.includes(&file.report.path, info));
-                if included {
+                if included && (cfg.duplication_include_artifacts || !file.duplication_artifact) {
                     Some(DupInput {
                         path: file.report.path.clone(),
                         content: std::mem::take(&mut file.content),
@@ -527,6 +527,8 @@ pub(super) fn analyze_file(
 
     let hash = xxhash_rust::xxh3::xxh3_64(content.as_bytes());
     if let Some(mut cached) = cache.get(&rel_str, hash) {
+        let duplication_artifact =
+            classify::hint_is_duplication_artifact(cached.report.skip_hint.as_deref());
         let needs_outlines = requirements.symbol_outlines && cached.symbol_outlines.is_none();
         let needs_graph = requirements.graph_facts && cached.graph_facts.is_none();
         let mut enriched = false;
@@ -567,6 +569,7 @@ pub(super) fn analyze_file(
         return AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
             report: cached.report,
             content,
+            duplication_artifact,
             test_regions: cached.test_regions,
             symbol_outlines: cached.symbol_outlines,
             graph_facts: cached.graph_facts,
@@ -595,6 +598,7 @@ pub(super) fn analyze_file(
     AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
         report: analysis.report,
         content,
+        duplication_artifact: analysis.duplication_artifact,
         test_regions: analysis.test_regions,
         symbol_outlines: analysis.symbol_outlines,
         graph_facts: analysis.graph_facts,
@@ -634,6 +638,7 @@ pub(super) fn analyze_source_details(
     let rel = report_path.to_path_buf();
     let rel_str = rel.to_string_lossy().to_string();
     let tokens = counter.map_or(0, |c| c.count(content));
+    let classification = classify::classify(&rel_str, content);
 
     // First-class line metrics also consume the syntax tree, so parse even
     // when structural analyzers are disabled.
@@ -651,7 +656,6 @@ pub(super) fn analyze_source_details(
     let import_list = import_facts(info, content, tree.as_ref(), cfg);
     let (sym, symbol_outlines) = symbol_facts(info, content, tree.as_ref(), cfg, requirements);
     let graph_facts = graph_facts(info, &rel_str, content, tree.as_ref(), requirements);
-    let skip = classify::skip_hint(&rel_str, content);
     let test_facts = rust_test_facts(info, content, tree.as_ref());
     let comment_ratio = percentage_ratio(line_stats.comment_lines, line_stats.loc);
 
@@ -673,9 +677,10 @@ pub(super) fn analyze_source_details(
             churn: None,
             approximate,
             symbols: sym,
-            skip_hint: skip,
+            skip_hint: classification.skip_hint().map(str::to_string),
             has_inline_tests: test_facts.has_inline_tests,
         },
+        duplication_artifact: classification.is_duplication_artifact(),
         test_regions: test_facts.regions,
         symbol_outlines,
         graph_facts,

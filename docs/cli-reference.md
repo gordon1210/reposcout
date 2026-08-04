@@ -73,10 +73,14 @@ table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 | `--health-exclude <GLOB>` | Remove repository-relative paths from health analysis while retaining inventory; repeatable | — |
 | `--dup-mode <strict\|mild\|weak>` | Keep all trivia, ignore whitespace, or also ignore comments | `mild` |
 | `--dup-format-scope <exact\|compatible\|all>` | Choose cross-format candidate pools | `exact` |
+| `--dup-include-artifacts` | Include minified and bundled build output in duplication analysis | off |
 | `--dup-snippets` | Include bounded source snippets in duplicate findings | off |
 | `--dup-details` | Expand precise duplicate pairs in human reports | off |
 
 `compatible` combines JavaScript, TypeScript, and TSX; `exact` isolates every detected format.
+Minified files and recognized JavaScript/CSS build chunks are excluded from the duplication corpus
+by default while remaining in inventory and navigation. `--dup-include-artifacts` explicitly
+restores their participation.
 Duplication token, line, and similarity thresholds are configurable in
 [`reposcout.toml`](configuration.md#example-reposcouttoml).
 Health selection always applies scope first, format includes second, and path excludes last, so an

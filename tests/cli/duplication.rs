@@ -150,6 +150,57 @@ fn short_clones_are_filtered_out() {
 }
 
 #[test]
+fn build_artifacts_are_excluded_from_duplication_unless_explicitly_included() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::create_dir_all(dir.path().join("static/js")).unwrap();
+    std::fs::write(
+        dir.path().join("src/app.js"),
+        "export function authored(value) {\n  return value + 1;\n}\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("bundle.js"), "const value=1;".repeat(200)).unwrap();
+    std::fs::write(
+        dir.path().join("static/js/main.a1b2c3.chunk.js"),
+        "export function bundled(value) {\n  return value + 1;\n}\n",
+    )
+    .unwrap();
+
+    let target = dir.path().to_str().unwrap();
+    let default = run_json(&["-f", "json", target]);
+    let default_files = default["duplicates"]["file_coverage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(default["summary"]["files"], 3);
+    assert_eq!(default_files, vec!["src/app.js"]);
+    assert_eq!(
+        default["analysis_profile"]["duplication"]["artifact_policy"],
+        "exclude"
+    );
+
+    let included = run_json(&["-f", "json", "--dup-include-artifacts", target]);
+    let included_files = included["duplicates"]["file_coverage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        included_files,
+        vec!["bundle.js", "src/app.js", "static/js/main.a1b2c3.chunk.js"]
+    );
+    assert_eq!(
+        included["analysis_profile"]["duplication"]["artifact_policy"],
+        "include"
+    );
+}
+
+#[test]
 fn summary_flag_keeps_top_duplicates() {
     // top_duplicates lives in the summary specifically so agents still get
     // actionable duplication data in the compact --summary output.

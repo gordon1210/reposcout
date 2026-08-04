@@ -84,7 +84,7 @@ fn duplication_options_load_from_config() {
     let config = dir.path().join("reposcout.toml");
     fs::write(
             &config,
-            "duplication_mode = \"weak\"\nduplication_format_scope = \"compatible\"\nduplication_report_snippets = true\n",
+            "duplication_mode = \"weak\"\nduplication_format_scope = \"compatible\"\nduplication_include_artifacts = true\nduplication_report_snippets = true\n",
         )
         .unwrap();
 
@@ -95,6 +95,7 @@ fn duplication_options_load_from_config() {
         loaded.duplication_format_scope,
         DuplicationFormatScope::Compatible
     );
+    assert!(loaded.duplication_include_artifacts);
     assert!(loaded.duplication_report_snippets);
 }
 

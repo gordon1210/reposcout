@@ -487,6 +487,35 @@ fn baseline_rejects_mismatched_duplication_settings() {
 }
 
 #[test]
+fn baseline_rejects_mismatched_duplication_artifact_policy() {
+    let fix = fixture();
+    let tmp = tempfile::NamedTempFile::new().expect("temp file");
+    let tmp_path = tmp.path().to_str().unwrap().to_string();
+
+    let mut save = reposcout_command();
+    save.args(["-f", "json", "--no-cache", "--quiet", "-o", &tmp_path, &fix]);
+    save.assert().success();
+
+    let mut compare = reposcout_command();
+    compare.args([
+        "-f",
+        "json",
+        "--dup-include-artifacts",
+        "--baseline",
+        &tmp_path,
+        "--no-cache",
+        "--quiet",
+        &fix,
+    ]);
+    let output = compare.assert().code(1).get_output().stderr.clone();
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .contains("baseline analyzer profile does not match")
+    );
+}
+
+#[test]
 fn baseline_rejects_mismatched_health_file_scope() {
     let fix = fixture();
     let tmp = tempfile::NamedTempFile::new().expect("temp file");

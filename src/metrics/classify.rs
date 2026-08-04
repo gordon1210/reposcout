@@ -1,8 +1,8 @@
-//! Classify files as skip candidates (generated, minified, or vendored).
+//! Classify files as skip candidates (generated, minified, bundled, or vendored).
 //!
 //! Returns a short reason string so callers can surface these files to users
-//! without requiring them to open each file to discover they are auto-generated
-//! or vendored noise.
+//! without requiring them to open each file to discover machine-produced or
+//! vendored noise.
 
 const GENERATED_SUFFIXES: &[&str] = &[
     ".pb.go",
@@ -24,55 +24,157 @@ const VENDORED_DIRS: &[&str] = &[
     ".next",
     "out",
 ];
+const BUNDLED_DIRS: &[&str] = &["dist", "build", ".next", ".nuxt", ".svelte-kit", "out"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Classification {
+    hint: Option<&'static str>,
+    duplication_artifact: bool,
+}
+
+impl Classification {
+    #[must_use]
+    pub(crate) fn skip_hint(self) -> Option<&'static str> {
+        self.hint
+    }
+
+    #[must_use]
+    pub(crate) fn is_duplication_artifact(self) -> bool {
+        self.duplication_artifact
+    }
+}
+
+/// Classify source that is likely machine-produced or otherwise a poor
+/// reading candidate. Minified and bundled build output are additionally
+/// marked as duplication artifacts so scan orchestration can keep them out of
+/// the default detector corpus without coupling to human-readable hint text.
+#[must_use]
+pub(crate) fn classify(rel_path: &str, content: &str) -> Classification {
+    let filename = rel_path.rsplit(['/', '\\']).next().unwrap_or(rel_path);
+    if filename.to_ascii_lowercase().contains(".min.") || looks_minified(content) {
+        return Classification {
+            hint: Some("minified"),
+            duplication_artifact: true,
+        };
+    }
+    if is_bundled_path(rel_path) {
+        return Classification {
+            hint: Some("bundled"),
+            duplication_artifact: true,
+        };
+    }
+
+    for suffix in GENERATED_SUFFIXES {
+        if rel_path.ends_with(suffix) {
+            return Classification {
+                hint: Some("generated"),
+                duplication_artifact: false,
+            };
+        }
+    }
+    for line in content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(5)
+    {
+        if is_generated_header(line) {
+            return Classification {
+                hint: Some("generated"),
+                duplication_artifact: false,
+            };
+        }
+    }
+
+    let normalized = rel_path.replace('\\', "/");
+    let mut components = normalized.split('/').collect::<Vec<_>>();
+    components.pop();
+    if components
+        .iter()
+        .any(|component| VENDORED_DIRS.contains(component))
+    {
+        return Classification {
+            hint: Some("vendored"),
+            duplication_artifact: false,
+        };
+    }
+
+    Classification {
+        hint: None,
+        duplication_artifact: false,
+    }
+}
 
 /// Return a reason string if `rel_path`/`content` looks like a file an agent
 /// should skip, or `None` if it appears to be hand-authored source code.
 ///
-/// Checks are applied in priority order: minified → generated → vendored.
+/// Checks are applied in priority order: minified → bundled → generated → vendored.
 #[must_use]
 pub fn skip_hint(rel_path: &str, content: &str) -> Option<String> {
-    // 1. Minified: .min. filename, very long lines, or high average line length.
-    let filename = rel_path.rsplit('/').next().unwrap_or(rel_path);
-    if filename.contains(".min.") {
-        return Some("minified".to_string());
-    }
-    let lines: Vec<&str> = content.lines().collect();
-    let line_count = lines.len();
-    let longest = lines.iter().map(|l| l.len()).max().unwrap_or(0);
-    if longest > 2000 {
-        return Some("minified".to_string());
-    }
-    if line_count > 1 {
-        let total: usize = lines.iter().map(|l| l.len()).sum();
-        if total > line_count.saturating_mul(250) {
-            return Some("minified".to_string());
+    classify(rel_path, content).skip_hint().map(str::to_string)
+}
+
+/// Interpret a cached hint without rescanning its source content.
+#[must_use]
+pub(crate) fn hint_is_duplication_artifact(hint: Option<&str>) -> bool {
+    matches!(hint, Some("minified" | "bundled"))
+}
+
+fn looks_minified(content: &str) -> bool {
+    let mut line_count = 0usize;
+    let mut total = 0usize;
+    for line in content.lines() {
+        line_count = line_count.saturating_add(1);
+        total = total.saturating_add(line.len());
+        if line.len() > 2_000 {
+            return true;
         }
     }
+    line_count > 1 && total > line_count.saturating_mul(250)
+}
 
-    // 2. Generated: header keywords in the first 5 non-empty lines, or a
-    //    well-known generated-file extension.
-    for suffix in GENERATED_SUFFIXES {
-        if rel_path.ends_with(suffix) {
-            return Some("generated".to_string());
-        }
+fn is_bundled_path(rel_path: &str) -> bool {
+    let normalized = rel_path.replace('\\', "/").to_ascii_lowercase();
+    let components = normalized.split('/').collect::<Vec<_>>();
+    let Some(filename) = components.last().copied() else {
+        return false;
+    };
+    if !matches!(
+        filename.rsplit_once('.').map(|(_, extension)| extension),
+        Some("js" | "mjs" | "cjs" | "css")
+    ) {
+        return false;
     }
-    for line in content.lines().filter(|l| !l.trim().is_empty()).take(5) {
-        if is_generated_header(line) {
-            return Some("generated".to_string());
-        }
-    }
+    let directories = &components[..components.len().saturating_sub(1)];
+    filename.contains(".chunk.")
+        || filename.contains(".bundle.")
+        || is_chunk_filename(filename)
+        || directories
+            .iter()
+            .any(|component| BUNDLED_DIRS.contains(component))
+        || directories
+            .windows(2)
+            .any(|pair| matches!(pair, ["static", "chunks"]))
+}
 
-    // 3. Vendored: a well-known vendor/build directory appears as a whole path
-    //    component. Matching whole segments avoids false positives like
-    //    `rebuild/` (contains "build") or `layout/` (contains "out").
-    let normalized = rel_path.replace('\\', "/");
-    let mut components: Vec<&str> = normalized.split('/').collect();
-    components.pop(); // drop the filename; only directory components count
-    if components.iter().any(|c| VENDORED_DIRS.contains(c)) {
-        return Some("vendored".to_string());
+fn is_chunk_filename(filename: &str) -> bool {
+    let stem = filename.rsplit_once('.').map_or(filename, |(stem, _)| stem);
+    if matches!(stem, "chunk-vendors" | "chunk-common") {
+        return true;
     }
-
-    None
+    let Some(identifier) = stem
+        .strip_prefix("chunk-")
+        .or_else(|| stem.strip_prefix("chunk_"))
+    else {
+        return false;
+    };
+    let allowed = identifier
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'~'));
+    let hash_like =
+        identifier.len() >= 8 && identifier.bytes().all(|byte| byte.is_ascii_hexdigit());
+    identifier.len() >= 6
+        && allowed
+        && (identifier.bytes().any(|byte| byte.is_ascii_digit()) || hash_like)
 }
 
 /// Match canonical generated-file comment headers, not incidental prose such
@@ -118,6 +220,59 @@ mod tests {
             skip_hint("jquery.min.js", "x=1"),
             Some("minified".to_string())
         );
+    }
+
+    #[test]
+    fn minified_files_are_duplication_artifacts() {
+        let long_line = "const value=1;".repeat(200);
+        let classification = classify("assets/bundle.js", &long_line);
+
+        assert_eq!(classification.skip_hint(), Some("minified"));
+        assert!(classification.is_duplication_artifact());
+    }
+
+    #[test]
+    fn chunk_outputs_are_duplication_artifacts() {
+        for path in [
+            "static/js/main.a1b2c3.chunk.js",
+            "public/js/main.bundle.js",
+            "public/js/chunk-a1b2c3d4.js",
+            "public/js/chunk-abcdefab.js",
+            ".next/static/chunks/1234.js",
+            "packages/web/dist/assets/index-a1b2c3.js",
+            "packages/web/build/static/js/main-a1b2c3.js",
+        ] {
+            let classification = classify(path, "export const value = 1;\n");
+
+            assert_eq!(
+                classification.skip_hint(),
+                Some("bundled"),
+                "unexpected hint for {path}"
+            );
+            assert!(
+                classification.is_duplication_artifact(),
+                "expected {path} to be excluded from duplication"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_chunk_named_source_is_not_a_duplication_artifact() {
+        let classification = classify(
+            "src/chunk-parser.js",
+            "export function parseChunk(value) { return value; }\n",
+        );
+
+        assert_eq!(classification.skip_hint(), None);
+        assert!(!classification.is_duplication_artifact());
+    }
+
+    #[test]
+    fn generated_hints_do_not_change_duplication_scope() {
+        let classification = classify("api/types.pb.go", "package api\n");
+
+        assert_eq!(classification.skip_hint(), Some("generated"));
+        assert!(!classification.is_duplication_artifact());
     }
 
     #[test]

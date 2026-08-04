@@ -43,6 +43,11 @@ The report includes:
 
 Use `--no-project-config` when repository-owned policy should not be parsed or applied.
 
+Human table and Markdown scan reports end with a configuration tip when no project configuration
+is active. The tip distinguishes built-in defaults from an active global configuration and points
+to the more specific project layer. It is omitted when a project config is loaded or project
+configuration was deliberately disabled with `--no-project-config` or the `safe` profile.
+
 ## Example `reposcout.toml`
 
 ```toml
@@ -67,6 +72,7 @@ min_dup_lines = 3
 near_dup_min_similarity = 0.85
 duplication_mode = "mild"           # strict, mild, weak
 duplication_format_scope = "exact"  # exact, compatible, all
+duplication_include_artifacts = false # minified/bundled output requires explicit opt-in
 duplication_report_snippets = false
 
 churn_max_commits = 5000            # 0 selects the absolute 100,000-commit ceiling
@@ -105,6 +111,18 @@ A JSON file under `fixtures/generated/` remains in repository inventory but does
 markers, complexity, duplication, risk, test-presence, or cleanup signals. It still contributes
 tokens and line totals and remains available to navigation, imports, symbols, and context queries.
 Use the ordinary `excludes` setting instead when the file should disappear from the scan entirely.
+
+## Duplication artifact policy
+
+Duplication excludes confidently detected minified files and JavaScript/CSS build chunks by
+default. Detection includes `.min.*` names, long-line density, `.chunk.*`/`.bundle.*` names,
+common build output directories such as `dist`, `build`, `.next`, and `out`, and `static/chunks`
+paths. These files stay in repository inventory, token/line totals, navigation, and skip-candidate
+reporting; they are removed only from duplication tokenization, coverage denominators, and findings.
+
+Set `duplication_include_artifacts = true` or pass `--dup-include-artifacts` when analyzing a
+specialized corpus where generated bundles are intentional inputs. The effective choice appears as
+`analysis_profile.duplication.artifact_policy`, so incompatible baselines are rejected.
 
 ## Execution profiles
 

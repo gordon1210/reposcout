@@ -86,6 +86,13 @@ pub fn render_capabilities(
                     report.health_exclude_flag
                 );
             }
+            if !report.duplication_include_artifacts_flag.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "Duplication artifact opt-in: {}",
+                    report.duplication_include_artifacts_flag
+                );
+            }
             let _ = writeln!(
                 out,
                 "Machine interfaces: {}",

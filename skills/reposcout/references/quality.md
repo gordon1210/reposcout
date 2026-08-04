@@ -37,6 +37,11 @@ cross-tool or cross-language equivalents.
 
 ## Duplication
 
+The default duplication corpus excludes minified and recognized bundled/chunk output while
+retaining those files in inventory and navigation. Check
+`analysis_profile.duplication.artifact_policy`; `include` means the caller explicitly supplied
+`--dup-include-artifacts` or equivalent configuration.
+
 Inspect `summary.assessment.production_duplication` and
 `summary.top_production_duplicates` first for product-code cleanup. Production evidence excludes
 conventional test files, Rust split test modules named `tests.rs`, and direct Rust inline-test

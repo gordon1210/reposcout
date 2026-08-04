@@ -5,12 +5,14 @@ use crate::config::{Config, HealthPolicy};
 use crate::dup::{self, DetectionOptions, DupInput};
 use crate::git::DiffScope;
 use crate::lang;
+use crate::metrics::classify;
 use crate::model::{
     FindingCatalog, FindingChange, FindingLocation, ReviewChangedFile, ReviewCounts,
     ReviewDiagnostics, ReviewFinding, ReviewReport,
 };
 use crate::snapshot::SourceSnapshot;
 use anyhow::Result;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -102,11 +104,22 @@ fn catalog(
             crate::scan::analyze_source(path, content, cfg, health_policy, None)
         })
         .collect::<Vec<_>>();
+    let duplication_artifacts = if cfg.enabled.duplication && !cfg.duplication_include_artifacts {
+        files
+            .iter()
+            .filter(|file| classify::hint_is_duplication_artifact(file.skip_hint.as_deref()))
+            .map(|file| file.path.clone())
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
     let duplication = if cfg.enabled.duplication {
         let inputs = snapshot
             .iter()
             .filter(|(path, _)| {
-                lang::detect(path).is_some_and(|info| health_policy.includes(path, info))
+                let health_eligible =
+                    lang::detect(path).is_some_and(|info| health_policy.includes(path, info));
+                health_eligible && !duplication_artifacts.contains(*path)
             })
             .map(|(path, content)| DupInput {
                 path: path.to_path_buf(),

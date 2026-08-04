@@ -44,6 +44,25 @@ pub struct RenderOptions {
     pub projection: Projection,
     pub duplication_details: bool,
     pub pretty_json: bool,
+    /// Hide configuration guidance when project configuration was deliberately
+    /// disabled by the caller or execution profile.
+    pub suppress_config_guidance: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ConfigGuidance {
+    NoConfiguration,
+    GlobalOnly,
+}
+
+pub(super) fn config_guidance(report: &ScanReport, suppressed: bool) -> Option<ConfigGuidance> {
+    if suppressed || report.execution.project_config.is_some() {
+        return None;
+    }
+    if report.execution.global_config.is_some() {
+        return Some(ConfigGuidance::GlobalOnly);
+    }
+    (report.execution.config_mode == "defaults").then_some(ConfigGuidance::NoConfiguration)
 }
 
 /// Render a scan report in the selected human or machine format.
@@ -76,9 +95,9 @@ pub fn render(
         };
     }
     match format {
-        Format::Table => Ok(table::render(report, color, options.duplication_details)),
+        Format::Table => Ok(table::render(report, color, options)),
         Format::Json => json::render(report, options.projection, options.pretty_json),
-        Format::Markdown => Ok(markdown::render(report, options.duplication_details)),
+        Format::Markdown => Ok(markdown::render(report, options)),
         Format::Ndjson => ndjson::render(report, options.projection == Projection::Summary),
         Format::Sarif => sarif::render(report),
         Format::Dot => report
@@ -446,6 +465,51 @@ mod tests {
         for rendered in human_renderings(&report) {
             assert!(rendered.contains("Top risks · algorithm 4"));
             assert!(!rendered.contains("Top risks · algorithm 5"));
+        }
+    }
+
+    #[test]
+    fn human_reports_distinguish_missing_and_global_only_configuration() {
+        let mut report = report_with_summary(Summary::default());
+        report.execution.config_mode = "defaults".to_string();
+
+        for rendered in human_renderings(&report) {
+            assert!(rendered.contains("Configuration tip"));
+            assert!(rendered.contains("No RepoScout configuration was found"));
+            assert!(rendered.contains("global config can establish reusable defaults"));
+            assert!(
+                rendered.contains("project `reposcout.toml`")
+                    || rendered.contains("project reposcout.toml")
+            );
+        }
+
+        report.execution.config_mode = "user".to_string();
+        report.execution.global_config = Some(PathBuf::from("/config/reposcout.toml"));
+        for rendered in human_renderings(&report) {
+            assert!(rendered.contains("global RepoScout configuration is active"));
+            assert!(!rendered.contains("No RepoScout configuration was found"));
+        }
+    }
+
+    #[test]
+    fn human_reports_omit_configuration_guidance_when_loaded_or_suppressed() {
+        let mut report = report_with_summary(Summary::default());
+        report.execution.config_mode = "project".to_string();
+        report.execution.project_config = Some(PathBuf::from("/repo/reposcout.toml"));
+        for rendered in human_renderings(&report) {
+            assert!(!rendered.contains("Configuration tip"));
+        }
+
+        report.execution.config_mode = "user".to_string();
+        report.execution.global_config = Some(PathBuf::from("/config/reposcout.toml"));
+        report.execution.project_config = None;
+        let options = RenderOptions {
+            suppress_config_guidance: true,
+            ..RenderOptions::default()
+        };
+        for format in [Format::Table, Format::Markdown] {
+            let rendered = render(&report, format, false, options).unwrap();
+            assert!(!rendered.contains("Configuration tip"));
         }
     }
 }

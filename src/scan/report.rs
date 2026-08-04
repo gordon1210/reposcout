@@ -508,6 +508,12 @@ pub(super) fn scan_profile(cfg: &Config, diff_base: Option<String>) -> ScanProfi
             dup::DuplicationFormatScope::All => "all",
         }
         .to_string(),
+        artifact_policy: if cfg.duplication_include_artifacts {
+            "include"
+        } else {
+            "exclude"
+        }
+        .to_string(),
     });
     let health = {
         let mut includes = if cfg.health_scope == lang::HealthScope::Source {

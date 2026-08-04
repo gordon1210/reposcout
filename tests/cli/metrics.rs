@@ -142,6 +142,26 @@ fn table_output_has_headers() {
         }),
         "math.rs hotspot must show cyclomatic total 12 and callable average 3.0"
     );
+    assert!(text.contains("global RepoScout configuration is active"));
+}
+
+#[test]
+fn no_project_config_suppresses_human_configuration_guidance() {
+    let mut cmd = reposcout_command();
+    cmd.args([
+        "--only",
+        "lines",
+        "--no-project-config",
+        "--no-cache",
+        "--quiet",
+        "-f",
+        "table",
+        &fixture(),
+    ]);
+    let out = cmd.assert().success().get_output().stdout.clone();
+    let text = String::from_utf8(out).unwrap();
+
+    assert!(!text.contains("Configuration tip"));
 }
 
 #[test]

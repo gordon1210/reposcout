@@ -181,7 +181,7 @@ src/
     complexity.rs    Cyclomatic, cognitive, nesting, Halstead, MI (+ per-function).
     imports.rs       Import / dependency extraction (ROOT module names only).
     symbols.rs       Per-file symbol counts plus compact declaration headers from the AST.
-    classify.rs      "Don't-read" skip-hint heuristics (generated/minified/vendored).
+    classify.rs      "Don't-read" skip-hint heuristics (generated/minified/bundled/vendored).
     testcov.rs       Test-vs-source classification + filename/PHPUnit/Rust CLI/inline-test
                      matching and direct `cfg(test)` region detection.
     risk.rs          Shared composite risk calculation and explain factors.
@@ -342,8 +342,12 @@ Metric semantics worth knowing:
 - **Duplication is structured, format-scoped, similarity-scored, and line-filtered.**
   The zero-config corpus is source/build files only. `health_includes` adds selected content
   formats and `health_scope = "all"` restores every recognized format; `health_excludes` removes
-  matching paths last. The equivalent CLI flags are `--health-include`, `--health-scope`, and
-  `--health-exclude`. Inventory metrics are never filtered by this policy.
+  matching paths last. Minified and recognized bundled/chunk output is then removed from
+  duplication tokenization, coverage, and findings by default while remaining in inventory and
+  navigation; `--dup-include-artifacts` or `duplication_include_artifacts = true` explicitly opts
+  back in, and `analysis_profile.duplication.artifact_policy` records the choice for baseline
+  compatibility. The equivalent health CLI flags are `--health-include`, `--health-scope`, and
+  `--health-exclude`. Inventory metrics are never filtered by these policies.
   `summary.duplication.duplicated_pct` uses `analyzed_lines`, not whole-repository LOC, so excluded
   content cannot dilute coverage. `duplicates.file_coverage` and `by_language` contain only
   eligible files/formats. The effective policy is recorded in `analysis_profile.health` and must
@@ -475,7 +479,7 @@ Metric semantics worth knowing:
   right place to exclude vendored/generated trees from scouting.
 - **Scouting signals (all in `summary`, all agent-oriented).** `symbols` = aggregate
   function/type/export counts (first-class files only, from `metrics/symbols.rs`).
-  `skip_candidates` = generated/minified/vendored files not worth reading, each with a
+  `skip_candidates` = generated/minified/bundled/vendored files not worth reading, each with a
   `reason` (`metrics/classify.rs`); the same reason appears per-file as `skip_hint`.
   `test_presence` = test-vs-source split + matching-test estimate (`metrics/testcov.rs`;
   source/test keys retain package prefixes and nested logical directories so same-named
