@@ -53,7 +53,7 @@ table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 | `--encoding <NAME>` | `o200k_base` or `cl100k_base` | `o200k_base` |
 | `--hidden` | Include hidden files | off |
 | `--no-ignore` | Ignore `.gitignore`; `.reposcoutignore` still applies | off |
-| `-j, --jobs <N>` | Worker thread count | CPU count |
+| `-j, --jobs <N>` | Worker threads for file analysis and duplication tokenization | CPU count |
 | `--max-file-bytes <BYTES>` | Largest recognized worktree file accepted | 32 MiB |
 | `--max-total-bytes <BYTES>` | Aggregate recognized bytes accepted per discovery pass | 512 MiB |
 | `--max-files <N>` | Files observed before discovery stops | `100000` |

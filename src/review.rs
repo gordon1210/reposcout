@@ -113,16 +113,22 @@ fn catalog(
                 content: content.to_string(),
             })
             .collect::<Vec<_>>();
-        dup::analyze(
+        let file_tokenized = || {};
+        dup::analyze_with_diagnostics(
             &inputs,
-            cfg.min_dup_tokens,
-            cfg.min_dup_lines,
-            cfg.near_dup_min_similarity,
+            dup::DetectionThresholds::new(
+                cfg.min_dup_tokens,
+                cfg.min_dup_lines,
+                cfg.near_dup_min_similarity,
+            ),
             DetectionOptions {
                 mode: cfg.duplication_mode,
                 format_scope: cfg.duplication_format_scope,
                 report_snippets: false,
             },
+            |_| {},
+            &file_tokenized,
+            None,
         )
         .duplication
     } else {

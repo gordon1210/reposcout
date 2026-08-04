@@ -444,6 +444,27 @@ fn debug_log_records_incremental_diagnostics_and_excludes_itself() {
             && record["data"]["status"] == "analyzed"
     }));
     assert!(records.iter().any(|record| {
+        record["event"] == "dup_tokenization_start"
+            && record["data"]["files_total"] == 1
+            && record["data"]["jobs"] == 2
+    }));
+    assert!(records.iter().any(|record| {
+        record["event"] == "dup_tokenization_progress"
+            && record["data"]["files_completed"] == 1
+            && record["data"]["files_total"] == 1
+    }));
+    let cache_save = records
+        .iter()
+        .position(|record| {
+            record["event"] == "scan_stage" && record["data"]["stage"] == "saving incremental cache"
+        })
+        .unwrap();
+    let duplication = records
+        .iter()
+        .position(|record| record["event"] == "dup_tokenization_start")
+        .unwrap();
+    assert!(cache_save < duplication);
+    assert!(records.iter().any(|record| {
         record["event"] == "type2_progress" && record["data"]["phase"] == "started"
     }));
     assert!(records.iter().any(|record| {
