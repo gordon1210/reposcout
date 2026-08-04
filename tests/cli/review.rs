@@ -213,6 +213,56 @@ fn deep_review_excludes_health_filtered_files_from_duplication() {
 }
 
 #[test]
+fn deep_review_excludes_build_artifacts_unless_explicitly_included() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    let chunk_dir = dir.path().join("static/js");
+    std::fs::create_dir_all(&chunk_dir).unwrap();
+    let block = (0..30).fold(String::new(), |mut block, index| {
+        let _ = writeln!(block, "const value{index} = input + {index};");
+        block
+    });
+    std::fs::write(dir.path().join("original.js"), &block).unwrap();
+    let chunk = chunk_dir.join("main.a1b2c3.chunk.js");
+    std::fs::write(&chunk, "export const initiallyUnique = true;\n").unwrap();
+    commit_all(&repo, "initial build artifact review fixture");
+    std::fs::write(&chunk, &block).unwrap();
+
+    let default = run_json(&[
+        "--working",
+        "--review=deep",
+        "--only",
+        "duplication",
+        "-f",
+        "json",
+        dir.path().to_str().unwrap(),
+    ]);
+    assert_eq!(default["review"]["counts"]["new"], 0);
+
+    let included = run_json(&[
+        "--working",
+        "--review=deep",
+        "--only",
+        "duplication",
+        "--dup-include-artifacts",
+        "-f",
+        "json",
+        dir.path().to_str().unwrap(),
+    ]);
+    assert!(
+        included["review"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["state"] == "new" && finding["finding"]["kind"] == "duplication"
+            }),
+        "review findings were: {}",
+        included["review"]["findings"]
+    );
+}
+
+#[test]
 fn fail_on_review_exits_two_for_changed_line_findings() {
     let dir = tempfile::tempdir().unwrap();
     let repo = git2::Repository::init(dir.path()).unwrap();

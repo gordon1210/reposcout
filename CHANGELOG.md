@@ -6,6 +6,15 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Duplication now excludes minified files and recognized JavaScript/CSS build chunks from its
+  default corpus while retaining them in inventory and navigation. Use
+  `--dup-include-artifacts` or `duplication_include_artifacts = true` to opt those files back in;
+  the effective artifact policy is recorded in analysis profiles.
+- Human table and Markdown scan reports now distinguish missing configuration from an active
+  global configuration and suggest the more specific project layer when appropriate.
+
 ## [0.1.12] - 2026-08-04
 
 ### Changed

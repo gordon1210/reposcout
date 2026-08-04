@@ -249,6 +249,10 @@ pub struct CommonArgs {
     #[arg(long = "dup-format-scope", value_enum)]
     pub duplication_format_scope: Option<DuplicationFormatScope>,
 
+    /// Include minified and bundled build artifacts in duplication analysis
+    #[arg(long = "dup-include-artifacts")]
+    pub duplication_include_artifacts: bool,
+
     /// Starting file scope for actionable health analysis
     #[arg(long = "health-scope", value_enum)]
     pub health_scope: Option<HealthScope>,

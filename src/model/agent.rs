@@ -34,6 +34,9 @@ pub struct CapabilitiesReport {
     /// Repeatable path-glob flag applied after health scope and includes.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub health_exclude_flag: String,
+    /// Explicit opt-in for minified and bundled duplication inputs.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub duplication_include_artifacts_flag: String,
     pub machine_interfaces: Vec<String>,
     pub error_formats: Vec<String>,
     pub max_graph_depth: usize,

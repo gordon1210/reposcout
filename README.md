@@ -27,7 +27,7 @@ RepoScout combines signals that usually require several tools:
 |---|---|
 | **What is here?** | Languages, files, SLOC, tokens, symbols, imports, and repository size |
 | **Where is the risk?** | Per-callable complexity, maintainability, churn, separate test-presence evidence, and continuously ranked composite risk |
-| **What can be skipped?** | Generated, minified, vendored, and oversized-file hints |
+| **What can be skipped?** | Generated, minified, bundled, vendored, and oversized-file hints |
 | **Is cleanup worthwhile?** | Exact and Type-2 duplication, markers, hotspots, and an evidence-qualified assessment |
 | **How broad is the work?** | Raw seed, context-budget, dependent, test, graph-component, and confidence counts |
 | **What should be read next?** | A deterministic context plan under hard token and file budgets |
@@ -42,8 +42,9 @@ into the repository it scans.
   data, or styles dilute code-health metrics.
 - **Actionable complexity:** cyclomatic, cognitive, nesting, Halstead, and Maintainability Index
   with precise callable-level findings.
-- **Structured duplication:** raw format-aware exact and consistent-rename Type-2 evidence, plus a
-  compact production-source projection with redundant blocks removed.
+- **Structured duplication:** raw format-aware exact and consistent-rename Type-2 evidence over an
+  artifact-filtered source corpus, plus a compact production-source projection with redundant
+  blocks removed.
 - **Agent-ready queries:** compact summary mode, capability discovery, declaration lookup,
   raw work-scope evidence, structured errors, and guardrailed execution profiles.
 - **Explainable context:** bounded reading plans that rank focus paths, changes, tests,

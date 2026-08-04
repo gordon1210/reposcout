@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 struct AnalyzedFile {
     report: FileReport,
     content: String,
+    duplication_artifact: bool,
     test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
     graph_facts: Option<crate::graph::SourceFacts>,
@@ -41,6 +42,7 @@ struct AnalyzedFile {
 
 struct SourceAnalysis {
     report: FileReport,
+    duplication_artifact: bool,
     test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
     graph_facts: Option<crate::graph::SourceFacts>,

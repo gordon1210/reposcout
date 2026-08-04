@@ -7,14 +7,15 @@ use crate::report::projection::{
     human_test_signal, metric_delta_display, metric_label, source_language_rollup,
 };
 use crate::report::{
-    dup_locations, human_bytes, markdown_code_span, markdown_table_code_span, markdown_table_text,
-    markdown_text, similarity_label, terminal_text, thousands, thousands_u64,
+    ConfigGuidance, RenderOptions, config_guidance, dup_locations, human_bytes, markdown_code_span,
+    markdown_table_code_span, markdown_table_text, markdown_text, similarity_label, terminal_text,
+    thousands, thousands_u64,
 };
 use std::fmt::Write as _;
 use std::path::Path;
 
 #[must_use]
-pub fn render(report: &ScanReport, duplication_details: bool) -> String {
+pub fn render(report: &ScanReport, options: RenderOptions) -> String {
     let mut out = String::new();
 
     let _ = writeln!(
@@ -38,7 +39,7 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
 
     render_complexity(&mut out, report);
 
-    render_duplication(&mut out, report, duplication_details);
+    render_duplication(&mut out, report, options.duplication_details);
 
     render_markers_symbols_and_skips(&mut out, report);
     render_languages_and_token_files(&mut out, report);
@@ -51,8 +52,32 @@ pub fn render(report: &ScanReport, duplication_details: bool) -> String {
     render_review(&mut out, report);
     render_graph(&mut out, report);
     render_impact(&mut out, report);
+    render_config_guidance(&mut out, report, options.suppress_config_guidance);
 
     out
+}
+
+fn render_config_guidance(out: &mut String, report: &ScanReport, suppressed: bool) {
+    let Some(guidance) = config_guidance(report, suppressed) else {
+        return;
+    };
+
+    let introduction = match guidance {
+        ConfigGuidance::NoConfiguration => concat!(
+            "No RepoScout configuration was found. A global config can establish reusable ",
+            "defaults across repositories."
+        ),
+        ConfigGuidance::GlobalOnly => {
+            "The global RepoScout configuration is active, but no project config was found."
+        }
+    };
+    let _ = writeln!(
+        out,
+        "> **Configuration tip:** {introduction} A project `reposcout.toml` can further improve \
+         signal quality by tailoring exclusions, health scope, and analysis settings to this \
+         repository. Inspect effective settings with `reposcout config .`."
+    );
+    let _ = writeln!(out);
 }
 
 fn render_markers_symbols_and_skips(out: &mut String, report: &ScanReport) {
@@ -85,7 +110,10 @@ fn render_markers_symbols_and_skips(out: &mut String, report: &ScanReport) {
     }
 
     if !s.skip_candidates.is_empty() {
-        let _ = writeln!(out, "## Skip candidates (generated/minified/vendored)");
+        let _ = writeln!(
+            out,
+            "## Skip candidates (generated/minified/bundled/vendored)"
+        );
         let _ = writeln!(out);
         let _ = writeln!(out, "| Path | Reason | Tokens |");
         let _ = writeln!(out, "|---|---|--:|");

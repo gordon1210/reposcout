@@ -126,6 +126,8 @@ pub struct Config {
     pub duplication_mode: DuplicationMode,
     /// Which detected formats may share duplicate candidates.
     pub duplication_format_scope: DuplicationFormatScope,
+    /// Include minified and bundled build artifacts in duplication analysis.
+    pub duplication_include_artifacts: bool,
     /// Include bounded source fragments in detailed duplicate findings.
     pub duplication_report_snippets: bool,
     /// Cap on commits walked for churn (0 selects the absolute ceiling).
@@ -229,6 +231,7 @@ impl Default for Config {
             near_dup_min_similarity: 0.85,
             duplication_mode: DuplicationMode::Mild,
             duplication_format_scope: DuplicationFormatScope::Exact,
+            duplication_include_artifacts: false,
             duplication_report_snippets: false,
             churn_max_commits: 5000,
             max_churn_deltas_per_commit: 50_000,
@@ -293,6 +296,7 @@ struct FileConfig {
     near_dup_min_similarity: Option<f64>,
     duplication_mode: Option<DuplicationMode>,
     duplication_format_scope: Option<DuplicationFormatScope>,
+    duplication_include_artifacts: Option<bool>,
     duplication_report_snippets: Option<bool>,
     churn_max_commits: Option<usize>,
     max_churn_deltas_per_commit: Option<usize>,
@@ -368,6 +372,7 @@ pub struct ConfigValues {
     pub near_dup_min_similarity: f64,
     pub duplication_mode: DuplicationMode,
     pub duplication_format_scope: DuplicationFormatScope,
+    pub duplication_include_artifacts: bool,
     pub duplication_report_snippets: bool,
     pub churn_max_commits: usize,
     pub max_churn_deltas_per_commit: usize,
@@ -413,6 +418,7 @@ impl From<&Config> for ConfigValues {
             near_dup_min_similarity: config.near_dup_min_similarity,
             duplication_mode: config.duplication_mode,
             duplication_format_scope: config.duplication_format_scope,
+            duplication_include_artifacts: config.duplication_include_artifacts,
             duplication_report_snippets: config.duplication_report_snippets,
             churn_max_commits: config.churn_max_commits,
             max_churn_deltas_per_commit: config.max_churn_deltas_per_commit,
@@ -567,6 +573,10 @@ impl Config {
         assign_if_some(
             &mut self.duplication_format_scope,
             fc.duplication_format_scope,
+        );
+        assign_if_some(
+            &mut self.duplication_include_artifacts,
+            fc.duplication_include_artifacts,
         );
         assign_if_some(
             &mut self.duplication_report_snippets,
@@ -831,6 +841,7 @@ impl FileConfig {
         key!(near_dup_min_similarity);
         key!(duplication_mode);
         key!(duplication_format_scope);
+        key!(duplication_include_artifacts);
         key!(duplication_report_snippets);
         key!(churn_max_commits);
         key!(max_churn_deltas_per_commit);

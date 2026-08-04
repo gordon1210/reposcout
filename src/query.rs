@@ -80,6 +80,7 @@ pub fn capabilities() -> CapabilitiesReport {
             .collect(),
         health_scopes: ["source", "all"].into_iter().map(str::to_string).collect(),
         health_exclude_flag: "--health-exclude".to_string(),
+        duplication_include_artifacts_flag: "--dup-include-artifacts".to_string(),
         machine_interfaces: ["cli-json", "cli-ndjson", "debug-log-ndjson"]
             .into_iter()
             .map(str::to_string)
@@ -322,5 +323,13 @@ mod tests {
         accepted.sort();
 
         assert_eq!(advertised, accepted);
+    }
+
+    #[test]
+    fn capabilities_advertise_duplication_artifact_opt_in() {
+        assert_eq!(
+            capabilities().duplication_include_artifacts_flag,
+            "--dup-include-artifacts"
+        );
     }
 }

@@ -56,8 +56,8 @@ neighbors, matching tests, risk, churn, and complexity. Treat each reason accord
 confidence. `high` means direct syntax/configuration evidence; `partial` can be heuristic or
 transitive.
 
-`summary.skip_candidates` identifies generated, minified, or vendored files that are usually poor
-reading choices. An explicit focus can still retain one when the task requires it.
+`summary.skip_candidates` identifies generated, minified, bundled, or vendored files that are
+usually poor reading choices. An explicit focus can still retain one when the task requires it.
 
 Request a bounded graph neighborhood only when relationships themselves are the question:
 

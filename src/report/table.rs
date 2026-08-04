@@ -8,7 +8,8 @@ use crate::report::projection::{
     human_test_signal, metric_delta_display, metric_label, source_language_rollup,
 };
 use crate::report::{
-    dup_locations, human_bytes, similarity_label, terminal_text, thousands, thousands_u64,
+    ConfigGuidance, RenderOptions, config_guidance, dup_locations, human_bytes, similarity_label,
+    terminal_text, thousands, thousands_u64,
 };
 use comfy_table::presets::UTF8_BORDERS_ONLY;
 use comfy_table::{CellAlignment, ColumnConstraint, ContentArrangement, Table, Width};
@@ -17,7 +18,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 #[must_use]
-pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> String {
+pub fn render(report: &ScanReport, color: bool, options: RenderOptions) -> String {
     let mut out = String::new();
     let title = format!(
         "reposcout  {}",
@@ -36,7 +37,7 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
         super::work_scope::table(&mut out, work_scope, color);
     }
     render_complexity(&mut out, report, color);
-    render_duplication(&mut out, report, color, duplication_details);
+    render_duplication(&mut out, report, color, options.duplication_details);
     render_markers(&mut out, report, color);
     render_symbols(&mut out, report, color);
     render_skip_candidates(&mut out, report, color);
@@ -52,7 +53,40 @@ pub fn render(report: &ScanReport, color: bool, duplication_details: bool) -> St
     render_review(&mut out, report, color);
     render_graph(&mut out, report, color);
     render_impact(&mut out, report, color);
+    render_config_guidance(&mut out, report, color, options.suppress_config_guidance);
     out
+}
+
+fn render_config_guidance(out: &mut String, report: &ScanReport, color: bool, suppressed: bool) {
+    let Some(guidance) = config_guidance(report, suppressed) else {
+        return;
+    };
+
+    let _ = writeln!(out, "{}", header("Configuration tip", color));
+    match guidance {
+        ConfigGuidance::NoConfiguration => {
+            let _ = writeln!(out, "  No RepoScout configuration was found.");
+            let _ = writeln!(
+                out,
+                "  A global config can establish reusable defaults across repositories."
+            );
+        }
+        ConfigGuidance::GlobalOnly => {
+            let _ = writeln!(
+                out,
+                "  The global RepoScout configuration is active, but no project config was found."
+            );
+        }
+    }
+    let _ = writeln!(
+        out,
+        "  A project reposcout.toml can further improve signal quality by tailoring exclusions,"
+    );
+    let _ = writeln!(
+        out,
+        "  health scope, and analysis settings to this repository."
+    );
+    let _ = writeln!(out, "  Inspect effective settings with: reposcout config .");
 }
 
 fn render_markers(out: &mut String, report: &ScanReport, color: bool) {
@@ -92,7 +126,10 @@ fn render_skip_candidates(out: &mut String, report: &ScanReport, color: bool) {
     let _ = writeln!(
         out,
         "{}",
-        header("Skip candidates (generated/minified/vendored)", color)
+        header(
+            "Skip candidates (generated/minified/bundled/vendored)",
+            color
+        )
     );
     let mut table = new_table(vec!["Path", "Reason", "Tokens"]);
     set_path_column_width(&mut table, 0, PATH_MEDIUM);

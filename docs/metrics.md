@@ -93,6 +93,11 @@ within RepoScout rather than directly across tools or languages.
 
 Duplication matches structured token sequences, not semantics.
 
+The default duplication corpus excludes minified and recognized bundled/chunk output. Those files
+remain part of repository inventory and navigation, but do not consume duplication-tokenization
+work or contribute to coverage denominators and findings. `--dup-include-artifacts` is the explicit
+opt-in for specialized scans that need them.
+
 | Detector | Behavior |
 |---|---|
 | Exact / Type-1 | Preserves identifier and literal values |

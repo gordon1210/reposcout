@@ -188,6 +188,10 @@ pub struct DuplicationProfile {
     pub min_similarity: f64,
     pub mode: String,
     pub format_scope: String,
+    /// `exclude` for the build-artifact-filtered default or `include` after explicit opt-in.
+    /// Empty in reports created before artifact filtering became part of the corpus contract.
+    #[serde(default)]
+    pub artifact_policy: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -299,7 +303,7 @@ pub struct Summary {
     #[serde(default)]
     pub symbols: SymbolCounts,
     /// Files that are almost certainly not hand-authored code an agent should
-    /// read (generated, minified, or vendored), sorted by tokens descending.
+    /// read (generated, minified, bundled, or vendored), sorted by tokens descending.
     #[serde(default)]
     pub skip_candidates: Vec<SkipCandidate>,
     /// Test-vs-source classification and filename/inline-test match estimate.

@@ -522,6 +522,8 @@ fn render_scan_output(
             projection,
             duplication_details: args.duplication_details,
             pretty_json: pretty,
+            suppress_config_guidance: args.common.no_project_config
+                || report.execution.profile == "safe",
         },
     )?;
     debug_log::event("render_end", || {
@@ -709,6 +711,7 @@ fn log_configuration(operation: &'static str, target: &Path, cfg: &Config) {
             "health_scope": cfg.health_scope.to_string(),
             "health_includes": cfg.health_includes.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "health_excludes": cfg.health_excludes.as_slice(),
+            "duplication_include_artifacts": cfg.duplication_include_artifacts,
             "context": cfg.context,
             "graph": cfg.graph,
             "impact": cfg.impact,
@@ -892,6 +895,9 @@ fn apply_common_overrides(cfg: &mut Config, args: &CommonArgs) {
     }
     if let Some(scope) = args.duplication_format_scope {
         cfg.duplication_format_scope = scope;
+    }
+    if args.duplication_include_artifacts {
+        cfg.duplication_include_artifacts = true;
     }
     if let Some(scope) = args.health_scope {
         cfg.health_scope = scope;

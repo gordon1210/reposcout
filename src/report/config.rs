@@ -127,6 +127,11 @@ fn render_table(inspection: &ConfigInspection) -> String {
     );
     value(
         &mut out,
+        "duplication_include_artifacts",
+        &config.duplication_include_artifacts.to_string(),
+    );
+    value(
+        &mut out,
         "duplication_report_snippets",
         &config.duplication_report_snippets.to_string(),
     );
