@@ -516,6 +516,40 @@ fn baseline_rejects_mismatched_duplication_artifact_policy() {
 }
 
 #[test]
+fn baseline_rejects_legacy_profile_without_duplication_artifact_policy() {
+    let fix = fixture();
+    let tmp = tempfile::NamedTempFile::new().expect("temp file");
+    let tmp_path = tmp.path().to_str().unwrap().to_string();
+
+    let mut save = reposcout_command();
+    save.args(["-f", "json", "--no-cache", "--quiet", "-o", &tmp_path, &fix]);
+    save.assert().success();
+
+    let mut legacy: Value =
+        serde_json::from_str(&std::fs::read_to_string(&tmp_path).unwrap()).unwrap();
+    legacy["analysis_profile"]["duplication"]
+        .as_object_mut()
+        .unwrap()
+        .remove("artifact_policy");
+    std::fs::write(&tmp_path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    let mut compare = reposcout_command();
+    compare.args([
+        "-f",
+        "json",
+        "--baseline",
+        &tmp_path,
+        "--no-cache",
+        "--quiet",
+        &fix,
+    ]);
+    let output = compare.assert().code(1).get_output().stderr.clone();
+    let error = String::from_utf8(output).unwrap();
+    assert!(error.contains("baseline predates duplication artifact filtering"));
+    assert!(error.contains("regenerate"));
+}
+
+#[test]
 fn baseline_rejects_mismatched_health_file_scope() {
     let fix = fixture();
     let tmp = tempfile::NamedTempFile::new().expect("temp file");

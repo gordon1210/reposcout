@@ -171,7 +171,7 @@ fn is_chunk_filename(filename: &str) -> bool {
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'~'));
     let hash_like =
-        identifier.len() >= 8 && identifier.bytes().all(|byte| byte.is_ascii_hexdigit());
+        identifier.len() >= 6 && identifier.bytes().all(|byte| byte.is_ascii_hexdigit());
     identifier.len() >= 6
         && allowed
         && (identifier.bytes().any(|byte| byte.is_ascii_digit()) || hash_like)
@@ -237,6 +237,7 @@ mod tests {
             "static/js/main.a1b2c3.chunk.js",
             "public/js/main.bundle.js",
             "public/js/chunk-a1b2c3d4.js",
+            "public/js/chunk-abcdef.js",
             "public/js/chunk-abcdefab.js",
             ".next/static/chunks/1234.js",
             "packages/web/dist/assets/index-a1b2c3.js",
@@ -257,14 +258,33 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_chunk_named_source_is_not_a_duplication_artifact() {
-        let classification = classify(
-            "src/chunk-parser.js",
-            "export function parseChunk(value) { return value; }\n",
-        );
+    fn bundled_outputs_inside_vendored_trees_remain_duplication_artifacts() {
+        for path in [
+            "vendor/lodash/dist/lodash.js",
+            "node_modules/example/build/styles.css",
+        ] {
+            let classification = classify(path, "export const value = 1;\n");
 
-        assert_eq!(classification.skip_hint(), None);
-        assert!(!classification.is_duplication_artifact());
+            assert_eq!(classification.skip_hint(), Some("bundled"));
+            assert!(classification.is_duplication_artifact());
+        }
+    }
+
+    #[test]
+    fn ordinary_chunk_named_source_is_not_a_duplication_artifact() {
+        for path in ["src/chunk-parser.js", "src/chunk-filter.js"] {
+            let classification = classify(
+                path,
+                "export function parseChunk(value) { return value; }\n",
+            );
+
+            assert_eq!(
+                classification.skip_hint(),
+                None,
+                "unexpected hint for {path}"
+            );
+            assert!(!classification.is_duplication_artifact());
+        }
     }
 
     #[test]
