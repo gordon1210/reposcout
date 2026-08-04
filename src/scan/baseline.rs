@@ -162,6 +162,13 @@ pub(super) fn compute_baseline_delta(
     })?;
     match prior.analysis_profile.as_ref() {
         Some(profile)
+            if baseline_predates_duplication_artifact_policy(profile, current_profile) =>
+        {
+            return Err(anyhow::anyhow!(
+                "baseline predates duplication artifact filtering; regenerate it before comparison"
+            ));
+        }
+        Some(profile)
             if scan_profiles_compatible_except_base(profile, current_profile)
                 && profile.diff_base != current_profile.diff_base =>
         {
@@ -219,6 +226,20 @@ pub(super) fn compute_baseline_delta(
         delta.regressed = true;
     }
     Ok(delta)
+}
+
+fn baseline_predates_duplication_artifact_policy(
+    baseline: &ScanProfile,
+    current: &ScanProfile,
+) -> bool {
+    baseline
+        .duplication
+        .as_ref()
+        .is_some_and(|profile| profile.artifact_policy.is_empty())
+        && current
+            .duplication
+            .as_ref()
+            .is_some_and(|profile| !profile.artifact_policy.is_empty())
 }
 
 pub(super) fn scan_profiles_compatible(left: &ScanProfile, right: &ScanProfile) -> bool {

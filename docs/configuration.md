@@ -119,10 +119,14 @@ default. Detection includes `.min.*` names, long-line density, `.chunk.*`/`.bund
 common build output directories such as `dist`, `build`, `.next`, and `out`, and `static/chunks`
 paths. These files stay in repository inventory, token/line totals, navigation, and skip-candidate
 reporting; they are removed only from duplication tokenization, coverage denominators, and findings.
+Bundled output remains an artifact inside vendored trees such as `vendor/*/dist/`; the more
+specific `bundled` skip hint takes precedence over `vendored` when both classifications apply.
 
 Set `duplication_include_artifacts = true` or pass `--dup-include-artifacts` when analyzing a
 specialized corpus where generated bundles are intentional inputs. The effective choice appears as
 `analysis_profile.duplication.artifact_policy`, so incompatible baselines are rejected.
+Baselines created before this field existed must be regenerated: treating them as compatible would
+compare a prior corpus that may contain artifacts with the new artifact-filtered default.
 
 ## Execution profiles
 
