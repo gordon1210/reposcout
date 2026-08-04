@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-04
+
 ### Changed
 
 - Duplication now excludes minified files and recognized JavaScript/CSS build chunks from its
