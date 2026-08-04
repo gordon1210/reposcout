@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-04
+
 ### Changed
 
 - Duplication tokenization now uses the configured worker count in the scan's shared Rayon pool,
