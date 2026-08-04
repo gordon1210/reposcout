@@ -13,6 +13,7 @@ use crate::model::{
     CloneGroup, CloneInstance, DuplicateFinding, DuplicateFragment, Duplication, LineRange,
 };
 use clap::ValueEnum;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -220,19 +221,37 @@ pub(crate) fn prepare(inputs: &[DupInput], options: DetectionOptions) -> Vec<Pre
     inputs
         .iter()
         .enumerate()
+        .map(|(input_index, input)| prepare_file(input_index, input, options))
+        .collect()
+}
+
+fn prepare_parallel_with_progress(
+    inputs: &[DupInput],
+    options: DetectionOptions,
+    file_completed: &(dyn Fn() + Sync),
+) -> Vec<PreparedFile> {
+    inputs
+        .par_iter()
+        .enumerate()
         .map(|(input_index, input)| {
-            let format = lang::detect(&input.path)
-                .map_or("Unknown", |info| info.name)
-                .to_string();
-            let pool = format_pool(&format, options.format_scope);
-            PreparedFile {
-                input_index,
-                format,
-                pool,
-                tokens: tokenize::tokenize_path(&input.path, &input.content, options.mode),
-            }
+            let prepared = prepare_file(input_index, input, options);
+            file_completed();
+            prepared
         })
         .collect()
+}
+
+fn prepare_file(input_index: usize, input: &DupInput, options: DetectionOptions) -> PreparedFile {
+    let format = lang::detect(&input.path)
+        .map_or("Unknown", |info| info.name)
+        .to_string();
+    let pool = format_pool(&format, options.format_scope);
+    PreparedFile {
+        input_index,
+        format,
+        pool,
+        tokens: tokenize::tokenize_path(&input.path, &input.content, options.mode),
+    }
 }
 
 fn format_pool(format: &str, scope: DuplicationFormatScope) -> String {
@@ -304,10 +323,13 @@ pub fn analyze_with_progress(
     min_lines: usize,
     min_similarity: f64,
     options: DetectionOptions,
-    progress: impl FnMut(DetectionStage),
+    mut progress: impl FnMut(DetectionStage),
 ) -> Detection {
-    analyze_with_diagnostics(
+    progress(DetectionStage::Tokenizing);
+    let prepared = prepare(inputs, options);
+    analyze_prepared_with_diagnostics(
         inputs,
+        &prepared,
         DetectionThresholds::new(min_tokens, min_lines, min_similarity),
         options,
         progress,
@@ -322,13 +344,32 @@ pub(crate) fn analyze_with_diagnostics(
     thresholds: DetectionThresholds,
     options: DetectionOptions,
     mut progress: impl FnMut(DetectionStage),
+    file_tokenized: &(dyn Fn() + Sync),
     type2_progress: Option<&mut dyn FnMut(fuzzy::Type2Progress)>,
 ) -> Detection {
     progress(DetectionStage::Tokenizing);
-    let prepared = prepare(inputs, options);
+    let prepared = prepare_parallel_with_progress(inputs, options, file_tokenized);
+    analyze_prepared_with_diagnostics(
+        inputs,
+        &prepared,
+        thresholds,
+        options,
+        progress,
+        type2_progress,
+    )
+}
+
+fn analyze_prepared_with_diagnostics(
+    inputs: &[DupInput],
+    prepared: &[PreparedFile],
+    thresholds: DetectionThresholds,
+    options: DetectionOptions,
+    mut progress: impl FnMut(DetectionStage),
+    type2_progress: Option<&mut dyn FnMut(fuzzy::Type2Progress)>,
+) -> Detection {
     progress(DetectionStage::ExactClones);
     let mut exact = finalize(
-        exact::detect_prepared(inputs, &prepared, thresholds.tokens),
+        exact::detect_prepared(inputs, prepared, thresholds.tokens),
         thresholds.lines,
     );
     progress(DetectionStage::Type2Clones);
@@ -337,18 +378,18 @@ pub(crate) fn analyze_with_diagnostics(
     let type2_detection = if let Some(type2_progress) = type2_progress {
         fuzzy::detect_prepared_bounded_with_progress(
             inputs,
-            &prepared,
+            prepared,
             thresholds.tokens,
             thresholds.similarity,
             Some(type2_progress),
         )
     } else {
-        fuzzy::detect_prepared_bounded(inputs, &prepared, thresholds.tokens, thresholds.similarity)
+        fuzzy::detect_prepared_bounded(inputs, prepared, thresholds.tokens, thresholds.similarity)
     };
     let mut near = filter_short(type2_detection.groups, thresholds.lines);
     progress(DetectionStage::Finalizing);
-    assign_group_fingerprints(&mut exact, "exact", &prepared, inputs, options);
-    assign_group_fingerprints(&mut near, "type2", &prepared, inputs, options);
+    assign_group_fingerprints(&mut exact, "exact", prepared, inputs, options);
+    assign_group_fingerprints(&mut near, "type2", prepared, inputs, options);
     let findings = build_findings(&exact, &near, inputs, options);
     let duplication = Duplication {
         exact,

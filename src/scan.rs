@@ -253,6 +253,18 @@ pub fn run_with_artifacts(
     exclusions: &[PathBuf],
     requirements: ArtifactRequirements,
 ) -> Result<ScanArtifacts> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(cfg.jobs.max(1))
+        .build()?;
+    pool.install(|| run_with_artifacts_in_pool(target, cfg, exclusions, requirements))
+}
+
+fn run_with_artifacts_in_pool(
+    target: &Path,
+    cfg: &Config,
+    exclusions: &[PathBuf],
+    requirements: ArtifactRequirements,
+) -> Result<ScanArtifacts> {
     let total_started = start_stage("total");
     let deadline = Some(
         total_started

@@ -275,8 +275,9 @@ Two more contract rules that keep JSON stable:
 
 Data flow: `main` → `scan::run_with_exclusions(target, cfg, output_paths)` discovers stable
 file identities (`walk`; `scan::run` remains the no-exclusions library wrapper),
-analyzes each in parallel (`rayon`), consults a profile-valid `cache`, runs cross-file
-`dup::analyze_with_progress` and builds `DuplicateCoverage`, attaches `git::collect`
+analyzes each in parallel (`rayon`), consults a profile-valid `cache`, prepares duplication tokens
+in the same configured worker pool, runs cross-file `dup::analyze_with_diagnostics` and builds
+`DuplicateCoverage`, attaches `git::collect`
 churn, aggregates a `Summary`, projects the complete canonical finding catalog, records scan
 diagnostics, optionally builds a changed-line review / directory rollup / baseline delta /
 dependency graph / token-budgeted context plan / diff impact, and returns a

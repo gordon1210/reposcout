@@ -47,7 +47,7 @@ Use `--no-project-config` when repository-owned policy should not be parsed or a
 
 ```toml
 encoding = "o200k_base"            # or "cl100k_base"
-jobs = 8                            # worker threads
+jobs = 8                            # file-analysis and duplication-tokenization workers
 use_cache = true
 top = 10                            # top-N projection length
 max_complexity = 20                 # per-callable cyclomatic maximum

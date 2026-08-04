@@ -65,7 +65,9 @@ serialization rather than analysis.
 A `panic` record includes its location and backtrace. Hard termination cannot append a final
 event, so retain and interpret the records already flushed.
 
-For Type-2 work, inspect the latest `type2_progress.phase` and completed/total counters before
+For duplication preparation, `dup_tokenization_start` records the effective worker count, corpus
+size, and file total; bounded `dup_tokenization_progress` events show completed files and elapsed
+time. For Type-2 work, inspect the latest `type2_progress.phase` and completed/total counters before
 changing inputs. Final pool events state whether seed-pair, match-buffer, or overlap-suppression
 bounds made the result partial. Debug logs contain paths, arguments, configuration, and
 backtraces—but not source bodies—so still treat them as potentially sensitive when sharing.

@@ -316,3 +316,95 @@ fn duplication_progress_reports_every_expensive_phase_in_order() {
         ]
     );
 }
+
+#[test]
+fn preparation_uses_the_current_pool_and_preserves_input_order() {
+    let inputs = (0..32)
+        .map(|index| {
+            input(
+                &format!("src/file_{index:02}.rs"),
+                "fn value() { let answer = 42; }",
+            )
+        })
+        .collect::<Vec<_>>();
+    let run = |jobs| {
+        let workers = std::sync::Mutex::new(HashSet::new());
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build()
+            .unwrap();
+        let prepared = pool.install(|| {
+            prepare_parallel_with_progress(&inputs, DetectionOptions::default(), &|| {
+                workers.lock().unwrap().insert(std::thread::current().id());
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            })
+        });
+        let worker_count = workers.into_inner().unwrap().len();
+        (prepared, worker_count)
+    };
+
+    let (serial, serial_workers) = run(1);
+    let (parallel, parallel_workers) = run(4);
+
+    assert_eq!(serial_workers, 1);
+    assert!(
+        parallel_workers > 1,
+        "parallel preparation should use more than one configured worker"
+    );
+    for prepared in [&serial, &parallel] {
+        assert_eq!(
+            prepared
+                .iter()
+                .map(|file| file.input_index)
+                .collect::<Vec<_>>(),
+            (0..inputs.len()).collect::<Vec<_>>(),
+            "indexed parallel collection must preserve deterministic input order"
+        );
+    }
+}
+
+#[test]
+fn duplication_results_are_identical_across_worker_counts() {
+    let inputs = vec![
+        input(
+            "src/a.rs",
+            "fn shared() { let alpha = 1; println!(\"{}\", alpha); }",
+        ),
+        input(
+            "src/b.rs",
+            "fn shared() { let alpha = 1; println!(\"{}\", alpha); }",
+        ),
+        input(
+            "src/c.rs",
+            "fn renamed() { let beta = 2; println!(\"{}\", beta); }",
+        ),
+    ];
+    let run = |jobs| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build()
+            .unwrap()
+            .install(|| {
+                let file_tokenized = || {};
+                analyze_with_diagnostics(
+                    &inputs,
+                    DetectionThresholds::new(8, 1, 0.7),
+                    DetectionOptions::default(),
+                    |_| {},
+                    &file_tokenized,
+                    None,
+                )
+            })
+    };
+
+    let serial = run(1);
+    let parallel = run(4);
+
+    assert_eq!(
+        serde_json::to_value(serial.duplication).unwrap(),
+        serde_json::to_value(parallel.duplication).unwrap()
+    );
+    assert_eq!(serial.token_counts, parallel.token_counts);
+    assert_eq!(serial.formats, parallel.formats);
+    assert_eq!(serial.type2_diagnostics, parallel.type2_diagnostics);
+}

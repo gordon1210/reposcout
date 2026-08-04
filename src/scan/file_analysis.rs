@@ -38,10 +38,6 @@ pub(super) fn analyze_files(
         &cache::AnalysisProfile::from_config(cfg),
     );
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(cfg.jobs.max(1))
-        .build()?;
-
     let counter_ref = counter.as_deref();
     let files = &discovered.files;
     debug_log::event("file_batch_start", || {
@@ -51,46 +47,44 @@ pub(super) fn analyze_files(
             "jobs": cfg.jobs.max(1),
         })
     });
-    let outcomes: Vec<AnalysisOutcome> = pool.install(|| {
-        files
-            .par_iter()
-            .map(|file| {
-                let debug_started = debug_log::enabled().then(Instant::now);
-                debug_log::event("file_start", || {
+    let outcomes: Vec<AnalysisOutcome> = files
+        .par_iter()
+        .map(|file| {
+            let debug_started = debug_log::enabled().then(Instant::now);
+            debug_log::event("file_start", || {
+                serde_json::json!({
+                    "batch": batch,
+                    "path": file.report_path.to_string_lossy(),
+                })
+            });
+            let outcome = if deadline_reached(deadline) {
+                AnalysisOutcome::DurationLimit
+            } else {
+                analyze_file(
+                    &file.absolute_path,
+                    &file.report_path,
+                    cfg,
+                    health_policy,
+                    counter_ref,
+                    &cache,
+                    requirements,
+                )
+            };
+            if let Some(started) = debug_started {
+                debug_log::event("file_end", || {
                     serde_json::json!({
                         "batch": batch,
                         "path": file.report_path.to_string_lossy(),
+                        "status": outcome.status(),
+                        "duration_ms": u64::try_from(started.elapsed().as_millis())
+                            .unwrap_or(u64::MAX),
                     })
                 });
-                let outcome = if deadline_reached(deadline) {
-                    AnalysisOutcome::DurationLimit
-                } else {
-                    analyze_file(
-                        &file.absolute_path,
-                        &file.report_path,
-                        cfg,
-                        health_policy,
-                        counter_ref,
-                        &cache,
-                        requirements,
-                    )
-                };
-                if let Some(started) = debug_started {
-                    debug_log::event("file_end", || {
-                        serde_json::json!({
-                            "batch": batch,
-                            "path": file.report_path.to_string_lossy(),
-                            "status": outcome.status(),
-                            "duration_ms": u64::try_from(started.elapsed().as_millis())
-                                .unwrap_or(u64::MAX),
-                        })
-                    });
-                }
-                progress.file_completed();
-                outcome
-            })
-            .collect()
-    });
+            }
+            progress.file_completed();
+            outcome
+        })
+        .collect();
     progress.stage("processing analyzed files");
 
     let mut diagnostics = ScanDiagnostics {
@@ -160,6 +154,17 @@ pub(super) fn analyze_cross_file_metrics(
 ) -> AnalyzedScan {
     let analyzed = &mut file_analysis.analyzed;
 
+    progress.stage("saving incremental cache");
+    let complete_root_scan =
+        cfg.diff_scope.is_none() && prepared.discovered.target == prepared.root;
+    if let Err(error) = file_analysis.cache.save(complete_root_scan) {
+        debug_log::event(
+            "cache_save_error",
+            || serde_json::json!({ "batch": "primary", "message": error.to_string() }),
+        );
+    }
+    let cache_stats = file_analysis.cache.stats();
+
     if deadline_reached(prepared.deadline) {
         mark_duration_limit(&mut file_analysis.diagnostics, 0);
     } else {
@@ -182,14 +187,19 @@ pub(super) fn analyze_cross_file_metrics(
         type2_diagnostics,
     ) = if cfg.enabled.duplication && !deadline_reached(prepared.deadline) {
         let inputs: Vec<DupInput> = analyzed
-            .iter()
-            .filter(|file| {
-                lang::detect(&file.report.path)
-                    .is_some_and(|info| prepared.health_policy.includes(&file.report.path, info))
-            })
-            .map(|a| DupInput {
-                path: a.report.path.clone(),
-                content: a.content.clone(),
+            .iter_mut()
+            .filter_map(|file| {
+                let included = lang::detect(&file.report.path)
+                    .is_some_and(|info| prepared.health_policy.includes(&file.report.path, info));
+                if included {
+                    Some(DupInput {
+                        path: file.report.path.clone(),
+                        content: std::mem::take(&mut file.content),
+                    })
+                } else {
+                    drop(std::mem::take(&mut file.content));
+                    None
+                }
             })
             .collect();
         let mut record_type2_progress = |detail: dup::fuzzy::Type2Progress| {
@@ -197,6 +207,38 @@ pub(super) fn analyze_cross_file_metrics(
         };
         let type2_progress: Option<&mut dyn FnMut(dup::fuzzy::Type2Progress)> =
             debug_log::enabled().then_some(&mut record_type2_progress);
+        let files_total = inputs.len();
+        let source_bytes = inputs.iter().fold(0usize, |total, input| {
+            total.saturating_add(input.content.len())
+        });
+        let tokenization_started = Instant::now();
+        let files_completed = std::sync::atomic::AtomicUsize::new(0);
+        let progress_interval = files_total.div_ceil(100).max(1);
+        debug_log::event("dup_tokenization_start", || {
+            serde_json::json!({
+                "files_total": files_total,
+                "source_bytes": source_bytes,
+                "jobs": cfg.jobs.max(1),
+            })
+        });
+        let tokenized = || {
+            progress.file_completed();
+            let completed = files_completed
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                .saturating_add(1);
+            if debug_log::enabled()
+                && (completed == files_total || completed.is_multiple_of(progress_interval))
+            {
+                debug_log::event("dup_tokenization_progress", || {
+                    serde_json::json!({
+                        "files_completed": completed,
+                        "files_total": files_total,
+                        "duration_ms": u64::try_from(tokenization_started.elapsed().as_millis())
+                            .unwrap_or(u64::MAX),
+                    })
+                });
+            }
+        };
         let detection = dup::analyze_with_diagnostics(
             &inputs,
             dup::DetectionThresholds::new(
@@ -209,7 +251,13 @@ pub(super) fn analyze_cross_file_metrics(
                 format_scope: cfg.duplication_format_scope,
                 report_snippets: cfg.duplication_report_snippets,
             },
-            |stage| progress.stage(stage.message()),
+            |stage| match stage {
+                dup::DetectionStage::Tokenizing => {
+                    progress.files_stage(stage.message(), inputs.len());
+                }
+                _ => progress.stage(stage.message()),
+            },
+            &tokenized,
             type2_progress,
         );
         (
@@ -228,6 +276,9 @@ pub(super) fn analyze_cross_file_metrics(
             dup::fuzzy::Type2Diagnostics::default(),
         )
     };
+    for file in analyzed.iter_mut() {
+        drop(std::mem::take(&mut file.content));
+    }
     if deadline_reached(prepared.deadline) {
         mark_duration_limit(&mut file_analysis.diagnostics, 0);
     }
@@ -247,17 +298,6 @@ pub(super) fn analyze_cross_file_metrics(
             })
         });
     }
-
-    progress.stage("saving incremental cache");
-    let complete_root_scan =
-        cfg.diff_scope.is_none() && prepared.discovered.target == prepared.root;
-    if let Err(error) = file_analysis.cache.save(complete_root_scan) {
-        debug_log::event(
-            "cache_save_error",
-            || serde_json::json!({ "batch": "primary", "message": error.to_string() }),
-        );
-    }
-    let cache_stats = file_analysis.cache.stats();
 
     let symbol_outlines = file_analysis
         .analyzed

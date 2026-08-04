@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Duplication tokenization now uses the configured worker count in the scan's shared Rayon pool,
+  reports bounded per-file progress, and avoids copying the complete source corpus before
+  tokenization. Incremental per-file cache entries are persisted before expensive cross-file work
+  so an interrupted duplication run does not discard reusable analysis.
+
 ## [0.1.11] - 2026-08-02
 
 ### Fixed
