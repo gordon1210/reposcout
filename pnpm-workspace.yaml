@@ -2,5 +2,8 @@ packages:
   - apps/*
   - packages/*
 
+minimumReleaseAgeExclude:
+  - brace-expansion@5.0.9
+
 onlyBuiltDependencies:
   - esbuild
