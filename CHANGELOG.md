@@ -13,9 +13,9 @@ within their section.
   verifies that the remote tag already exists and targets the `release` GitHub Environment so
   repository protection rules can gate it.
 - File outputs for scans, explanations, and symbol queries are now staged and atomically replaced.
-  Existing output symlinks and symlinked parent directories are rejected, and Unix writes remain
-  anchored to an opened parent-directory handle so a concurrent path swap cannot redirect reports
-  into unrelated user files.
+  Existing output symlinks and symlinked parent directories are rejected, and Unix opens parent
+  paths component by component before anchoring writes to the resulting directory handle, so a
+  concurrent intermediate or final path swap cannot redirect reports into unrelated user files.
 - Documented the GitHub CLI release- and provenance-verification path alongside the convenience
   installer, and removed the unused Vercel installer redirect.
 
