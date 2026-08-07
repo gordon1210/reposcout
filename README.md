@@ -67,6 +67,10 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/gordon1210/reposcout/releases/latest/download/reposcout-installer.sh | sh
 ```
 
+This convenience command trusts GitHub's TLS endpoint, this repository's release permissions, and
+its release workflow. For release-attested installation with the GitHub CLI, follow the
+[verified installation](docs/getting-started.md#verified-installation) instructions.
+
 Update an installer-managed copy:
 
 ```sh

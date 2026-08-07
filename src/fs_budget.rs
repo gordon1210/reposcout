@@ -360,6 +360,113 @@ pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Atomically replace a user-selected output file without following symlinks.
+///
+/// Existing regular-file permissions are preserved. Existing destination
+/// symlinks and symlinked parent components below `untrusted_root` or the
+/// current directory are rejected; a destination that becomes a symlink after
+/// validation is atomically replaced rather than opened, so its target is
+/// never modified.
+///
+/// # Errors
+///
+/// Returns an error when the destination has no file name, its parent cannot
+/// be resolved without symlinks, an existing destination is not a regular
+/// file, or staging, synchronization, or atomic replacement fails.
+pub fn write_output_atomic(
+    path: &Path,
+    bytes: &[u8],
+    untrusted_root: &Path,
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+
+    let file_name = path.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "output path has no file name",
+        )
+    })?;
+    let parent = output_parent_without_symlinks(path, untrusted_root)?;
+    let destination = parent.join(file_name);
+    let existing_permissions = match fs::symlink_metadata(&destination) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "refusing to overwrite an output symlink",
+            ));
+        }
+        Ok(metadata) if metadata.is_file() => Some(metadata.permissions()),
+        Ok(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "output path is not a regular file",
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".reposcout-output-")
+        .tempfile_in(&parent)?;
+    temporary.write_all(bytes)?;
+    if let Some(permissions) = existing_permissions {
+        temporary.as_file().set_permissions(permissions)?;
+    }
+    temporary.as_file_mut().sync_all()?;
+    persist_output(temporary, &destination)
+}
+
+fn output_parent_without_symlinks(
+    path: &Path,
+    untrusted_root: &Path,
+) -> std::io::Result<std::path::PathBuf> {
+    let requested = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let absolute = std::path::absolute(requested)?;
+
+    if fs::symlink_metadata(&absolute)?.file_type().is_symlink() {
+        return Err(symlinked_output_parent_error());
+    }
+    reject_symlinked_descendants(&std::env::current_dir()?, &absolute)?;
+    reject_symlinked_descendants(untrusted_root, &absolute)?;
+    absolute.canonicalize()
+}
+
+fn reject_symlinked_descendants(boundary: &Path, parent: &Path) -> std::io::Result<()> {
+    let boundary = std::path::absolute(boundary)?;
+    let Ok(relative) = parent.strip_prefix(&boundary) else {
+        return Ok(());
+    };
+    if fs::symlink_metadata(&boundary)?.file_type().is_symlink() {
+        return Err(symlinked_output_parent_error());
+    }
+    let mut candidate = boundary;
+    for component in relative.components() {
+        candidate.push(component);
+        if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
+            return Err(symlinked_output_parent_error());
+        }
+    }
+    Ok(())
+}
+
+fn symlinked_output_parent_error() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "refusing to write output through a symlinked parent directory",
+    )
+}
+
+fn persist_output(temporary: tempfile::NamedTempFile, destination: &Path) -> std::io::Result<()> {
+    temporary
+        .persist(destination)
+        .map(|_| ())
+        .map_err(|error| error.error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +536,105 @@ mod tests {
             read_ignore_file(&path, limits).unwrap_err(),
             ReadOutcome::BudgetExceeded
         );
+    }
+
+    #[test]
+    fn atomic_output_replaces_regular_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("report.json");
+        fs::write(&output, "old").unwrap();
+
+        write_output_atomic(&output, b"new", dir.path()).unwrap();
+
+        assert_eq!(fs::read(&output).unwrap(), b"new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_output_rejects_destination_and_parent_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim");
+        let output = dir.path().join("report.json");
+        fs::write(&victim, "sentinel").unwrap();
+        symlink(&victim, &output).unwrap();
+
+        let error = write_output_atomic(&output, b"replacement", dir.path()).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "sentinel");
+
+        let external = tempfile::tempdir().unwrap();
+        let linked_parent = dir.path().join("linked-parent");
+        symlink(external.path(), &linked_parent).unwrap();
+        let error = write_output_atomic(&linked_parent.join("report.json"), b"report", dir.path())
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!external.path().join("report.json").exists());
+
+        let linked_root = dir.path().join("linked-root");
+        fs::create_dir(external.path().join("nested")).unwrap();
+        symlink(external.path(), &linked_root).unwrap();
+        let error = write_output_atomic(
+            &linked_root.join("nested/report.json"),
+            b"report",
+            &linked_root,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!external.path().join("nested/report.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_persist_replaces_a_raced_symlink_instead_of_its_target() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim");
+        let output = dir.path().join("report.json");
+        fs::write(&victim, "sentinel").unwrap();
+        let mut temporary = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+        temporary.write_all(b"report").unwrap();
+        temporary.as_file_mut().sync_all().unwrap();
+        symlink(&victim, &output).unwrap();
+
+        persist_output(temporary, &output).unwrap();
+
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "sentinel");
+        assert_eq!(fs::read_to_string(&output).unwrap(), "report");
+        assert!(
+            !fs::symlink_metadata(&output)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    fn concurrent_atomic_outputs_never_interleave() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("report.json");
+        let output_root = dir.path().to_path_buf();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let first = "a".repeat(64 * 1024);
+        let second = "b".repeat(64 * 1024);
+
+        let handles = [first.clone(), second.clone()].map(|content| {
+            let output = output.clone();
+            let output_root = output_root.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                write_output_atomic(&output, content.as_bytes(), &output_root).unwrap();
+            })
+        });
+        barrier.wait();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let rendered = fs::read_to_string(output).unwrap();
+        assert!(rendered == first || rendered == second);
     }
 }

@@ -56,7 +56,6 @@ jobs:
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
       tag: ${{ !github.event.pull_request && github.ref_name || '' }}
-      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
       publishing: ${{ !github.event.pull_request }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,14 +81,49 @@ jobs:
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/dist
+      - name: Validate release tag and source
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --no-tags --unshallow origin \
+              +refs/heads/main:refs/remotes/origin/main
+          else
+            git fetch --no-tags origin \
+              +refs/heads/main:refs/remotes/origin/main
+          fi
+          if ! git merge-base --is-ancestor \
+            "$RELEASE_COMMIT" refs/remotes/origin/main; then
+            echo "release commit is not reachable from origin/main: $RELEASE_COMMIT" >&2
+            exit 1
+          fi
       # sure would be cool if github gave us proper conditionals...
       # so here's a doubly-nested ternary-via-truthiness to try to provide the best possible
       # functionality based on whether this is a pull_request, and whether it's from a fork.
       # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ !github.event.pull_request && github.ref_name || '' }}
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          if [[ -n "$RELEASE_TAG" ]]; then
+            dist host \
+              --steps=create \
+              --tag="$RELEASE_TAG" \
+              --output-format=json \
+              > plan-dist-manifest.json
+          else
+            dist plan --output-format=json > plan-dist-manifest.json
+          fi
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -124,6 +158,8 @@ jobs:
     container: ${{ matrix.container && matrix.container.image || null }}
     env:
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+      DIST_ARGS: ${{ matrix.dist_args }}
+      RELEASE_TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - name: enable windows longpaths
         run: |
@@ -169,9 +205,22 @@ jobs:
         run: |
           ${{ matrix.packages_install }}
       - name: Build artifacts
+        shell: bash
         run: |
           # Actually do builds and make zips and whatnot
-          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+          tag_args=()
+          if [[ -n "$RELEASE_TAG" ]]; then
+            tag_args+=(--tag "$RELEASE_TAG")
+          fi
+          dist_args=()
+          if [[ -n "$DIST_ARGS" ]]; then
+            read -r -a dist_args <<< "$DIST_ARGS"
+          fi
+          dist build "${tag_args[@]}" \
+            --print=linkage \
+            --output-format=json \
+            "${dist_args[@]}" \
+            > dist-manifest.json
           echo "dist ran successfully"
       - name: Bound release archive decoder memory
         run: |
@@ -181,11 +230,14 @@ jobs:
             --max-decoder-memory-mib 64
       - name: Verify binary portability
         shell: bash
+        env:
+          BINARY_TARGET: ${{ join(matrix.targets, '') }}
+          RUNNER_OS: ${{ runner.os }}
         run: |
-          binary="target/${{ join(matrix.targets, '') }}/dist/reposcout"
+          binary="target/$BINARY_TARGET/dist/reposcout"
           test -x "$binary"
 
-          case "${{ runner.os }}" in
+          case "$RUNNER_OS" in
             macOS)
               while read -r dependency _; do
                 case "$dependency" in
@@ -234,6 +286,7 @@ jobs:
     timeout-minutes: 10
     env:
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+      RELEASE_TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -267,7 +320,14 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
-          dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
+          tag_args=()
+          if [[ -n "$RELEASE_TAG" ]]; then
+            tag_args+=(--tag "$RELEASE_TAG")
+          fi
+          dist build "${tag_args[@]}" \
+            --output-format=json \
+            "--artifacts=global" \
+            > dist-manifest.json
           cargo cyclonedx --format xml
           mv reposcout.cdx.xml target/distrib/reposcout.cdx.xml
           test -s target/distrib/reposcout.cdx.xml
@@ -298,12 +358,14 @@ jobs:
       - build-global-artifacts
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    environment: release
     permissions:
       attestations: write
       contents: write
       id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.plan.outputs.tag }}
     runs-on: "ubuntu-22.04"
     timeout-minutes: 10
     outputs:
@@ -329,7 +391,12 @@ jobs:
       - id: host
         shell: bash
         run: |
-          dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
+          dist host \
+            --tag="$RELEASE_TAG" \
+            --steps=upload \
+            --steps=release \
+            --output-format=json \
+            > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -356,15 +423,26 @@ jobs:
           subject-path: artifacts/*
       - name: Create GitHub Release
         env:
-          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
+          ANNOUNCEMENT_IS_PRERELEASE: ${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease }}
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
           RELEASE_COMMIT: "${{ github.sha }}"
+        shell: bash
         run: |
           # Write and read notes from a file to avoid quoting breaking things
-          echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
+          printf '%s\n' "$ANNOUNCEMENT_BODY" > "$RUNNER_TEMP/notes.txt"
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          prerelease_args=()
+          if [[ "$ANNOUNCEMENT_IS_PRERELEASE" == "true" ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --target "$RELEASE_COMMIT" \
+            "${prerelease_args[@]}" \
+            --title "$ANNOUNCEMENT_TITLE" \
+            --notes-file "$RUNNER_TEMP/notes.txt" \
+            artifacts/*
 
   announce:
     needs:
