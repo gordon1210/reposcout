@@ -366,7 +366,9 @@ pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// symlinks and symlinked parent components below `untrusted_root` or the
 /// current directory are rejected; a destination that becomes a symlink after
 /// validation is atomically replaced rather than opened, so its target is
-/// never modified.
+/// never modified. On Unix, staging and replacement stay relative to an opened
+/// parent-directory handle, so replacing the validated parent path cannot
+/// redirect the write.
 ///
 /// # Errors
 ///
@@ -378,8 +380,18 @@ pub fn write_output_atomic(
     bytes: &[u8],
     untrusted_root: &Path,
 ) -> std::io::Result<()> {
-    use std::io::Write as _;
+    write_output_atomic_impl(path, bytes, untrusted_root, |_| Ok(()))
+}
 
+fn write_output_atomic_impl<F>(
+    path: &Path,
+    bytes: &[u8],
+    untrusted_root: &Path,
+    after_parent_validation: F,
+) -> std::io::Result<()>
+where
+    F: FnOnce(&Path) -> std::io::Result<()>,
+{
     let file_name = path.file_name().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -387,6 +399,123 @@ pub fn write_output_atomic(
         )
     })?;
     let parent = output_parent_without_symlinks(path, untrusted_root)?;
+
+    #[cfg(unix)]
+    {
+        let directory = rustix::fs::open(
+            &parent,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::CLOEXEC
+                | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::empty(),
+        )?;
+        after_parent_validation(&parent)?;
+        write_output_in_directory(&directory, file_name, bytes, || Ok(()))
+    }
+
+    #[cfg(not(unix))]
+    {
+        after_parent_validation(&parent)?;
+        write_output_portable(&parent, file_name, bytes)
+    }
+}
+
+#[cfg(unix)]
+fn write_output_in_directory<F>(
+    directory: &rustix::fd::OwnedFd,
+    file_name: &std::ffi::OsStr,
+    bytes: &[u8],
+    after_destination_validation: F,
+) -> std::io::Result<()>
+where
+    F: FnOnce() -> std::io::Result<()>,
+{
+    use std::io::Write as _;
+
+    let existing_mode =
+        match rustix::fs::statat(directory, file_name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
+                rustix::fs::FileType::Symlink => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "refusing to overwrite an output symlink",
+                    ));
+                }
+                rustix::fs::FileType::RegularFile => {
+                    Some(rustix::fs::Mode::from_raw_mode(stat.st_mode))
+                }
+                _ => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "output path is not a regular file",
+                    ));
+                }
+            },
+            Err(rustix::io::Errno::NOENT) => None,
+            Err(error) => return Err(error.into()),
+        };
+    after_destination_validation()?;
+
+    let (temporary_name, mut temporary) = create_output_temporary(directory)?;
+    let result = (|| {
+        temporary.write_all(bytes)?;
+        if let Some(mode) = existing_mode {
+            rustix::fs::fchmod(&temporary, mode)?;
+        }
+        temporary.sync_all()?;
+        rustix::fs::renameat(directory, &temporary_name, directory, file_name)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = rustix::fs::unlinkat(directory, &temporary_name, rustix::fs::AtFlags::empty());
+    }
+    result
+}
+
+#[cfg(unix)]
+fn create_output_temporary(
+    directory: &rustix::fd::OwnedFd,
+) -> std::io::Result<(std::ffi::OsString, File)> {
+    const MAX_ATTEMPTS: usize = 16;
+
+    for _ in 0..MAX_ATTEMPTS {
+        let nonce = getrandom::u64().map_err(|error| std::io::Error::other(error.to_string()))?;
+        let name = std::ffi::OsString::from(format!(
+            ".reposcout-output-{}-{nonce:016x}.tmp",
+            std::process::id()
+        ));
+        match rustix::fs::openat(
+            directory,
+            &name,
+            rustix::fs::OFlags::WRONLY
+                | rustix::fs::OFlags::CREATE
+                | rustix::fs::OFlags::EXCL
+                | rustix::fs::OFlags::CLOEXEC
+                | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        ) {
+            Ok(file) => return Ok((name, File::from(file))),
+            Err(rustix::io::Errno::EXIST) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a unique output staging file",
+    ))
+}
+
+#[cfg(not(unix))]
+fn write_output_portable(
+    parent: &Path,
+    file_name: &std::ffi::OsStr,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+
     let destination = parent.join(file_name);
     let existing_permissions = match fs::symlink_metadata(&destination) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -408,7 +537,7 @@ pub fn write_output_atomic(
 
     let mut temporary = tempfile::Builder::new()
         .prefix(".reposcout-output-")
-        .tempfile_in(&parent)?;
+        .tempfile_in(parent)?;
     temporary.write_all(bytes)?;
     if let Some(permissions) = existing_permissions {
         temporary.as_file().set_permissions(permissions)?;
@@ -460,6 +589,7 @@ fn symlinked_output_parent_error() -> std::io::Error {
     )
 }
 
+#[cfg(not(unix))]
 fn persist_output(temporary: tempfile::NamedTempFile, destination: &Path) -> std::io::Result<()> {
     temporary
         .persist(destination)
@@ -543,10 +673,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.path().join("report.json");
         fs::write(&output, "old").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            fs::set_permissions(&output, fs::Permissions::from_mode(0o640)).unwrap();
+        }
 
         write_output_atomic(&output, b"new", dir.path()).unwrap();
 
         assert_eq!(fs::read(&output).unwrap(), b"new");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            assert_eq!(
+                fs::metadata(output).unwrap().permissions().mode() & 0o777,
+                0o640
+            );
+        }
     }
 
     #[cfg(unix)]
@@ -587,19 +732,27 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn atomic_persist_replaces_a_raced_symlink_instead_of_its_target() {
+    fn atomic_output_replaces_a_raced_symlink_instead_of_its_target() {
         use std::os::unix::fs::symlink;
 
         let dir = tempfile::tempdir().unwrap();
         let victim = dir.path().join("victim");
         let output = dir.path().join("report.json");
         fs::write(&victim, "sentinel").unwrap();
-        let mut temporary = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
-        temporary.write_all(b"report").unwrap();
-        temporary.as_file_mut().sync_all().unwrap();
-        symlink(&victim, &output).unwrap();
+        let directory = rustix::fs::open(
+            dir.path(),
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::CLOEXEC
+                | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::empty(),
+        )
+        .unwrap();
 
-        persist_output(temporary, &output).unwrap();
+        write_output_in_directory(&directory, output.file_name().unwrap(), b"report", || {
+            symlink(&victim, &output)
+        })
+        .unwrap();
 
         assert_eq!(fs::read_to_string(&victim).unwrap(), "sentinel");
         assert_eq!(fs::read_to_string(&output).unwrap(), "report");
@@ -608,6 +761,33 @@ mod tests {
                 .unwrap()
                 .file_type()
                 .is_symlink()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_output_parent_swap_cannot_redirect_the_write() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let parent = root.path().join("output-parent");
+        let retained_parent = root.path().join("retained-parent");
+        let external = tempfile::tempdir().unwrap();
+        let output = parent.join("report.json");
+        let external_output = external.path().join("report.json");
+        fs::create_dir(&parent).unwrap();
+        fs::write(&external_output, "sentinel").unwrap();
+
+        write_output_atomic_impl(&output, b"report", root.path(), |validated_parent| {
+            fs::rename(validated_parent, &retained_parent)?;
+            symlink(external.path(), validated_parent)
+        })
+        .unwrap();
+
+        assert_eq!(fs::read_to_string(external_output).unwrap(), "sentinel");
+        assert_eq!(
+            fs::read_to_string(retained_parent.join("report.json")).unwrap(),
+            "report"
         );
     }
 
