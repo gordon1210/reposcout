@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-07
+
 ### Security
 
 - Release tags are now validated as semantic versions, transported to shell steps only through

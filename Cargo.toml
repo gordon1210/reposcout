@@ -1,6 +1,6 @@
 [package]
 name = "reposcout"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2024"
 description = "Fast repository scouting for tokens, complexity, duplication, risk, and Git churn"
 license = "MIT"
