@@ -366,9 +366,10 @@ pub fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// symlinks and symlinked parent components below `untrusted_root` or the
 /// current directory are rejected; a destination that becomes a symlink after
 /// validation is atomically replaced rather than opened, so its target is
-/// never modified. On Unix, staging and replacement stay relative to an opened
-/// parent-directory handle, so replacing the validated parent path cannot
-/// redirect the write.
+/// never modified. On Unix, the canonical parent is opened component by
+/// component without following symlinks, then staging and replacement stay
+/// relative to that directory handle. Replacing either an intermediate or the
+/// final validated parent path therefore cannot redirect the write.
 ///
 /// # Errors
 ///
@@ -402,15 +403,8 @@ where
 
     #[cfg(unix)]
     {
-        let directory = rustix::fs::open(
-            &parent,
-            rustix::fs::OFlags::RDONLY
-                | rustix::fs::OFlags::DIRECTORY
-                | rustix::fs::OFlags::CLOEXEC
-                | rustix::fs::OFlags::NOFOLLOW,
-            rustix::fs::Mode::empty(),
-        )?;
         after_parent_validation(&parent)?;
+        let directory = open_output_directory(&parent)?;
         write_output_in_directory(&directory, file_name, bytes, || Ok(()))
     }
 
@@ -419,6 +413,41 @@ where
         after_parent_validation(&parent)?;
         write_output_portable(&parent, file_name, bytes)
     }
+}
+
+#[cfg(unix)]
+fn open_output_directory(parent: &Path) -> std::io::Result<rustix::fd::OwnedFd> {
+    use std::path::Component;
+
+    let flags = rustix::fs::OFlags::RDONLY
+        | rustix::fs::OFlags::DIRECTORY
+        | rustix::fs::OFlags::CLOEXEC
+        | rustix::fs::OFlags::NOFOLLOW;
+    let mut directory = rustix::fs::open(Path::new("/"), flags, rustix::fs::Mode::empty())?;
+
+    for component in parent.components() {
+        match component {
+            Component::RootDir => {}
+            Component::Normal(name) => {
+                directory =
+                    match rustix::fs::openat(&directory, name, flags, rustix::fs::Mode::empty()) {
+                        Ok(next) => next,
+                        Err(rustix::io::Errno::LOOP | rustix::io::Errno::NOTDIR) => {
+                            return Err(symlinked_output_parent_error());
+                        }
+                        Err(error) => return Err(error.into()),
+                    };
+            }
+            Component::CurDir | Component::ParentDir | Component::Prefix(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "output parent is not a normalized absolute path",
+                ));
+            }
+        }
+    }
+
+    Ok(directory)
 }
 
 #[cfg(unix)]
@@ -739,15 +768,7 @@ mod tests {
         let victim = dir.path().join("victim");
         let output = dir.path().join("report.json");
         fs::write(&victim, "sentinel").unwrap();
-        let directory = rustix::fs::open(
-            dir.path(),
-            rustix::fs::OFlags::RDONLY
-                | rustix::fs::OFlags::DIRECTORY
-                | rustix::fs::OFlags::CLOEXEC
-                | rustix::fs::OFlags::NOFOLLOW,
-            rustix::fs::Mode::empty(),
-        )
-        .unwrap();
+        let directory = open_output_directory(&dir.path().canonicalize().unwrap()).unwrap();
 
         write_output_in_directory(&directory, output.file_name().unwrap(), b"report", || {
             symlink(&victim, &output)
@@ -778,10 +799,16 @@ mod tests {
         fs::create_dir(&parent).unwrap();
         fs::write(&external_output, "sentinel").unwrap();
 
-        write_output_atomic_impl(&output, b"report", root.path(), |validated_parent| {
-            fs::rename(validated_parent, &retained_parent)?;
-            symlink(external.path(), validated_parent)
-        })
+        let validated_parent = output_parent_without_symlinks(&output, root.path()).unwrap();
+        let directory = open_output_directory(&validated_parent).unwrap();
+        fs::rename(&validated_parent, &retained_parent).unwrap();
+        symlink(external.path(), &validated_parent).unwrap();
+        write_output_in_directory(
+            &directory,
+            output.file_name().unwrap(),
+            b"report",
+            || Ok(()),
+        )
         .unwrap();
 
         assert_eq!(fs::read_to_string(external_output).unwrap(), "sentinel");
@@ -789,6 +816,34 @@ mod tests {
             fs::read_to_string(retained_parent.join("report.json")).unwrap(),
             "report"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_output_intermediate_parent_swap_cannot_redirect_the_write() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let ancestor = root.path().join("output-parent");
+        let parent = ancestor.join("nested");
+        let retained_ancestor = root.path().join("retained-parent");
+        let external = tempfile::tempdir().unwrap();
+        let external_parent = external.path().join("nested");
+        let output = parent.join("report.json");
+        let external_output = external_parent.join("report.json");
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir(&external_parent).unwrap();
+        fs::write(&external_output, "sentinel").unwrap();
+
+        let error = write_output_atomic_impl(&output, b"report", root.path(), |_| {
+            fs::rename(&ancestor, &retained_ancestor)?;
+            symlink(external.path(), &ancestor)
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(fs::read_to_string(external_output).unwrap(), "sentinel");
+        assert!(!retained_ancestor.join("nested/report.json").exists());
     }
 
     #[test]
