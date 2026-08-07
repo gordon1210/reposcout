@@ -16,7 +16,38 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 
 The installer selects the matching prebuilt archive and refuses to install it unless SHA-256
 verification succeeds. It installs the binary under Cargo's binary directory and stores an
-owner-writable install receipt for later updates.
+owner-writable install receipt for later updates. The one-line command is a convenience path: it
+trusts GitHub's TLS endpoint, this repository's release permissions, and the release workflow
+because the downloaded shell script executes before its archive checksum checks run.
+
+### Verified installation
+
+A current GitHub CLI can verify the immutable release attestation, the downloaded installer asset,
+and the build provenance before executing the script:
+
+```sh
+set -euo pipefail
+
+repo="gordon1210/reposcout"
+workdir="$(mktemp -d)"
+trap 'rm -rf "$workdir"' EXIT
+
+tag="$(gh release view --repo "$repo" --json tagName --jq '.tagName')"
+gh release verify "$tag" --repo "$repo"
+gh release download "$tag" \
+  --repo "$repo" \
+  --pattern 'reposcout-installer.sh' \
+  --dir "$workdir"
+gh release verify-asset "$tag" "$workdir/reposcout-installer.sh" \
+  --repo "$repo"
+gh attestation verify "$workdir/reposcout-installer.sh" \
+  --repo "$repo" \
+  --signer-workflow 'gordon1210/reposcout/.github/workflows/release.yml' \
+  --source-ref "refs/tags/$tag" \
+  --deny-self-hosted-runners
+sh -n "$workdir/reposcout-installer.sh"
+sh "$workdir/reposcout-installer.sh"
+```
 
 Update an installer-managed copy later with:
 

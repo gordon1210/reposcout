@@ -736,6 +736,91 @@ fn output_file_inside_target_is_excluded_from_future_scans() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn file_output_commands_refuse_symlinks_without_touching_their_targets() {
+    use std::ffi::OsString;
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    let source = repo.join("source.rs");
+    std::fs::write(&source, "pub fn source() {}\n").unwrap();
+
+    let cases = [
+        (
+            "scan.json",
+            vec![
+                OsString::from("-f"),
+                OsString::from("json"),
+                OsString::from("--profile"),
+                OsString::from("safe"),
+                repo.as_os_str().to_owned(),
+            ],
+        ),
+        (
+            "explain.json",
+            vec![
+                OsString::from("explain"),
+                source.as_os_str().to_owned(),
+                OsString::from("-f"),
+                OsString::from("json"),
+                OsString::from("--profile"),
+                OsString::from("safe"),
+            ],
+        ),
+        (
+            "locate.json",
+            vec![
+                OsString::from("locate"),
+                OsString::from("source"),
+                repo.as_os_str().to_owned(),
+                OsString::from("-f"),
+                OsString::from("json"),
+                OsString::from("--profile"),
+                OsString::from("safe"),
+            ],
+        ),
+    ];
+
+    for (name, mut args) in cases {
+        let victim = dir.path().join(format!("{name}.victim"));
+        let output = repo.join(name);
+        std::fs::write(&victim, "sentinel\n").unwrap();
+        symlink(&victim, &output).unwrap();
+        args.extend([
+            OsString::from("-o"),
+            output.as_os_str().to_owned(),
+            OsString::from("--no-cache"),
+            OsString::from("--quiet"),
+        ]);
+
+        let mut command = reposcout_command();
+        let stderr = command
+            .args(args)
+            .assert()
+            .failure()
+            .get_output()
+            .stderr
+            .clone();
+
+        assert!(
+            String::from_utf8(stderr)
+                .unwrap()
+                .contains("refusing to overwrite an output symlink"),
+            "unexpected error for {name}"
+        );
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "sentinel\n");
+        assert!(
+            std::fs::symlink_metadata(&output)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+}
+
 #[test]
 fn baseline_file_inside_target_is_excluded_from_comparison_scan() {
     let dir = tempfile::tempdir().unwrap();

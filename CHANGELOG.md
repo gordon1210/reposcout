@@ -6,6 +6,18 @@ within their section.
 
 ## [Unreleased]
 
+### Security
+
+- Release tags are now validated as semantic versions, transported to shell steps only through
+  environment variables, and required to identify commits reachable from `main`; publication also
+  verifies that the remote tag already exists and targets the `release` GitHub Environment so
+  repository protection rules can gate it.
+- File outputs for scans, explanations, and symbol queries are now staged and atomically replaced.
+  Existing output symlinks and symlinked parent directories are rejected, preventing repository
+  paths from redirecting reports into unrelated user files.
+- Documented the GitHub CLI release- and provenance-verification path alongside the convenience
+  installer, and removed the unused Vercel installer redirect.
+
 ## [0.1.13] - 2026-08-04
 
 ### Changed

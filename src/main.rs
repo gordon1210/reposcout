@@ -547,7 +547,7 @@ fn write_scan_output(args: &ScanArgs, rendered: &str) -> Result<()> {
         })
     });
     match args.common.output.as_deref() {
-        Some(path) => std::fs::write(path, rendered.as_bytes())?,
+        Some(path) => write_file_output(path, rendered.as_bytes(), &args.path)?,
         None => write_stdout(rendered)?,
     }
     debug_log::event("output_end", || {
@@ -607,7 +607,7 @@ fn run_explain(args: &ExplainArgs, pretty: bool) -> Result<ExitCode> {
         format == Format::Table && args.common.output.is_none() && std::io::stdout().is_terminal();
     let rendered = report::render_explain(&report, format, color, pretty)?;
     match args.common.output.as_deref() {
-        Some(path) => std::fs::write(path, rendered.as_bytes())?,
+        Some(path) => write_file_output(path, rendered.as_bytes(), &args.file)?,
         None => write_stdout(&rendered)?,
     }
     Ok(ExitCode::SUCCESS)
@@ -657,10 +657,20 @@ fn run_locate(args: LocateArgs, pretty: bool) -> Result<ExitCode> {
         format == Format::Table && args.common.output.is_none() && std::io::stdout().is_terminal();
     let rendered = report::render_symbol_query(&report, format, color, pretty)?;
     match args.common.output.as_deref() {
-        Some(path) => std::fs::write(path, rendered.as_bytes())?,
+        Some(path) => write_file_output(path, rendered.as_bytes(), &args.path)?,
         None => write_stdout(&rendered)?,
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn write_file_output(path: &Path, bytes: &[u8], target: &Path) -> Result<()> {
+    let untrusted_root = if target.is_dir() {
+        target
+    } else {
+        target.parent().unwrap_or_else(|| Path::new("."))
+    };
+    reposcout::fs_budget::write_output_atomic(path, bytes, untrusted_root)?;
+    Ok(())
 }
 
 fn write_stdout(rendered: &str) -> Result<()> {

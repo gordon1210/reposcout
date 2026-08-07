@@ -31,6 +31,12 @@
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
       "computedHash": "66e8a50c83c3c724fcfe0769701b665c56cec220cc4f49cc1aee8bdfc07de94a"
     },
+    "rust-codebase-excellence": {
+      "source": "gordon1210/agent-goodies",
+      "sourceType": "github",
+      "skillPath": "skills/rust-codebase-excellence/SKILL.md",
+      "computedHash": "6d873bf76a29a5bea5ae80e88ca418c140e1d856702570eb3ef7ad87ab417e9e"
+    },
     "tdd": {
       "source": "mattpocock/skills",
       "sourceType": "github",
