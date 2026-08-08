@@ -861,7 +861,8 @@ fn render_duplication(out: &mut String, report: &ScanReport, duplication_details
         }
     }
 
-    if !duplication.by_language.is_empty() {
+    let languages = super::projection::human_duplication_languages(&duplication.by_language);
+    if !languages.is_empty() {
         let _ = writeln!(out, "## Duplication by language");
         let _ = writeln!(out);
         let _ = writeln!(
@@ -869,7 +870,7 @@ fn render_duplication(out: &mut String, report: &ScanReport, duplication_details
             "| Language | Groups E/N | Line coverage | Token coverage |"
         );
         let _ = writeln!(out, "|---|--:|--:|--:|");
-        for language in &duplication.by_language {
+        for language in languages {
             let _ = writeln!(
                 out,
                 "| {} | {}/{} | {:.1}% ({}) | {:.1}% ({}) |",

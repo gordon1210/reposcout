@@ -6,6 +6,16 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Human terminal tables now share the detected terminal width instead of shrinking to unrelated
+  content widths. Each table allocates that width by column role, keeping metrics compact while
+  shortening paths from the front to preserve filenames and line numbers on a single row.
+- Human terminal reports now place detailed inventory first and health, risk, diagnostic, and
+  assessment signals near the prompt, ending with the compact overview and configuration hint.
+  Empty per-language duplication rows are omitted, and semantic colors highlight concrete
+  outcomes, warnings, and failures without changing machine-readable output.
+
 ## [0.1.14] - 2026-08-07
 
 ### Security

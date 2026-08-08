@@ -4,55 +4,69 @@
 use crate::model::{ScanDiagnostics, ScanReport};
 use crate::numeric::usize_to_f64;
 use crate::report::projection::{
-    file_cyclomatic_average, finding_location, human_duplicate_projection, human_risk_heading,
-    human_test_signal, metric_delta_display, metric_label, source_language_rollup,
+    file_cyclomatic_average, finding_location, human_duplicate_projection,
+    human_duplication_languages, human_risk_heading, human_test_signal, metric_delta_display,
+    metric_label, source_language_rollup,
 };
 use crate::report::{
     ConfigGuidance, RenderOptions, config_guidance, dup_locations, human_bytes, similarity_label,
     terminal_text, thousands, thousands_u64,
 };
 use comfy_table::presets::UTF8_BORDERS_ONLY;
-use comfy_table::{CellAlignment, ColumnConstraint, ContentArrangement, Table, Width};
+use comfy_table::{
+    Cell, CellAlignment, Color, ColumnConstraint, ContentArrangement, Row, Table, Width,
+};
 use owo_colors::OwoColorize;
 use std::fmt::Write as _;
 use std::path::Path;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+#[derive(Clone, Copy)]
+enum Tone {
+    Neutral,
+    Accent,
+    Positive,
+    Caution,
+    Negative,
+    Info,
+}
 
 #[must_use]
 pub fn render(report: &ScanReport, color: bool, options: RenderOptions) -> String {
     let mut out = String::new();
-    let title = format!(
-        "reposcout  {}",
-        terminal_text(&report.target.display().to_string())
+    let target = terminal_text(&report.target.display().to_string());
+    let encoding = terminal_text(&report.encoding);
+    let title_suffix = format!("   (encoding: {encoding})");
+    let title_path_width = output_width().map_or_else(
+        || target.chars().count(),
+        |width| width.saturating_sub("reposcout  ".len() + title_suffix.len()),
     );
-    let _ = writeln!(
-        out,
-        "{}   (encoding: {})",
-        header(&title, color),
-        terminal_text(&report.encoding)
-    );
+    let title = format!("reposcout  {}", path_cell(&target, title_path_width));
+    let _ = writeln!(out, "{}{}", header(&title, color), title_suffix);
     let _ = writeln!(out);
 
-    render_overview(&mut out, report, color);
+    render_languages(&mut out, report, color);
+    render_top_source_files(&mut out, report, color);
+    render_symbols(&mut out, report, color);
     if let Some(work_scope) = &report.work_scope {
         super::work_scope::table(&mut out, work_scope, color);
     }
-    render_complexity(&mut out, report, color);
-    render_duplication(&mut out, report, color, options.duplication_details);
-    render_markers(&mut out, report, color);
-    render_symbols(&mut out, report, color);
     render_skip_candidates(&mut out, report, color);
-    render_languages(&mut out, report, color);
-    render_top_source_files(&mut out, report, color);
-    render_hotspots(&mut out, report, color);
-    render_assessment(&mut out, report, color);
-    render_test_presence(&mut out, report, color);
-    render_top_risks(&mut out, report, color);
-    render_context(&mut out, report, color);
     render_directories(&mut out, report, color);
+    render_graph(&mut out, report, color);
+    render_markers(&mut out, report, color);
+    render_test_presence(&mut out, report, color);
+    render_duplication(&mut out, report, color, options.duplication_details);
+    render_complexity(&mut out, report, color);
+    render_hotspots(&mut out, report, color);
+    render_top_risks(&mut out, report, color);
+    render_scan_diagnostics(&mut out, &report.diagnostics, color);
+    render_assessment(&mut out, report, color);
     render_baseline(&mut out, report, color);
     render_review(&mut out, report, color);
-    render_graph(&mut out, report, color);
     render_impact(&mut out, report, color);
+    render_context(&mut out, report, color);
+    render_overview(&mut out, report, color);
     render_config_guidance(&mut out, report, color, options.suppress_config_guidance);
     out
 }
@@ -62,42 +76,32 @@ fn render_config_guidance(out: &mut String, report: &ScanReport, color: bool, su
         return;
     };
 
-    let _ = writeln!(out, "{}", header("Configuration tip", color));
-    match guidance {
+    let message = match guidance {
         ConfigGuidance::NoConfiguration => {
-            let _ = writeln!(out, "  No RepoScout configuration was found.");
-            let _ = writeln!(
-                out,
-                "  A global config can establish reusable defaults across repositories."
-            );
+            "Tip: no config found — global/project settings can sharpen this report."
         }
         ConfigGuidance::GlobalOnly => {
-            let _ = writeln!(
-                out,
-                "  The global RepoScout configuration is active, but no project config was found."
-            );
+            "Tip: global config active — a project config can sharpen this report further."
         }
-    }
-    let _ = writeln!(
-        out,
-        "  A project reposcout.toml can further improve signal quality by tailoring exclusions,"
-    );
-    let _ = writeln!(
-        out,
-        "  health scope, and analysis settings to this repository."
-    );
-    let _ = writeln!(out, "  Inspect effective settings with: reposcout config .");
+    };
+    let _ = writeln!(out, "  {}\n", toned_value(message, color, Tone::Info));
 }
 
 fn render_markers(out: &mut String, report: &ScanReport, color: bool) {
     if report.summary.markers.is_empty() {
         return;
     }
-    let markers = report
-        .summary
-        .markers
-        .iter()
-        .map(|(marker, count)| format!("{} {count}", terminal_text(marker)))
+    let mut markers = report.summary.markers.iter().collect::<Vec<_>>();
+    markers.sort_by_key(|(marker, _)| marker_priority(marker));
+    let markers = markers
+        .into_iter()
+        .map(|(marker, count)| {
+            toned_value(
+                &format!("{} {count}", terminal_text(marker)),
+                color,
+                marker_tone(marker),
+            )
+        })
         .collect::<Vec<_>>();
     let _ = writeln!(out, "{}  {}", header("Markers", color), markers.join(" · "));
     let _ = writeln!(out);
@@ -126,20 +130,26 @@ fn render_skip_candidates(out: &mut String, report: &ScanReport, color: bool) {
     let _ = writeln!(
         out,
         "{}",
-        header(
+        toned_header(
             "Skip candidates (generated/minified/bundled/vendored)",
-            color
+            color,
+            Tone::Info,
         )
     );
     let mut table = new_table(vec!["Path", "Reason", "Tokens"]);
-    set_path_column_width(&mut table, 0, PATH_MEDIUM);
-    for candidate in &report.summary.skip_candidates {
-        table.add_row(vec![
-            path_cell(&candidate.path, PATH_MEDIUM),
-            terminal_text(&candidate.reason),
-            thousands(candidate.tokens),
-        ]);
-    }
+    let rows = report
+        .summary
+        .skip_candidates
+        .iter()
+        .map(|candidate| {
+            vec![
+                terminal_text(&candidate.path),
+                terminal_text(&candidate.reason),
+                thousands(candidate.tokens),
+            ]
+        })
+        .collect();
+    add_responsive_path_rows(&mut table, rows, 0, &[(0, 2), (1, 1)]);
     right_align(&mut table, &[2]);
     let _ = writeln!(out, "{table}\n");
 }
@@ -164,6 +174,7 @@ fn render_languages(out: &mut String, report: &ScanReport, color: bool) {
             thousands(language.tokens),
         ]);
     }
+    fit_responsive_table(&mut table, 0, &[(0, 1)]);
     right_align(&mut table, &[1, 2, 3, 4]);
     let _ = writeln!(out, "{table}\n");
 }
@@ -174,13 +185,18 @@ fn render_top_source_files(out: &mut String, report: &ScanReport, color: bool) {
     }
     let _ = writeln!(out, "{}", header("Top source files by tokens", color));
     let mut table = new_table(vec!["File", "Tokens"]);
-    set_path_column_width(&mut table, 0, PATH_WIDE);
-    for file in &report.summary.top_source_token_files {
-        table.add_row(vec![
-            path_cell(&file.path.display().to_string(), PATH_WIDE),
-            thousands(file.tokens),
-        ]);
-    }
+    let rows = report
+        .summary
+        .top_source_token_files
+        .iter()
+        .map(|file| {
+            vec![
+                terminal_text(&file.path.display().to_string()),
+                thousands(file.tokens),
+            ]
+        })
+        .collect();
+    add_responsive_path_rows(&mut table, rows, 0, &[(0, 1)]);
     right_align(&mut table, &[1]);
     let _ = writeln!(out, "{table}\n");
 }
@@ -191,17 +207,24 @@ fn render_hotspots(out: &mut String, report: &ScanReport, color: bool) {
     }
     let _ = writeln!(out, "{}", header("Hotspots (churn × complexity)", color));
     let mut table = new_table(vec!["File", "Commits", "Cyclo", "Avg/fn", "Score"]);
-    set_path_column_width(&mut table, 0, PATH_HOTSPOT);
-    for hotspot in &report.summary.top_hotspots {
-        table.add_row(vec![
-            path_cell(&hotspot.path.display().to_string(), PATH_HOTSPOT),
-            thousands(hotspot.commits),
-            thousands(hotspot.cyclomatic as usize),
-            file_cyclomatic_average(report, &hotspot.path)
-                .map_or_else(|| "-".to_string(), |average| format!("{average:.1}")),
-            format!("{:.0}", hotspot.score),
-        ]);
-    }
+    let rows = report
+        .summary
+        .top_hotspots
+        .iter()
+        .map(|hotspot| {
+            vec![
+                Cell::new(terminal_text(&hotspot.path.display().to_string())),
+                Cell::new(thousands(hotspot.commits)),
+                Cell::new(thousands(hotspot.cyclomatic as usize)),
+                Cell::new(
+                    file_cyclomatic_average(report, &hotspot.path)
+                        .map_or_else(|| "-".to_string(), |average| format!("{average:.1}")),
+                ),
+                toned_cell(format!("{:.0}", hotspot.score), color, Tone::Caution),
+            ]
+        })
+        .collect();
+    add_responsive_path_cell_rows(&mut table, rows, 0, &[(0, 1)]);
     right_align(&mut table, &[1, 2, 3, 4]);
     let _ = writeln!(out, "{table}\n");
 }
@@ -209,31 +232,50 @@ fn render_hotspots(out: &mut String, report: &ScanReport, color: bool) {
 fn render_assessment(out: &mut String, report: &ScanReport, color: bool) {
     let assessment = &report.summary.assessment;
     let _ = writeln!(out, "{}", header("Assessment", color));
-    let context = if assessment.fits_context_known {
-        format!(
-            "{} (budget {})",
+    let (context, context_tone) = if assessment.fits_context_known {
+        (
+            format!(
+                "{} (budget {})",
+                if assessment.fits_context {
+                    "fits"
+                } else {
+                    "exceeds"
+                },
+                thousands(assessment.token_budget)
+            ),
             if assessment.fits_context {
-                "fits"
+                Tone::Positive
             } else {
-                "exceeds"
+                Tone::Caution
             },
-            thousands(assessment.token_budget)
         )
     } else {
-        "unknown (tokens unavailable)".to_string()
+        ("unknown (tokens unavailable)".to_string(), Tone::Caution)
     };
-    kv(out, "Context", &context);
+    toned_kv(out, "Context", &context, color, context_tone);
     let cleanup = if assessment.cleanup_worth_complete {
         assessment.cleanup_worth.clone()
     } else {
         format!("{} (partial)", assessment.cleanup_worth)
     };
-    kv(out, "Cleanup worth", &cleanup);
+    let cleanup_tone = if assessment.cleanup_worth_complete {
+        match assessment.cleanup_worth.as_str() {
+            "low" => Tone::Positive,
+            "medium" => Tone::Caution,
+            "high" => Tone::Negative,
+            _ => Tone::Neutral,
+        }
+    } else {
+        Tone::Caution
+    };
+    toned_kv(out, "Cleanup worth", &cleanup, color, cleanup_tone);
     if !assessment.unavailable_signals.is_empty() {
-        kv(
+        toned_kv(
             out,
             "Unavailable",
             &assessment.unavailable_signals.join(", "),
+            color,
+            Tone::Caution,
         );
     }
     if !assessment.reasons.is_empty() {
@@ -247,10 +289,16 @@ fn render_test_presence(out: &mut String, report: &ScanReport, color: bool) {
     let _ = writeln!(out, "{}", header("Test filename matching", color));
     kv(out, "Test files", &thousands(tests.test_files));
     kv(out, "Source files", &thousands(tests.source_files));
-    kv(
+    toned_kv(
         out,
         "No filename match",
         &thousands(tests.untested_source_files),
+        color,
+        if tests.untested_source_files == 0 {
+            Tone::Positive
+        } else {
+            Tone::Caution
+        },
     );
     if !tests.untested_samples.is_empty() {
         kv(out, "Samples", &tests.untested_samples.join(", "));
@@ -266,26 +314,33 @@ fn render_top_risks(out: &mut String, report: &ScanReport, color: bool) {
     let mut table = new_table(vec![
         "Path", "Score", "SLOC", "Cyclo", "Avg/fn", "Churn", "Reasons",
     ]);
-    set_path_column_width(&mut table, 0, PATH_TIGHT);
-    for risk in &report.summary.top_risks {
-        table.add_row(vec![
-            path_cell(&risk.path, PATH_TIGHT),
-            format!("{:.2}", risk.score),
-            thousands(risk.sloc),
-            thousands(risk.cyclomatic as usize),
-            file_cyclomatic_average(report, Path::new(&risk.path))
-                .map_or_else(|| "-".to_string(), |average| format!("{average:.1}")),
-            thousands(risk.churn_commits),
-            terminal_text(
-                &risk
-                    .reasons
-                    .iter()
-                    .map(|reason| human_test_signal(reason))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ),
-        ]);
-    }
+    let rows = report
+        .summary
+        .top_risks
+        .iter()
+        .map(|risk| {
+            vec![
+                Cell::new(terminal_text(&risk.path)),
+                toned_cell(format!("{:.2}", risk.score), color, risk_tone(risk.score)),
+                Cell::new(thousands(risk.sloc)),
+                Cell::new(thousands(risk.cyclomatic as usize)),
+                Cell::new(
+                    file_cyclomatic_average(report, Path::new(&risk.path))
+                        .map_or_else(|| "-".to_string(), |average| format!("{average:.1}")),
+                ),
+                Cell::new(thousands(risk.churn_commits)),
+                Cell::new(terminal_text(
+                    &risk
+                        .reasons
+                        .iter()
+                        .map(|reason| human_test_signal(reason))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                )),
+            ]
+        })
+        .collect();
+    add_responsive_path_cell_rows(&mut table, rows, 0, &[(0, 1), (6, 1)]);
     right_align(&mut table, &[1, 2, 3, 4, 5]);
     let _ = writeln!(out, "{table}\n");
 }
@@ -305,28 +360,43 @@ fn render_directories(out: &mut String, report: &ScanReport, color: bool) {
         "Dup lines",
         "No filename match",
     ]);
-    set_path_column_width(&mut table, 0, PATH_TIGHT);
-    for directory in &report.directories {
-        table.add_row(vec![
-            path_cell(&directory.path, PATH_TIGHT),
-            thousands(directory.files),
-            thousands(directory.tokens),
-            thousands(directory.sloc),
-            format!("{:.1}", directory.cyclomatic_avg),
-            format!("{:.0}", directory.mi_avg),
-            thousands(directory.duplicated_lines),
-            thousands(directory.untested_source_files),
-        ]);
-    }
+    let rows = report
+        .directories
+        .iter()
+        .map(|directory| {
+            vec![
+                terminal_text(&directory.path),
+                thousands(directory.files),
+                thousands(directory.tokens),
+                thousands(directory.sloc),
+                format!("{:.1}", directory.cyclomatic_avg),
+                format!("{:.0}", directory.mi_avg),
+                thousands(directory.duplicated_lines),
+                thousands(directory.untested_source_files),
+            ]
+        })
+        .collect();
+    add_responsive_path_rows(&mut table, rows, 0, &[(0, 1)]);
     right_align(&mut table, &[1, 2, 3, 4, 5, 6, 7]);
     let _ = writeln!(out, "{table}\n");
 }
 
 fn header(text: &str, color: bool) -> String {
-    if color {
-        format!("{}", text.cyan().bold())
-    } else {
-        text.to_string()
+    toned_header(text, color, Tone::Accent)
+}
+
+fn toned_header(text: &str, color: bool, tone: Tone) -> String {
+    let text = terminal_text(text);
+    if !color {
+        return text;
+    }
+    match tone {
+        Tone::Neutral => format!("{}", text.bold()),
+        Tone::Accent => format!("{}", text.cyan().bold()),
+        Tone::Positive => format!("{}", text.green().bold()),
+        Tone::Caution => format!("{}", text.yellow().bold()),
+        Tone::Negative => format!("{}", text.red().bold()),
+        Tone::Info => format!("{}", text.blue().bold()),
     }
 }
 
@@ -346,6 +416,7 @@ fn render_baseline(out: &mut String, report: &ScanReport, color: bool) {
             display.delta,
         ]);
     }
+    fit_responsive_table(&mut table, 0, &[(0, 1)]);
     right_align(&mut table, &[1, 2, 3]);
     let _ = writeln!(out, "{table}");
     let regressions = if baseline.regressions.is_empty() {
@@ -358,7 +429,17 @@ fn render_baseline(out: &mut String, report: &ScanReport, color: bool) {
             .collect::<Vec<_>>()
             .join("; ")
     };
-    kv(out, "Regressions", &regressions);
+    toned_kv(
+        out,
+        "Regressions",
+        &regressions,
+        color,
+        if baseline.regressions.is_empty() {
+            Tone::Positive
+        } else {
+            Tone::Negative
+        },
+    );
     if baseline.finding_changes.comparison == "complete" {
         let counts = &baseline.finding_changes.counts;
         kv(
@@ -403,40 +484,48 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
     }
     if !context.files.is_empty() {
         let mut table = new_table(vec!["File", "Tokens", "Score", "Why"]);
-        set_path_column_width(&mut table, 0, PATH_CONTEXT);
-        for file in &context.files {
-            table.add_row(vec![
-                path_cell(&file.path.display().to_string(), PATH_CONTEXT),
-                thousands(file.tokens),
-                format!("{:.2}", file.score),
-                terminal_text(&file.reasons.join(", ")),
-            ]);
-        }
+        let rows = context
+            .files
+            .iter()
+            .map(|file| {
+                vec![
+                    terminal_text(&file.path.display().to_string()),
+                    thousands(file.tokens),
+                    format!("{:.2}", file.score),
+                    terminal_text(&file.reasons.join(", ")),
+                ]
+            })
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 2), (3, 3)]);
         right_align(&mut table, &[1, 2]);
         let _ = writeln!(out, "{table}");
     }
     if !context.outline_only.is_empty() {
         let _ = writeln!(out, "{}", header("Outline-only focus", color));
         let mut table = new_table(vec!["File", "Source tokens", "Reason"]);
-        set_path_column_width(&mut table, 0, PATH_MEDIUM);
-        for file in &context.outline_only {
-            table.add_row(vec![
-                path_cell(&file.path.display().to_string(), PATH_MEDIUM),
-                thousands(file.source_tokens),
-                terminal_text(&file.reason),
-            ]);
-        }
+        let rows = context
+            .outline_only
+            .iter()
+            .map(|file| {
+                vec![
+                    terminal_text(&file.path.display().to_string()),
+                    thousands(file.source_tokens),
+                    terminal_text(&file.reason),
+                ]
+            })
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 2), (2, 1)]);
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
     }
     if context.files.iter().any(|file| !file.symbols.is_empty()) {
         let _ = writeln!(out, "{}", header("Selected symbol outlines", color));
         let mut table = new_table(vec!["File", "Line", "Kind", "Signature", "Why"]);
-        set_path_column_width(&mut table, 0, PATH_TIGHT);
+        let mut rows = Vec::new();
         for file in &context.files {
             for symbol in &file.symbols {
-                table.add_row(vec![
-                    path_cell(&file.path.display().to_string(), PATH_TIGHT),
+                rows.push(vec![
+                    terminal_text(&file.path.display().to_string()),
                     thousands(symbol.line),
                     terminal_text(&symbol.kind),
                     terminal_text(&symbol.signature),
@@ -444,6 +533,7 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
                 ]);
             }
         }
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 1), (3, 2), (4, 1)]);
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
     }
@@ -454,11 +544,11 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
     {
         let _ = writeln!(out, "{}", header("Outline-only declarations", color));
         let mut table = new_table(vec!["File", "Line", "Kind", "Signature", "Why"]);
-        set_path_column_width(&mut table, 0, PATH_TIGHT);
+        let mut rows = Vec::new();
         for file in &context.outline_only {
             for symbol in &file.symbols {
-                table.add_row(vec![
-                    path_cell(&file.path.display().to_string(), PATH_TIGHT),
+                rows.push(vec![
+                    terminal_text(&file.path.display().to_string()),
                     thousands(symbol.line),
                     terminal_text(&symbol.kind),
                     terminal_text(&symbol.signature),
@@ -466,6 +556,7 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
                 ]);
             }
         }
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 1), (3, 2), (4, 1)]);
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
     }
@@ -489,9 +580,6 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
 }
 
 fn render_overview(out: &mut String, report: &ScanReport, color: bool) {
-    let diagnostics = &report.diagnostics;
-    render_scan_diagnostics(out, diagnostics, color);
-
     let summary = &report.summary;
     let _ = writeln!(out, "{}", header("Overview", color));
     kv(
@@ -552,27 +640,45 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
         return;
     }
 
-    let _ = writeln!(out, "{}", header("Scan diagnostics", color));
+    let _ = writeln!(
+        out,
+        "{}",
+        toned_header("Scan diagnostics", color, Tone::Caution)
+    );
     kv(out, "Discovered", &thousands(diagnostics.discovered_files));
     kv(out, "Analyzed", &thousands(diagnostics.analyzed_files));
     if diagnostics.unsupported_files > 0 {
-        kv(
+        toned_kv(
             out,
             "Unsupported",
             &thousands(diagnostics.unsupported_files),
+            color,
+            Tone::Caution,
         );
         if !diagnostics.unsupported_samples.is_empty() {
             kv(out, "Examples", &diagnostics.unsupported_samples.join(", "));
         }
     }
     if diagnostics.unreadable_files > 0 {
-        kv(out, "Unreadable", &thousands(diagnostics.unreadable_files));
+        toned_kv(
+            out,
+            "Unreadable",
+            &thousands(diagnostics.unreadable_files),
+            color,
+            Tone::Negative,
+        );
     }
     if diagnostics.walker_errors > 0 {
-        kv(out, "Walker errors", &thousands(diagnostics.walker_errors));
+        toned_kv(
+            out,
+            "Walker errors",
+            &thousands(diagnostics.walker_errors),
+            color,
+            Tone::Negative,
+        );
     }
     if diagnostics.oversized_files > 0 {
-        kv(
+        toned_kv(
             out,
             "Oversized files",
             &format!(
@@ -580,6 +686,8 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
                 thousands(diagnostics.oversized_files),
                 human_bytes(diagnostics.oversized_bytes)
             ),
+            color,
+            Tone::Caution,
         );
     }
     if diagnostics.files_omitted_by_limit > 0 {
@@ -588,7 +696,7 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
         } else {
             thousands(diagnostics.files_omitted_by_limit)
         };
-        kv(
+        toned_kv(
             out,
             "Known files omitted",
             &format!(
@@ -596,54 +704,73 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
                 count,
                 human_bytes(diagnostics.bytes_omitted_by_limit)
             ),
+            color,
+            Tone::Caution,
         );
     }
     if diagnostics.duration_limit_reached {
-        kv(out, "Scan duration", "limit reached");
+        toned_kv(out, "Scan duration", "limit reached", color, Tone::Caution);
     }
     if diagnostics.scan_truncated {
-        kv(out, "Scan completeness", "partial (resource limit reached)");
-    }
-    if diagnostics.type2_analysis_partial {
-        kv(out, "Type-2 analysis", "partial (safety limit reached)");
-        kv(
+        toned_kv(
             out,
-            "Pools truncated",
-            &thousands(diagnostics.type2_pools_truncated),
+            "Scan completeness",
+            "partial (resource limit reached)",
+            color,
+            Tone::Caution,
         );
-        if diagnostics.type2_candidate_buckets_skipped > 0
-            || diagnostics.type2_candidate_buckets_partially_selected > 0
-        {
-            kv(
-                out,
-                "Candidate buckets",
-                &format!(
-                    "{} skipped, {} partially searched",
-                    thousands(diagnostics.type2_candidate_buckets_skipped),
-                    thousands(diagnostics.type2_candidate_buckets_partially_selected)
-                ),
-            );
-        }
-        kv(
-            out,
-            "Seed pairs skipped",
-            &thousands_u64(diagnostics.type2_seed_pairs_skipped),
-        );
-        if diagnostics.type2_match_limit_reached {
-            kv(out, "Match buffer limit", "reached");
-        }
-        if diagnostics.type2_suppression_limit_reached {
-            kv(
-                out,
-                "Overlap work limit",
-                &format!(
-                    "reached ({} matches omitted)",
-                    thousands(diagnostics.type2_matches_skipped_during_suppression)
-                ),
-            );
-        }
     }
+    render_type2_diagnostics(out, diagnostics, color);
     let _ = writeln!(out);
+}
+
+fn render_type2_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, color: bool) {
+    if !diagnostics.type2_analysis_partial {
+        return;
+    }
+    toned_kv(
+        out,
+        "Type-2 analysis",
+        "partial (safety limit reached)",
+        color,
+        Tone::Caution,
+    );
+    kv(
+        out,
+        "Pools truncated",
+        &thousands(diagnostics.type2_pools_truncated),
+    );
+    if diagnostics.type2_candidate_buckets_skipped > 0
+        || diagnostics.type2_candidate_buckets_partially_selected > 0
+    {
+        kv(
+            out,
+            "Candidate buckets",
+            &format!(
+                "{} skipped, {} partially searched",
+                thousands(diagnostics.type2_candidate_buckets_skipped),
+                thousands(diagnostics.type2_candidate_buckets_partially_selected)
+            ),
+        );
+    }
+    kv(
+        out,
+        "Seed pairs skipped",
+        &thousands_u64(diagnostics.type2_seed_pairs_skipped),
+    );
+    if diagnostics.type2_match_limit_reached {
+        kv(out, "Match buffer limit", "reached");
+    }
+    if diagnostics.type2_suppression_limit_reached {
+        kv(
+            out,
+            "Overlap work limit",
+            &format!(
+                "reached ({} matches omitted)",
+                thousands(diagnostics.type2_matches_skipped_during_suppression)
+            ),
+        );
+    }
 }
 
 #[expect(
@@ -663,7 +790,7 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
                 complexity.cyclomatic_threshold
             ),
         );
-        kv(
+        toned_kv(
             out,
             "Functions",
             &format!(
@@ -671,6 +798,14 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
                 thousands(complexity.functions),
                 thousands(complexity.functions_over_threshold)
             ),
+            color,
+            if complexity.functions == 0 {
+                Tone::Neutral
+            } else if complexity.functions_over_threshold == 0 {
+                Tone::Positive
+            } else {
+                Tone::Negative
+            },
         );
         kv(
             out,
@@ -688,13 +823,21 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
                 complexity.cognitive_avg, complexity.cognitive_max
             ),
         );
-        kv(
+        toned_kv(
             out,
             "File MI",
             &format!(
                 "avg {:.1} · min {:.1}",
                 complexity.mi_avg, complexity.mi_min
             ),
+            color,
+            if complexity.mi_min < 10.0 {
+                Tone::Negative
+            } else if complexity.mi_min < 20.0 {
+                Tone::Caution
+            } else {
+                Tone::Positive
+            },
         );
         if complexity.approximate_files > 0 {
             kv(
@@ -707,30 +850,47 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
     }
 
     if !summary.complexity_violations.is_empty() {
-        let _ = writeln!(out, "{}", header("Complexity violations", color));
+        let _ = writeln!(
+            out,
+            "{}",
+            toned_header("Complexity violations", color, Tone::Negative)
+        );
         let mut table = new_table(vec![
             "Function", "Location", "Cyclo", "Max", "Over", "Cog.", "Nest",
         ]);
-        set_path_column_width(&mut table, 1, PATH_TIGHT);
-        for function in &summary.complexity_violations {
-            table.add_row(vec![
-                terminal_text(&function.name),
-                path_cell(
-                    &format!("{}:{}", function.path.display(), function.line),
-                    PATH_TIGHT,
-                ),
-                thousands(function.cyclomatic as usize),
-                thousands(complexity.cyclomatic_threshold as usize),
-                format!(
-                    "+{}",
-                    function
-                        .cyclomatic
-                        .saturating_sub(complexity.cyclomatic_threshold)
-                ),
-                thousands(function.cognitive as usize),
-                thousands(function.max_nesting as usize),
-            ]);
-        }
+        let rows = summary
+            .complexity_violations
+            .iter()
+            .map(|function| {
+                vec![
+                    Cell::new(terminal_text(&function.name)),
+                    Cell::new(terminal_text(&format!(
+                        "{}:{}",
+                        function.path.display(),
+                        function.line
+                    ))),
+                    toned_cell(
+                        thousands(function.cyclomatic as usize),
+                        color,
+                        Tone::Negative,
+                    ),
+                    Cell::new(thousands(complexity.cyclomatic_threshold as usize)),
+                    toned_cell(
+                        format!(
+                            "+{}",
+                            function
+                                .cyclomatic
+                                .saturating_sub(complexity.cyclomatic_threshold)
+                        ),
+                        color,
+                        Tone::Negative,
+                    ),
+                    Cell::new(thousands(function.cognitive as usize)),
+                    Cell::new(thousands(function.max_nesting as usize)),
+                ]
+            })
+            .collect();
+        add_responsive_path_cell_rows(&mut table, rows, 1, &[(0, 1), (1, 2)]);
         right_align(&mut table, &[2, 3, 4, 5, 6]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -741,19 +901,28 @@ fn render_complexity(out: &mut String, report: &ScanReport, color: bool) {
             header("Most complex functions (all within limit)", color)
         );
         let mut table = new_table(vec!["Function", "Location", "Cyclo", "Cog.", "Nest"]);
-        set_path_column_width(&mut table, 1, PATH_CONTEXT);
-        for function in &summary.top_functions {
-            table.add_row(vec![
-                terminal_text(&function.name),
-                path_cell(
-                    &format!("{}:{}", function.path.display(), function.line),
-                    PATH_CONTEXT,
-                ),
-                thousands(function.cyclomatic as usize),
-                thousands(function.cognitive as usize),
-                thousands(function.max_nesting as usize),
-            ]);
-        }
+        let rows = summary
+            .top_functions
+            .iter()
+            .map(|function| {
+                vec![
+                    Cell::new(terminal_text(&function.name)),
+                    Cell::new(terminal_text(&format!(
+                        "{}:{}",
+                        function.path.display(),
+                        function.line
+                    ))),
+                    toned_cell(
+                        thousands(function.cyclomatic as usize),
+                        color,
+                        complexity_tone(function.cyclomatic, complexity.cyclomatic_threshold),
+                    ),
+                    Cell::new(thousands(function.cognitive as usize)),
+                    Cell::new(thousands(function.max_nesting as usize)),
+                ]
+            })
+            .collect();
+        add_responsive_path_cell_rows(&mut table, rows, 1, &[(0, 1), (1, 2)]);
         right_align(&mut table, &[2, 3, 4]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -773,9 +942,21 @@ fn render_duplication(
     let summary = &report.summary;
     let duplication = &summary.duplication;
     let _ = writeln!(out, "{}", header("Duplication", color));
-    kv(out, "Exact groups", &thousands(duplication.exact_groups));
-    kv(out, "Near groups", &thousands(duplication.near_groups));
-    kv(
+    toned_kv(
+        out,
+        "Exact groups",
+        &thousands(duplication.exact_groups),
+        color,
+        count_tone(duplication.exact_groups),
+    );
+    toned_kv(
+        out,
+        "Near groups",
+        &thousands(duplication.near_groups),
+        color,
+        count_tone(duplication.near_groups),
+    );
+    toned_kv(
         out,
         "Line coverage",
         &format!(
@@ -784,8 +965,10 @@ fn render_duplication(
             thousands(duplication.duplicated_lines),
             thousands(duplication.analyzed_lines)
         ),
+        color,
+        duplication_tone(duplication.duplicated_pct),
     );
-    kv(
+    toned_kv(
         out,
         "Token coverage",
         &format!(
@@ -794,6 +977,8 @@ fn render_duplication(
             thousands(duplication.duplicated_tokens),
             thousands(duplication.analyzed_tokens)
         ),
+        color,
+        duplication_tone(duplication.duplicated_tokens_pct),
     );
     let _ = writeln!(out);
 
@@ -807,15 +992,19 @@ fn render_duplication(
             "Removable",
             "Locations",
         ]);
-        for duplicate in duplicates {
-            table.add_row(vec![
-                thousands(duplicate.lines),
-                thousands(duplicate.copies),
-                similarity_label(duplicate.similarity),
-                thousands(duplicate.duplicated_lines),
-                terminal_text(&dup_locations(&duplicate.locations, duplicate.copies)),
-            ]);
-        }
+        let rows = duplicates
+            .iter()
+            .map(|duplicate| {
+                vec![
+                    thousands(duplicate.lines),
+                    thousands(duplicate.copies),
+                    similarity_label(duplicate.similarity),
+                    thousands(duplicate.duplicated_lines),
+                    terminal_text(&dup_locations(&duplicate.locations, duplicate.copies)),
+                ]
+            })
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 4, &[(4, 1)]);
         right_align(&mut table, &[0, 1, 3]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -832,31 +1021,38 @@ fn render_duplication(
             "Similarity",
             "Locations",
         ]);
-        for finding in &report.duplicates.findings {
-            table.add_row(vec![
-                terminal_text(&finding.id.chars().take(10).collect::<String>()),
-                terminal_text(&finding.kind),
-                terminal_text(&finding.format),
-                format!("{}/{}", finding.lines_a, finding.lines_b),
-                thousands(finding.tokens),
-                similarity_label(finding.similarity),
-                terminal_text(&format!(
-                    "{}:{}:{} ↔ {}:{}:{}",
-                    finding.fragment_a.path.display(),
-                    finding.fragment_a.start_line,
-                    finding.fragment_a.start_column,
-                    finding.fragment_b.path.display(),
-                    finding.fragment_b.start_line,
-                    finding.fragment_b.start_column,
-                )),
-            ]);
-        }
+        let rows = report
+            .duplicates
+            .findings
+            .iter()
+            .map(|finding| {
+                vec![
+                    terminal_text(&finding.id.chars().take(10).collect::<String>()),
+                    terminal_text(&finding.kind),
+                    terminal_text(&finding.format),
+                    format!("{}/{}", finding.lines_a, finding.lines_b),
+                    thousands(finding.tokens),
+                    similarity_label(finding.similarity),
+                    terminal_text(&format!(
+                        "{}:{}:{} ↔ {}:{}:{}",
+                        finding.fragment_a.path.display(),
+                        finding.fragment_a.start_line,
+                        finding.fragment_a.start_column,
+                        finding.fragment_b.path.display(),
+                        finding.fragment_b.start_line,
+                        finding.fragment_b.start_column,
+                    )),
+                ]
+            })
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 6, &[(6, 1)]);
         right_align(&mut table, &[3, 4]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
     }
 
-    if !duplication.by_language.is_empty() {
+    let languages = human_duplication_languages(&duplication.by_language);
+    if !languages.is_empty() {
         let _ = writeln!(out, "{}", header("Duplication by language", color));
         let mut table = new_table(vec![
             "Language",
@@ -864,22 +1060,34 @@ fn render_duplication(
             "Line coverage",
             "Token coverage",
         ]);
-        for language in &duplication.by_language {
+        for language in languages {
             table.add_row(vec![
-                terminal_text(&language.name),
-                format!("{}/{}", language.exact_groups, language.near_groups),
-                format!(
-                    "{:.1}% ({})",
-                    language.duplicated_lines_pct,
-                    thousands(language.duplicated_lines)
+                Cell::new(terminal_text(&language.name)),
+                Cell::new(format!(
+                    "{}/{}",
+                    language.exact_groups, language.near_groups
+                )),
+                toned_cell(
+                    format!(
+                        "{:.1}% ({})",
+                        language.duplicated_lines_pct,
+                        thousands(language.duplicated_lines)
+                    ),
+                    color,
+                    duplication_tone(language.duplicated_lines_pct),
                 ),
-                format!(
-                    "{:.1}% ({})",
-                    language.duplicated_tokens_pct,
-                    thousands(language.duplicated_tokens)
+                toned_cell(
+                    format!(
+                        "{:.1}% ({})",
+                        language.duplicated_tokens_pct,
+                        thousands(language.duplicated_tokens)
+                    ),
+                    color,
+                    duplication_tone(language.duplicated_tokens_pct),
                 ),
             ]);
         }
+        fit_responsive_table(&mut table, 0, &[(0, 1)]);
         right_align(&mut table, &[1, 2, 3]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -950,17 +1158,22 @@ fn render_review(out: &mut String, report: &ScanReport, color: bool) {
 
     if !review.findings.is_empty() {
         let mut table = new_table(vec!["State", "Kind", "Severity", "Location", "Finding"]);
-        set_path_column_width(&mut table, 3, PATH_TIGHT);
+        let mut rows = Vec::new();
         for item in &review.findings {
             let finding = item.after.as_ref().unwrap_or(&item.finding);
-            table.add_row(vec![
-                terminal_text(&item.state),
-                terminal_text(&finding.kind),
-                terminal_text(&finding.severity),
-                path_cell(&finding_location(finding), PATH_TIGHT),
-                terminal_text(&finding.message),
+            rows.push(vec![
+                toned_cell(
+                    terminal_text(&item.state),
+                    color,
+                    review_state_tone(&item.state),
+                ),
+                Cell::new(terminal_text(&finding.kind)),
+                Cell::new(terminal_text(&finding.severity)),
+                Cell::new(terminal_text(&finding_location(finding))),
+                Cell::new(terminal_text(&finding.message)),
             ]);
         }
+        add_responsive_path_cell_rows(&mut table, rows, 3, &[(3, 1), (4, 2)]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
     }
@@ -991,11 +1204,35 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     );
     kv(out, "Nodes", &thousands(graph.nodes));
     kv(out, "Edges", &thousands(graph.edges));
-    kv(out, "Cycles", &thousands(graph.cycles.len()));
+    toned_kv(
+        out,
+        "Cycles",
+        &thousands(graph.cycles.len()),
+        color,
+        count_tone(graph.cycles.len()),
+    );
     kv(out, "Orphans", &thousands(graph.orphans.len()));
-    kv(out, "Unresolved", &thousands(graph.unresolved_imports));
-    kv(out, "Parse errors", &thousands(graph.parse_errors));
-    kv(out, "Config errors", &thousands(graph.config_errors));
+    toned_kv(
+        out,
+        "Unresolved",
+        &thousands(graph.unresolved_imports),
+        color,
+        count_tone(graph.unresolved_imports),
+    );
+    toned_kv(
+        out,
+        "Parse errors",
+        &thousands(graph.parse_errors),
+        color,
+        error_count_tone(graph.parse_errors),
+    );
+    toned_kv(
+        out,
+        "Config errors",
+        &thousands(graph.config_errors),
+        color,
+        error_count_tone(graph.config_errors),
+    );
     if !graph.config_files.is_empty() {
         kv(out, "Resolver configs", &graph.config_files.join(", "));
     }
@@ -1019,15 +1256,19 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     if !graph.focus.is_empty() && !graph.files.is_empty() {
         let _ = writeln!(out, "{}", header("  Focused graph files", color));
         let mut table = new_table(vec!["Path", "Distance", "Fan-in", "Fan-out"]);
-        set_path_column_width(&mut table, 0, PATH_HOTSPOT);
-        for file in &graph.files {
-            table.add_row(vec![
-                path_cell(&file.path, PATH_HOTSPOT),
-                file.focus_distance.unwrap_or_default().to_string(),
-                thousands(file.fan_in),
-                thousands(file.fan_out),
-            ]);
-        }
+        let rows = graph
+            .files
+            .iter()
+            .map(|file| {
+                vec![
+                    terminal_text(&file.path),
+                    file.focus_distance.unwrap_or_default().to_string(),
+                    thousands(file.fan_in),
+                    thousands(file.fan_out),
+                ]
+            })
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 1)]);
         right_align(&mut table, &[1, 2, 3]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -1047,13 +1288,12 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     if !graph.top_depended.is_empty() {
         let _ = writeln!(out, "{}", header("  Most depended-upon", color));
         let mut table = new_table(vec!["Path", "Fan-in"]);
-        set_path_column_width(&mut table, 0, PATH_WIDE);
-        for node in &graph.top_depended {
-            table.add_row(vec![
-                path_cell(&node.path, PATH_WIDE),
-                thousands(node.fan_in),
-            ]);
-        }
+        let rows = graph
+            .top_depended
+            .iter()
+            .map(|node| vec![terminal_text(&node.path), thousands(node.fan_in)])
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 1)]);
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -1062,13 +1302,12 @@ fn render_graph(out: &mut String, report: &ScanReport, color: bool) {
     if !graph.most_dependent.is_empty() {
         let _ = writeln!(out, "{}", header("  Most dependent", color));
         let mut table = new_table(vec!["Path", "Fan-out"]);
-        set_path_column_width(&mut table, 0, PATH_WIDE);
-        for node in &graph.most_dependent {
-            table.add_row(vec![
-                path_cell(&node.path, PATH_WIDE),
-                thousands(node.fan_out),
-            ]);
-        }
+        let rows = graph
+            .most_dependent
+            .iter()
+            .map(|node| vec![terminal_text(&node.path), thousands(node.fan_out)])
+            .collect();
+        add_responsive_path_rows(&mut table, rows, 0, &[(0, 1)]);
         right_align(&mut table, &[1]);
         let _ = writeln!(out, "{table}");
         let _ = writeln!(out);
@@ -1096,7 +1335,18 @@ fn render_impact(out: &mut String, report: &ScanReport, color: bool) {
         "{}",
         header("Change impact (first-class languages)", color)
     );
-    kv(out, "Confidence", &impact.confidence);
+    toned_kv(
+        out,
+        "Confidence",
+        &impact.confidence,
+        color,
+        match impact.confidence.as_str() {
+            "high" => Tone::Positive,
+            "partial" => Tone::Caution,
+            "low" => Tone::Negative,
+            _ => Tone::Neutral,
+        },
+    );
     kv(out, "Changed files", &thousands(impact.changed_files.len()));
     kv(
         out,
@@ -1146,42 +1396,328 @@ fn render_impact(out: &mut String, report: &ScanReport, color: bool) {
 }
 
 fn kv(out: &mut String, key: &str, value: &str) {
+    toned_kv(out, key, value, false, Tone::Neutral);
+}
+
+fn toned_kv(out: &mut String, key: &str, value: &str, color: bool, tone: Tone) {
     let key = terminal_text(key);
     let value = terminal_text(value);
+    let value = toned_value(&value, color, tone);
     let _ = writeln!(out, "  {key:<16} {value}");
 }
 
-const PATH_WIDE: usize = 48;
-const PATH_MEDIUM: usize = 36;
-const PATH_HOTSPOT: usize = 34;
-const PATH_CONTEXT: usize = 24;
-const PATH_TIGHT: usize = 18;
+fn toned_value(text: &str, color: bool, tone: Tone) -> String {
+    if !color {
+        return text.to_string();
+    }
+    match tone {
+        Tone::Neutral => text.to_string(),
+        Tone::Accent => format!("{}", text.cyan()),
+        Tone::Positive => format!("{}", text.green()),
+        Tone::Caution => format!("{}", text.yellow()),
+        Tone::Negative => format!("{}", text.red()),
+        Tone::Info => format!("{}", text.blue()),
+    }
+}
+
+fn toned_cell(text: impl Into<String>, color: bool, tone: Tone) -> Cell {
+    let cell = Cell::new_owned(text.into());
+    if !color {
+        return cell;
+    }
+    match tone {
+        Tone::Neutral => cell,
+        Tone::Accent => cell.fg(Color::Cyan),
+        Tone::Positive => cell.fg(Color::Green),
+        Tone::Caution => cell.fg(Color::Yellow),
+        Tone::Negative => cell.fg(Color::Red),
+        Tone::Info => cell.fg(Color::Blue),
+    }
+}
+
+fn risk_tone(score: f64) -> Tone {
+    if score >= 0.7 {
+        Tone::Negative
+    } else if score >= 0.4 {
+        Tone::Caution
+    } else {
+        Tone::Neutral
+    }
+}
+
+fn complexity_tone(value: u32, threshold: u32) -> Tone {
+    if value > threshold {
+        Tone::Negative
+    } else if threshold > 0 && value.saturating_mul(4) >= threshold.saturating_mul(3) {
+        Tone::Caution
+    } else {
+        Tone::Neutral
+    }
+}
+
+fn duplication_tone(percentage: f64) -> Tone {
+    if percentage > 0.0 {
+        Tone::Caution
+    } else {
+        Tone::Positive
+    }
+}
+
+fn count_tone(count: usize) -> Tone {
+    if count == 0 {
+        Tone::Positive
+    } else {
+        Tone::Caution
+    }
+}
+
+fn error_count_tone(count: usize) -> Tone {
+    if count == 0 {
+        Tone::Positive
+    } else {
+        Tone::Negative
+    }
+}
+
+fn marker_priority(marker: &str) -> u8 {
+    match marker {
+        "BUG" => 0,
+        "FIXME" => 1,
+        "HACK" => 2,
+        "XXX" => 3,
+        "TODO" => 4,
+        _ => 5,
+    }
+}
+
+fn marker_tone(marker: &str) -> Tone {
+    match marker {
+        "BUG" | "FIXME" => Tone::Negative,
+        "HACK" | "XXX" => Tone::Caution,
+        "TODO" => Tone::Info,
+        _ => Tone::Neutral,
+    }
+}
+
+fn review_state_tone(state: &str) -> Tone {
+    match state {
+        "new" | "worsened" => Tone::Negative,
+        "improved" | "resolved" => Tone::Positive,
+        _ => Tone::Caution,
+    }
+}
+
+const DEFAULT_TABLE_WIDTH: usize = 100;
+const CELL_HORIZONTAL_PADDING: usize = 2;
 
 fn path_cell(path: &str, max_chars: usize) -> String {
     let escaped = terminal_text(path);
-    let char_count = escaped.chars().count();
-    if char_count <= max_chars {
+    if UnicodeWidthStr::width(escaped.as_str()) <= max_chars {
         return escaped;
     }
-    let suffix = escaped
-        .chars()
-        .skip(char_count.saturating_sub(max_chars.saturating_sub(1)))
-        .collect::<String>();
-    format!("…{suffix}")
+    if max_chars == 0 {
+        return String::new();
+    }
+    let suffix_width = max_chars.saturating_sub(UnicodeWidthChar::width('…').unwrap_or(1));
+    let mut used_width = 0usize;
+    let mut suffix_start = escaped.len();
+    for (index, character) in escaped.char_indices().rev() {
+        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
+        if used_width.saturating_add(character_width) > suffix_width {
+            break;
+        }
+        used_width = used_width.saturating_add(character_width);
+        suffix_start = index;
+    }
+    format!("…{}", &escaped[suffix_start..])
 }
 
-fn set_path_column_width(table: &mut Table, index: usize, width: usize) {
-    if let Some(column) = table.column_mut(index) {
-        column.set_constraint(ColumnConstraint::Absolute(Width::Fixed(
-            u16::try_from(width.saturating_add(2)).unwrap_or(u16::MAX),
-        )));
+fn output_width() -> Option<usize> {
+    Table::new().width().map(usize::from)
+}
+
+fn add_responsive_path_rows(
+    table: &mut Table,
+    rows: Vec<Vec<String>>,
+    path_column: usize,
+    flexible_columns: &[(usize, usize)],
+) {
+    let rows = rows
+        .into_iter()
+        .map(|row| row.into_iter().map(Cell::new_owned).collect())
+        .collect();
+    add_responsive_path_cell_rows(table, rows, path_column, flexible_columns);
+}
+
+fn add_responsive_path_cell_rows(
+    table: &mut Table,
+    rows: Vec<Vec<Cell>>,
+    path_column: usize,
+    flexible_columns: &[(usize, usize)],
+) {
+    let mut sizing_table = table.clone();
+    sizing_table.add_rows(rows.clone());
+    let max_widths = sizing_table
+        .column_max_content_widths()
+        .into_iter()
+        .map(usize::from)
+        .collect::<Vec<_>>();
+    if max_widths.is_empty() || path_column >= max_widths.len() {
+        table.add_rows(rows);
+        return;
     }
+
+    let table_width = sizing_table
+        .width()
+        .map_or(DEFAULT_TABLE_WIDTH, usize::from);
+    let widths = responsive_column_widths(table_width, &max_widths, path_column, flexible_columns);
+    apply_responsive_widths(table, table_width, &widths);
+
+    for mut cells in rows {
+        if let Some(path) = cells.get_mut(path_column) {
+            *path = Cell::new(path_cell(&path.content(), widths[path_column]));
+        }
+        let mut row = Row::from(cells);
+        row.max_height(1);
+        table.add_row(row);
+    }
+}
+
+fn fit_responsive_table(
+    table: &mut Table,
+    expanding_column: usize,
+    flexible_columns: &[(usize, usize)],
+) {
+    let max_widths = table
+        .column_max_content_widths()
+        .into_iter()
+        .map(usize::from)
+        .collect::<Vec<_>>();
+    if max_widths.is_empty() || expanding_column >= max_widths.len() {
+        return;
+    }
+    let table_width = table.width().map_or(DEFAULT_TABLE_WIDTH, usize::from);
+    let widths =
+        responsive_column_widths(table_width, &max_widths, expanding_column, flexible_columns);
+    apply_responsive_widths(table, table_width, &widths);
+    for row in table.row_iter_mut() {
+        row.max_height(1);
+    }
+}
+
+fn apply_responsive_widths(table: &mut Table, table_width: usize, widths: &[usize]) {
+    table
+        .set_width(u16::try_from(table_width).unwrap_or(u16::MAX))
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    for (index, width) in widths.iter().copied().enumerate() {
+        if let Some(column) = table.column_mut(index) {
+            column.set_constraint(ColumnConstraint::Absolute(Width::Fixed(
+                u16::try_from(width.saturating_add(CELL_HORIZONTAL_PADDING)).unwrap_or(u16::MAX),
+            )));
+        }
+    }
+}
+
+fn responsive_column_widths(
+    table_width: usize,
+    max_widths: &[usize],
+    path_column: usize,
+    flexible_columns: &[(usize, usize)],
+) -> Vec<usize> {
+    let column_count = max_widths.len();
+    let structural_width = column_count
+        .saturating_add(1)
+        .saturating_add(column_count.saturating_mul(CELL_HORIZONTAL_PADDING));
+    let content_budget = table_width
+        .saturating_sub(structural_width)
+        .max(column_count);
+    let mut widths = max_widths.to_vec();
+    let is_flexible = |index| flexible_columns.iter().any(|(column, _)| *column == index);
+    for (index, width) in widths.iter_mut().enumerate() {
+        if is_flexible(index) {
+            *width = 0;
+        }
+    }
+
+    let minimum_flexible_width = flexible_columns.len().min(content_budget);
+    let fixed_budget = content_budget.saturating_sub(minimum_flexible_width);
+    shrink_fixed_columns(&mut widths, flexible_columns, fixed_budget);
+    let fixed_width = widths.iter().sum::<usize>();
+    let flexible_budget = content_budget.saturating_sub(fixed_width);
+    distribute_flexible_width(
+        &mut widths,
+        max_widths,
+        path_column,
+        flexible_columns,
+        flexible_budget,
+    );
+    widths
+}
+
+fn shrink_fixed_columns(widths: &mut [usize], flexible_columns: &[(usize, usize)], budget: usize) {
+    let mut current = widths.iter().sum::<usize>();
+    while current > budget {
+        let Some(index) = widths
+            .iter()
+            .enumerate()
+            .filter(|(index, width)| {
+                **width > 1 && !flexible_columns.iter().any(|(column, _)| column == index)
+            })
+            .max_by_key(|(_, width)| **width)
+            .map(|(index, _)| index)
+        else {
+            break;
+        };
+        widths[index] -= 1;
+        current -= 1;
+    }
+}
+
+fn distribute_flexible_width(
+    widths: &mut [usize],
+    max_widths: &[usize],
+    path_column: usize,
+    flexible_columns: &[(usize, usize)],
+    budget: usize,
+) {
+    if flexible_columns.is_empty() {
+        return;
+    }
+    let base = usize::from(budget >= flexible_columns.len());
+    for (column, _) in flexible_columns {
+        widths[*column] = base;
+    }
+    let mut remaining = budget.saturating_sub(base.saturating_mul(flexible_columns.len()));
+    let weight_total = flexible_columns
+        .iter()
+        .map(|(_, weight)| (*weight).max(1))
+        .sum::<usize>();
+    let distributable = remaining;
+    for (column, weight) in flexible_columns {
+        let share = distributable.saturating_mul((*weight).max(1)) / weight_total;
+        widths[*column] = widths[*column].saturating_add(share);
+        remaining = remaining.saturating_sub(share);
+    }
+    widths[path_column] = widths[path_column].saturating_add(remaining);
+
+    let mut reclaimed = 0;
+    for (column, _) in flexible_columns {
+        if *column == path_column {
+            continue;
+        }
+        let maximum = max_widths[*column].max(1);
+        if widths[*column] > maximum {
+            reclaimed += widths[*column] - maximum;
+            widths[*column] = maximum;
+        }
+    }
+    widths[path_column] = widths[path_column].saturating_add(reclaimed);
 }
 
 fn new_table(headers: Vec<&str>) -> Table {
     let mut t = Table::new();
     t.load_preset(UTF8_BORDERS_ONLY)
-        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .set_header(headers);
     t
 }

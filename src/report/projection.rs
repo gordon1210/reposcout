@@ -1,7 +1,7 @@
 use crate::lang;
 use crate::model::{
-    DuplicateBlock, FindingRecord, FunctionComplexity, LanguageStat, MetricDelta, ScanReport,
-    Summary,
+    DuplicateBlock, FindingRecord, FunctionComplexity, LanguageDuplication, LanguageStat,
+    MetricDelta, ScanReport, Summary,
 };
 use crate::numeric::{u64_to_f64, usize_to_f64};
 use serde_json::Value;
@@ -84,6 +84,24 @@ pub(crate) fn human_duplicate_projection(summary: &Summary) -> (&'static str, &[
     } else {
         ("Top duplicates", &summary.top_duplicates)
     }
+}
+
+/// Omit corpus-only language rows that carry no duplication signal from human
+/// reports while preserving the complete per-language data in machine output.
+pub(crate) fn human_duplication_languages(
+    languages: &[LanguageDuplication],
+) -> Vec<&LanguageDuplication> {
+    languages
+        .iter()
+        .filter(|language| {
+            language.exact_groups > 0
+                || language.near_groups > 0
+                || language.duplicated_lines > 0
+                || language.duplicated_tokens > 0
+                || language.duplicated_lines_pct > 0.0
+                || language.duplicated_tokens_pct > 0.0
+        })
+        .collect()
 }
 
 /// Keep human reports source-first while preserving one honest rollup for the
