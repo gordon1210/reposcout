@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Security
+
+- Updated the transitive `nanoid` lockfile resolution used by the frontend toolchain to patched
+  version `3.3.17`, resolving `GHSA-2v37-7h3g-55p8`, and removed obsolete minimum-release-age
+  exceptions that had no active policy.
+
 ### Documentation
 
 - Corrected the daemon's documented bearer-token, loopback, SSE, and remote TLS-proxy boundaries;
