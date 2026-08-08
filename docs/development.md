@@ -106,8 +106,10 @@ Important module boundaries:
 | Graph domain projections | `apps/web/src/lib/graph-*.ts` |
 | Shared frontend lint rules | `packages/eslint-config/` |
 
-Read [`AGENTS.md`](../AGENTS.md) before changing code. It documents frozen interfaces, schema/cache
-versioning rules, metric semantics, resource guardrails, and repository-specific validation.
+Read the compact root [`AGENTS.md`](../AGENTS.md) before changing code, then every matching
+normative reference it routes to under [`docs/agents/`](agents/). The root keeps essential safety
+and architecture rules inline; the focused references hold full contracts, metric semantics,
+repository ownership, and validation details.
 
 ## Contract rules
 

@@ -17,11 +17,13 @@ a reference manual.
 
 ## Useful project links
 
+- [Agent instructions](../AGENTS.md) — compact mandatory router to the focused maintainer
+  contracts under `docs/agents/`
 - [README](../README.md) — concise product overview and quick start
 - [Contributing](../CONTRIBUTING.md) — development expectations and pull-request guidance
 - [Security policy](../SECURITY.md) — supported versions and private vulnerability reporting
 - [Changelog](../CHANGELOG.md) — released and upcoming user-visible changes
-- [Roadmap](../ROADMAP.md) — product direction, delivered work, and explicit non-goals
+- [Roadmap](../ROADMAP.md) — evidence-gated future direction and explicit non-goals
 - [License](../LICENSE) — MIT
 - [Third-party notices](../THIRD_PARTY_NOTICES.md) — bundled and adapted material
 
