@@ -5,7 +5,8 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 (toolchain, layout, the frozen contract, validation checklist) and `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-07-30 · version 0.1.8 · JSON `SCHEMA_VERSION` 1.0_
+_Last updated: 2026-08-08 · latest release 0.1.15 · JSON `SCHEMA_VERSION` 1.0 ·
+`ANALYZER_VERSION` 16_
 
 ---
 
@@ -19,14 +20,19 @@ any path inside it**, so they can make decisions *before* diving in:
 - **Just tell me the verdict.** → `summary.assessment` (`fits_context_known`, `fits_context`,
   `cleanup_worth_complete`, `cleanup_worth`, `unavailable_signals`, `reasons`) — the one-glance
   answer without treating a disabled analyzer as zero evidence.
-- **Is it worth cleaning up?** → `summary.duplication.duplicated_pct`,
-  `summary.top_duplicates`, `summary.complexity`, `summary.top_functions`.
+- **Is it worth cleaning up?** → `summary.assessment.production_duplication`,
+  `summary.top_production_duplicates`, `summary.complexity`, and `summary.top_functions`; use the
+  raw all-health-corpus duplication fields only when that broader scope is intentional.
 - **What should I read vs skip, and where's the risk?** → `summary.top_risks`,
   `summary.skip_candidates`, `summary.symbols`, `summary.test_presence`,
   `summary.top_hotspots`, `summary.top_token_files`.
 - **What fits the task's actual budget, and why?** → `--context` plus repeatable
   `--focus`; top-level `context.files` is a hard-budgeted reading order with reasons and bounded
   body-free symbol outlines. A diff scope automatically seeds a change-aware plan.
+- **What does this change require next?** → exactly one of `--since` / `--staged` / `--working`
+  plus `--change-summary` returns a bounded decision report with reading order, known impact,
+  matching-test evidence, confidence gaps, and validation categories rather than a generic health
+  dump.
 - **Where is a declaration, and what can this binary do?** → `reposcout locate SYMBOL [PATH]`
   and zero-scan `reposcout capabilities -f json`.
 - **Need to invalidate persistent facts while debugging?** → `reposcout cache clear [PATH]`
@@ -34,9 +40,9 @@ any path inside it**, so they can make decisions *before* diving in:
 - **Why is a run slow, growing, or dead?** → repeat the same command with a fresh
   `--debug-log <FILE>`. Flushed NDJSON stages, per-file timing, two-second memory heartbeats, and
   Type-2 inner counters survive ordinary errors and most crashes.
-- **Should I spawn a sub-agent for this subtree, or is it trivial?** → the summary as a
-  whole, or `--by-dir` to compare subtrees in one run; `--since`/`--graph` to scope to a
-  changeset or find dead code.
+- **How broad is the work actually observed to be?** → `work_scope`, `--by-dir`, change-summary,
+  context, and impact expose bounded raw scope evidence without making delegation or routing
+  decisions for the caller.
 
 The design bias is therefore **high signal, low noise, machine-readable, fast**. When in
 doubt, optimize for "an agent can trust and act on this in one glance" over completeness.
@@ -45,10 +51,12 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 - **Feature-complete for the core purpose, plus a full scouting/CI layer.** Tokens
   (tiktoken `o200k_base` default / `cl100k_base`), complexity (per-function
-  cyclomatic/cognitive/nesting + Halstead + MI), duplication (exact + verified Type-2, ranked), line
-  metrics, markers, imports, git churn. On top of that: per-file symbol counts,
-  don't-read `skip_hint`s, test-presence, a composite per-file `top_risks` ranking, and a
-  one-glance health `assessment`.
+  cyclomatic/cognitive/nesting + Halstead + MI), duplication (exact + verified Type-2, ranked and
+  tokenized in the configured worker pool), line metrics, markers, imports, git churn. Minified
+  files and recognized JavaScript/CSS chunks remain inventory/navigation facts but are excluded
+  from duplication by default; `--dup-include-artifacts` is the explicit opt-in. On top of that:
+  per-file symbol counts, don't-read `skip_hint`s, test-presence, a composite per-file `top_risks`
+  ranking, and a one-glance health `assessment`.
 - **Source-first zero-config health.** Complete inventory, tokens/context size, and line facts
   retain every recognized format, but actionable health analysis defaults to programming/build source.
   HTML, CSS/SCSS, JSON, YAML, TOML, Markdown, XML, and text require repeated
@@ -61,11 +69,15 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   lifecycle/stage/file/render/error/panic events plus liveness/memory and detailed Type-2 progress.
   CLI duplication orchestration schedules rare fingerprint buckets first and caps each format pool
   at 10,000,000 seed pairs, 250,000 compact matches, and 10,000,000 suppression checks. Hitting a
-  cap keeps useful verified groups but marks Type-2 results and combined duplication percentages as
-  lower bounds in debug, JSON, table, and Markdown output. `capabilities` advertises the limits.
+  cap keeps useful verified groups but marks Type-2 and production-duplication evidence partial in
+  debug, JSON, table, and Markdown output. A percentage is a lower bound when skipped Type-2 work
+  is the only gap; source omissions can move the complete-repository percentage either way.
+  `capabilities` advertises the limits.
 - **Scan modes.** `--by-dir[=DEPTH]` (per-directory rollup), `--since`/`--staged`/`--working`
   (diff-scoped scan), `--impact` (full-topology first-class-language reverse dependents for a diff),
-  `--baseline <file>` + `--fail-on-regression` (compare vs a saved report, gate CI), and
+  `--change-summary` (bounded change decision that defaults to the agent profile and implies
+  context/impact), `--baseline <file>` + `--fail-on-regression` (compare vs a saved report, gate
+  CI), and
   `--graph` (heuristic mixed-language import graph for every first-class language: stable
   adjacency/edges, fan-in/out, cycles, orphans, TS/JS config aliases/package metadata, Python
   relative/absolute imports, Composer namespace/static-include resolution, Rust modules/Cargo
@@ -78,7 +90,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   That universe has its own `context.planning_diagnostics`; top-level diagnostics stay scoped.
 - **Layered team configuration.** Resolution is CLI > nearest project > global > defaults;
   project files override only fields they define. `reposcout config` exposes source paths,
-  loaded keys, precedence, and effective values for humans or agents.
+  loaded keys, precedence, and effective values for humans or agents. Human reports end with a
+  short configuration hint when no project configuration is active and distinguish built-in
+  defaults from an already useful global configuration.
 - **Automation profiles and trust boundaries.** `--profile agent` omits duplication/churn unless
   explicitly requested; `--profile safe` also ignores project config and applies conservative
   worker/history/context/duplication and discovery-policy guardrails;
@@ -88,10 +102,19 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   unsupported/unreadable files, bounded unsupported-path examples, walker errors, and partial
   Type-2 reasons/omitted work); malformed config files fail loudly instead of silently falling
   back to defaults.
+- **Security boundaries.** Scan/explain/locate output files use symlink-safe atomic replacement,
+  including anchored Unix parent traversal. Release tags are validated, shell context crosses
+  through environment variables, release commits must be reachable from `main`, and published
+  assets receive attestations. The daemon is loopback-first and bearer-token authenticated;
+  unauthenticated mode is loopback-only, while remote plain HTTP is explicit and intended only
+  behind TLS.
 - **Output:** `table` (human), `json` (agent), `markdown` (PRs/issues), `sarif` (SARIF
   2.1.0 for code scanning / CI), `ndjson` (streamable), and graph-only `dot` / `mermaid`.
   `--summary` drops heavy arrays while retaining explicitly requested context/graph/directory/
-  impact answers — the intended agent payload.
+  impact answers — the intended agent payload. Terminal tables share the detected width, shorten
+  paths from the front, omit empty language rows, use semantic color, and place detailed inventory
+  first so the overview, configuration hint, and most decision-relevant verdicts remain nearest
+  the prompt.
 - **Frontend:** `apps/web` is the Shadcn-based live daemon dashboard with an on-demand, searchable,
   bounded dependency-graph explorer. It groups mixed repositories into deterministic architecture
   scopes, supports breadcrumb drill-down and file neighborhoods, highlights direct relationships
@@ -104,7 +127,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   builds for both frontend packages.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
-  **Rebuild release after any change** (`cargo build --release`) — see AGENTS.md.
+  **Rebuild release after any code change** (`cargo build --release`) — see AGENTS.md.
 - **CI gates:** `--fail-on "max-cyclomatic>30,duplicated-pct>5,…"` (exit 2), or
   `--baseline b.json --fail-on-regression` to fail when any metric worsens.
 
@@ -125,144 +148,15 @@ rare-first Type-2 admission; and `report::render` turns the `ScanReport` into ta
 Analyzer signatures are decoupled and mostly frozen; `scan.rs` is their only caller.
 See the "frozen contract" section in AGENTS.md before changing any of them.
 
-## How we got here (recent arc, newest first)
+## Recent direction
 
-The tool was built as a skeleton + analyzers, then **hardened by dogfooding on
-real-world repositories** (a large TypeScript/React codebase among them). Each fix below
-came from "I ran it and the output wasn't actually useful":
+RepoScout's core analyzers matured into a source-first, cache-backed scouting layer with bounded
+context, change, graph, review, and machine-query contracts. The current focus is trustworthy
+evidence and human/agent usability: explicit completeness, production-focused duplication,
+guardrailed execution, safe outputs and releases, and concise terminal/JSON projections.
 
-**Feature expansion (newest first).** Implemented in scoped waves, then reviewed,
-validated, and sanity-run before committing. All changes remain additive (`SCHEMA_VERSION` is
-still `1.0`); `ANALYZER_VERSION` is now `15`.
-
-- **2026-07-17 — source-first default health corpus.** `reposcout .` now keeps complete
-  repository inventory and context-size evidence without feeding data, docs, markup, styles, or
-  text into marker and duplication health results. One centralized language policy partitions the
-  22 default program/build formats from 9 explicit content formats. CLI/config opt-ins select one
-  or all content formats; safe mode forces source-only. Profiles, cache identity, baseline
-  compatibility, capability discovery, JSON source rollups, and eligible line/token denominators
-  all record the same policy. Baselines without profile metadata are intentionally rejected because
-  their historical all-content semantics are unknowable.
-
-- **2026-07-17 — agent-efficient CLI contract.** Added agent/safe execution profiles,
-  repository-config opt-out, capability discovery, bounded cross-language symbol lookup,
-  structured JSON errors, execution/cache telemetry, honest partial assessments, explicit focus
-  resolution, and outline-only oversized focus results. Compact output retains requested query
-  blocks. Declaration outlines no longer split cache profiles; graph source facts enrich the same
-  per-file cache only on demand and are reused by graph/context/impact/explain. Exact symbol lookup
-  is case-sensitive; a cold lookup performs configured per-file analysis and then reuses that same
-  cache. MCP is explicitly out of scope; stable CLI JSON/NDJSON and shared query contracts are the
-  supported automation surface.
-
-- **2026-07-17 — live debug diagnostics + pathological Type-2 guardrails.** Added the global,
-  no-overwrite `--debug-log` NDJSON trace with exact scan/watcher exclusion, per-stage/file timing,
-  runtime/panic records, two-second memory heartbeats, and detailed rate-limited Type-2 phases.
-  A real large-repository trace exposed 832,934,702 JSON seed pairs and multi-gigabyte linear
-  covered-region/match growth. Covered diagonals now use merged interval lookup; bounded CLI
-  orchestration admits rare buckets first and caps seed pairs, compact matches, and suppression
-  comparisons per format pool. Partial near-duplicate output is explicitly a lower bound in every
-  reporter and capability discovery. The public frozen detector adapter stays exhaustive.
-
-- **2026-07-16 — structural/change-aware context + graph precision.** Context strategy v2 adds
-  bounded body-free declarations, reasons, serialized payload/omission measurements, and planning
-  time. Diff scopes seed a separate full-tree plan with structured evidence for changes,
-  dependencies, tests, nearby code, and direct/transitive dependents; deleted paths remain virtual
-  graph seeds, scoped metrics stay scoped, and impact reuses the same topology. Graph resolution
-  adds deterministic local package exports/imports/entrypoints, TypeScript source substitution,
-  and unambiguous Python absolute/`src` imports. SCIP remains a documented future opt-in input,
-  not a hidden indexing dependency.
-
-- **2026-07-16 — all-language hierarchical graph explorer.** Rust external modules, local use
-  paths, and Cargo library names plus Go module/package imports now join JS/TS/TSX, Python, and PHP
-  in one mixed-language topology. Go imports deliberately target a stable package representative.
-  The dashboard now opens on architecture scopes with weighted aggregate connections, smooth
-  Bézier routing, breadcrumbs, scope drill-down, file neighborhoods, all-report-file search,
-  direct-relationship single-click selection, deliberate double-click navigation, dense-view
-  decluttering, a reliable minimap, and detailed factual scope/file/connection inspectors.
-  Type-bearing files with explicit relations open into a centered semantic neighborhood with
-  labeled incoming/outgoing type groups, quiet bounded direct-import context, honest truncation
-  counts, and an escape to the full direction/depth neighborhood. The projection is shared by all
-  first-class languages rather than keyed to language names. Architecture scopes and file
-  neighborhoods are also routed under `/graph/scope/...` and `/graph/file/...`; presentation,
-  direction, and depth round-trip through canonical query parameters, while breadcrumbs and browser
-  history remain the navigation surface. It has no AI, tour, or source-opening action and retains
-  the 100-node render bound.
-
-- **2026-07-16 — on-demand web graph foundation.** The dashboard Graph tab lazily calls
-  `GET /api/graph` for the current report revision; ordinary daemon scans remain graph-free. The
-  daemon computes once per revision, while the browser provides a Dagre-laid-out React Flow canvas,
-  file search, dependencies/blast radius/both-direction traversal, one-to-three-hop controls,
-  resolver-aware details, a minimap, and a hard 100-node render cap.
-
-- **2026-07-15 — queryable repository graph.** Graph JSON/NDJSON now exposes deterministic
-  adjacency and edge records with resolver provenance. Bounded focus/direction/depth queries answer
-  direct dependency and blast-radius questions, DOT/Mermaid provide external-tool-free exports,
-  and JSONC `tsconfig`/`jsconfig` `baseUrl` + `paths` mappings (including local references and
-  relative extends) improve TypeScript resolution while invalid config remains an explicit
-  diagnostic that lowers impact confidence.
-
-- **2026-07-15 — layered config + agent context plan.** Global personal defaults now compose
-  with the nearest team-committed project config and CLI overrides, with field-level nested
-  merging and an inspectable `reposcout config` command. `--context` produces an explainable,
-  deterministic reading list under hard token/file caps, optionally centered on repeated
-  `--focus` paths, same-directory siblings, and their direct first-class-language graph neighborhood. It
-  reuses normal scan facts, remains opt-in, and is retained in summary JSON/NDJSON. The research
-  and next priorities live in `ROADMAP.md`. The same validation pass fixed `explain` mistaking
-  macOS's system `/var` alias for a repository-internal symlink and accidentally scanning from
-  `/`.
-
-- **2026-07-09 — correctness + trust + impact pass.** Cache validity is now keyed by the
-  effective per-file analysis profile, so focused scans cannot poison full scans. Discovery
-  owns stable report/cache paths (including standalone files) and reports walker errors;
-  scan diagnostics expose unsupported/unreadable outcomes. `DuplicateCoverage` gives global
-  and directory rollups the same physical-line semantics. `--impact` builds full first-class-language
-  topology for a diff-scoped scan and reports direct/transitive unchanged importers. Invalid
-  config now fails loudly; generated-header detection no longer mistakes explanatory prose for
-  generated source.
-
-- **Wave 6 — SARIF + NDJSON output + `.reposcoutignore`.** `-f sarif` (SARIF
-  2.1.0: duplicate-code, high-complexity-function, orphan-file results), `-f ndjson`
-  (summary line + one line per file, each `kind`-tagged), and a custom ignore file honored
-  even with `--no-ignore`.
-- **Wave 5 — dependency graph (`--graph`).** Self-contained `graph.rs`; initially
-  resolved relative/`@/` (JS/TS) and dotted-relative (Python) imports to scanned files and reported
-  fan-in/out, cycles (Kosaraju SCC), and orphan (dead-code) files. Later waves expanded it to every
-  first-class language.
-- **Wave 4 — diff-scoped scan + baseline compare.** `--since`/`--staged`/
-  `--working` narrow to a git diff; `--baseline` + `--fail-on-regression` diff against a
-  saved report and gate CI (exit 2).
-- **Wave 3 — per-directory rollup (`--by-dir[=DEPTH]`).** `directories[]` with
-  per-subtree tokens/SLOC/complexity/dup/untested counts + a "By directory" table.
-- **Wave 2 — test-presence + composite risk + assessment.** `summary.test_presence`,
-  `summary.top_risks` (size×complexity×churn, untested penalty), and the `summary.assessment`
-  verdict.
-- **Wave 1 — per-file symbols + don't-read flags.** `summary.symbols` /
-  per-file `symbols`, and `skip_candidates` / per-file `skip_hint` for
-  generated/minified/vendored files. (Two review fixes: whole-segment vendored matching;
-  symbols piggyback on the existing tree parse instead of forcing an extra AST parse.)
-
-Earlier, driven by dogfooding:
-
-- **Prune overlapping instances from clone groups.** A block of
-  structurally-identical lines (e.g. a long list of CSS custom properties) produced a
-  "clone group" whose copies were overlapping sliding windows (lines 18-22, 19-23,
-  20-24, …) counted as many separate instances. A copy that physically overlaps another
-  in the same file is *not* a distinct copy. We now greedily keep non-overlapping
-  instances (by `path`, `start_line`) and drop groups left with < 2 copies. This removed
-  a whole class of false positives while leaving genuine cross-file clones untouched.
-- **Make duplication output actionable.** Reports previously showed only group
-  *counts*. Added: `similarity` on every clone group (exact = 1.0; near = lowest pairwise
-  similarity in the group); `min_dup_lines` (default 3) to drop dense single-line "clones";
-  and `summary.top_duplicates` — the highest-impact blocks ranked by removable lines
-  (`lines * (copies - 1)`) with `copies`, `similarity`, and `locations`. Rendered as a
-  "Top duplicates" section in table/markdown. Kept in `--summary` on purpose.
-- **Agent scouting mode.** `--summary` (drop `files[]`/`duplicates`, ~MB → ~KB);
-  complexity computed **only for real code** (`LangInfo::is_code()`), so prose/data/markup
-  no longer get bogus cyclomatic scores; hotspots restricted to code files; **cache moved
-  to the OS cache dir** so scanning never writes into the target repo.
-- **Lockfiles excluded by default + per-function complexity** (`top_functions`,
-  "Most complex functions" section).
-- **Duplication metric fixed** to a bounded line union (no more double-counting).
+The detailed release history lives in `CHANGELOG.md`; do not rebuild it here. Keep only direction
+that a new maintainer still needs to interpret the current architecture and roadmap.
 
 ## Known limitations & sharp edges
 
@@ -272,15 +166,18 @@ Earlier, driven by dogfooding:
    `similarity` + `copies` + `locations` let the reader judge in a second. Don't add a
    fragile heuristic here without strong evidence it beats the current honesty.
 2. **Default CLI Type-2 analysis is bounded on pathological pools.** Reported matches retain the
-   same verifier/precision, but recall and combined duplication percentages are lower bounds when
-   `diagnostics.type2_analysis_partial` is true. Exact duplication remains complete. Do not remove
+   same verifier/precision, but recall is partial when `diagnostics.type2_analysis_partial` is
+   true. Exact duplication remains complete. Combined percentages are lower bounds when skipped
+   Type-2 work is the only gap; omitted source can also change the denominator. Do not remove
    limits or silently auto-escalate; a higher-effort mode should be reconsidered only if real usage
    shows that partial results materially reduce the tool's value.
-3. **Vendored / generated source can still inflate health signals; all recognized content still
-   affects inventory and token counts.** Bundled UI component libraries (e.g. shadcn/ui), `dist/`,
-   and codegen output can be removed only from health analysis with `health_excludes` or
-   `--health-exclude`, or removed from the complete scan with `excludes` / `--exclude`.
-   `.gitignore` is respected by default; lockfiles are excluded by default.
+3. **Vendored / generated source can still affect inventory and non-duplication health signals.**
+   Minified files and recognized bundles/chunks are excluded from duplication by default, but all
+   recognized content still affects inventory and token counts, and other generated or vendored
+   source can still enter complexity, markers, risk, and test-presence. Use `health_excludes` /
+   `--health-exclude` to retain such paths only as inventory/navigation facts, or `excludes` /
+   `--exclude` to remove them from the complete scan. `.gitignore` is respected by default;
+   lockfiles are excluded by default.
 4. **First-class complexity is limited to Rust, Python, JS, TS/TSX, Go, and PHP.** Generic code
    languages get tokens/lines/markers/dup plus *heuristic* complexity flagged `approximate`
    (contributes to `mi_avg`/`mi_min` but not to per-function cyclomatic/cognitive stats).
@@ -318,15 +215,21 @@ Earlier, driven by dogfooding:
    budget but retains a bounded `outline_only` projection for oversized explicit focus/change
    seeds, and independently caps outline symbols/bytes. Focus misses/ambiguity remain explicit. In diff mode, `context` may reference
    unchanged full-tree files even though `summary`, `files`, and findings remain diff-scoped.
+11. **Configured ignore-file limits do not guard the ordinary full-profile discovery walk.** The
+   main walker still lets the `ignore` crate load repository and Git ignore files directly; the
+   bounded reader protects snapshot/explain paths, while the `safe` profile avoids the exposure by
+   disabling repository-owned ignores. Do not claim `max_ignore_*` bounds apply to ordinary
+   discovery until that path is changed.
 
 ## Candidate next steps (ideas, not commitments)
 
-See `ROADMAP.md` for post-0.1 evidence-gated opportunities. None are release blockers or committed
-next steps: higher-effort Type-2 analysis, reusable team profiles, historical trends, and optional
-precision-index interoperability should be considered only when real usage demonstrates a clear
-need. MCP/read-only protocol work is explicitly out of scope; stable CLI JSON/NDJSON and shared
-query contracts remain the integration baseline. The bar remains: does the feature directly
-improve a scouting decision without making the default path slow or the evidence less honest?
+See `ROADMAP.md` for evidence-gated opportunities. None are release blockers or committed next
+steps: higher-effort Type-2 analysis, additional team profiles, external diagnostic seeds,
+historical trends, additional distribution channels, and optional precision-index interoperability
+all require real usage evidence. MCP/read-only protocol work is explicitly out of scope; stable CLI
+JSON/NDJSON and shared query contracts remain the integration baseline. The bar remains: does the
+feature directly improve a scouting decision without making the default path slow or the evidence
+less honest?
 
 ## Working agreements (the easy-to-forget ones)
 
@@ -335,8 +238,12 @@ improve a scouting decision without making the default path slow or the evidence
 - Global flags come **after** any subcommand (git-style; `args_conflicts_with_subcommands`).
 - Add cross-cutting duplication policy in `dup/mod.rs` orchestration (currently
   `analyze_with_diagnostics`), not in the frozen `exact::detect` / `fuzzy::detect` adapters.
+- Treat `HANDOFF.md` as a maintained current-state contract: update it in the same patch whenever
+  architecture, defaults, trust boundaries, versions, limitations, or working agreements change;
+  keep historical release detail in `CHANGELOG.md` instead.
+- Do not edit skills.sh-managed `.agents/skills` files by hand. Edit only the canonical
+  `skills/reposcout` package when changing RepoScout's own skill, then run the repository sync/check
+  script to refresh its `.agents` mirror.
 - Validation before commit covers Rust formatting, clippy, and tests; dashboard build/tests;
   the landing build; `cargo build --release`; and a repo-local sanity scan. (Full checklist in
   AGENTS.md.)
-- Commits include the `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
-  trailer.

@@ -96,7 +96,8 @@ full-suite command.
 
 - A C compiler is required (vendored `libgit2` and the tree-sitter grammars build
   via `cc`). `cmake` is **not** needed.
-- Frontend packages use the root pnpm workspace (`pnpm@11.18.0`).
+- Frontend packages use the root pnpm workspace. The authoritative pnpm version is the
+  `packageManager` field in `package.json`; do not duplicate that pin in documentation.
 
 ## Common commands
 
@@ -120,6 +121,9 @@ pnpm build:landing          # type-check + production landing-page build
 Edit the canonical skill under `skills/reposcout`; never edit `.agents/skills/reposcout`
 independently. The repository owns that mirror, so `reposcout` must not be listed in
 `skills-lock.json` as an externally managed installation.
+
+Every other skill under `.agents/skills/` is managed through skills.sh and `skills-lock.json`.
+Do not edit those installed copies by hand; update or reinstall them through skills.sh instead.
 
 ## Repository layout
 
@@ -611,6 +615,15 @@ Metric semantics worth knowing:
 ## Conventions
 
 - Keep `cargo fmt` clean and `cargo clippy --all-targets -- -D warnings` passing.
+- Keep `HANDOFF.md` synchronized with the current repository. Any change that makes its current
+  state, architecture, defaults, trust boundaries, known limitations, or working agreements stale
+  must update it in the same patch. Every release updates its date, released version, and explicit
+  schema/analyzer version facts. Keep release history in `CHANGELOG.md`; prune superseded detail
+  from the handoff instead of letting it become a second changelog.
+- Keep `ROADMAP.md` focused on unresolved decisions and evidence-gated future work. Summarize newly
+  delivered work in at most one or two sentences, link to `CHANGELOG.md` for detail, and remove the
+  delivered summary entirely once the behavior has been integrated long enough to be ordinary
+  project context.
 - Update `CHANGELOG.md` in the same change for every user-visible addition, behavior
   change, fix, removal, compatibility change, or meaningful performance improvement.
   Keep `[Unreleased]` first, released versions newest first, and prepend new bullets at

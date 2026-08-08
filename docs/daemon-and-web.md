@@ -13,10 +13,23 @@ reposcout daemon .
 
 The default address is `http://127.0.0.1:7331`.
 
-The service is intentionally unauthenticated local tooling. It validates `Host` and `Origin`
-headers against the loopback trust boundary, and non-loopback binding is refused unless
-`--unsafe-no-auth` explicitly accepts exposure of source-derived repository metrics. Keep the
-loopback default for normal use.
+## Authentication and network boundary
+
+The daemon requires a fresh bearer token by default, including on loopback. After successfully
+binding its port, it writes the token to the platform runtime directory or RepoScout cache as
+`daemon-<port>.token` and prints that path. The file is owner-only on Unix and is written with
+symlink and regular-file checks; keep it secret because the API exposes repository-derived
+information.
+
+Requests may send `Authorization: Bearer <token>` or `X-RepoScout-Token: <token>`. Loopback SSE
+clients may instead use `?token=` on `/api/events` because browser `EventSource` cannot set an
+authorization header; query tokens are rejected for every other endpoint and for remote
+listeners. Host and Origin validation remain an additional browser and DNS-rebinding boundary.
+
+Keep the loopback default for ordinary use. `--unsafe-no-auth` deliberately disables the token but
+is accepted only on loopback. A non-loopback listener requires `--allow-insecure-remote`, still
+requires token authentication, and sends that token over plain HTTP; use this mode only behind a
+TLS reverse proxy.
 
 ## Start the dashboard
 
@@ -28,6 +41,14 @@ pnpm dev:web
 ```
 
 Run the daemon and frontend in separate terminals. Vite proxies `/api` to the daemon.
+The proxy reads the port-scoped token file with no-follow and size/type checks and injects the
+bearer token server-side, so it never needs a `VITE_*` browser variable. For a non-default daemon
+port, set `REPOSCOUT_DAEMON_PORT` for the Vite command; specialized setups may point
+`REPOSCOUT_DAEMON_TOKEN_FILE` at the exact token file.
+
+Direct, non-proxied browser clients can receive a valid token through a `#token=...` fragment. A
+one-time `?token=...` value is immediately removed from the URL query and retained in the fragment
+and tab-local `sessionStorage`; the proxy path above remains preferable for local development.
 
 The independent public landing page runs with:
 
@@ -44,7 +65,8 @@ pnpm dev:landing
 | `--debounce-ms <MS>` | Filesystem-event coalescing delay | `300` |
 | `--profile <full\|lite\|safe>` | Analyzer and trust profile | `full` |
 | `--no-project-config` | Ignore repository-owned configuration | off |
-| `--unsafe-no-auth` | Permit an unauthenticated non-loopback listener | off |
+| `--unsafe-no-auth` | Disable bearer-token authentication on loopback | off |
+| `--allow-insecure-remote` | Permit authenticated non-loopback binding over plain HTTP for use behind a TLS proxy | off |
 
 The `lite` profile omits whole-corpus duplication and Git churn. The report's
 `analysis_profile` records those unavailable metrics so the dashboard can label them accurately.
@@ -63,9 +85,10 @@ file/byte/time, worker, history, context, discovery, and health limits as a safe
 
 SSE events are `scan_started`, `scan_completed`, and `scan_failed`.
 
-The custom rescan header prevents a cross-origin browser page from issuing a simple request.
-Rescans have a one-second cooldown in addition to single-flight coalescing, and the daemon accepts
-at most 32 concurrent SSE clients.
+Unless `--unsafe-no-auth` is active, every endpoint requires the daemon token. The custom rescan
+header is required in addition to authentication and prevents a cross-origin browser page from
+issuing a simple request. Rescans have a one-second cooldown in addition to single-flight
+coalescing, and the daemon accepts at most 32 concurrent SSE clients.
 
 ## Runtime behavior
 

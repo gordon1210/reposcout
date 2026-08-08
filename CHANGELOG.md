@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Documentation
+
+- Corrected the daemon's documented bearer-token, loopback, SSE, and remote TLS-proxy boundaries;
+  refreshed the maintainer handoff and manifest-owned toolchain guidance; and reduced delivered
+  roadmap history to concise pointers instead of duplicating the changelog.
+
 ## [0.1.15] - 2026-08-08
 
 ### Changed
