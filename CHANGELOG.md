@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-08-08
+
 ### Changed
 
 - Human terminal tables now share the detected terminal width instead of shrinking to unrelated
