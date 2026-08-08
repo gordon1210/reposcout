@@ -22,7 +22,7 @@ file.
 | `reposcout complexity [PATH]` | Analyze complexity only |
 | `reposcout dup [PATH]` | Detect duplication only |
 | `reposcout churn [PATH]` | Analyze Git churn and hotspots only |
-| `reposcout metrics [PATH]` | Run tokens, markers, and imports |
+| `reposcout metrics [PATH]` | Run tokens, line/language metrics, markers, and imports |
 | `reposcout explain FILE` | Explain one file in its full repository context |
 | `reposcout locate SYMBOL [PATH]` | Find declarations across first-class languages |
 | `reposcout capabilities` | Describe the installed machine contract without scanning |

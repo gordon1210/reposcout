@@ -8,7 +8,8 @@ RepoScout is a Rust 2024 CLI with a pnpm frontend workspace.
 
 - Rust via `rustup`
 - a C compiler for vendored libgit2 and tree-sitter grammars
-- pnpm `11.18.0` for frontend work
+- pnpm for frontend work; use the version pinned by the root
+  [`packageManager` field](../package.json)
 
 `cmake` is not required.
 
@@ -47,9 +48,11 @@ assertion, and development-only React rules.
 
 ## Agent skill
 
-`skills/reposcout` is the canonical distributable skill. `.agents/skills/reposcout` is a
-deterministic repository-local mirror and must not be edited independently. Because the repository
-owns this mirror, `reposcout` must not appear as an externally managed entry in `skills-lock.json`.
+Skills under `.agents/skills/` are installed through skills.sh and tracked by `skills-lock.json`;
+do not edit those installed copies by hand. RepoScout's own skill is the deliberate exception:
+`skills/reposcout` is its canonical source, while `.agents/skills/reposcout` is a deterministic
+repository-local mirror and must not be edited independently. Because the repository owns this
+mirror, `reposcout` must not appear as an externally managed entry in `skills-lock.json`.
 
 ```sh
 ./scripts/reposcout-skill.sh sync   # refresh the mirror after canonical changes

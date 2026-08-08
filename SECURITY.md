@@ -26,6 +26,15 @@ You should receive an acknowledgement within seven days. Confirmed vulnerabiliti
 handled through a private GitHub security advisory until a fix and coordinated disclosure are
 ready.
 
+## Daemon access
+
+`reposcout daemon` binds to loopback and requires a fresh bearer token by default. The token is
+stored in a user-scoped runtime/cache file for local tooling such as the Vite proxy, with
+owner-only permissions on Unix; Host and Origin validation provide an additional browser and
+DNS-rebinding boundary. Unauthenticated mode is an explicit loopback-only override. Non-loopback
+plain HTTP requires
+`--allow-insecure-remote`, remains authenticated, and should run only behind a TLS proxy.
+
 ## Release integrity
 
 Release installers require successful SHA-256 verification before extracting a platform archive.
@@ -35,5 +44,11 @@ executing a downloaded installer script. GitHub build-provenance attestations ca
 ```sh
 gh attestation verify PATH_TO_ARCHIVE --repo gordon1210/reposcout
 ```
+
+The `curl | sh` installer is a convenience path that trusts GitHub TLS, this repository's release
+permissions, and the release workflow because the downloaded script executes before its archive
+verification. Security-sensitive installations should use the complete
+[verified installation](docs/getting-started.md#verified-installation) procedure, which verifies
+the immutable release, installer asset, workflow provenance, and source tag before execution.
 
 [private-reporting]: https://github.com/gordon1210/reposcout/security/advisories

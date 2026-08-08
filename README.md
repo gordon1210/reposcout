@@ -168,9 +168,11 @@ reposcout daemon .
 pnpm dev:web
 ```
 
-The daemon binds to loopback by default, rejects browser-origin and DNS-rebinding requests that do
-not match its local trust boundary, and refuses non-loopback listeners unless the risk is explicitly
-accepted. See [Daemon and web dashboard](docs/daemon-and-web.md) for setup and the local API.
+The daemon binds to loopback and issues a per-start bearer token by default. The Vite development
+proxy reads the protected token file server-side and injects authentication without exposing the
+token through browser configuration. Non-loopback plain HTTP requires an explicit override,
+retains token authentication, and is intended only behind a TLS proxy. See
+[Daemon and web dashboard](docs/daemon-and-web.md) for setup and the local API.
 
 ## Documentation
 
