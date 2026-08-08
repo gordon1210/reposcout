@@ -350,8 +350,9 @@ pub(crate) fn dup_locations(locations: &[String], copies: usize) -> String {
 mod tests {
     use super::*;
     use crate::model::{
-        DuplicateBlock, Duplication, FindingCatalog, FindingProfile, ProductionDuplication,
-        RiskEntry, ScanDiagnostics, ScanProfile, ScanReport, Summary,
+        Assessment, ComplexitySummary, DuplicateBlock, Duplication, DuplicationSummary,
+        FindingCatalog, FindingProfile, LanguageDuplication, LanguageStat, ProductionDuplication,
+        RiskEntry, ScanDiagnostics, ScanProfile, ScanReport, Summary, WorkScope,
     };
     use std::path::PathBuf;
 
@@ -469,26 +470,137 @@ mod tests {
     }
 
     #[test]
+    fn terminal_report_groups_composition_health_and_ranked_details() {
+        let mut report = report_with_summary(Summary {
+            languages: vec![LanguageStat {
+                name: "Rust".to_string(),
+                source: true,
+                files: 1,
+                ..LanguageStat::default()
+            }],
+            complexity: ComplexitySummary {
+                cyclomatic_total: 1,
+                functions: 1,
+                cyclomatic_threshold: 20,
+                mi_avg: 80.0,
+                mi_min: 80.0,
+                ..ComplexitySummary::default()
+            },
+            markers: [("TODO".to_string(), 1)].into_iter().collect(),
+            top_risks: vec![RiskEntry {
+                path: "src/lib.rs".to_string(),
+                algorithm_version: 5,
+                score: 0.75,
+                ..RiskEntry::default()
+            }],
+            assessment: Assessment {
+                fits_context_known: true,
+                fits_context: true,
+                cleanup_worth: "low".to_string(),
+                cleanup_worth_complete: true,
+                ..Assessment::default()
+            },
+            ..Summary::default()
+        });
+        report.work_scope = Some(WorkScope::default());
+        report.execution.config_mode = "defaults".to_string();
+
+        let rendered = render(&report, Format::Table, false, RenderOptions::default()).unwrap();
+        let positions = [
+            "Source languages",
+            "Work scope",
+            "Markers",
+            "Test filename matching",
+            "Duplication",
+            "Function complexity",
+            "Top risks",
+            "Assessment",
+            "Overview",
+            "Tip: no config found",
+        ]
+        .map(|heading| {
+            rendered
+                .find(heading)
+                .unwrap_or_else(|| panic!("missing terminal heading: {heading}"))
+        });
+
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn terminal_report_uses_semantic_color_without_changing_plain_text() {
+        let report = report_with_summary(Summary {
+            duplication: DuplicationSummary {
+                exact_groups: 1,
+                duplicated_lines: 20,
+                duplicated_pct: 20.0,
+                analyzed_lines: 100,
+                ..DuplicationSummary::default()
+            },
+            markers: [("TODO".to_string(), 1), ("BUG".to_string(), 1)]
+                .into_iter()
+                .collect(),
+            top_risks: vec![RiskEntry {
+                path: "src/high-risk.rs".to_string(),
+                score: 0.75,
+                ..RiskEntry::default()
+            }],
+            assessment: Assessment {
+                fits_context_known: true,
+                fits_context: true,
+                token_budget: 200_000,
+                cleanup_worth: "high".to_string(),
+                cleanup_worth_complete: true,
+                ..Assessment::default()
+            },
+            ..Summary::default()
+        });
+
+        let colored = render(&report, Format::Table, true, RenderOptions::default()).unwrap();
+        let plain = render(&report, Format::Table, false, RenderOptions::default()).unwrap();
+
+        assert!(colored.contains("\u{1b}[32mfits"));
+        assert!(colored.contains("\u{1b}[31mhigh"));
+        assert!(colored.contains("\u{1b}[33m20.0%"));
+        assert!(colored.contains("\u{1b}[31mBUG 1"));
+        assert!(colored.contains("\u{1b}[34mTODO 1"));
+        assert!(!plain.contains('\u{1b}'));
+        assert!(plain.contains("Context          fits (budget 200,000)"));
+        assert!(plain.contains("Cleanup worth    high"));
+        assert!(plain.find("BUG 1").unwrap() < plain.find("TODO 1").unwrap());
+    }
+
+    #[test]
     fn human_reports_distinguish_missing_and_global_only_configuration() {
         let mut report = report_with_summary(Summary::default());
         report.execution.config_mode = "defaults".to_string();
 
-        for rendered in human_renderings(&report) {
-            assert!(rendered.contains("Configuration tip"));
-            assert!(rendered.contains("No RepoScout configuration was found"));
-            assert!(rendered.contains("global config can establish reusable defaults"));
-            assert!(
-                rendered.contains("project `reposcout.toml`")
-                    || rendered.contains("project reposcout.toml")
-            );
-        }
+        let table = render(&report, Format::Table, false, RenderOptions::default()).unwrap();
+        assert!(
+            table.contains(
+                "Tip: no config found — global/project settings can sharpen this report."
+            )
+        );
+        assert!(!table.contains("Configuration tip"));
+        assert!(!table.contains("Inspect effective settings"));
+
+        let markdown = render(&report, Format::Markdown, false, RenderOptions::default()).unwrap();
+        assert!(markdown.contains("Configuration tip"));
+        assert!(markdown.contains("No RepoScout configuration was found"));
+        assert!(markdown.contains("global config can establish reusable defaults"));
+        assert!(markdown.contains("project `reposcout.toml`"));
 
         report.execution.config_mode = "user".to_string();
         report.execution.global_config = Some(PathBuf::from("/config/reposcout.toml"));
-        for rendered in human_renderings(&report) {
-            assert!(rendered.contains("global RepoScout configuration is active"));
-            assert!(!rendered.contains("No RepoScout configuration was found"));
-        }
+        let table = render(&report, Format::Table, false, RenderOptions::default()).unwrap();
+        assert!(table.contains(
+            "Tip: global config active — a project config can sharpen this report further."
+        ));
+        assert!(!table.contains("Tip: no config found"));
+
+        let markdown = render(&report, Format::Markdown, false, RenderOptions::default()).unwrap();
+        assert!(markdown.contains("global RepoScout configuration is active"));
+        assert!(!markdown.contains("No RepoScout configuration was found"));
     }
 
     #[test]
@@ -498,6 +610,8 @@ mod tests {
         report.execution.project_config = Some(PathBuf::from("/repo/reposcout.toml"));
         for rendered in human_renderings(&report) {
             assert!(!rendered.contains("Configuration tip"));
+            assert!(!rendered.contains("Tip: no config found"));
+            assert!(!rendered.contains("Tip: global config active"));
         }
 
         report.execution.config_mode = "user".to_string();
@@ -510,6 +624,52 @@ mod tests {
         for format in [Format::Table, Format::Markdown] {
             let rendered = render(&report, format, false, options).unwrap();
             assert!(!rendered.contains("Configuration tip"));
+            assert!(!rendered.contains("Tip: global config active"));
+        }
+    }
+
+    #[test]
+    fn human_duplication_breakdown_omits_languages_without_duplication() {
+        let mut report = report_with_summary(Summary {
+            duplication: DuplicationSummary {
+                exact_groups: 1,
+                by_language: vec![
+                    LanguageDuplication {
+                        name: "Rust".to_string(),
+                        exact_groups: 1,
+                        duplicated_lines: 4,
+                        duplicated_tokens: 12,
+                        ..LanguageDuplication::default()
+                    },
+                    LanguageDuplication {
+                        name: "ZeroLang".to_string(),
+                        files: 2,
+                        lines: 40,
+                        tokens: 100,
+                        ..LanguageDuplication::default()
+                    },
+                ],
+                ..DuplicationSummary::default()
+            },
+            ..Summary::default()
+        });
+
+        for rendered in human_renderings(&report) {
+            assert!(rendered.contains("Duplication by language"));
+            assert!(rendered.contains("Rust"));
+            assert!(!rendered.contains("ZeroLang"));
+        }
+
+        report.summary.duplication.by_language = vec![LanguageDuplication {
+            name: "ZeroLang".to_string(),
+            files: 2,
+            lines: 40,
+            tokens: 100,
+            ..LanguageDuplication::default()
+        }];
+        for rendered in human_renderings(&report) {
+            assert!(!rendered.contains("Duplication by language"));
+            assert!(!rendered.contains("ZeroLang"));
         }
     }
 }

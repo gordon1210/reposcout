@@ -142,7 +142,11 @@ fn table_output_has_headers() {
         }),
         "math.rs hotspot must show cyclomatic total 12 and callable average 3.0"
     );
-    assert!(text.contains("global RepoScout configuration is active"));
+    assert!(
+        text.contains(
+            "Tip: global config active — a project config can sharpen this report further."
+        )
+    );
 }
 
 #[test]
@@ -162,6 +166,8 @@ fn no_project_config_suppresses_human_configuration_guidance() {
     let text = String::from_utf8(out).unwrap();
 
     assert!(!text.contains("Configuration tip"));
+    assert!(!text.contains("Tip: no config found"));
+    assert!(!text.contains("Tip: global config active"));
 }
 
 #[test]
@@ -202,7 +208,7 @@ fn narrow_human_tables_front_truncate_paths_without_wrapping_the_suffix() {
     assert!(
         rendered
             .lines()
-            .any(|line| line.contains("…globe-scene.tsx:1")),
+            .any(|line| line.contains("command-globe-scene.tsx:1")),
         "complexity locations should keep the path tail and line on one row:\n{rendered}"
     );
     assert!(
@@ -213,7 +219,7 @@ fn narrow_human_tables_front_truncate_paths_without_wrapping_the_suffix() {
     );
     let risk_row = rendered
         .lines()
-        .find(|line| line.contains("…d-globe-scene.tsx"))
+        .find(|line| line.contains("command-globe-scene.tsx") && line.contains("0.12"))
         .unwrap_or_else(|| {
             panic!("risk rows should keep an identifying path suffix on one row:\n{rendered}")
         });
