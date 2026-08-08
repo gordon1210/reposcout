@@ -1,8 +1,8 @@
 # HANDOFF.md
 
 A running handoff for the next agent picking up **reposcout**. Read this first for
-*where the project is and why*, then `AGENTS.md` for *how to work in the repo*
-(toolchain, layout, the frozen contract, validation checklist) and `README.md` for
+*where the project is and why*, then the compact root `AGENTS.md` and every matching normative
+reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
 _Last updated: 2026-08-08 · latest release 0.1.15 · JSON `SCHEMA_VERSION` 1.0 ·
@@ -127,7 +127,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   builds for both frontend packages.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
-  **Rebuild release after any code change** (`cargo build --release`) — see AGENTS.md.
+  **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and
+  `docs/agents/validation.md`.
 - **CI gates:** `--fail-on "max-cyclomatic>30,duplicated-pct>5,…"` (exit 2), or
   `--baseline b.json --fail-on-regression` to fail when any metric worsens.
 
@@ -146,7 +147,7 @@ shared topology used by both context and impact.
 rare-first Type-2 admission; and `report::render` turns the `ScanReport` into table/json/markdown.
 
 Analyzer signatures are decoupled and mostly frozen; `scan.rs` is their only caller.
-See the "frozen contract" section in AGENTS.md before changing any of them.
+Read `AGENTS.md` and `docs/agents/architecture-contracts.md` before changing any of them.
 
 ## Recent direction
 
@@ -248,6 +249,10 @@ less honest?
   lockfile/security update path before adding policy. Overrides, direct transitive pins, ignores,
   and release-age exclusions require proof, narrow scope, and an explicit removal condition;
   remove stale exceptions whose governing policy is inactive.
+- Keep the root `AGENTS.md` as a compact mandatory router with essential safety and architecture
+  invariants inline. Detailed normative guidance belongs in focused `docs/agents/` references;
+  update routing and affected references together, and keep the root at or below roughly 9.6 KiB
+  so the project-instruction ceiling retains headroom.
 - Validation before commit covers Rust formatting, clippy, and tests; dashboard build/tests;
-  the landing build; `cargo build --release`; and a repo-local sanity scan. (Full checklist in
-  AGENTS.md.)
+  the landing build; `cargo build --release`; and a repo-local sanity scan. The full proportional
+  checklist is in `docs/agents/validation.md`.

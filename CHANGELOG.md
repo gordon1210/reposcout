@@ -14,6 +14,9 @@ within their section.
 
 ### Documentation
 
+- Refactored the oversized root `AGENTS.md` into a compact mandatory router with critical safety
+  and architecture rules inline, backed by focused normative references under `docs/agents/` for
+  repository ownership, contracts, metrics, reports, graph/context behavior, and validation.
 - Corrected the daemon's documented bearer-token, loopback, SSE, and remote TLS-proxy boundaries;
   refreshed the maintainer handoff and manifest-owned toolchain guidance; and reduced delivered
   roadmap history to concise pointers instead of duplicating the changelog.
