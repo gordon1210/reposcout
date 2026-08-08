@@ -125,6 +125,25 @@ independently. The repository owns that mirror, so `reposcout` must not be liste
 Every other skill under `.agents/skills/` is managed through skills.sh and `skills-lock.json`.
 Do not edit those installed copies by hand; update or reinstall them through skills.sh instead.
 
+## Dependency and supply-chain maintenance
+
+- Reproduce dependency alerts and trace the complete dependency path before changing manifests or
+  lockfiles. For transitive findings, first use the package manager's dedicated lockfile/security
+  update path (for pnpm, `pnpm audit --fix=update`) and inspect the resulting diff. A targeted
+  direct-dependency update doing nothing is evidence that the package is transitive, not evidence
+  that an override is required.
+- Treat overrides, resolutions, direct pins of transitive packages, audit ignores, and
+  release-age exclusions as last-resort policy changes. Add one only after proving that normal
+  version constraints cannot select a patched release; keep it narrowly scoped and document both
+  the reason and the exact removal condition. Never accept an unrelated broad dependency refresh
+  merely to clear one advisory.
+- Before retaining an existing exception such as `minimumReleaseAgeExclude`, inspect the effective
+  governing configuration and its Git history. Remove the exception when its policy is inactive or
+  its temporary condition has expired.
+- Validate the final state with a frozen/locked install, the resolved dependency tree, a fresh
+  audit, and the smallest relevant build/test set. The committed diff should contain only the
+  intended resolution and any still-necessary policy.
+
 ## Repository layout
 
 ```

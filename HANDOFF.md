@@ -244,6 +244,10 @@ less honest?
 - Do not edit skills.sh-managed `.agents/skills` files by hand. Edit only the canonical
   `skills/reposcout` package when changing RepoScout's own skill, then run the repository sync/check
   script to refresh its `.agents` mirror.
+- For dependency alerts, trace the transitive path and exhaust the package manager's targeted
+  lockfile/security update path before adding policy. Overrides, direct transitive pins, ignores,
+  and release-age exclusions require proof, narrow scope, and an explicit removal condition;
+  remove stale exceptions whose governing policy is inactive.
 - Validation before commit covers Rust formatting, clippy, and tests; dashboard build/tests;
   the landing build; `cargo build --release`; and a repo-local sanity scan. (Full checklist in
   AGENTS.md.)
