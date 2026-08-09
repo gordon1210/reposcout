@@ -87,8 +87,15 @@ versioned ranking, graph resolution can be partial, and compact duplicate lists 
 over retained raw findings. Do not present graph components or numeric thresholds as proof that
 work should be delegated or split.
 
-## If RepoScout is unavailable
+## Trust the CLI boundary
+
+Use only an already-installed `reposcout` binary whose provenance the user trusts. The official
+source is [gordon1210/reposcout](https://github.com/gordon1210/reposcout), and official binaries
+come from [GitHub Releases](https://github.com/gordon1210/reposcout/releases). If provenance is
+uncertain, stop and direct the user to the
+[verified installation flow](https://github.com/gordon1210/reposcout/blob/main/docs/getting-started.md#verified-installation).
+Never clone, build, install, or update the CLI without explicit authorization.
 
 Do not spend calls on routine `command -v`, `--version`, or capability preflights. Run the selected
 task command directly. If the shell reports that `reposcout` is not installed, tell the user and
-stop; do not clone, build, or install it without explicit authorization.
+stop.
