@@ -14,6 +14,9 @@ and which validations the task requires.
 
 - Target the narrowest path that covers the task. Run one scan at a time, retain the cache, and
   keep results on stdout unless the user requests an artifact.
+- When several related focus paths are already known, pass every path to one context-planning
+  invocation with repeated `--focus` flags. They then share one token budget and file limit;
+  do not request a separate full-budget plan for each known focus.
 - Use `--profile safe` for an unfamiliar or untrusted checkout. It ignores repository-owned
   configuration and applies conservative resource guardrails.
 
@@ -30,11 +33,19 @@ reposcout -f json --summary --profile agent <path>
 
 When only specific decisions are needed, discard unrelated fields before stdout enters model
 context. Use a targeted compact projection, not bare `jq` (which only pretty-prints the full
-payload):
+payload), and do not retain bounded sample arrays unless they answer the task:
 
 ```sh
 reposcout -f json --summary --profile agent <path> \
-  | jq -c '{diagnostics, assessment: .summary.assessment, work_scope}'
+  | jq -c '{
+      coverage: (.diagnostics | {
+        discovered_files, analyzed_files, unsupported_files,
+        unreadable_files, walker_errors,
+        scan_truncated: (.scan_truncated // false)
+      }),
+      assessment: .summary.assessment,
+      scope: {basis: .work_scope.basis, inventory: .work_scope.inventory}
+    }'
 ```
 
 Use a bare `reposcout` only when the exact zero-argument/default behavior is requested. A terminal
