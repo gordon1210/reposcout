@@ -33,9 +33,12 @@ reposcout -f json --summary --profile agent <path>
 
 When only specific decisions are needed, discard unrelated fields before stdout enters model
 context. Use a targeted compact projection, not bare `jq` (which only pretty-prints the full
-payload), and do not retain bounded sample arrays unless they answer the task:
+payload), and do not retain bounded sample arrays unless they answer the task. In Bash or Zsh,
+preserve the producer's failure status with `pipefail`:
 
 ```sh
+set -o pipefail
+
 reposcout -f json --summary --profile agent <path> \
   | jq -c '{
       coverage: (.diagnostics | {
@@ -63,6 +66,7 @@ those workflows.
 | Context planning | [context-planning.md](references/context-planning.md) |
 | Change analysis | [change-analysis.md](references/change-analysis.md) |
 | Quality assessment | [quality.md](references/quality.md) |
+| Conditional or compound JSON decision | [decision-queries.md](references/decision-queries.md) |
 | Diagnostics and configuration | [diagnostics.md](references/diagnostics.md) |
 
 ## Require configuration consent

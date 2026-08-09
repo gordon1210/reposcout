@@ -14,6 +14,9 @@ within their section.
 
 ### Documentation
 
+- Expanded the bundled agent skill with shared-budget multi-focus context planning and
+  completeness-aware conditional `jq` decision queries that preserve producer failures, choose
+  narrow analyzers, cap output, and return at most one actionable result.
 - Refactored the oversized root `AGENTS.md` into a compact mandatory router with critical safety
   and architecture rules inline, backed by focused normative references under `docs/agents/` for
   repository ownership, contracts, metrics, reports, graph/context behavior, and validation.

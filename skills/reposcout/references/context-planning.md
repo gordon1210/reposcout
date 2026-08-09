@@ -43,6 +43,8 @@ This compact default retains coverage, focus resolution, aggregate budget facts,
 ranked candidates:
 
 ```sh
+set -o pipefail
+
 reposcout -f json --summary --profile agent \
   --focus <primary-file> --focus <related-file-or-directory> \
   --context-budget 24000 --context-max-files 15 <scan-root> \
@@ -58,6 +60,8 @@ When coverage is already known and only the immediate reading order is needed, r
 human-readable list:
 
 ```sh
+set -o pipefail
+
 reposcout -f json --summary --profile agent \
   --focus <primary-file> --focus <related-file-or-directory> \
   --context-budget 24000 --context-max-files 15 <scan-root> \
@@ -70,6 +74,8 @@ Use the omission projection instead only when the shortlist or confidence gaps p
 decision:
 
 ```sh
+set -o pipefail
+
 reposcout -f json --summary --profile agent \
   --focus <primary-file> --focus <related-file-or-directory> \
   --context-budget 24000 --context-max-files 15 <scan-root> \

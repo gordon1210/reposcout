@@ -44,12 +44,24 @@ reposcout -f json --summary --profile safe <path>
 When the task needs only a subset, project it before reading the command result:
 
 ```sh
+set -o pipefail
+
 reposcout -f json --summary --profile agent <path> \
-  | jq -c '{diagnostics, assessment: .summary.assessment, source: .summary.source, work_scope}'
+  | jq -c '{
+      coverage: (.diagnostics | {
+        discovered_files, analyzed_files, unsupported_files,
+        unreadable_files, walker_errors,
+        scan_truncated: (.scan_truncated // false)
+      }),
+      assessment: .summary.assessment,
+      source: .summary.source,
+      scope: {basis: .work_scope.basis, inventory: .work_scope.inventory}
+    }'
 ```
 
 Use `jq -c` with an explicit selector. Bare `jq` preserves every field and expands compact JSON
-with indentation, so it is not an output-budget strategy by itself.
+with indentation, so it is not an output-budget strategy by itself. In Bash or Zsh, retain
+`pipefail` so a failed RepoScout producer cannot be hidden by a successful empty `jq` consumer.
 
 The `agent` profile disables duplication and churn by default. The `safe` profile additionally
 ignores project configuration and enforces conservative worker, history, discovery, context, and

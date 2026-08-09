@@ -43,6 +43,9 @@ any path inside it**, so they can make decisions *before* diving in:
 - **How broad is the work actually observed to be?** → `work_scope`, `--by-dir`, change-summary,
   context, and impact expose bounded raw scope evidence without making delegation or routing
   decisions for the caller.
+- **Need only one conditional machine decision?** → the bundled skill's progressive decision-query
+  guidance combines the narrowest analyzer with one bounded, completeness-aware `jq` result
+  instead of passing an entire report into agent context.
 
 The design bias is therefore **high signal, low noise, machine-readable, fast**. When in
 doubt, optimize for "an agent can trust and act on this in one glance" over completeness.
