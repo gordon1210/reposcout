@@ -31,7 +31,7 @@ fn is_zero_u64(value: &u64) -> bool {
 }
 
 /// Bump when the JSON shape changes in a breaking way.
-pub const SCHEMA_VERSION: &str = "1.0";
+pub const SCHEMA_VERSION: &str = "2.0";
 
 /// Top-level report produced by a scan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -306,9 +306,10 @@ pub struct Summary {
     /// read (generated, minified, bundled, or vendored), sorted by tokens descending.
     #[serde(default)]
     pub skip_candidates: Vec<SkipCandidate>,
-    /// Test-vs-source classification and filename/inline-test match estimate.
-    #[serde(default)]
-    pub test_presence: TestPresence,
+    /// Framework-backed test discovery. Omitted when no supported test setup
+    /// can be established from repository-owned configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_presence: Option<TestPresence>,
     /// Source files ranked by composite risk score (size × complexity × churn).
     #[serde(default)]
     pub top_risks: Vec<RiskEntry>,

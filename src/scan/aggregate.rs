@@ -18,6 +18,10 @@ pub(super) struct AggregateAccum {
     function_hotspots: Vec<FunctionHotspot>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "aggregation keeps each shared scan input explicit"
+)]
 pub(super) fn aggregate(
     files: &[FileReport],
     dup: &Duplication,
@@ -26,6 +30,7 @@ pub(super) fn aggregate(
     cfg: &Config,
     health_policy: &HealthPolicy,
     duplication_complete: bool,
+    frameworks: Vec<crate::model::TestFramework>,
 ) -> (Summary, Vec<RiskEntry>) {
     let mut s = Summary::default();
     let accumulated = accumulate_file_metrics(files, &mut s);
@@ -40,7 +45,7 @@ pub(super) fn aggregate(
     );
     populate_file_rankings(&mut s, files, cfg);
     let (test_presence, top_risks, all_risk_entries) =
-        test_and_risk_summary(files, cfg, health_policy);
+        test_and_risk_summary(files, cfg, health_policy, frameworks);
     s.test_presence = test_presence;
     s.top_risks = top_risks;
     let production_duplication = cfg.enabled.duplication.then(|| {
@@ -354,7 +359,22 @@ pub(super) fn test_and_risk_summary(
     files: &[FileReport],
     cfg: &Config,
     health_policy: &HealthPolicy,
-) -> (TestPresence, Vec<RiskEntry>, Vec<RiskEntry>) {
+    frameworks: Vec<crate::model::TestFramework>,
+) -> (Option<TestPresence>, Vec<RiskEntry>, Vec<RiskEntry>) {
+    if frameworks.is_empty() {
+        let mut risk_entries = files
+            .iter()
+            .filter_map(|file| risk::entry(file, false))
+            .collect::<Vec<_>>();
+        risk_entries.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        let all_risk_entries = risk_entries.clone();
+        risk_entries.truncate(cfg.top);
+        return (None, risk_entries, all_risk_entries);
+    }
     let mut test_stem_set: HashSet<String> = HashSet::new();
     let mut test_file_count = 0usize;
     let mut source_files: Vec<&FileReport> = Vec::new();
@@ -366,7 +386,7 @@ pub(super) fn test_and_risk_summary(
             continue;
         }
         let path_str = f.path.to_string_lossy();
-        if testcov::is_test_file(path_str.as_ref()) {
+        if testcov::is_framework_test_file(&frameworks, path_str.as_ref()) {
             test_file_count += 1;
             for key in testcov::test_stem_keys(path_str.as_ref()) {
                 test_stem_set.insert(key);
@@ -388,6 +408,7 @@ pub(super) fn test_and_risk_summary(
     }
 
     let test_presence = TestPresence {
+        frameworks,
         test_files: test_file_count,
         source_files: source_files.len(),
         untested_source_files,
@@ -397,7 +418,7 @@ pub(super) fn test_and_risk_summary(
     let mut risk_entries: Vec<RiskEntry> = source_files
         .iter()
         .copied()
-        .filter_map(|file| risk::entry(file, !has_matching_test(file, &test_stem_set)))
+        .filter_map(|file| risk::entry(file, false))
         .collect();
 
     risk_entries.sort_by(|a, b| {
@@ -411,7 +432,7 @@ pub(super) fn test_and_risk_summary(
     });
     let all_risk_entries = risk_entries.clone();
     risk_entries.truncate(cfg.top);
-    (test_presence, risk_entries, all_risk_entries)
+    (Some(test_presence), risk_entries, all_risk_entries)
 }
 
 pub(super) fn has_matching_test(file: &FileReport, test_stem_set: &HashSet<String>) -> bool {

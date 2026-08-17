@@ -223,7 +223,7 @@ fn narrow_human_tables_front_truncate_paths_without_wrapping_the_suffix() {
         .unwrap_or_else(|| {
             panic!("risk rows should keep an identifying path suffix on one row:\n{rendered}")
         });
-    assert!(risk_row.contains("no matching test file"));
+    assert!(!risk_row.contains("test file"));
     let risk_score = risk_row
         .split_whitespace()
         .nth(2)
@@ -567,7 +567,7 @@ fn summary_flag_omits_heavy_arrays() {
     // The aggregate summary (the whole point) is retained.
     assert!(brief["summary"]["files"].as_u64().unwrap() >= 5);
     assert!(brief["summary"]["tokens"].as_u64().unwrap() > 0);
-    assert_eq!(brief["schema_version"], "1.0");
+    assert_eq!(brief["schema_version"], "2.0");
 }
 
 #[test]

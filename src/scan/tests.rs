@@ -211,9 +211,14 @@ fn baseline_profiles_require_matching_resource_limits() {
 
 #[test]
 fn assessment_treats_test_filename_matching_as_informational() {
-    let mut summary = Summary::default();
-    summary.test_presence.source_files = 4;
-    summary.test_presence.untested_source_files = 3;
+    let summary = Summary {
+        test_presence: Some(crate::model::TestPresence {
+            source_files: 4,
+            untested_source_files: 3,
+            ..crate::model::TestPresence::default()
+        }),
+        ..Summary::default()
+    };
     let evidence_at_threshold = ProductionDuplication {
         corpus: "production-source".to_string(),
         duplicated_lines: 15,
@@ -306,7 +311,15 @@ fn equal_risk_scores_use_the_path_as_a_stable_tie_breaker() {
     )
     .unwrap();
 
-    let (_, ranked, _) = test_and_risk_summary(&[second, first], &cfg, &health_policy);
+    let (_, ranked, _) = test_and_risk_summary(
+        &[second, first],
+        &cfg,
+        &health_policy,
+        vec![crate::model::TestFramework {
+            name: "cargo-test".to_string(),
+            evidence: "Cargo.toml".to_string(),
+        }],
+    );
     let paths = ranked
         .iter()
         .map(|risk| risk.path.as_str())
@@ -461,8 +474,13 @@ fn source_analysis_limits_first_class_markers_to_comments() {
 #[test]
 fn baseline_regression_describes_test_matching_heuristic() {
     let baseline = Summary::default();
-    let mut current = Summary::default();
-    current.test_presence.untested_source_files = 1;
+    let current = Summary {
+        test_presence: Some(crate::model::TestPresence {
+            untested_source_files: 1,
+            ..crate::model::TestPresence::default()
+        }),
+        ..Summary::default()
+    };
 
     let delta = baseline_delta(
         &baseline,

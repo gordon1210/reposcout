@@ -352,7 +352,8 @@ mod tests {
     use crate::model::{
         Assessment, ComplexitySummary, DuplicateBlock, Duplication, DuplicationSummary,
         FindingCatalog, FindingProfile, LanguageDuplication, LanguageStat, ProductionDuplication,
-        RiskEntry, ScanDiagnostics, ScanProfile, ScanReport, Summary, WorkScope,
+        RiskEntry, ScanDiagnostics, ScanProfile, ScanReport, Summary, TestFramework, TestPresence,
+        WorkScope,
     };
     use std::path::PathBuf;
 
@@ -500,6 +501,13 @@ mod tests {
                 cleanup_worth_complete: true,
                 ..Assessment::default()
             },
+            test_presence: Some(TestPresence {
+                frameworks: vec![TestFramework {
+                    name: "cargo-test".to_string(),
+                    evidence: "Cargo.toml".to_string(),
+                }],
+                ..TestPresence::default()
+            }),
             ..Summary::default()
         });
         report.work_scope = Some(WorkScope::default());
@@ -510,7 +518,7 @@ mod tests {
             "Source languages",
             "Work scope",
             "Markers",
-            "Test filename matching",
+            "Configured test discovery",
             "Duplication",
             "Function complexity",
             "Top risks",

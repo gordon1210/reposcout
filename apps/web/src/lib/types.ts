@@ -203,7 +203,7 @@ export interface Summary {
   top_duplicates: DuplicateBlock[]
   top_production_duplicates?: DuplicateBlock[]
   symbols: SymbolCounts
-  test_presence: TestPresence
+  test_presence?: TestPresence
   top_risks: RiskEntry[]
   assessment: Assessment
 }
@@ -270,10 +270,8 @@ export interface SymbolCounts {
 }
 
 export interface TestPresence {
+  frameworks: Array<{ name: string; evidence: string }>
   test_files: number
-  source_files: number
-  untested_source_files: number
-  untested_samples: string[]
 }
 
 export interface RiskEntry {
@@ -283,7 +281,7 @@ export interface RiskEntry {
   sloc: number
   cyclomatic: number
   churn_commits: number
-  untested: boolean
+  untested?: boolean
   reasons: string[]
 }
 

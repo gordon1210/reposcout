@@ -101,6 +101,7 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
         .cloned()
         .collect();
 
+    let repository = explain_repository(&report.summary);
     Ok(ExplainReport {
         schema_version: SCHEMA_VERSION.to_string(),
         root,
@@ -109,18 +110,26 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
         encoding: report.encoding,
         execution: report.execution,
         discovery,
-        repository: ExplainRepository {
-            files: report.summary.files,
-            tokens: report.summary.tokens,
-            source_files: report.summary.test_presence.source_files,
-            test_files: report.summary.test_presence.test_files,
-        },
+        repository,
         file: file_report,
         risk,
         testing,
         graph,
         findings,
     })
+}
+
+fn explain_repository(summary: &crate::model::Summary) -> ExplainRepository {
+    let (source_files, test_files) = summary
+        .test_presence
+        .as_ref()
+        .map_or((0, 0), |tests| (tests.source_files, tests.test_files));
+    ExplainRepository {
+        files: summary.files,
+        tokens: summary.tokens,
+        source_files,
+        test_files,
+    }
 }
 
 fn discovery_explanation(

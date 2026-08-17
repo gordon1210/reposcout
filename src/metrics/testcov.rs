@@ -1,8 +1,169 @@
 //! Test-presence heuristics: classify files as tests vs source code and
 //! compute stem keys for matching test files to the source files they cover.
 
-use crate::model::LineRange;
+use crate::model::{FileReport, LineRange, TestFramework};
+use std::fs;
+use std::path::Path;
 use tree_sitter::{Node, Tree};
+
+/// Detect test runners from checked-in manifests and conventional runner
+/// configuration. Test-looking source filenames alone are not setup evidence.
+#[must_use]
+pub fn detect_frameworks(root: &Path, files: &[FileReport]) -> Vec<TestFramework> {
+    let mut found = Vec::new();
+    for file in files {
+        let path = file.path.to_string_lossy().replace('\\', "/");
+        let name = path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&path)
+            .to_ascii_lowercase();
+        let direct = if name == "cargo.toml" {
+            Some("cargo-test")
+        } else if name == "go.mod" {
+            Some("go-test")
+        } else if name == "pytest.ini" {
+            Some("pytest")
+        } else if matches!(name.as_str(), "phpunit.xml" | "phpunit.xml.dist") {
+            Some("phpunit")
+        } else if name.starts_with("vitest.config.") {
+            Some("vitest")
+        } else if name.starts_with("jest.config.") {
+            Some("jest")
+        } else {
+            None
+        };
+        if let Some(framework) = direct {
+            push_framework(&mut found, framework, &path);
+            continue;
+        }
+
+        if let Ok(content) = fs::read_to_string(root.join(&file.path)) {
+            match name.as_str() {
+                "package.json" => detect_package_json(&content, &path, &mut found),
+                "composer.json" => detect_composer_json(&content, &path, &mut found),
+                "pyproject.toml" => detect_pyproject(&content, &path, &mut found),
+                _ => {}
+            }
+        }
+    }
+    found.sort_by(|left, right| (&left.name, &left.evidence).cmp(&(&right.name, &right.evidence)));
+    found
+}
+
+fn detect_package_json(content: &str, evidence: &str, found: &mut Vec<TestFramework>) {
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(content) else {
+        return;
+    };
+    let dependency = |name: &str| {
+        ["dependencies", "devDependencies"]
+            .iter()
+            .any(|section| document[*section].get(name).is_some())
+    };
+    if dependency("vitest") {
+        push_framework(found, "vitest", evidence);
+    }
+    if dependency("jest") {
+        push_framework(found, "jest", evidence);
+    }
+    for script in document["scripts"]
+        .as_object()
+        .into_iter()
+        .flat_map(|scripts| scripts.values())
+        .filter_map(serde_json::Value::as_str)
+    {
+        if script.split_whitespace().any(|part| part == "vitest") {
+            push_framework(found, "vitest", evidence);
+        }
+        if script.split_whitespace().any(|part| part == "jest") {
+            push_framework(found, "jest", evidence);
+        }
+        if script.contains("bun test") {
+            push_framework(found, "bun-test", evidence);
+        }
+        if script.contains("node --test") {
+            push_framework(found, "node-test", evidence);
+        }
+    }
+}
+
+fn detect_composer_json(content: &str, evidence: &str, found: &mut Vec<TestFramework>) {
+    let Ok(document) = serde_json::from_str::<serde_json::Value>(content) else {
+        return;
+    };
+    if ["require", "require-dev"]
+        .iter()
+        .any(|section| document[*section].get("phpunit/phpunit").is_some())
+    {
+        push_framework(found, "phpunit", evidence);
+    }
+}
+
+fn detect_pyproject(content: &str, evidence: &str, found: &mut Vec<TestFramework>) {
+    let Ok(document) = content.parse::<toml::Value>() else {
+        return;
+    };
+    let has_config = document
+        .get("tool")
+        .and_then(|tool| tool.get("pytest"))
+        .is_some();
+    let declares_dependency = content.lines().any(|line| {
+        line.trim_start().starts_with("pytest")
+            || line.contains("\"pytest")
+            || line.contains("'pytest")
+    });
+    if has_config || declares_dependency {
+        push_framework(found, "pytest", evidence);
+    }
+}
+
+fn push_framework(found: &mut Vec<TestFramework>, name: &str, evidence: &str) {
+    if !found
+        .iter()
+        .any(|item| item.name == name && item.evidence == evidence)
+    {
+        found.push(TestFramework {
+            name: name.to_string(),
+            evidence: evidence.to_string(),
+        });
+    }
+}
+
+/// Apply the detected runners' default test-file conventions.
+#[must_use]
+pub fn is_framework_test_file(frameworks: &[TestFramework], rel_path: &str) -> bool {
+    let normalized = rel_path.replace('\\', "/").to_ascii_lowercase();
+    let filename = normalized.rsplit('/').next().unwrap_or(&normalized);
+    let extension = filename.rsplit_once('.').map(|(_, extension)| extension);
+    frameworks
+        .iter()
+        .any(|framework| match framework.name.as_str() {
+            "cargo-test" => {
+                extension == Some("rs")
+                    && (filename == "tests.rs" || normalized.split('/').any(|part| part == "tests"))
+            }
+            "go-test" => filename.ends_with("_test.go"),
+            "pytest" => {
+                extension == Some("py")
+                    && (filename.starts_with("test_")
+                        || filename.ends_with("_test.py")
+                        || normalized.split('/').any(|part| part == "tests"))
+            }
+            "phpunit" => {
+                filename.ends_with("test.php")
+                    || normalized.split('/').any(|part| part == "tests") && extension == Some("php")
+            }
+            "vitest" | "jest" | "bun-test" | "node-test" => {
+                matches!(
+                    filename.rsplit('.').next(),
+                    Some("js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts")
+                ) && (filename.contains(".test.")
+                    || filename.contains(".spec.")
+                    || normalized.split('/').any(|part| part == "__tests__"))
+            }
+            _ => false,
+        })
+}
 
 /// Return whether a parsed Rust file contains an inline test attribute.
 ///

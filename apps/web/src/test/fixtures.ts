@@ -23,7 +23,7 @@ export function makeFile(path: string, tokens = 100): FileReport {
 
 export function makeReport(overrides: Partial<ScanReport> = {}): ScanReport {
   const report: ScanReport = {
-    schema_version: "1.0",
+    schema_version: "2.0",
     root: "/workspace/repo",
     target: "/workspace/repo",
     generated_at: "2026-07-14T08:00:00Z",
@@ -110,10 +110,8 @@ export function makeReport(overrides: Partial<ScanReport> = {}): ScanReport {
       top_duplicates: [],
       symbols: { functions: 4, types: 2, exports: 1 },
       test_presence: {
+        frameworks: [{ name: "cargo-test", evidence: "Cargo.toml" }],
         test_files: 1,
-        source_files: 1,
-        untested_source_files: 0,
-        untested_samples: [],
       },
       top_risks: [
         {

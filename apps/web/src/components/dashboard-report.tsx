@@ -654,16 +654,13 @@ function Overview({ report }: { report: ScanReport }) {
               label="Analyzed files"
               value={formatNumber(diagnostics.analyzed_files)}
             />
-            <StatLine
-              icon={TestTube2}
-              label="Test files"
-              value={formatNumber(summary.test_presence.test_files)}
-            />
-            <StatLine
-              icon={AlertTriangle}
-              label="No matching test"
-              value={formatNumber(summary.test_presence.untested_source_files)}
-            />
+            {summary.test_presence ? (
+              <StatLine
+                icon={TestTube2}
+                label="Configured test files"
+                value={formatNumber(summary.test_presence.test_files)}
+              />
+            ) : null}
             <StatLine
               icon={Activity}
               label="Markers"

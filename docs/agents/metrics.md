@@ -121,12 +121,11 @@ All scouting signals live in `summary` and are designed for agent decisions:
 - `symbols` aggregates function/type/export counts from first-class files.
 - `skip_candidates` lists generated, minified, bundled, and vendored files that are not worth
   reading, with the same `reason` exposed as each file's `skip_hint`.
-- `test_presence` reports the test/source split and matching-test estimate. Source/test keys retain
-  package prefixes and nested logical directories, preventing same-named files in separate
-  packages from cross-matching. Rust `tests/cli.rs` conventionally matches package `src/main.rs`;
-  `#[test]` and `#[cfg(test)]` make a file tested via `has_inline_tests`. Serialized `untested_*`
-  names are compatibility fields meaning “no matching test file or inline Rust test,” not measured
-  coverage.
+- `test_presence` is omitted unless checked-in manifests or runner configuration establish a
+  supported test setup. Reported frameworks retain their evidence paths; configured runners use
+  their conventional discovery defaults and report selected test-file counts. Aggregate output
+  does not publish inferred source-to-test matches, `untested_*` fields, or matching-test risk
+  reasons.
 - `top_risks` uses algorithm 5: `0.40·size + 0.40·complexity + 0.20·churn`. Each continuous factor
   is `value / (value + half_saturation_anchor)` with anchors of 1,000 SLOC, cyclomatic 100, and 20
   commits. Entries carry `algorithm_version` and raw inputs; ties break by those inputs then path.

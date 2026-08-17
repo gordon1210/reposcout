@@ -84,16 +84,23 @@ pub struct SkipCandidate {
     pub tokens: usize,
 }
 
-/// Test-vs-source classification for the scanned tree.
-///
-/// The `untested_*` names are retained for JSON compatibility. They mean that
-/// no matching test file or inline Rust test was found, not measured coverage.
+/// Test files selected by runners established from repository-owned evidence.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TestPresence {
+    pub frameworks: Vec<TestFramework>,
     pub test_files: usize,
+    #[serde(skip)]
     pub source_files: usize,
+    #[serde(skip)]
     pub untested_source_files: usize,
+    #[serde(skip)]
     pub untested_samples: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TestFramework {
+    pub name: String,
+    pub evidence: String,
 }
 
 /// A source file ranked by composite risk.
@@ -109,6 +116,7 @@ pub struct RiskEntry {
     pub churn_commits: usize,
     /// No matching test file or inline Rust test was found. The field name is
     /// retained for JSON compatibility and does not represent code coverage.
+    #[serde(skip)]
     pub untested: bool,
     pub reasons: Vec<String>,
 }

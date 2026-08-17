@@ -285,24 +285,21 @@ fn render_assessment(out: &mut String, report: &ScanReport, color: bool) {
 }
 
 fn render_test_presence(out: &mut String, report: &ScanReport, color: bool) {
-    let tests = &report.summary.test_presence;
-    let _ = writeln!(out, "{}", header("Test filename matching", color));
-    kv(out, "Test files", &thousands(tests.test_files));
-    kv(out, "Source files", &thousands(tests.source_files));
-    toned_kv(
+    let Some(tests) = &report.summary.test_presence else {
+        return;
+    };
+    let _ = writeln!(out, "{}", header("Configured test discovery", color));
+    kv(
         out,
-        "No filename match",
-        &thousands(tests.untested_source_files),
-        color,
-        if tests.untested_source_files == 0 {
-            Tone::Positive
-        } else {
-            Tone::Caution
-        },
+        "Frameworks",
+        &tests
+            .frameworks
+            .iter()
+            .map(|framework| format!("{} ({})", framework.name, framework.evidence))
+            .collect::<Vec<_>>()
+            .join(", "),
     );
-    if !tests.untested_samples.is_empty() {
-        kv(out, "Samples", &tests.untested_samples.join(", "));
-    }
+    kv(out, "Test files", &thousands(tests.test_files));
     let _ = writeln!(out);
 }
 

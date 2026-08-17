@@ -239,28 +239,25 @@ fn render_assessment_and_tests(out: &mut String, report: &ScanReport) {
     }
     let _ = writeln!(out);
 
-    let tp = &s.test_presence;
-    let _ = writeln!(out, "## Test filename matching");
+    let Some(tp) = &s.test_presence else {
+        return;
+    };
+    let _ = writeln!(out, "## Configured test discovery");
     let _ = writeln!(out);
+    let frameworks = tp
+        .frameworks
+        .iter()
+        .map(|framework| {
+            format!(
+                "{} ({})",
+                framework.name,
+                markdown_code_span(&framework.evidence)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(out, "- Frameworks: {frameworks}");
     let _ = writeln!(out, "- Test files: **{}**", thousands(tp.test_files));
-    let _ = writeln!(
-        out,
-        "- Source files: **{}**, without a matching test filename: **{}**",
-        thousands(tp.source_files),
-        thousands(tp.untested_source_files)
-    );
-    if !tp.untested_samples.is_empty() {
-        let samples: Vec<String> = tp
-            .untested_samples
-            .iter()
-            .map(|path| markdown_code_span(path))
-            .collect();
-        let _ = writeln!(
-            out,
-            "- Samples without a matching test filename: {}",
-            samples.join(", ")
-        );
-    }
     let _ = writeln!(out);
 }
 
