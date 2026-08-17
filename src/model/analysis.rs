@@ -1,6 +1,6 @@
 use super::{
-    Deserialize, ExecutionMetadata, FileReport, FindingRecord, PathBuf, Serialize, is_false,
-    is_zero, is_zero_u64,
+    Deserialize, ExecutionMetadata, FileReport, FindingRecord, PathBuf, Serialize, TestFramework,
+    is_false, is_zero, is_zero_u64,
 };
 
 /// A node in the import dependency graph (single file with fan metrics).
@@ -523,7 +523,8 @@ pub struct ExplainRepository {
     pub files: usize,
     pub tokens: usize,
     pub source_files: usize,
-    pub test_files: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_files: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -538,12 +539,6 @@ pub struct RiskExplanation {
     pub size_factor: f64,
     pub complexity_factor: f64,
     pub churn_factor: f64,
-    /// No matching test file or inline Rust test was found. Retained under its
-    /// original JSON name for compatibility.
-    pub untested: bool,
-    /// Legacy compatibility field. Filename matching no longer changes risk,
-    /// so new reports always emit `1.0`.
-    pub untested_multiplier: f64,
     pub reasons: Vec<String>,
 }
 
@@ -551,13 +546,9 @@ pub struct RiskExplanation {
 pub struct TestExplanation {
     /// `source`, `test`, `non-code`, or `unavailable`.
     pub classification: String,
-    /// Whether a matching test file or inline Rust test was found.
-    pub tested: bool,
     pub has_inline_tests: bool,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub logical_key: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub matches: Vec<String>,
+    pub frameworks: Vec<TestFramework>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

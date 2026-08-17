@@ -7,6 +7,11 @@ fn explain_json_combines_file_findings_tests_and_graph_context() {
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
     std::fs::create_dir_all(dir.path().join("tests")).unwrap();
     std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"devDependencies":{"vitest":"latest"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
         dir.path().join("src/work.js"),
         "import { dep } from './dep';\n// TODO explain me\nexport function work(value) { if (value) { return dep; } return 0; }\n",
     )
@@ -43,14 +48,14 @@ fn explain_json_combines_file_findings_tests_and_graph_context() {
     assert_eq!(report["file"]["language"], "JavaScript");
     assert!(report["risk"]["score"].is_number());
     assert_eq!(report["risk"]["algorithm_version"], 5);
-    assert_eq!(report["testing"]["tested"], true);
-    assert!(
-        report["testing"]["matches"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|path| path == "tests/work.test.js")
-    );
+    assert!(report["risk"].get("untested").is_none());
+    assert!(report["risk"].get("untested_multiplier").is_none());
+    assert_eq!(report["repository"]["source_files"], 4);
+    assert_eq!(report["repository"]["test_files"], 1);
+    assert_eq!(report["testing"]["classification"], "source");
+    assert_eq!(report["testing"]["frameworks"][0]["name"], "vitest");
+    assert!(report["testing"].get("tested").is_none());
+    assert!(report["testing"].get("matches").is_none());
     assert!(
         report["graph"]["dependencies"]
             .as_array()
@@ -72,6 +77,35 @@ fn explain_json_combines_file_findings_tests_and_graph_context() {
             .iter()
             .any(|finding| finding["kind"] == "marker")
     );
+}
+
+#[test]
+fn explain_without_a_configured_runner_keeps_source_inventory_separate() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(
+        dir.path().join("src/lib.rs"),
+        "pub fn answer() -> u8 { 42 }\n",
+    )
+    .unwrap();
+
+    let mut cmd = reposcout_command();
+    cmd.args([
+        "explain",
+        dir.path().join("src/lib.rs").to_str().unwrap(),
+        "-f",
+        "json",
+        "--no-cache",
+        "--quiet",
+    ]);
+    let report: Value =
+        serde_json::from_slice(&cmd.assert().success().get_output().stdout).unwrap();
+
+    assert_eq!(report["repository"]["source_files"], 1);
+    assert!(report["repository"].get("test_files").is_none());
+    assert_eq!(report["testing"]["classification"], "unavailable");
+    assert!(report["risk"]["score"].is_number());
 }
 
 #[test]

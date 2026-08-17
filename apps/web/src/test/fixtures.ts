@@ -120,7 +120,6 @@ export function makeReport(overrides: Partial<ScanReport> = {}): ScanReport {
           sloc: 64,
           cyclomatic: 7,
           churn_commits: 3,
-          untested: false,
           reasons: ["high complexity"],
         },
       ],

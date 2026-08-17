@@ -5,8 +5,7 @@ use crate::model::{ScanDiagnostics, ScanReport};
 use crate::numeric::usize_to_f64;
 use crate::report::projection::{
     file_cyclomatic_average, finding_location, human_duplicate_projection,
-    human_duplication_languages, human_risk_heading, human_test_signal, metric_delta_display,
-    metric_label, source_language_rollup,
+    human_duplication_languages, human_risk_heading, metric_delta_display, source_language_rollup,
 };
 use crate::report::{
     ConfigGuidance, RenderOptions, config_guidance, dup_locations, human_bytes, similarity_label,
@@ -326,14 +325,7 @@ fn render_top_risks(out: &mut String, report: &ScanReport, color: bool) {
                         .map_or_else(|| "-".to_string(), |average| format!("{average:.1}")),
                 ),
                 Cell::new(thousands(risk.churn_commits)),
-                Cell::new(terminal_text(
-                    &risk
-                        .reasons
-                        .iter()
-                        .map(|reason| human_test_signal(reason))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                )),
+                Cell::new(terminal_text(&risk.reasons.join(", "))),
             ]
         })
         .collect();
@@ -355,7 +347,6 @@ fn render_directories(out: &mut String, report: &ScanReport, color: bool) {
         "Cyclo avg",
         "MI avg",
         "Dup lines",
-        "No filename match",
     ]);
     let rows = report
         .directories
@@ -369,12 +360,11 @@ fn render_directories(out: &mut String, report: &ScanReport, color: bool) {
                 format!("{:.1}", directory.cyclomatic_avg),
                 format!("{:.0}", directory.mi_avg),
                 thousands(directory.duplicated_lines),
-                thousands(directory.untested_source_files),
             ]
         })
         .collect();
     add_responsive_path_rows(&mut table, rows, 0, &[(0, 1)]);
-    right_align(&mut table, &[1, 2, 3, 4, 5, 6, 7]);
+    right_align(&mut table, &[1, 2, 3, 4, 5, 6]);
     let _ = writeln!(out, "{table}\n");
 }
 
@@ -407,7 +397,7 @@ fn render_baseline(out: &mut String, report: &ScanReport, color: bool) {
     for metric in &baseline.metrics {
         let display = metric_delta_display(metric);
         table.add_row(vec![
-            terminal_text(metric_label(&metric.metric)),
+            terminal_text(&metric.metric),
             display.baseline,
             display.current,
             display.delta,
@@ -419,12 +409,7 @@ fn render_baseline(out: &mut String, report: &ScanReport, color: bool) {
     let regressions = if baseline.regressions.is_empty() {
         "none".to_string()
     } else {
-        baseline
-            .regressions
-            .iter()
-            .map(|regression| human_test_signal(regression))
-            .collect::<Vec<_>>()
-            .join("; ")
+        baseline.regressions.join("; ")
     };
     toned_kv(
         out,

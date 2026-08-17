@@ -217,6 +217,17 @@ fn legacy_risk_evidence_defaults_the_algorithm_version() {
 }
 
 #[test]
+fn legacy_test_presence_defaults_framework_evidence() {
+    let presence: TestPresence = serde_json::from_value(serde_json::json!({
+        "test_files": 2
+    }))
+    .expect("legacy test presence");
+
+    assert!(presence.frameworks.is_empty());
+    assert_eq!(presence.test_files, 2);
+}
+
+#[test]
 fn precise_clone_coordinates_serialize_a_real_zero_byte_offset() {
     let instance = CloneInstance {
         path: PathBuf::from("sample.rs"),

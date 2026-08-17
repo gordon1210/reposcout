@@ -131,7 +131,7 @@ fn build_foundation(
         cfg,
         &prepared.health_policy,
         production_duplication_is_complete(cfg.enabled.duplication, &analyzed.diagnostics),
-        crate::metrics::testcov::detect_frameworks(&prepared.root, &analyzed.files),
+        prepared.test_frameworks.clone(),
     );
     let finding_catalog =
         crate::findings::build(&analyzed.files, &analyzed.duplication, &risk_entries, cfg);

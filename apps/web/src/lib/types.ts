@@ -281,7 +281,6 @@ export interface RiskEntry {
   sloc: number
   cyclomatic: number
   churn_commits: number
-  untested?: boolean
   reasons: string[]
 }
 

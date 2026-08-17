@@ -34,8 +34,7 @@ function mixedFixture() {
       sloc: 16,
       cyclomatic: 4,
       churn_commits: 3,
-      untested: true,
-      reasons: ["no matching test"],
+      reasons: ["complex"],
     },
   ]
   report.finding_catalog.findings = [

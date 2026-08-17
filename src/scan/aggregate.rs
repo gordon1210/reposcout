@@ -361,86 +361,42 @@ pub(super) fn test_and_risk_summary(
     health_policy: &HealthPolicy,
     frameworks: Vec<crate::model::TestFramework>,
 ) -> (Option<TestPresence>, Vec<RiskEntry>, Vec<RiskEntry>) {
-    if frameworks.is_empty() {
-        let mut risk_entries = files
-            .iter()
-            .filter_map(|file| risk::entry(file, false))
-            .collect::<Vec<_>>();
-        risk_entries.sort_by(|a, b| {
-            b.score
-                .total_cmp(&a.score)
-                .then_with(|| a.path.cmp(&b.path))
-        });
-        let all_risk_entries = risk_entries.clone();
-        risk_entries.truncate(cfg.top);
-        return (None, risk_entries, all_risk_entries);
-    }
-    let mut test_stem_set: HashSet<String> = HashSet::new();
     let mut test_file_count = 0usize;
-    let mut source_files: Vec<&FileReport> = Vec::new();
+    let mut risk_entries = Vec::new();
 
-    for f in files {
-        if !lang::detect(&f.path)
-            .is_some_and(|info| info.is_code() && health_policy.includes(&f.path, info))
+    for file in files {
+        if !lang::detect(&file.path)
+            .is_some_and(|info| info.is_code() && health_policy.includes(&file.path, info))
         {
             continue;
         }
-        let path_str = f.path.to_string_lossy();
-        if testcov::is_framework_test_file(&frameworks, path_str.as_ref()) {
+        let is_configured_test = !frameworks.is_empty()
+            && testcov::is_framework_test_file(&frameworks, file.path.to_string_lossy().as_ref());
+        if is_configured_test {
             test_file_count += 1;
-            for key in testcov::test_stem_keys(path_str.as_ref()) {
-                test_stem_set.insert(key);
-            }
-        } else {
-            source_files.push(f);
+        } else if let Some(entry) = risk::entry(file) {
+            risk_entries.push(entry);
         }
     }
 
-    let mut untested_source_files = 0usize;
-    let mut untested_samples: Vec<String> = Vec::new();
-    for f in source_files.iter().copied() {
-        if !has_matching_test(f, &test_stem_set) {
-            untested_source_files += 1;
-            if untested_samples.len() < cfg.top {
-                untested_samples.push(f.path.to_string_lossy().into_owned());
-            }
-        }
-    }
-
-    let test_presence = TestPresence {
-        frameworks,
-        test_files: test_file_count,
-        source_files: source_files.len(),
-        untested_source_files,
-        untested_samples,
-    };
-
-    let mut risk_entries: Vec<RiskEntry> = source_files
-        .iter()
-        .copied()
-        .filter_map(|file| risk::entry(file, false))
-        .collect();
-
-    risk_entries.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.sloc.cmp(&a.sloc))
-            .then_with(|| b.cyclomatic.cmp(&a.cyclomatic))
-            .then_with(|| b.churn_commits.cmp(&a.churn_commits))
-            .then_with(|| a.path.cmp(&b.path))
-    });
+    risk_entries.sort_by(compare_risk_entries);
     let all_risk_entries = risk_entries.clone();
     risk_entries.truncate(cfg.top);
-    (Some(test_presence), risk_entries, all_risk_entries)
+    let test_presence = (!frameworks.is_empty()).then_some(TestPresence {
+        frameworks,
+        test_files: test_file_count,
+    });
+    (test_presence, risk_entries, all_risk_entries)
 }
 
-pub(super) fn has_matching_test(file: &FileReport, test_stem_set: &HashSet<String>) -> bool {
-    if file.has_inline_tests {
-        return true;
-    }
-    let path = file.path.to_string_lossy();
-    test_stem_set.contains(&testcov::source_stem(path.as_ref()))
+pub(super) fn compare_risk_entries(left: &RiskEntry, right: &RiskEntry) -> std::cmp::Ordering {
+    right
+        .score
+        .total_cmp(&left.score)
+        .then_with(|| right.sloc.cmp(&left.sloc))
+        .then_with(|| right.cyclomatic.cmp(&left.cyclomatic))
+        .then_with(|| right.churn_commits.cmp(&left.churn_commits))
+        .then_with(|| left.path.cmp(&right.path))
 }
 
 pub(super) fn production_duplication(

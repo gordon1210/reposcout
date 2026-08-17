@@ -140,7 +140,7 @@ pub(crate) struct MetricDeltaDisplay {
 pub(crate) fn metric_delta_display(metric: &MetricDelta) -> MetricDeltaDisplay {
     if matches!(
         metric.metric.as_str(),
-        "files" | "tokens" | "sloc" | "cyclomatic_max" | "untested_source_files"
+        "files" | "tokens" | "sloc" | "cyclomatic_max"
     ) {
         MetricDeltaDisplay {
             baseline: format!("{:.0}", metric.baseline),
@@ -154,20 +154,6 @@ pub(crate) fn metric_delta_display(metric: &MetricDelta) -> MetricDeltaDisplay {
             delta: format!("{:+.2}", metric.delta),
         }
     }
-}
-
-pub(crate) fn metric_label(metric: &str) -> &str {
-    if metric == "untested_source_files" {
-        "source_files_without_matching_test"
-    } else {
-        metric
-    }
-}
-
-pub(crate) fn human_test_signal(value: &str) -> String {
-    value
-        .replace("untested sources", "source files without a matching test")
-        .replace("untested", "no matching test file")
 }
 
 pub(crate) fn finding_location(finding: &FindingRecord) -> String {
@@ -291,19 +277,6 @@ mod tests {
 
         finding.primary_location.end_line = 11;
         assert_eq!(finding_location(&finding), "src/lib.rs:7-11");
-    }
-
-    #[test]
-    fn coverage_heuristic_is_not_presented_as_coverage() {
-        assert_eq!(
-            metric_label("untested_source_files"),
-            "source_files_without_matching_test"
-        );
-        assert_eq!(
-            human_test_signal("untested sources +2 (now 4)"),
-            "source files without a matching test +2 (now 4)"
-        );
-        assert_eq!(human_test_signal("untested"), "no matching test file");
     }
 
     #[test]
