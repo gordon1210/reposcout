@@ -448,6 +448,7 @@ pub(super) fn analyze_planning_universe(
         cfg,
         &prepared.health_policy,
         false,
+        testcov::detect_frameworks(&prepared.root, &files),
     );
     Ok(Some(PlanningAnalysis {
         files,

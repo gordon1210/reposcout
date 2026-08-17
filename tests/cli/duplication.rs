@@ -302,6 +302,11 @@ fn summary_has_test_presence_top_risks_assessment() {
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
     std::fs::create_dir_all(dir.path().join("tests")).unwrap();
     std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname='fixture'\nversion='0.1.0'\n",
+    )
+    .unwrap();
+    std::fs::write(
         dir.path().join("src/lib.rs"),
         concat!(
             "pub fn classify(value: i32) -> bool { value > 0 }\n",
@@ -318,27 +323,15 @@ fn summary_has_test_presence_top_risks_assessment() {
     .unwrap();
     let v = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
 
-    // test_presence: object with the four required keys
+    // test_presence is emitted only because Cargo.toml establishes cargo-test.
     let tp = &v["summary"]["test_presence"];
     assert!(tp.is_object(), "summary.test_presence must be an object");
     assert!(
         tp["test_files"].is_number(),
         "test_presence.test_files must be a number"
     );
-    assert!(
-        tp["source_files"].is_number(),
-        "test_presence.source_files must be a number"
-    );
-    assert!(
-        tp["untested_source_files"].is_number(),
-        "test_presence.untested_source_files must be a number"
-    );
-    assert!(
-        tp["untested_samples"].is_array(),
-        "test_presence.untested_samples must be an array"
-    );
     assert!(tp["test_files"].as_u64().unwrap() >= 1);
-    assert!(tp["source_files"].as_u64().unwrap() >= 1);
+    assert_eq!(tp["frameworks"][0]["name"], "cargo-test");
 
     // top_risks: array (may be empty if no complexity data, but must exist)
     assert!(
@@ -368,6 +361,11 @@ fn summary_has_test_presence_top_risks_assessment() {
 #[test]
 fn test_presence_does_not_cross_package_boundaries() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"devDependencies":{"vitest":"latest"}}"#,
+    )
+    .unwrap();
     for package in ["web", "server"] {
         std::fs::create_dir_all(dir.path().join(format!("packages/{package}/src"))).unwrap();
         std::fs::write(
@@ -385,13 +383,7 @@ fn test_presence_does_not_cross_package_boundaries() {
 
     let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
     let presence = &report["summary"]["test_presence"];
-    assert_eq!(presence["source_files"], 2);
     assert_eq!(presence["test_files"], 1);
-    assert_eq!(presence["untested_source_files"], 1);
-    assert_eq!(
-        presence["untested_samples"],
-        serde_json::json!(["packages/server/src/user.ts"])
-    );
 }
 
 #[test]
@@ -400,6 +392,11 @@ fn rust_cli_integration_tests_cover_the_binary_entrypoint() {
     git2::Repository::init(dir.path()).unwrap();
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
     std::fs::create_dir_all(dir.path().join("tests")).unwrap();
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname='fixture'\nversion='0.1.0'\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.path().join("src/main.rs"),
         "fn main() { println!(\"ready\"); }\n",
@@ -412,11 +409,7 @@ fn rust_cli_integration_tests_cover_the_binary_entrypoint() {
     .unwrap();
 
     let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
-    assert_eq!(report["summary"]["test_presence"]["source_files"], 1);
-    assert_eq!(
-        report["summary"]["test_presence"]["untested_source_files"],
-        0
-    );
+    assert_eq!(report["summary"]["test_presence"]["test_files"], 1);
 
     let mut explain = reposcout_command();
     explain.args([
@@ -601,8 +594,9 @@ fn large_complex_file_uses_continuous_risk_without_coverage_claims() {
     assert!(reasons.iter().any(|reason| reason == "large"));
     assert!(reasons.iter().any(|reason| reason == "complex"));
     assert!(
-        reasons
+        !reasons
             .iter()
-            .any(|reason| reason == "no matching test file")
+            .filter_map(Value::as_str)
+            .any(|reason| reason.contains("test"))
     );
 }

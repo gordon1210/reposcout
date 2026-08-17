@@ -73,10 +73,29 @@ pub(super) fn baseline_delta(
     }
     metrics.push(MetricDelta {
         metric: "untested_source_files".to_string(),
-        baseline: usize_to_f64(baseline.test_presence.untested_source_files),
-        current: usize_to_f64(current.test_presence.untested_source_files),
-        delta: usize_to_f64(current.test_presence.untested_source_files)
-            - usize_to_f64(baseline.test_presence.untested_source_files),
+        baseline: usize_to_f64(
+            baseline
+                .test_presence
+                .as_ref()
+                .map_or(0, |tests| tests.untested_source_files),
+        ),
+        current: usize_to_f64(
+            current
+                .test_presence
+                .as_ref()
+                .map_or(0, |tests| tests.untested_source_files),
+        ),
+        delta: usize_to_f64(
+            current
+                .test_presence
+                .as_ref()
+                .map_or(0, |tests| tests.untested_source_files),
+        ) - usize_to_f64(
+            baseline
+                .test_presence
+                .as_ref()
+                .map_or(0, |tests| tests.untested_source_files),
+        ),
     });
 
     let mut regressions = Vec::new();
@@ -121,8 +140,14 @@ pub(super) fn baseline_delta(
         ));
     }
 
-    let untested_base = baseline.test_presence.untested_source_files;
-    let untested_cur = current.test_presence.untested_source_files;
+    let untested_base = baseline
+        .test_presence
+        .as_ref()
+        .map_or(0, |tests| tests.untested_source_files);
+    let untested_cur = current
+        .test_presence
+        .as_ref()
+        .map_or(0, |tests| tests.untested_source_files);
     if untested_cur > untested_base {
         regressions.push(format!(
             "sources without matching tests +{} (now {})",

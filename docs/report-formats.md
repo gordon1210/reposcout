@@ -113,7 +113,7 @@ guidance, not evidence that validation ran.
 
 ## Stable JSON contract
 
-Scan reports carry `schema_version: "1.0"`. The top-level contract is organized around:
+Scan reports carry `schema_version: "2.0"`. The top-level contract is organized around:
 
 | Block | Contents |
 |---|---|

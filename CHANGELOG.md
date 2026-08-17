@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Test-presence output is now conditional on checked-in evidence for a supported test runner and
+  identifies the detected framework and evidence path; repositories without an established test
+  setup omit the metric instead of interpreting test-looking filenames. The output no longer
+  publishes inferred source matches, `untested_*` fields, or matching-test risk reasons.
+
 ### Security
 
 - Updated the transitive `nanoid` lockfile resolution used by the frontend toolchain to patched

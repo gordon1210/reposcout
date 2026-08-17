@@ -245,7 +245,8 @@ fn php_is_first_class_across_scan_context_tests_and_composer_graphs() {
         dir.path().join("composer.json"),
         r#"{
           "autoload": { "psr-4": { "App\\": "src/" } },
-          "autoload-dev": { "psr-4": { "Tests\\": "tests/" } }
+          "autoload-dev": { "psr-4": { "Tests\\": "tests/" } },
+          "require-dev": { "phpunit/phpunit": "^11" }
         }"#,
     )
     .unwrap();
@@ -301,13 +302,7 @@ final class UserService {
     assert_eq!(service["symbols"]["functions"], 1);
     assert_eq!(service["complexity"]["functions"][0]["name"], "find");
     assert_eq!(service["complexity"]["functions"][0]["cyclomatic"], 2);
-    assert!(
-        !report["summary"]["test_presence"]["untested_samples"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|path| path == "src/Service/UserService.php")
-    );
+    assert_eq!(report["summary"]["test_presence"]["test_files"], 1);
     assert!(
         report["context"]["graph_languages"]
             .as_array()

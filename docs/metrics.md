@@ -194,23 +194,22 @@ SLOC, cyclomatic, and commit inputs; deterministic ties fall back to those input
 The canonical risk-finding threshold remains `0.7`, and a risk-algorithm change makes finding
 profiles baseline-incompatible.
 
-Risk reasons expose the contributing raw signals. A missing conventional test filename remains
-visible as navigation evidence, but it does not change the risk score because filename matching is
-not measured coverage.
+Risk reasons expose the contributing raw size, complexity, and churn signals. Test filename
+matching is not measured coverage and is not published as a risk reason.
 
 ## Test presence
 
-RepoScout classifies test files and estimates source/test matches from conventional names and
-logical directories. Package prefixes remain part of the match key, so identically named files in
-different monorepo packages do not cross-match.
+RepoScout emits `summary.test_presence` only when checked-in configuration establishes a supported
+test runner. Recognized evidence includes Cargo and Go manifests; PHPUnit, Vitest, Jest, pytest,
+Bun test, and Node test configuration or manifest declarations. Each detected runner includes its
+evidence path. When no supported setup is established, the entire field and the corresponding
+human report section are omitted rather than treating test-looking filenames as evidence.
 
-Rust inline `#[test]` and `#[cfg(test)]` blocks can satisfy the heuristic. PHPUnit
-`SomethingTest.php` and common `.test`, `.spec`, `test_`, and `_test` conventions are recognized.
-For Rust binary crates, `tests/cli.rs` conventionally matches the package `src/main.rs`
-entrypoint.
+Once a runner is established, RepoScout applies that runner's conventional discovery defaults to
+count selected test files. It does not publish source-to-test matches or infer coverage from names.
 
-Serialized `untested_*` names are retained for schema compatibility and mean only “no matching test
-was found.” This heuristic does not change risk or cleanup scoring.
+Legacy `untested_*` data is no longer serialized and missing matches do not contribute risk reasons
+or cleanup scoring.
 
 ## Assessment
 

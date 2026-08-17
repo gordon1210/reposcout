@@ -4,7 +4,7 @@ use super::*;
 fn full_scan_reports_core_metrics() {
     let v = run_json(&["-f", "json", &fixture()]);
 
-    assert_eq!(v["schema_version"], "1.0");
+    assert_eq!(v["schema_version"], "2.0");
     assert_eq!(v["encoding"], "o200k_base");
     assert!(v.get("report_kind").is_none());
     assert!(v.get("change_summary").is_none());
@@ -199,7 +199,7 @@ fn health_excludes_win_after_scope_and_format_includes_without_removing_inventor
         report["analysis_profile"]["health"]["excludes"],
         serde_json::json!(["second.json", "second.rs"])
     );
-    assert_eq!(report["summary"]["test_presence"]["source_files"], 1);
+    assert!(report["summary"].get("test_presence").is_none());
 
     for excluded in ["second.rs", "second.json"] {
         let file = report["files"]
@@ -232,7 +232,7 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     let output = cmd.assert().success().get_output().stdout.clone();
     let report: Value = serde_json::from_slice(&output).unwrap();
 
-    assert_eq!(report["schema_version"], "1.0");
+    assert_eq!(report["schema_version"], "2.0");
     assert_eq!(report["default_operation"], "scan");
     assert_eq!(report["default_invocation"], "reposcout [PATH]");
     assert_eq!(report["health_exclude_flag"], "--health-exclude");
