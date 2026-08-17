@@ -8,10 +8,14 @@ within their section.
 
 ### Changed
 
-- Test-presence output is now conditional on checked-in evidence for a supported test runner and
-  identifies the detected framework and evidence path; repositories without an established test
+- Test-presence output is now conditional on discovered repository evidence for a supported test
+  runner and identifies the detected framework and evidence path; repositories without an established test
   setup omit the metric instead of interpreting test-looking filenames. The output no longer
-  publishes inferred source matches, `untested_*` fields, or matching-test risk reasons.
+  publishes inferred source matches, `untested_*` fields, or matching-test risk reasons. Detection
+  now includes otherwise unsupported manifest/configuration files from discovery, uses bounded
+  reads for content-bearing manifests, scopes runner defaults to the evidence directory, and parses
+  Python dependency declarations structurally, and interprets package scripts by command
+  position.
 
 ### Security
 

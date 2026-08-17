@@ -1,7 +1,6 @@
 //! Focused renderers for `reposcout explain FILE`.
 
 use crate::model::{ExplainReport, FindingRecord};
-use crate::report::projection::human_test_signal;
 use crate::report::{
     Format, human_bytes, markdown_code_span, markdown_text, terminal_text, thousands,
 };
@@ -73,13 +72,12 @@ fn table(report: &ExplainReport, color: bool) -> String {
     kv(&mut out, "Tokens", &thousands(report.repository.tokens));
     kv(
         &mut out,
-        "Source / tests",
-        &format!(
-            "{} / {}",
-            thousands(report.repository.source_files),
-            thousands(report.repository.test_files)
-        ),
+        "Source files",
+        &thousands(report.repository.source_files),
     );
+    if let Some(test_files) = report.repository.test_files {
+        kv(&mut out, "Configured test files", &thousands(test_files));
+    }
     let _ = writeln!(out);
 
     if let Some(file) = &report.file {
@@ -125,7 +123,7 @@ fn table(report: &ExplainReport, color: bool) -> String {
                 &risk
                     .reasons
                     .iter()
-                    .map(|reason| human_test_signal(reason))
+                    .map(String::as_str)
                     .collect::<Vec<_>>()
                     .join(", "),
             );
@@ -135,22 +133,21 @@ fn table(report: &ExplainReport, color: bool) -> String {
 
     section(&mut out, "Testing", color);
     kv(&mut out, "Classification", &report.testing.classification);
-    kv(
-        &mut out,
-        "Matching test",
-        if report.testing.classification == "unavailable" {
-            "n/a"
-        } else if report.testing.tested {
-            "yes"
-        } else {
-            "no"
-        },
-    );
+    if !report.testing.frameworks.is_empty() {
+        kv(
+            &mut out,
+            "Frameworks",
+            &report
+                .testing
+                .frameworks
+                .iter()
+                .map(|framework| format!("{} ({})", framework.name, framework.evidence))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
     if report.testing.has_inline_tests {
         kv(&mut out, "Inline tests", "yes");
-    }
-    if !report.testing.matches.is_empty() {
-        kv(&mut out, "Matches", &report.testing.matches.join(", "));
     }
     let _ = writeln!(out);
 
@@ -228,12 +225,18 @@ fn markdown(report: &ExplainReport) -> String {
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "- {} files, {} tokens, {} source files, {} test files.",
+        "- {} files, {} tokens, {} source files.",
         thousands(report.repository.files),
         thousands(report.repository.tokens),
-        thousands(report.repository.source_files),
-        thousands(report.repository.test_files)
+        thousands(report.repository.source_files)
     );
+    if let Some(test_files) = report.repository.test_files {
+        let _ = writeln!(
+            out,
+            "- Configured test files: **{}**.",
+            thousands(test_files)
+        );
+    }
     let _ = writeln!(out);
 
     if let Some(file) = &report.file {
@@ -264,7 +267,7 @@ fn markdown(report: &ExplainReport) -> String {
             let reasons = risk
                 .reasons
                 .iter()
-                .map(|reason| markdown_text(&human_test_signal(reason)))
+                .map(|reason| markdown_text(reason))
                 .collect::<Vec<_>>()
                 .join(", ");
             let _ = writeln!(out, "- Reasons: {reasons}.");
@@ -276,18 +279,19 @@ fn markdown(report: &ExplainReport) -> String {
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "- Classification: **{}**; matching test: **{}**.",
-        markdown_text(&report.testing.classification),
-        if report.testing.classification == "unavailable" {
-            "n/a"
-        } else if report.testing.tested {
-            "yes"
-        } else {
-            "no"
-        }
+        "- Classification: **{}**.",
+        markdown_text(&report.testing.classification)
     );
-    for path in &report.testing.matches {
-        let _ = writeln!(out, "- Match: {}", markdown_code_span(path));
+    for framework in &report.testing.frameworks {
+        let _ = writeln!(
+            out,
+            "- Runner: **{}** from {}.",
+            markdown_text(&framework.name),
+            markdown_code_span(&framework.evidence)
+        );
+    }
+    if report.testing.has_inline_tests {
+        let _ = writeln!(out, "- Inline Rust tests are present.");
     }
     let _ = writeln!(out);
 

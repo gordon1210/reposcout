@@ -1,7 +1,4 @@
-use super::{
-    BTreeMap, DirSummary, DuplicateCoverage, FileReport, HashSet, lang, testcov, u64_to_f64,
-    usize_to_f64,
-};
+use super::{BTreeMap, DirSummary, DuplicateCoverage, FileReport, lang, u64_to_f64, usize_to_f64};
 
 /// The directory bucket for a file's relative path at the given depth.
 ///
@@ -42,20 +39,6 @@ pub(super) fn rollup_by_dir(
         mi_count: usize,
     }
 
-    // Build the global test-stem set exactly as aggregate() does.
-    let mut test_stem_set: HashSet<String> = HashSet::new();
-    for f in files {
-        if !lang::detect(&f.path).is_some_and(lang::LangInfo::is_code) {
-            continue;
-        }
-        let path_str = f.path.to_string_lossy();
-        if testcov::is_test_file(path_str.as_ref()) {
-            for key in testcov::test_stem_keys(path_str.as_ref()) {
-                test_stem_set.insert(key);
-            }
-        }
-    }
-
     let mut buckets: BTreeMap<String, Accum> = BTreeMap::new();
 
     for f in files {
@@ -79,25 +62,16 @@ pub(super) fn rollup_by_dir(
         entry.summary.sloc += f.sloc;
         entry.summary.duplicated_lines += duplicate_coverage.covered_lines(&f.path);
 
-        let is_code = lang::detect(&f.path).is_some_and(lang::LangInfo::is_code);
-        if is_code {
-            if let Some(c) = &f.complexity {
-                entry.mi_sum += c.maintainability_index;
-                entry.mi_count += 1;
-                for function in &c.functions {
-                    entry.cyc_sum += u64::from(function.cyclomatic);
-                    entry.cyc_count += 1;
-                    entry.summary.cyclomatic_max =
-                        entry.summary.cyclomatic_max.max(function.cyclomatic);
-                }
-            }
-
-            if !testcov::is_test_file(path_str.as_ref()) {
-                let stem = testcov::source_stem(path_str.as_ref());
-                let tested = f.has_inline_tests || test_stem_set.contains(&stem);
-                if !tested {
-                    entry.summary.untested_source_files += 1;
-                }
+        if lang::detect(&f.path).is_some_and(lang::LangInfo::is_code)
+            && let Some(c) = &f.complexity
+        {
+            entry.mi_sum += c.maintainability_index;
+            entry.mi_count += 1;
+            for function in &c.functions {
+                entry.cyc_sum += u64::from(function.cyclomatic);
+                entry.cyc_count += 1;
+                entry.summary.cyclomatic_max =
+                    entry.summary.cyclomatic_max.max(function.cyclomatic);
             }
         }
     }

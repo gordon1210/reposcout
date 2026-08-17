@@ -1,6 +1,6 @@
 use super::{
-    BaselineDelta, BaselineInput, FindingCatalog, MetricDelta, Path, Result, ScanProfile, Summary,
-    usize_to_f64,
+    BaselineDelta, BaselineInput, FindingCatalog, MetricDelta, Path, Result, SCHEMA_VERSION,
+    ScanProfile, Summary, usize_to_f64,
 };
 
 /// Compare two summaries and produce deltas + regression flags. Pure/testable.
@@ -71,33 +71,6 @@ pub(super) fn baseline_delta(
             },
         ]);
     }
-    metrics.push(MetricDelta {
-        metric: "untested_source_files".to_string(),
-        baseline: usize_to_f64(
-            baseline
-                .test_presence
-                .as_ref()
-                .map_or(0, |tests| tests.untested_source_files),
-        ),
-        current: usize_to_f64(
-            current
-                .test_presence
-                .as_ref()
-                .map_or(0, |tests| tests.untested_source_files),
-        ),
-        delta: usize_to_f64(
-            current
-                .test_presence
-                .as_ref()
-                .map_or(0, |tests| tests.untested_source_files),
-        ) - usize_to_f64(
-            baseline
-                .test_presence
-                .as_ref()
-                .map_or(0, |tests| tests.untested_source_files),
-        ),
-    });
-
     let mut regressions = Vec::new();
 
     let dup_base = baseline.duplication.duplicated_pct;
@@ -140,22 +113,6 @@ pub(super) fn baseline_delta(
         ));
     }
 
-    let untested_base = baseline
-        .test_presence
-        .as_ref()
-        .map_or(0, |tests| tests.untested_source_files);
-    let untested_cur = current
-        .test_presence
-        .as_ref()
-        .map_or(0, |tests| tests.untested_source_files);
-    if untested_cur > untested_base {
-        regressions.push(format!(
-            "sources without matching tests +{} (now {})",
-            untested_cur.saturating_sub(untested_base),
-            untested_cur
-        ));
-    }
-
     let regressed = !regressions.is_empty();
     BaselineDelta {
         baseline_generated_at: baseline_generated_at.to_string(),
@@ -185,6 +142,12 @@ pub(super) fn compute_baseline_delta(
             path.display()
         )
     })?;
+    if prior.schema_version != SCHEMA_VERSION {
+        return Err(anyhow::anyhow!(
+            "baseline schema version {} does not match current schema {SCHEMA_VERSION}; regenerate it with the current reposcout",
+            prior.schema_version
+        ));
+    }
     match prior.analysis_profile.as_ref() {
         Some(profile)
             if baseline_predates_duplication_artifact_policy(profile, current_profile) =>

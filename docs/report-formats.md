@@ -149,6 +149,11 @@ Risk entries in `summary.top_risks` and detailed `explain` output identify their
 profile carries the same version so baselines do not compare scores produced by different
 algorithms.
 
+Detailed `explain` output always reports repository source inventory independently of test-runner
+availability. Its configured test-file count is omitted when no supported runner is established;
+the file-level testing block then reports `unavailable` instead of a synthetic zero or an inferred
+source-to-test match.
+
 `summary.duplication` and the top-level `duplicates` block describe the configured health corpus.
 Compact `summary.top_duplicates` removes nested/substantially overlapping rankings, while
 `summary.top_production_duplicates` additionally omits test-only and Rust-inline-test-only

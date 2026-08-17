@@ -87,14 +87,9 @@ pub struct SkipCandidate {
 /// Test files selected by runners established from repository-owned evidence.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TestPresence {
+    #[serde(default)]
     pub frameworks: Vec<TestFramework>,
     pub test_files: usize,
-    #[serde(skip)]
-    pub source_files: usize,
-    #[serde(skip)]
-    pub untested_source_files: usize,
-    #[serde(skip)]
-    pub untested_samples: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -114,10 +109,6 @@ pub struct RiskEntry {
     pub sloc: usize,
     pub cyclomatic: u32,
     pub churn_commits: usize,
-    /// No matching test file or inline Rust test was found. The field name is
-    /// retained for JSON compatibility and does not represent code coverage.
-    #[serde(skip)]
-    pub untested: bool,
     pub reasons: Vec<String>,
 }
 

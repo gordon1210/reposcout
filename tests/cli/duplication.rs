@@ -332,6 +332,9 @@ fn summary_has_test_presence_top_risks_assessment() {
     );
     assert!(tp["test_files"].as_u64().unwrap() >= 1);
     assert_eq!(tp["frameworks"][0]["name"], "cargo-test");
+    for legacy in ["source_files", "untested_source_files", "untested_samples"] {
+        assert!(tp.get(legacy).is_none(), "legacy field remained: {legacy}");
+    }
 
     // top_risks: array (may be empty if no complexity data, but must exist)
     assert!(
@@ -361,8 +364,9 @@ fn summary_has_test_presence_top_risks_assessment() {
 #[test]
 fn test_presence_does_not_cross_package_boundaries() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("packages/web")).unwrap();
     std::fs::write(
-        dir.path().join("package.json"),
+        dir.path().join("packages/web/package.json"),
         r#"{"devDependencies":{"vitest":"latest"}}"#,
     )
     .unwrap();
@@ -380,6 +384,12 @@ fn test_presence_does_not_cross_package_boundaries() {
         "export const userTest = 1;\n",
     )
     .unwrap();
+    std::fs::create_dir_all(dir.path().join("packages/server/tests")).unwrap();
+    std::fs::write(
+        dir.path().join("packages/server/tests/user.test.ts"),
+        "export const userTest = 1;\n",
+    )
+    .unwrap();
 
     let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
     let presence = &report["summary"]["test_presence"];
@@ -387,7 +397,38 @@ fn test_presence_does_not_cross_package_boundaries() {
 }
 
 #[test]
-fn rust_cli_integration_tests_cover_the_binary_entrypoint() {
+fn runner_detection_uses_discovered_files_that_are_not_analyzed_formats() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("internal")).unwrap();
+    std::fs::create_dir_all(dir.path().join("tests")).unwrap();
+    std::fs::write(dir.path().join("go.mod"), "module example.com/fixture\n").unwrap();
+    std::fs::write(dir.path().join("pytest.ini"), "[pytest]\n").unwrap();
+    std::fs::write(
+        dir.path().join("internal/user_test.go"),
+        "package internal\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("tests/test_user.py"),
+        "def test_user():\n    assert True\n",
+    )
+    .unwrap();
+
+    let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
+    let presence = &report["summary"]["test_presence"];
+    let frameworks = presence["frameworks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|framework| framework["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(frameworks, ["go-test", "pytest"]);
+    assert_eq!(presence["test_files"], 2);
+}
+
+#[test]
+fn rust_cli_integration_tests_are_runner_discovered_without_coverage_claims() {
     let dir = tempfile::tempdir().unwrap();
     git2::Repository::init(dir.path()).unwrap();
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -422,14 +463,10 @@ fn rust_cli_integration_tests_cover_the_binary_entrypoint() {
     ]);
     let explained: Value =
         serde_json::from_slice(&explain.assert().success().get_output().stdout).unwrap();
-    assert_eq!(explained["testing"]["tested"], true);
-    assert!(
-        explained["testing"]["matches"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|path| path == "tests/cli.rs")
-    );
+    assert_eq!(explained["testing"]["classification"], "source");
+    assert_eq!(explained["testing"]["frameworks"][0]["name"], "cargo-test");
+    assert!(explained["testing"].get("tested").is_none());
+    assert!(explained["testing"].get("matches").is_none());
 }
 
 #[test]
@@ -591,6 +628,7 @@ fn large_complex_file_uses_continuous_risk_without_coverage_claims() {
         "continuous half-saturation score changed unexpectedly: {risk:?}"
     );
     let reasons = risk["reasons"].as_array().unwrap();
+    assert!(risk.get("untested").is_none());
     assert!(reasons.iter().any(|reason| reason == "large"));
     assert!(reasons.iter().any(|reason| reason == "complex"));
     assert!(

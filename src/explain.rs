@@ -75,9 +75,11 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
         .iter()
         .find(|candidate| candidate.path == path)
         .cloned();
-    let testing = testing_context(&path, file_report.as_ref(), &report.files);
+    let testing = testing_context_from_summary(&path, file_report.as_ref(), &report.summary);
     let risk = file_report.as_ref().and_then(|file| {
-        (testing.classification == "source").then(|| risk::explain(file, !testing.tested))
+        (lang::detect(&file.path).is_some_and(lang::LangInfo::is_code)
+            && testing.classification != "test")
+            .then(|| risk::explain(file))
     });
     let graph = graph::explain_with_facts(
         &report.files,
@@ -119,16 +121,24 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
     })
 }
 
-fn explain_repository(summary: &crate::model::Summary) -> ExplainRepository {
-    let (source_files, test_files) = summary
+fn testing_context_from_summary(
+    path: &Path,
+    file: Option<&FileReport>,
+    summary: &crate::model::Summary,
+) -> TestExplanation {
+    let frameworks = summary
         .test_presence
         .as_ref()
-        .map_or((0, 0), |tests| (tests.source_files, tests.test_files));
+        .map_or_else(Vec::new, |tests| tests.frameworks.clone());
+    testing_context(path, file, &frameworks)
+}
+
+fn explain_repository(summary: &crate::model::Summary) -> ExplainRepository {
     ExplainRepository {
         files: summary.files,
         tokens: summary.tokens,
-        source_files,
-        test_files,
+        source_files: summary.source.files,
+        test_files: summary.test_presence.as_ref().map(|tests| tests.test_files),
     }
 }
 
@@ -406,7 +416,7 @@ fn hidden_component(path: &Path) -> Option<&str> {
 fn testing_context(
     path: &Path,
     file: Option<&FileReport>,
-    files: &[FileReport],
+    frameworks: &[crate::model::TestFramework],
 ) -> TestExplanation {
     let Some(file) = file else {
         return TestExplanation {
@@ -421,44 +431,27 @@ fn testing_context(
         };
     }
     let path_string = path.to_string_lossy();
-    if testcov::is_test_file(path_string.as_ref()) {
-        let keys = testcov::test_stem_keys(path_string.as_ref());
-        let mut matches = files
-            .iter()
-            .filter(|candidate| {
-                let candidate = candidate.path.to_string_lossy();
-                !testcov::is_test_file(candidate.as_ref())
-                    && keys.contains(&testcov::source_stem(candidate.as_ref()))
-            })
-            .map(|candidate| candidate.path.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        matches.sort();
+    let applicable = frameworks
+        .iter()
+        .filter(|framework| testcov::framework_applies_to_path(framework, path_string.as_ref()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if applicable.is_empty() {
         return TestExplanation {
-            classification: "test".to_string(),
-            tested: true,
+            classification: "unavailable".to_string(),
             has_inline_tests: file.has_inline_tests,
-            logical_key: keys.first().cloned().unwrap_or_default(),
-            matches,
+            frameworks: Vec::new(),
         };
     }
-
-    let logical_key = testcov::source_stem(path_string.as_ref());
-    let mut matches = files
-        .iter()
-        .filter(|candidate| {
-            let candidate = candidate.path.to_string_lossy();
-            testcov::is_test_file(candidate.as_ref())
-                && testcov::test_stem_keys(candidate.as_ref()).contains(&logical_key)
-        })
-        .map(|candidate| candidate.path.to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    matches.sort();
+    let classification = if testcov::is_framework_test_file(&applicable, path_string.as_ref()) {
+        "test"
+    } else {
+        "source"
+    };
     TestExplanation {
-        classification: "source".to_string(),
-        tested: file.has_inline_tests || !matches.is_empty(),
+        classification: classification.to_string(),
         has_inline_tests: file.has_inline_tests,
-        logical_key,
-        matches,
+        frameworks: applicable,
     }
 }
 

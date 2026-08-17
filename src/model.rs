@@ -241,7 +241,6 @@ pub struct DirSummary {
     pub cyclomatic_max: u32,
     pub mi_avg: f64,
     pub duplicated_lines: usize,
-    pub untested_source_files: usize,
 }
 
 /// Inventory totals for authored program and build source. The repository-wide

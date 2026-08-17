@@ -259,8 +259,7 @@ function makeGraphReport() {
       sloc: 16,
       cyclomatic: 4,
       churn_commits: 3,
-      untested: true,
-      reasons: ["high complexity", "no matching test"],
+      reasons: ["high complexity"],
     },
   ]
   report.finding_catalog.findings = [

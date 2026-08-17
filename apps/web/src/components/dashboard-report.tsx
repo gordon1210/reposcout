@@ -646,7 +646,7 @@ function Overview({ report }: { report: ScanReport }) {
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Coverage signals</CardTitle>
+            <CardTitle>Health signals</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <StatLine

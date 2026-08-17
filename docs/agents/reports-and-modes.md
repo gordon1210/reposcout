@@ -18,6 +18,11 @@ metadata and `summary`, not omitted arrays. It cannot provide finding-level comp
 `--baseline-ready` is the finding-complete compact artifact: it removes heavy arrays and opt-in
 analysis blocks but retains `finding_catalog`.
 
+Schema 2 reports do not expose inferred source-to-test matches through summaries, directory
+rollups, baseline metrics, risk entries, or `explain`. Explain's repository source count is complete
+inventory and remains available without a configured runner; its configured test-file count is
+optional, and file classification is `unavailable` when no evidence-scoped runner applies.
+
 ## Change summary
 
 `--change-summary` is the bounded change-decision mode:
@@ -88,7 +93,8 @@ cached full-tree file facts. A subpath target still limits which changed paths s
 
 New reports carry additive `analysis_profile` metadata for analyzer availability, diff scope,
 health policy, duplication settings, and finding settings. A baseline must match that profile,
-target scope, and effective token encoding. Omit metrics for disabled analyzers.
+target scope, schema version, and effective token encoding. Omit metrics for disabled
+analyzers and signals that are not comparable measurements, including configured test-file counts.
 
 Finding comparison is complete only when both catalogs and finding profiles are compatible. Older
 compatible reports without catalogs are aggregate-only. Reports predating analyzer-profile

@@ -1,6 +1,6 @@
 use super::aggregate::{
-    build_assessment, production_duplication, production_duplication_is_complete,
-    test_and_risk_summary,
+    build_assessment, compare_risk_entries, production_duplication,
+    production_duplication_is_complete, test_and_risk_summary,
 };
 use super::analyze_source;
 use super::baseline::{baseline_delta, scan_profiles_compatible};
@@ -12,10 +12,40 @@ use crate::config::{Config, Enabled};
 use crate::dup::{DuplicateCoverage, fuzzy::Type2Diagnostics};
 use crate::git::DiffScope;
 use crate::model::{
-    CloneGroup, CloneInstance, Duplication, LineRange, ProductionDuplication, ScanDiagnostics,
-    Summary,
+    CloneGroup, CloneInstance, Duplication, LineRange, ProductionDuplication, RiskEntry,
+    ScanDiagnostics, Summary,
 };
 use std::path::{Path, PathBuf};
+
+#[test]
+fn risk_order_uses_every_documented_tie_breaker() {
+    let entry = |path: &str, sloc, cyclomatic, churn_commits| RiskEntry {
+        path: path.to_string(),
+        algorithm_version: 5,
+        score: 0.5,
+        sloc,
+        cyclomatic,
+        churn_commits,
+        reasons: Vec::new(),
+    };
+    let mut risks = [
+        entry("z.rs", 10, 3, 2),
+        entry("a.rs", 10, 3, 2),
+        entry("churn.rs", 10, 3, 4),
+        entry("cyclomatic.rs", 10, 5, 1),
+        entry("sloc.rs", 20, 1, 1),
+    ];
+
+    risks.sort_by(compare_risk_entries);
+
+    assert_eq!(
+        risks
+            .iter()
+            .map(|risk| risk.path.as_str())
+            .collect::<Vec<_>>(),
+        ["sloc.rs", "cyclomatic.rs", "churn.rs", "a.rs", "z.rs"]
+    );
+}
 
 #[test]
 fn type2_limits_mark_scan_diagnostics_partial() {
@@ -210,15 +240,8 @@ fn baseline_profiles_require_matching_resource_limits() {
 }
 
 #[test]
-fn assessment_treats_test_filename_matching_as_informational() {
-    let summary = Summary {
-        test_presence: Some(crate::model::TestPresence {
-            source_files: 4,
-            untested_source_files: 3,
-            ..crate::model::TestPresence::default()
-        }),
-        ..Summary::default()
-    };
+fn assessment_uses_only_actionable_cleanup_signals() {
+    let summary = Summary::default();
     let evidence_at_threshold = ProductionDuplication {
         corpus: "production-source".to_string(),
         duplicated_lines: 15,
@@ -253,12 +276,6 @@ fn assessment_treats_test_filename_matching_as_informational() {
             .reasons
             .iter()
             .any(|reason| reason == "high source duplication (15.1%)")
-    );
-    assert!(
-        !above_threshold
-            .reasons
-            .iter()
-            .any(|reason| reason == "many source files have no matching test file")
     );
     let evidence = above_threshold
         .production_duplication
@@ -472,11 +489,17 @@ fn source_analysis_limits_first_class_markers_to_comments() {
 }
 
 #[test]
-fn baseline_regression_describes_test_matching_heuristic() {
-    let baseline = Summary::default();
+fn baseline_omits_runner_test_counts_from_regression_metrics() {
+    let baseline = Summary {
+        test_presence: Some(crate::model::TestPresence {
+            test_files: 1,
+            ..crate::model::TestPresence::default()
+        }),
+        ..Summary::default()
+    };
     let current = Summary {
         test_presence: Some(crate::model::TestPresence {
-            untested_source_files: 1,
+            test_files: 3,
             ..crate::model::TestPresence::default()
         }),
         ..Summary::default()
@@ -491,10 +514,11 @@ fn baseline_regression_describes_test_matching_heuristic() {
 
     assert!(
         delta
-            .regressions
+            .metrics
             .iter()
-            .any(|reason| reason == "sources without matching tests +1 (now 1)")
+            .all(|metric| !metric.metric.contains("test"))
     );
+    assert!(!delta.regressed);
 }
 
 #[test]

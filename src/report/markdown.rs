@@ -4,7 +4,7 @@ use crate::model::{ScanDiagnostics, ScanReport};
 use crate::numeric::usize_to_f64;
 use crate::report::projection::{
     file_cyclomatic_average, finding_location, human_duplicate_projection, human_risk_heading,
-    human_test_signal, metric_delta_display, metric_label, source_language_rollup,
+    metric_delta_display, source_language_rollup,
 };
 use crate::report::{
     ConfigGuidance, RenderOptions, config_guidance, dup_locations, human_bytes, markdown_code_span,
@@ -283,13 +283,7 @@ fn render_top_risks(out: &mut String, report: &ScanReport) {
                 r.cyclomatic,
                 average,
                 r.churn_commits,
-                markdown_table_text(
-                    &r.reasons
-                        .iter()
-                        .map(|reason| human_test_signal(reason))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
+                markdown_table_text(&r.reasons.join(", ")),
             );
         }
         let _ = writeln!(out);
@@ -302,13 +296,13 @@ fn render_directories(out: &mut String, report: &ScanReport) {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "| Path | Files | Tokens | SLOC | Cyclo avg | MI avg | Dup lines | No filename match |"
+            "| Path | Files | Tokens | SLOC | Cyclo avg | MI avg | Dup lines |"
         );
-        let _ = writeln!(out, "|---|--:|--:|--:|--:|--:|--:|--:|");
+        let _ = writeln!(out, "|---|--:|--:|--:|--:|--:|--:|");
         for d in &report.directories {
             let _ = writeln!(
                 out,
-                "| {} | {} | {} | {} | {:.1} | {:.0} | {} | {} |",
+                "| {} | {} | {} | {} | {:.1} | {:.0} | {} |",
                 markdown_table_code_span(&d.path),
                 thousands(d.files),
                 thousands(d.tokens),
@@ -316,7 +310,6 @@ fn render_directories(out: &mut String, report: &ScanReport) {
                 d.cyclomatic_avg,
                 d.mi_avg,
                 thousands(d.duplicated_lines),
-                thousands(d.untested_source_files),
             );
         }
         let _ = writeln!(out);
@@ -337,7 +330,7 @@ fn render_baseline(out: &mut String, report: &ScanReport) {
         let _ = writeln!(
             out,
             "| {} | {} | {} | {} |",
-            markdown_table_text(metric_label(&metric.metric)),
+            markdown_table_text(&metric.metric),
             display.baseline,
             display.current,
             display.delta
@@ -347,12 +340,7 @@ fn render_baseline(out: &mut String, report: &ScanReport) {
     let regressions = if baseline.regressions.is_empty() {
         "none".to_string()
     } else {
-        baseline
-            .regressions
-            .iter()
-            .map(|regression| human_test_signal(regression))
-            .collect::<Vec<_>>()
-            .join("; ")
+        baseline.regressions.join("; ")
     };
     let _ = writeln!(out, "Regressions: {}", markdown_text(&regressions));
     if baseline.finding_changes.comparison == "complete" {

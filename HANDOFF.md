@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-08-17 · latest release 0.1.15 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-08-18 · latest release 0.1.15 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 16_
 
 ---
@@ -197,11 +197,15 @@ that a new maintainer still needs to interpret the current architecture and road
    Churn has a separate OS-cache index of immutable commit events and exact result views.
    `Duplication`, graph topology, and `Summary` remain scan-wide computations. `--no-cache`
    disables both per-file and churn caches.
-7. **`SCHEMA_VERSION` is `2.0`.** Test-presence output is now optional and carries framework
-   evidence, so consumers must treat an absent field as “no supported configured runner found.” Additive fields (e.g. `similarity`,
-   `top_duplicates`) have been treated as non-breaking for this pre-release tool. **Bump
-   it and update the integration tests for any breaking JSON change.** Additive fields must
-   carry `#[serde(default)]` so old baseline/cache JSON still deserializes.
+7. **`SCHEMA_VERSION` is `2.0`.** Test-presence output is optional and carries framework evidence,
+   so consumers must treat an absent field as “no supported configured runner found.” Detection
+   uses the bounded discovery universe for the requested scope, reads only candidate manifests through
+   the bounded no-follow path, and scopes runner defaults to the evidence directory. Explain,
+   rollups, baselines, risk output, and aggregate reports do not publish inferred source-to-test or
+   `untested_*` claims. Additive fields (e.g. `similarity`, `top_duplicates`) have been treated as
+   non-breaking for this pre-release tool. **Bump it and update the integration tests for any
+   breaking JSON change.** Additive fields must carry `#[serde(default)]` so old baseline/cache JSON
+   still deserializes before explicit compatibility checks.
 8. **The dependency graph and `--impact` cover every first-class language heuristically.** `graph.rs`
    resolves relative imports, TypeScript `baseUrl`/`paths`, deterministic local package metadata,
    unambiguous Python absolute/`src` imports, Composer PSR-4/PSR-0 maps, and static PHP includes,

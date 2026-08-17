@@ -30,10 +30,7 @@ fn by_dir_produces_directories_array() {
             d["duplicated_lines"].is_number(),
             "each entry must have 'duplicated_lines'"
         );
-        assert!(
-            d["untested_source_files"].is_number(),
-            "each entry must have 'untested_source_files'"
-        );
+        assert!(d.get("untested_source_files").is_none());
     }
 }
 
@@ -289,6 +286,38 @@ fn baseline_rejects_mismatched_analyzer_profiles() {
 }
 
 #[test]
+fn baseline_rejects_a_previous_breaking_schema_version() {
+    let fix = fixture();
+    let tmp = tempfile::NamedTempFile::new().expect("temp file");
+    let tmp_path = tmp.path().to_str().unwrap().to_string();
+
+    let mut save = reposcout_command();
+    save.args(["-f", "json", "--no-cache", "--quiet", "-o", &tmp_path, &fix]);
+    save.assert().success();
+
+    let mut baseline: Value = serde_json::from_slice(&std::fs::read(&tmp_path).unwrap()).unwrap();
+    baseline["schema_version"] = Value::String("1.0".to_string());
+    std::fs::write(&tmp_path, serde_json::to_vec(&baseline).unwrap()).unwrap();
+
+    let mut compare = reposcout_command();
+    compare.args([
+        "-f",
+        "json",
+        "--baseline",
+        &tmp_path,
+        "--no-cache",
+        "--quiet",
+        &fix,
+    ]);
+    let output = compare.assert().code(1).get_output().stderr.clone();
+    let error = String::from_utf8(output).unwrap();
+    assert!(
+        error.contains("baseline schema version 1.0 does not match current schema 2.0"),
+        "error was: {error}"
+    );
+}
+
+#[test]
 fn focused_baseline_reports_only_available_metrics() {
     let fix = fixture();
     let tmp = tempfile::NamedTempFile::new().expect("temp file");
@@ -314,10 +343,7 @@ fn focused_baseline_reports_only_available_metrics() {
         .iter()
         .map(|metric| metric["metric"].as_str().unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(
-        names,
-        vec!["files", "tokens", "sloc", "untested_source_files"]
-    );
+    assert_eq!(names, vec!["files", "tokens", "sloc"]);
     assert_eq!(report["baseline"]["regressed"], false);
 }
 

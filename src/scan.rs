@@ -50,6 +50,7 @@ struct SourceAnalysis {
 
 #[derive(serde::Deserialize)]
 struct BaselineInput {
+    schema_version: String,
     generated_at: String,
     encoding: String,
     root: PathBuf,
@@ -89,6 +90,8 @@ struct ScanProgress {
 struct PreparedScan {
     discovered: walk::Discovered,
     planning_discovered: Option<walk::Discovered>,
+    test_frameworks: Vec<crate::model::TestFramework>,
+    planning_test_frameworks: Vec<crate::model::TestFramework>,
     root: PathBuf,
     diff_base: Option<String>,
     analysis_profile: ScanProfile,
@@ -370,6 +373,7 @@ fn prepare_scan(
         } else {
             walk::discover_with_exclusions_until(target, cfg, &effective_exclusions, deadline)?
         };
+    let test_frameworks = detect_test_frameworks(&discovered, cfg.max_file_bytes);
     let root = discovered.root.clone();
     let diff_base = match cfg.diff_scope.as_ref() {
         Some(scope) => git::diff_base_tree_id(&root, scope)?,
@@ -432,6 +436,9 @@ fn prepare_scan(
         })
         .unwrap_or_default();
     let planning_discovered = needs_planning_universe.then_some(full_discovered).flatten();
+    let planning_test_frameworks = planning_discovered.as_ref().map_or_else(Vec::new, |files| {
+        detect_test_frameworks(files, cfg.max_file_bytes)
+    });
     if let Some(changed) = &changed_files {
         discovered
             .files
@@ -441,6 +448,8 @@ fn prepare_scan(
     Ok(PreparedScan {
         discovered,
         planning_discovered,
+        test_frameworks,
+        planning_test_frameworks,
         root,
         diff_base,
         analysis_profile,
@@ -453,6 +462,19 @@ fn prepare_scan(
         deadline,
         health_policy,
     })
+}
+
+fn detect_test_frameworks(
+    discovered: &walk::Discovered,
+    max_file_bytes: u64,
+) -> Vec<crate::model::TestFramework> {
+    testcov::detect_frameworks(
+        discovered
+            .files
+            .iter()
+            .map(|file| (file.absolute_path.as_path(), file.report_path.as_path())),
+        max_file_bytes,
+    )
 }
 
 fn scan_exclusions(cfg: &Config, exclusions: &[PathBuf]) -> Vec<PathBuf> {

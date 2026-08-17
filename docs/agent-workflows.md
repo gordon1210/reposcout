@@ -33,7 +33,7 @@ The most useful first-pass fields are:
 | Is cleanup worthwhile? | `summary.assessment.production_duplication`, complexity violations, risks, and assessment reasons |
 | What should be read first? | `summary.top_risks`, `summary.top_source_token_files` |
 | What can be skipped? | `summary.skip_candidates` and each reason |
-| Are tests present? | `summary.test_presence` |
+| Is a supported test runner configured, and what files do its defaults select? | `summary.test_presence` |
 | Did the scan cover the target? | top-level `diagnostics` |
 | Was Type-2 analysis complete? | `diagnostics.type2_analysis_partial` |
 
@@ -70,9 +70,9 @@ limits through `reposcout capabilities -f json`.
 These are raw measurements. The calling agent decides whether the task fits its available context,
 needs deeper inspection, or would benefit from splitting or delegation.
 
-The serialized `untested_*` fields mean “no conventional matching test file or inline Rust test
-was found.” Rust `tests/cli.rs` also conventionally matches `src/main.rs`; these are
-test-presence heuristics, not measured coverage, and they do not change risk or cleanup scoring.
+`summary.test_presence` exists only when discovered manifests or runner configuration establish a
+supported test setup. It reports the evidence-backed runners and files selected by their default
+discovery conventions; it does not infer source-to-test matches or measured coverage.
 
 ## Interpret quality evidence progressively
 
