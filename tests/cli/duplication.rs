@@ -465,6 +465,30 @@ fn subpath_scan_uses_runner_evidence_from_repository_ancestors() {
 }
 
 #[test]
+fn subpath_scan_honors_repository_ignores_for_ancestor_runner_evidence() {
+    for ignore_file in [".gitignore", ".ignore", ".reposcoutignore"] {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname='fixture'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join(ignore_file), "Cargo.toml\n").unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "pub fn ready() {}\n").unwrap();
+
+        let target = dir.path().join("src");
+        let report = run_json(&["-f", "json", target.to_str().unwrap()]);
+
+        assert!(
+            report["summary"].get("test_presence").is_none(),
+            "ancestor runner evidence ignored by {ignore_file} was still used"
+        );
+    }
+}
+
+#[test]
 #[cfg(unix)]
 fn subpath_scan_does_not_follow_ancestor_runner_evidence_symlinks() {
     let dir = tempfile::tempdir().unwrap();

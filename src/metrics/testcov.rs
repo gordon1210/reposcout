@@ -135,14 +135,22 @@ fn detect_package_json(content: &str, evidence: &str, found: &mut Vec<TestFramew
         }) {
             push_framework(found, "bun-test", evidence);
         }
-        if script_invokes(script, "node", |arguments| {
-            arguments
-                .iter()
-                .any(|argument| *argument == "--test" || argument.starts_with("--test="))
-        }) {
+        if script_invokes(script, "node", node_invokes_test_runner) {
             push_framework(found, "node-test", evidence);
         }
     }
+}
+
+fn node_invokes_test_runner(arguments: &[&str]) -> bool {
+    for argument in arguments {
+        if *argument == "--" || !argument.starts_with('-') {
+            return false;
+        }
+        if *argument == "--test" || argument.starts_with("--test=") {
+            return true;
+        }
+    }
+    false
 }
 
 fn script_invokes(
@@ -1005,13 +1013,15 @@ mod tests {
             "npm exec -- jest",
             "cross-env NODE_ENV=test bun test",
             "node --test",
+            "node --trace-warnings --test",
+            "node --test=unit",
         ] {
             assert!(
                 script_invokes(script, "vitest", |_| true)
                     || script_invokes(script, "jest", |_| true)
                     || script_invokes(script, "bun", |arguments| arguments.first()
                         == Some(&"test"))
-                    || script_invokes(script, "node", |arguments| arguments.contains(&"--test")),
+                    || script_invokes(script, "node", node_invokes_test_runner),
                 "missed runner command: {script}"
             );
         }
@@ -1022,6 +1032,8 @@ mod tests {
             "pnpm --filter vitest lint",
             "npx --package vitest echo ready",
             "node --test-reporter spec",
+            "node server.js --test",
+            "node -- server.js --test",
         ] {
             assert!(!script_invokes(script, "vitest", |_| true), "{script}");
             assert!(!script_invokes(script, "jest", |_| true), "{script}");
@@ -1031,11 +1043,7 @@ mod tests {
                 "{script}"
             );
             assert!(
-                !script_invokes(script, "node", |arguments| {
-                    arguments
-                        .iter()
-                        .any(|argument| *argument == "--test" || argument.starts_with("--test="))
-                }),
+                !script_invokes(script, "node", node_invokes_test_runner),
                 "{script}"
             );
         }
