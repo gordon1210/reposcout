@@ -1,9 +1,12 @@
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import type { ColumnDef } from "@tanstack/react-table"
 import { describe, expect, it } from "vitest"
 
-import { DataTable, DataTableColumnHeader } from "@/components/ui/data-table"
+import {
+  DataTable,
+  DataTableColumnHeader,
+  type DataTableColumnDef,
+} from "@/components/ui/data-table"
 
 interface Entry {
   id: string
@@ -11,7 +14,7 @@ interface Entry {
   score: number
 }
 
-const columns: ColumnDef<Entry, unknown>[] = [
+const columns: DataTableColumnDef<Entry>[] = [
   {
     accessorKey: "name",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,

@@ -2,17 +2,26 @@ import { useCallback, useMemo, useState } from "react"
 import {
   type Column,
   type ColumnDef,
+  type ColumnVisibilityState,
   type FilterFn,
   type RowData,
   type SortingState,
   type TableOptions,
-  type VisibilityState,
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  globalFilteringFeature,
+  metaHelper,
+  rowPaginationFeature,
+  rowSortingFeature,
+  sortFn_alphanumeric,
+  sortFn_datetime,
+  sortFn_text,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table"
 import {
   ArrowDown,
@@ -54,16 +63,38 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 
-declare module "@tanstack/react-table" {
-  interface ColumnMeta<TData extends RowData, TValue> {
-    label?: string
-    headerClassName?: string
-    cellClassName?: string
-  }
+interface DataTableColumnMeta {
+  label?: string
+  headerClassName?: string
+  cellClassName?: string
 }
 
-interface DataTableProps<TData> {
-  columns: ColumnDef<TData, unknown>[]
+const dataTableFeatures = tableFeatures({
+  columnFilteringFeature,
+  globalFilteringFeature,
+  filteredRowModel: createFilteredRowModel(),
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    datetime: sortFn_datetime,
+    text: sortFn_text,
+  },
+  rowPaginationFeature,
+  paginatedRowModel: createPaginatedRowModel(),
+  columnVisibilityFeature,
+  columnMeta: metaHelper<DataTableColumnMeta>(),
+})
+
+type DataTableFeatures = typeof dataTableFeatures
+
+export type DataTableColumnDef<
+  TData extends RowData,
+  TValue = unknown,
+> = ColumnDef<DataTableFeatures, TData, TValue>
+
+interface DataTableProps<TData extends RowData> {
+  columns: DataTableColumnDef<TData>[]
   data: TData[]
   label: string
   searchPlaceholder: string
@@ -72,17 +103,17 @@ interface DataTableProps<TData> {
   initialSorting?: SortingState
   defaultPageSize?: number
   pageSizeOptions?: number[]
-  getRowId?: TableOptions<TData>["getRowId"]
+  getRowId?: TableOptions<DataTableFeatures, TData>["getRowId"]
 }
 
-interface DataTableColumnHeaderProps<TData, TValue> {
-  column: Column<TData, TValue>
+interface DataTableColumnHeaderProps<TData extends RowData, TValue> {
+  column: Column<DataTableFeatures, TData, TValue>
   title: string
   align?: "left" | "right"
   className?: string
 }
 
-export function DataTableColumnHeader<TData, TValue>({
+export function DataTableColumnHeader<TData extends RowData, TValue>({
   column,
   title,
   align = "left",
@@ -114,7 +145,7 @@ export function DataTableColumnHeader<TData, TValue>({
   )
 }
 
-export function DataTable<TData>({
+export function DataTable<TData extends RowData>({
   columns,
   data,
   label,
@@ -127,7 +158,7 @@ export function DataTable<TData>({
   getRowId,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting)
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({})
   const [globalFilter, setGlobalFilter] = useState("")
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: defaultPageSize })
   const searchIndex = useMemo(
@@ -135,7 +166,7 @@ export function DataTable<TData>({
     [data, searchText],
   )
 
-  const searchFilter = useCallback<FilterFn<TData>>(
+  const searchFilter = useCallback<FilterFn<DataTableFeatures, TData>>(
     (row, _columnId, filterValue) => {
       const query = String(filterValue).trim().toLocaleLowerCase()
       return query.length === 0 || searchIndex.get(row.original)?.includes(query) === true
@@ -143,7 +174,8 @@ export function DataTable<TData>({
     [searchIndex],
   )
 
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data,
     columns,
     state: { sorting, columnVisibility, globalFilter, pagination },
@@ -153,10 +185,6 @@ export function DataTable<TData>({
     onPaginationChange: setPagination,
     globalFilterFn: searchFilter,
     getColumnCanGlobalFilter: () => true,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
     getRowId,
   })
 
@@ -164,7 +192,7 @@ export function DataTable<TData>({
     .getAllLeafColumns()
     .filter((column) => column.getCanHide() && typeof column.accessorFn !== "undefined")
   const filteredRows = table.getFilteredRowModel().rows.length
-  const { pageIndex, pageSize } = table.getState().pagination
+  const { pageIndex, pageSize } = table.state.pagination
   const firstRow = filteredRows === 0 ? 0 : pageIndex * pageSize + 1
   const lastRow = Math.min((pageIndex + 1) * pageSize, filteredRows)
   const pageCount = Math.max(1, table.getPageCount())

@@ -1,5 +1,4 @@
 import { lazy, Suspense, useMemo } from "react"
-import type { ColumnDef } from "@tanstack/react-table"
 import {
   Activity,
   AlertTriangle,
@@ -20,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { DataTable, DataTableColumnHeader } from "@/components/ui/data-table"
+import type { DataTableColumnDef } from "@/components/ui/data-table"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -197,7 +197,7 @@ export function ReportDashboard({
 
 function languageColumns(
   largestTokens: number
-): ColumnDef<LanguageStat, unknown>[] {
+): DataTableColumnDef<LanguageStat>[] {
   return [
     {
       accessorKey: "name",
@@ -251,7 +251,7 @@ function languageColumns(
   ]
 }
 
-const riskColumns: ColumnDef<RiskEntry, unknown>[] = [
+const riskColumns: DataTableColumnDef<RiskEntry>[] = [
   {
     accessorKey: "path",
     header: ({ column }) => (
@@ -320,7 +320,7 @@ const riskColumns: ColumnDef<RiskEntry, unknown>[] = [
   },
 ]
 
-const complexityColumns: ColumnDef<FunctionHotspot, unknown>[] = [
+const complexityColumns: DataTableColumnDef<FunctionHotspot>[] = [
   {
     accessorKey: "name",
     header: ({ column }) => (
@@ -371,7 +371,7 @@ const complexityColumns: ColumnDef<FunctionHotspot, unknown>[] = [
   },
 ]
 
-const duplicateColumns: ColumnDef<DuplicateBlock, unknown>[] = [
+const duplicateColumns: DataTableColumnDef<DuplicateBlock>[] = [
   {
     id: "kind",
     accessorFn: (duplicate) =>
@@ -456,7 +456,7 @@ const duplicateColumns: ColumnDef<DuplicateBlock, unknown>[] = [
   },
 ]
 
-const fileColumns: ColumnDef<FileReport, unknown>[] = [
+const fileColumns: DataTableColumnDef<FileReport>[] = [
   {
     accessorKey: "path",
     header: ({ column }) => (
@@ -540,7 +540,7 @@ const fileColumns: ColumnDef<FileReport, unknown>[] = [
 
 const severityRank: Record<string, number> = { error: 3, warning: 2, note: 1 }
 
-const findingColumns: ColumnDef<FindingRecord, unknown>[] = [
+const findingColumns: DataTableColumnDef<FindingRecord>[] = [
   {
     accessorKey: "severity",
     header: ({ column }) => (
@@ -553,7 +553,7 @@ const findingColumns: ColumnDef<FindingRecord, unknown>[] = [
         {row.original.severity}
       </Badge>
     ),
-    sortingFn: (left, right) =>
+    sortFn: (left, right) =>
       (severityRank[left.original.severity] ?? 0) -
       (severityRank[right.original.severity] ?? 0),
     meta: { label: "Severity" },
