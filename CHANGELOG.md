@@ -12,10 +12,11 @@ within their section.
   runner and identifies the detected framework and evidence path; repositories without an established test
   setup omit the metric instead of interpreting test-looking filenames. The output no longer
   publishes inferred source matches, `untested_*` fields, or matching-test risk reasons. Detection
-  now includes otherwise unsupported manifest/configuration files from discovery, uses bounded
-  reads for content-bearing manifests, scopes runner defaults to the evidence directory, and parses
-  Python dependency declarations structurally, and interprets package scripts by command
-  position.
+  now includes otherwise unsupported manifest/configuration files from discovery, carries
+  fixed-name runner evidence from target ancestors through the Git root into subpath scans without
+  widening their analyzed scope, uses bounded reads for content-bearing manifests, scopes runner
+  defaults to the evidence directory, parses Python dependency declarations structurally, and
+  interprets package scripts by command position.
 
 ### Security
 

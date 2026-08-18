@@ -9,7 +9,7 @@ use crate::model::{
 use crate::{graph, lang, scan, walk};
 use anyhow::{Context, Result};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use ignore::overrides::{Override, OverrideBuilder};
+use ignore::overrides::OverrideBuilder;
 use std::path::{Component, Path, PathBuf};
 
 /// Build a repository-aware explanation for one requested file.
@@ -261,7 +261,7 @@ fn exclusion_rule(
     for pattern in &cfg.extra_excludes {
         let mut builder = OverrideBuilder::new(root);
         builder.add(&format!("!{pattern}"))?;
-        if override_ignored(&builder.build()?, absolute, root) {
+        if walk::override_ignored(&builder.build()?, absolute, root) {
             return Ok(Some(rule("exclude", "configuration", pattern)));
         }
     }
@@ -288,23 +288,6 @@ fn exclusion_rule(
         }
     }
     Ok(None)
-}
-
-fn override_ignored(overrides: &Override, absolute: &Path, root: &Path) -> bool {
-    if overrides.matched(absolute, false).is_ignore() {
-        return true;
-    }
-    let mut ancestor = absolute.parent();
-    while let Some(path) = ancestor.filter(|path| path.starts_with(root)) {
-        if overrides.matched(path, true).is_ignore() {
-            return true;
-        }
-        if path == root {
-            break;
-        }
-        ancestor = path.parent();
-    }
-    false
 }
 
 fn local_ignore_rule(

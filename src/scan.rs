@@ -22,6 +22,7 @@ use crate::numeric::{u64_to_f64, usize_to_f64};
 use crate::parse;
 use crate::walk;
 use anyhow::Result;
+use ignore::overrides::OverrideBuilder;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashSet};
@@ -373,7 +374,8 @@ fn prepare_scan(
         } else {
             walk::discover_with_exclusions_until(target, cfg, &effective_exclusions, deadline)?
         };
-    let test_frameworks = detect_test_frameworks(&discovered, cfg.max_file_bytes);
+    let test_frameworks =
+        detect_test_frameworks(&discovered, cfg, &effective_exclusions, deadline)?;
     let root = discovered.root.clone();
     let diff_base = match cfg.diff_scope.as_ref() {
         Some(scope) => git::diff_base_tree_id(&root, scope)?,
@@ -436,9 +438,10 @@ fn prepare_scan(
         })
         .unwrap_or_default();
     let planning_discovered = needs_planning_universe.then_some(full_discovered).flatten();
-    let planning_test_frameworks = planning_discovered.as_ref().map_or_else(Vec::new, |files| {
-        detect_test_frameworks(files, cfg.max_file_bytes)
-    });
+    let planning_test_frameworks = match planning_discovered.as_ref() {
+        Some(files) => detect_test_frameworks(files, cfg, &effective_exclusions, deadline)?,
+        None => Vec::new(),
+    };
     if let Some(changed) = &changed_files {
         discovered
             .files
@@ -466,17 +469,92 @@ fn prepare_scan(
 
 fn detect_test_frameworks(
     discovered: &walk::Discovered,
-    max_file_bytes: u64,
-) -> Vec<crate::model::TestFramework> {
-    testcov::detect_frameworks(
+    cfg: &Config,
+    exclusions: &[PathBuf],
+    deadline: Option<Instant>,
+) -> Result<Vec<crate::model::TestFramework>> {
+    let mut frameworks = testcov::detect_frameworks(
         discovered
             .files
             .iter()
             .map(|file| (file.absolute_path.as_path(), file.report_path.as_path())),
-        max_file_bytes,
-    )
+        cfg.max_file_bytes,
+    );
+    let ancestor_evidence = ancestor_runner_evidence(discovered, cfg, exclusions, deadline)?;
+    frameworks.extend(testcov::detect_frameworks(
+        ancestor_evidence
+            .iter()
+            .map(|file| (file.absolute_path.as_path(), file.report_path.as_path())),
+        cfg.max_file_bytes,
+    ));
+    frameworks
+        .sort_by(|left, right| (&left.name, &left.evidence).cmp(&(&right.name, &right.evidence)));
+    frameworks.dedup_by(|left, right| left.name == right.name && left.evidence == right.evidence);
+    Ok(frameworks)
 }
 
+fn ancestor_runner_evidence(
+    discovered: &walk::Discovered,
+    cfg: &Config,
+    exclusions: &[PathBuf],
+    deadline: Option<Instant>,
+) -> Result<Vec<walk::DiscoveredFile>> {
+    let discovered_paths = discovered
+        .files
+        .iter()
+        .map(|file| file.absolute_path.as_path())
+        .collect::<HashSet<_>>();
+    let exact_exclusions = exclusions
+        .iter()
+        .map(|path| walk::exact_path_identity(path))
+        .collect::<Result<HashSet<_>>>()?;
+    let mut override_builder = OverrideBuilder::new(&discovered.root);
+    for pattern in &cfg.extra_excludes {
+        override_builder.add(&format!("!{pattern}"))?;
+    }
+    let overrides = override_builder.build()?;
+    let mut evidence = Vec::new();
+    let mut ancestor = discovered.target.parent();
+
+    while let Some(directory) = ancestor.filter(|directory| directory.starts_with(&discovered.root))
+    {
+        for name in testcov::RUNNER_EVIDENCE_FILE_NAMES {
+            if deadline_reached(deadline) {
+                return Ok(evidence);
+            }
+            let candidate = directory.join(name);
+            if discovered_paths.contains(candidate.as_path())
+                || exact_exclusions.contains(&candidate)
+                || walk::override_ignored(&overrides, &candidate, &discovered.root)
+            {
+                continue;
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(&candidate) else {
+                continue;
+            };
+            if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+                continue;
+            }
+            let Ok(report_path) = candidate
+                .strip_prefix(&discovered.root)
+                .map(Path::to_path_buf)
+            else {
+                continue;
+            };
+            evidence.push(walk::DiscoveredFile {
+                absolute_path: candidate,
+                report_path,
+            });
+        }
+
+        if directory == discovered.root {
+            break;
+        }
+        ancestor = directory.parent();
+    }
+
+    Ok(evidence)
+}
 fn scan_exclusions(cfg: &Config, exclusions: &[PathBuf]) -> Vec<PathBuf> {
     let mut effective = exclusions.to_vec();
     if let Some(path) = &cfg.baseline_path {

@@ -8,7 +8,7 @@ use crate::lang;
 use anyhow::{Context, Result};
 use ignore::DirEntry;
 use ignore::WalkBuilder;
-use ignore::overrides::OverrideBuilder;
+use ignore::overrides::{Override, OverrideBuilder};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -43,6 +43,23 @@ pub(crate) fn is_lockfile(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| LOCKFILES.contains(&name))
+}
+
+pub(crate) fn override_ignored(overrides: &Override, absolute: &Path, root: &Path) -> bool {
+    if overrides.matched(absolute, false).is_ignore() {
+        return true;
+    }
+    let mut ancestor = absolute.parent();
+    while let Some(path) = ancestor.filter(|path| path.starts_with(root)) {
+        if overrides.matched(path, true).is_ignore() {
+            return true;
+        }
+        if path == root {
+            break;
+        }
+        ancestor = path.parent();
+    }
+    false
 }
 
 /// A file selected for analysis, with separate filesystem and public identities.
