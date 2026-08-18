@@ -82,10 +82,10 @@ State the scanned target, profile, and diff scope. Lead with relevant coverage g
 only the findings, reading order, tests, and dependents that affect the task. Include totals,
 omissions, and unavailable signals; never turn a disabled analyzer into a measured zero.
 
-Distinguish measured facts from heuristics: filename matching is not measured coverage, risk is a
-versioned ranking, graph resolution can be partial, and compact duplicate lists are projections
-over retained raw findings. Do not present graph components or numeric thresholds as proof that
-work should be delegated or split.
+Distinguish measured facts from heuristics: runner-backed test-file selection is not measured
+coverage, risk is a versioned ranking, graph resolution can be partial, and compact duplicate lists
+are projections over retained raw findings. Do not present graph components or numeric thresholds
+as proof that work should be delegated or split.
 
 ## Trust the CLI boundary
 

@@ -59,8 +59,10 @@ also change the denominator and can move the percentage either way.
 
 ## Tests, markers, and churn
 
-Test presence is filename/inline-Rust-test matching, not measured coverage. Report it as navigation
-evidence and verify important paths with the project's real tests.
+Test presence is emitted only when supported repository configuration establishes a runner. Its
+test-file count applies that runner's conventional filename and directory defaults within the scan
+scope; neither the configuration nor the selected filenames are measured coverage. Report it as
+test-discovery evidence and verify important paths with the project's real tests.
 
 Markers are comment-aware for first-class languages and can use raw-text fallback elsewhere or on
 parse failure. Churn counts Git history under configured bounds; it identifies frequently changed

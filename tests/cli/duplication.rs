@@ -428,6 +428,68 @@ fn runner_detection_uses_discovered_files_that_are_not_analyzed_formats() {
 }
 
 #[test]
+fn subpath_scan_uses_runner_evidence_from_repository_ancestors() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::create_dir_all(dir.path().join("packages/web/src")).unwrap();
+    std::fs::write(
+        dir.path().join("packages/web/package.json"),
+        r#"{"devDependencies":{"vitest":"latest"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("packages/web/src/user.test.ts"),
+        "export const userTest = 1;\n",
+    )
+    .unwrap();
+
+    let target = dir.path().join("packages/web/src");
+    let report = run_json(&["-f", "json", target.to_str().unwrap()]);
+    let presence = &report["summary"]["test_presence"];
+
+    assert_eq!(presence["frameworks"][0]["name"], "vitest");
+    assert_eq!(
+        presence["frameworks"][0]["evidence"],
+        "packages/web/package.json"
+    );
+    assert_eq!(presence["test_files"], 1);
+
+    let excluded = run_json(&[
+        "-f",
+        "json",
+        "--exclude",
+        "package.json",
+        target.to_str().unwrap(),
+    ]);
+    assert!(excluded["summary"].get("test_presence").is_none());
+}
+
+#[test]
+#[cfg(unix)]
+fn subpath_scan_does_not_follow_ancestor_runner_evidence_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/lib.rs"), "pub fn ready() {}\n").unwrap();
+    std::fs::write(
+        dir.path().join("runner-package.json"),
+        r#"{"devDependencies":{"vitest":"latest"}}"#,
+    )
+    .unwrap();
+
+    std::os::unix::fs::symlink(
+        dir.path().join("runner-package.json"),
+        dir.path().join("package.json"),
+    )
+    .unwrap();
+
+    let target = dir.path().join("src");
+    let report = run_json(&["-f", "json", target.to_str().unwrap()]);
+
+    assert!(report["summary"].get("test_presence").is_none());
+}
+
+#[test]
 fn rust_cli_integration_tests_are_runner_discovered_without_coverage_claims() {
     let dir = tempfile::tempdir().unwrap();
     git2::Repository::init(dir.path()).unwrap();

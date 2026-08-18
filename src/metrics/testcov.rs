@@ -6,6 +6,32 @@ use crate::walk::{self, BoundedText};
 use std::path::Path;
 use tree_sitter::{Node, Tree};
 
+/// Conventional files that can establish runner context for a narrower scan
+/// target. The scan orchestrator probes only these names in target ancestors;
+/// content-bearing manifests are still validated by `detect_frameworks`.
+pub(crate) const RUNNER_EVIDENCE_FILE_NAMES: &[&str] = &[
+    "Cargo.toml",
+    "go.mod",
+    "pytest.ini",
+    "phpunit.xml",
+    "phpunit.xml.dist",
+    "package.json",
+    "composer.json",
+    "pyproject.toml",
+    "vitest.config.js",
+    "vitest.config.mjs",
+    "vitest.config.cjs",
+    "vitest.config.ts",
+    "vitest.config.mts",
+    "vitest.config.cts",
+    "jest.config.js",
+    "jest.config.mjs",
+    "jest.config.cjs",
+    "jest.config.ts",
+    "jest.config.cts",
+    "jest.config.json",
+];
+
 /// Detect test runners from discovered repository manifests and conventional
 /// runner configuration. Test-looking source filenames alone are not setup
 /// evidence.

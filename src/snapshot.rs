@@ -410,31 +410,13 @@ impl SnapshotFilter {
         let absolute = self.root.join(path);
         let identity = absolute.canonicalize().unwrap_or_else(|_| absolute.clone());
         if self.exclusions.contains(&identity)
-            || self.override_ignored(&absolute)
+            || walk::override_ignored(&self.overrides, &absolute, &self.root)
             || self.is_ignored(&absolute)
         {
             return false;
         }
         true
     }
-
-    fn override_ignored(&self, absolute: &Path) -> bool {
-        if self.overrides.matched(absolute, false).is_ignore() {
-            return true;
-        }
-        let mut ancestor = absolute.parent();
-        while let Some(path) = ancestor.filter(|path| path.starts_with(&self.root)) {
-            if self.overrides.matched(path, true).is_ignore() {
-                return true;
-            }
-            if path == self.root {
-                break;
-            }
-            ancestor = path.parent();
-        }
-        false
-    }
-
     fn is_ignored(&self, absolute: &Path) -> bool {
         let Ok(relative) = absolute.strip_prefix(&self.root) else {
             return true;

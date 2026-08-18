@@ -207,10 +207,12 @@ human report section are omitted rather than treating test-looking filenames as 
 
 Once a runner is established, RepoScout applies that runner's conventional discovery defaults to
 count selected test files. Runner evidence is taken from the discovery universe, including
-configuration formats that are not otherwise analyzed, and applies only below the evidence file's
-directory. Manifest contents are read through the configured bounded, no-follow file policy;
-`pyproject.toml` detection inspects supported dependency/configuration tables rather than arbitrary
-text. RepoScout does not publish source-to-test matches or infer coverage from names.
+configuration formats that are not otherwise analyzed. A subpath scan additionally probes the
+fixed set of supported runner filenames in its ancestor directories through the Git root, without
+widening the analyzed file scope. Evidence applies only below its file's directory. Manifest
+contents are read through the configured bounded, no-follow file policy; `pyproject.toml` detection
+inspects supported dependency/configuration tables rather than arbitrary text. RepoScout does not
+publish source-to-test matches or infer coverage from names.
 
 Legacy `untested_*` data is no longer serialized and missing matches do not contribute risk reasons
 or cleanup scoring.
