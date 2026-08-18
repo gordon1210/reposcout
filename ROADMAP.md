@@ -95,10 +95,11 @@ contract; this is not permission to break post-1.0 reports casually.
 
 ## Recently delivered
 
-Releases `0.1.8` through `0.1.15` added bounded change decisions and work-scope evidence, compact
-JSON, production-focused and artifact-filtered duplication, hardened outputs/releases, and the
-responsive terminal report. See `CHANGELOG.md` for details; remove this paragraph once those
-contracts are ordinary background rather than useful roadmap context.
+Releases `0.1.8` through `0.2.0` added bounded change decisions and work-scope evidence, compact
+JSON, production-focused and artifact-filtered duplication, hardened outputs/releases, the
+responsive terminal report, and runner-evidence-backed test presence. See `CHANGELOG.md` for
+details; remove this paragraph once those contracts are ordinary background rather than useful
+roadmap context.
 
 ## Evidence-gated opportunities
 

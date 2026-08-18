@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-18
+
 ### Changed
 
 - Test-presence output is now conditional on discovered repository evidence for a supported test
@@ -14,9 +16,10 @@ within their section.
   publishes inferred source matches, `untested_*` fields, or matching-test risk reasons. Detection
   now includes otherwise unsupported manifest/configuration files from discovery, carries
   fixed-name runner evidence from target ancestors through the Git root into subpath scans without
-  widening their analyzed scope, uses bounded reads for content-bearing manifests, scopes runner
-  defaults to the evidence directory, parses Python dependency declarations structurally, and
-  interprets package scripts by command position.
+  widening their analyzed scope, applies repository ignores and path exclusions to that evidence,
+  uses bounded reads for content-bearing manifests, scopes runner defaults to the evidence
+  directory, parses Python dependency declarations structurally, and interprets package scripts
+  by command position so Node application arguments cannot masquerade as runner flags.
 
 ### Security
 
