@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Fixed
+
+- Normalized cargo-dist's source and unified SHA-256 files to exactly one trailing newline before
+  release verification, eliminating spurious `shasum --check` format warnings without changing
+  the recorded archive digests.
+
 ## [0.2.0] - 2026-08-18
 
 ### Changed

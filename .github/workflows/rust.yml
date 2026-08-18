@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - .github/scripts/normalize-cargo-dist-checksums.py
+      - .github/workflows/release.yml
       - .cargo/**
       - Cargo.lock
       - Cargo.toml
@@ -27,6 +29,8 @@ on:
       - reopened
       - ready_for_review
     paths:
+      - .github/scripts/normalize-cargo-dist-checksums.py
+      - .github/workflows/release.yml
       - .cargo/**
       - Cargo.lock
       - Cargo.toml

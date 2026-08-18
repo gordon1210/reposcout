@@ -337,6 +337,14 @@ jobs:
             target/distrib/reposcout-installer.sh
           sh -n target/distrib/reposcout-installer.sh
 
+          python3 .github/scripts/normalize-cargo-dist-checksums.py \
+            target/distrib/source.tar.gz.sha256 \
+            target/distrib/sha256.sum
+          (
+            cd target/distrib
+            shasum -a 256 --check source.tar.gz.sha256 sha256.sum
+          )
+
           # Parse out what we just built and upload it to scratch storage
           echo "paths<<EOF" >> "$GITHUB_OUTPUT"
           jq --raw-output ".upload_files[]" dist-manifest.json >> "$GITHUB_OUTPUT"
