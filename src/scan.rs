@@ -22,7 +22,6 @@ use crate::numeric::{u64_to_f64, usize_to_f64};
 use crate::parse;
 use crate::walk;
 use anyhow::Result;
-use ignore::overrides::OverrideBuilder;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, HashSet};
@@ -508,11 +507,7 @@ fn ancestor_runner_evidence(
         .iter()
         .map(|path| walk::exact_path_identity(path))
         .collect::<Result<HashSet<_>>>()?;
-    let mut override_builder = OverrideBuilder::new(&discovered.root);
-    for pattern in &cfg.extra_excludes {
-        override_builder.add(&format!("!{pattern}"))?;
-    }
-    let overrides = override_builder.build()?;
+    let mut path_matcher = walk::build_path_matcher(&discovered.root, cfg)?;
     let mut evidence = Vec::new();
     let mut ancestor = discovered.target.parent();
 
@@ -525,14 +520,7 @@ fn ancestor_runner_evidence(
             let candidate = directory.join(name);
             if discovered_paths.contains(candidate.as_path())
                 || exact_exclusions.contains(&candidate)
-                || walk::override_ignored(&overrides, &candidate, &discovered.root)
             {
-                continue;
-            }
-            let Ok(metadata) = std::fs::symlink_metadata(&candidate) else {
-                continue;
-            };
-            if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
                 continue;
             }
             let Ok(report_path) = candidate
@@ -541,6 +529,15 @@ fn ancestor_runner_evidence(
             else {
                 continue;
             };
+            if path_matcher.matched(&report_path, false).is_ignore() {
+                continue;
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(&candidate) else {
+                continue;
+            };
+            if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+                continue;
+            }
             evidence.push(walk::DiscoveredFile {
                 absolute_path: candidate,
                 report_path,

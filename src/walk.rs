@@ -261,6 +261,14 @@ fn build_walker(target: &Path, cfg: &Config) -> Result<WalkBuilder> {
     Ok(builder)
 }
 
+pub(crate) fn build_path_matcher(target: &Path, cfg: &Config) -> Result<ignore::IncrementalIgnore> {
+    build_walker(target, cfg)?
+        .build_matchers()
+        .into_iter()
+        .next()
+        .context("repository path matcher has no root")
+}
+
 fn collect_files(
     builder: &WalkBuilder,
     paths: &DiscoveryPaths,
