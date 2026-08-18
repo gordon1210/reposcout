@@ -1716,7 +1716,7 @@ fn distribute_flexible_width(
 
 fn new_table(headers: Vec<&str>) -> Table {
     let mut t = Table::new();
-    t.load_preset(UTF8_BORDERS_ONLY)
+    t.load_style(UTF8_BORDERS_ONLY)
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .set_header(headers);
     t
