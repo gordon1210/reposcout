@@ -335,8 +335,10 @@ fn decode_os_string(value: &str) -> Result<OsString, String> {
         return Err("cached Windows path has an odd byte count".to_string());
     }
     let wide = bytes
-        .chunks_exact(2)
-        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
         .collect::<Vec<_>>();
     Ok(OsString::from_wide(&wide))
 }
@@ -369,7 +371,9 @@ fn decode_bytes(value: &str) -> Result<Vec<u8>, String> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let high = decode_nibble(pair[0])?;
             let low = decode_nibble(pair[1])?;

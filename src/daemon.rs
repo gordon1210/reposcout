@@ -485,8 +485,7 @@ fn allowed_request_authority(request: &Request, loopback: bool) -> bool {
     match request.headers().get(header::HOST) {
         Some(value) => value
             .to_str()
-            .ok()
-            .is_some_and(|authority| allowed_request_host(authority, loopback)),
+            .is_ok_and(|authority| allowed_request_host(authority, loopback)),
         None => request
             .uri()
             .authority()
