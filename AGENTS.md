@@ -69,6 +69,12 @@ Clap uses `args_conflicts_with_subcommands`, for example:
 reposcout tokens --encoding cl100k_base src/
 ```
 
+### Sign every commit
+
+Every commit an agent creates or integrates must be cryptographically signed and verified before
+push to `main`. Never use `--no-gpg-sign` or disable signing; if signing is unavailable, stop and
+ask the user.
+
 ## Core architecture invariants
 
 - `src/model.rs` is the stable serializable API shared by analyzers and reporters. JSON changes are

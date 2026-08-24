@@ -150,6 +150,12 @@ Documentation-only changes do not require unrelated Rust/frontend builds. Depend
 security, or cross-cutting changes require validation proportional to their actual risk even if
 their textual diff is small.
 
+Before pushing, verify every agent-created commit locally with `git log --show-signature` and every
+third-party or bot commit through GitHub. Never use `--no-gpg-sign`, disable signing, or integrate
+an unverifiable commit. GitHub's server-side rebase paths create unsigned replacement commits, so
+rebase locally or fast-forward an up-to-date verified PR head. If signing is unavailable, stop and
+ask the user.
+
 ## Testing notes
 
 - Unit tests live beside their modules under `#[cfg(test)]`.
