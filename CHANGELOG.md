@@ -8,6 +8,8 @@ within their section.
 
 ### Fixed
 
+- Made the dashboard Vite configuration compatible with the native ESM config loader and replaced
+  the yanked optional `chacha20` lockfile resolution with the compatible `0.10.2` release.
 - Normalized cargo-dist's source and unified SHA-256 files to exactly one trailing newline before
   release verification, eliminating spurious `shasum --check` format warnings without changing
   the recorded archive digests.
