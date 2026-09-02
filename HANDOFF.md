@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-08-18 · latest release 0.2.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-03 · latest release 0.2.0 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 16_
 
 ---
@@ -119,11 +119,13 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   first so the overview, configuration hint, and most decision-relevant verdicts remain nearest
   the prompt.
 - **Frontend:** `apps/web` is the Shadcn-based live daemon dashboard with an on-demand, searchable,
-  bounded dependency-graph explorer. It groups mixed repositories into deterministic architecture
-  scopes, supports breadcrumb drill-down and file neighborhoods, highlights direct relationships
-  on one click, opens nodes on double-click, and provides factual scope/file/connection inspectors.
-  Dense views retain readable zoom and subdued idle topology plus a populated high-contrast
-  minimap; `apps/landing` is a
+  bounded dependency-graph explorer. SSE reconnects reconcile the canonical snapshot and lagged
+  streams reconnect instead of silently losing state. Daemon scans retain source facts and resolver
+  configs for revision integrity, while graph topology is built and cached only when requested. The
+  explorer groups mixed repositories into deterministic architecture scopes, supports breadcrumb
+  drill-down and file neighborhoods, highlights direct relationships on one click, opens nodes on
+  double-click, and provides factual scope/file/connection inspectors. Dense views retain readable
+  zoom and subdued idle topology plus a populated high-contrast minimap; `apps/landing` is a
   standalone, responsive public product page on the same React/TypeScript/Vite/Tailwind stack,
   with bespoke styling and the RepoScout fox artwork.
 - **Quality gates:** Rust formatting, clippy, and test suites; dashboard Vitest; and production
@@ -192,8 +194,9 @@ that a new maintainer still needs to interpret the current architecture and road
    `reposcout.toml`. There's no magic here — revisit them if a repo type shows noise.
 6. **Per-file cache entries store `FileReport` plus reusable source facts**, keyed by content hash
    + version + the effective per-file analysis profile (token encoding/enablement, complexity,
-   imports, markers, and health-file eligibility/excludes). Declaration outlines enrich entries only for queries/context; graph import,
-   parse, and type-relation facts enrich them only when a graph consumer requests them.
+   imports, markers, and health-file eligibility/excludes). Declaration outlines enrich entries only
+   for queries/context; graph import, parse, and type-relation facts enrich them lazily for CLI graph
+   consumers and are captured by daemon refreshes to preserve immutable revision inputs.
    Churn has a separate OS-cache index of immutable commit events and exact result views.
    `Duplication`, graph topology, and `Summary` remain scan-wide computations. `--no-cache`
    disables both per-file and churn caches.

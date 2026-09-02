@@ -83,7 +83,9 @@ file/byte/time, worker, history, context, discovery, and health limits as a safe
 | `GET /api/events` | SSE scan lifecycle events |
 | `POST /api/rescan` | Queue a manual scan; requires `X-RepoScout-Request: rescan` |
 
-SSE events are `scan_started`, `scan_completed`, and `scan_failed`.
+SSE events are `scan_started`, `scan_completed`, and `scan_failed`. A client that falls behind the
+bounded broadcast buffer is disconnected so browser `EventSource` can reconnect and reconcile the
+canonical snapshot instead of silently retaining stale state.
 
 Unless `--unsafe-no-auth` is active, every endpoint requires the daemon token. The custom rescan
 header is required in addition to authentication and prevents a cross-origin browser page from
@@ -100,8 +102,10 @@ Incremental caches remove repeated per-file work and reuse immutable Git commit 
 whole-corpus duplication or large Git-history pass may still take time; daemon scans apply the
 configured cooperative deadline and expose any truncation in the report diagnostics.
 
-Graph analysis is separately single-flight. Ordinary watched scans do not pay graph extraction
-cost. Opening the Graph view requests one revision-keyed graph build, which is then reused.
+Graph topology is separately single-flight. Watched scans keep graph output disabled but capture
+cacheable source facts and bounded resolver-config contents as immutable inputs for the completed
+revision. Opening the Graph view builds topology only from those inputs, without rereading mutable
+live sources, and reuses the result for that revision.
 
 ## Dashboard views
 

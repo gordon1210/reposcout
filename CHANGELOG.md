@@ -8,11 +8,23 @@ within their section.
 
 ### Fixed
 
+- Reconciled the dashboard from the canonical snapshot on every SSE open or reconnect, closed
+  lagged SSE streams so the browser can recover, and prevented older snapshot requests from
+  overwriting newer scan state.
+- Made impact-only scans reuse available changed-file graph facts while applying the configured
+  graph read limits and shared scan deadline to remaining full-tree topology reads.
+- Prevented ordinary cached CLI scans from carrying unrequested graph facts into report assembly
+  and rereading resolver configuration when no graph consumer is active.
 - Made the dashboard Vite configuration compatible with the native ESM config loader and replaced
   the yanked optional `chacha20` lockfile resolution with the compatible `0.10.2` release.
 - Normalized cargo-dist's source and unified SHA-256 files to exactly one trailing newline before
   release verification, eliminating spurious `shasum --check` format warnings without changing
   the recorded archive digests.
+
+### Documentation
+
+- Corrected the daemon graph contract: watched scans intentionally capture revision-scoped source
+  facts and resolver configuration for integrity, while topology remains lazy and revision-cached.
 
 ## [0.2.0] - 2026-08-18
 

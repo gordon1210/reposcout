@@ -61,10 +61,12 @@ facts under hard aggregate-token and file-count limits.
 
 ## On-demand daemon graph
 
-Normal watched scans keep `cfg.graph = false`. Opening the dashboard Graph tab calls
-`GET /api/graph?revision=N`, which builds from the latest completed report's file set away from the
-async runtime and caches one graph by report revision. Do not move graph analysis into every daemon
-scan.
+Normal watched scans keep `cfg.graph = false` and never build topology. They deliberately capture
+and cache per-file graph source facts plus bounded resolver-config contents as immutable inputs of
+the completed report revision. Opening the dashboard Graph tab calls `GET /api/graph?revision=N`,
+which builds topology only from those revision-scoped inputs away from the async runtime and caches
+one graph per report revision. Do not reread mutable live sources for an older revision or move
+topology construction into every daemon scan.
 
 The frontend creates deterministic mixed-language architecture scopes and performs bounded local
 file-neighborhood projection:

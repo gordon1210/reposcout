@@ -409,6 +409,51 @@ fn cached_source_facts_produce_the_same_graph_without_rereading_sources() {
 }
 
 #[test]
+fn impact_fallback_reuses_facts_and_honors_limits_and_deadlines() {
+    let dir = tempdir().unwrap();
+    let changed_source = "export const value = 1;\n";
+    let importer_source = "import { value } from './changed';\nexport const imported = value;\n";
+    std::fs::write(dir.path().join("changed.js"), changed_source).unwrap();
+    std::fs::write(dir.path().join("importer.js"), importer_source).unwrap();
+    let paths = [PathBuf::from("changed.js"), PathBuf::from("importer.js")];
+    let changed = HashSet::from([PathBuf::from("changed.js")]);
+    let facts = BTreeMap::from([(
+        PathBuf::from("changed.js"),
+        extract_source_facts(FirstClass::JavaScript, "changed.js", changed_source),
+    )]);
+    std::fs::remove_file(dir.path().join("changed.js")).unwrap();
+
+    let cases = [
+        GraphReadLimits {
+            max_file_bytes: 32,
+            max_total_bytes: 32,
+            max_files: 1,
+            facts_only_sources: false,
+            deadline: None,
+        },
+        GraphReadLimits {
+            deadline: Some(std::time::Instant::now()),
+            ..GraphReadLimits::default()
+        },
+    ];
+    for limits in cases {
+        let analysis = analyze_paths_with_fallback_facts(
+            &paths,
+            dir.path(),
+            &HashSet::new(),
+            &facts,
+            None,
+            limits,
+        );
+        let impact = impact_from_analysis(&analysis, &changed);
+
+        assert_eq!(impact.graph_changed_files, ["changed.js"]);
+        assert!(impact.direct_dependents.is_empty());
+        assert_eq!(impact.confidence, "partial");
+    }
+}
+
+#[test]
 fn parse_errors_reduce_impact_confidence() {
     let dir = tempdir().unwrap();
     std::fs::write(dir.path().join("changed.js"), "import { from './dep';\n").unwrap();

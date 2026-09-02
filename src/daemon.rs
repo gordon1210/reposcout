@@ -642,16 +642,21 @@ fn event_stream(
     shutdown: watch::Receiver<bool>,
     permit: OwnedSemaphorePermit,
 ) -> impl tokio_stream::Stream<Item = std::result::Result<Event, Infallible>> {
-    let stream = BroadcastStream::new(events).filter_map(|message| {
-        message.ok().and_then(|event| {
-            serde_json::to_string(&event).ok().map(|data| {
-                Ok(Event::default()
-                    .event(event.kind.as_str())
-                    .id(event.revision.to_string())
-                    .data(data))
+    // A lagged receiver has missed an unknown state transition. End that SSE
+    // connection so EventSource reconnects and the client reconciles from the
+    // canonical snapshot instead of remaining silently stale.
+    let stream = BroadcastStream::new(events)
+        .take_while(Result::is_ok)
+        .filter_map(|message| {
+            message.ok().and_then(|event| {
+                serde_json::to_string(&event).ok().map(|data| {
+                    Ok(Event::default()
+                        .event(event.kind.as_str())
+                        .id(event.revision.to_string())
+                        .data(data))
+                })
             })
-        })
-    });
+        });
     let guarded = stream.map(move |event| {
         let _permit = &permit;
         event
@@ -1076,6 +1081,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn daemon_graph_uses_revision_inputs_instead_of_live_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("tsconfig.json"),
+            r#"{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/*"]}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/dependency.ts"),
+            "export const dependency = 1;\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/importer.ts"),
+            "import { dependency } from '@app/dependency';\nvoid dependency;\n",
+        )
+        .unwrap();
+        let mut config = Config::default();
+        config.enabled = crate::config::Enabled::none();
+        config.use_cache = false;
+        config.quiet_progress = true;
+        let (events, _) = broadcast::channel(4);
+        let snapshot = Arc::new(RwLock::new(DaemonSnapshot {
+            target: dir.path().to_path_buf(),
+            profile: "lite".to_string(),
+            revision: 0,
+            status: DaemonStatus::Starting,
+            scan_started_at: None,
+            scan_finished_at: None,
+            error: None,
+            report: None,
+            graph_facts: std::collections::BTreeMap::default(),
+            resolver_configs: std::collections::BTreeMap::default(),
+            graph_limits: crate::graph::GraphReadLimits::default(),
+        }));
+
+        scan_once(dir.path(), &config, &snapshot, &events, &[]).await;
+        {
+            let completed = snapshot.read().await;
+            assert_eq!(completed.revision, 1);
+            assert_eq!(completed.status, DaemonStatus::Ready);
+            assert!(completed.report.as_ref().unwrap().graph.is_none());
+            assert_eq!(completed.graph_facts.len(), 2);
+            assert!(completed.resolver_configs.contains_key("tsconfig.json"));
+        }
+
+        std::fs::write(
+            dir.path().join("tsconfig.json"),
+            r#"{"compilerOptions":{"baseUrl":".","paths":{}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/importer.ts"),
+            "export const importer = 1;\n",
+        )
+        .unwrap();
+
+        let (trigger, _) = mpsc::channel(1);
+        let (_, shutdown) = watch::channel(false);
+        let state = AppState {
+            snapshot,
+            graph_cache: Arc::new(Mutex::new(None)),
+            events,
+            trigger,
+            shutdown,
+            last_rescan: Arc::new(Mutex::new(None)),
+            sse_slots: Arc::new(Semaphore::new(MAX_SSE_CLIENTS)),
+        };
+        let Json(response) =
+            repository_graph(Query(GraphRequest { revision: Some(1) }), State(state))
+                .await
+                .unwrap();
+
+        assert!(response.graph.edge_list.iter().any(|edge| {
+            edge.source == "src/importer.ts"
+                && edge.target == "src/dependency.ts"
+                && edge.resolver == "tsconfig-paths"
+        }));
+    }
+
+    #[tokio::test]
     async fn event_stream_closes_when_shutdown_begins() {
         let (events, _) = broadcast::channel(1);
         let (shutdown_tx, shutdown) = watch::channel(false);
@@ -1088,6 +1175,37 @@ mod tests {
             tokio::time::timeout(Duration::from_millis(100), stream.next())
                 .await
                 .expect("SSE stream should close promptly")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn event_stream_closes_when_the_receiver_lags() {
+        let (events, receiver) = broadcast::channel(1);
+        let (_, shutdown) = watch::channel(false);
+        let permit = Arc::new(Semaphore::new(1)).try_acquire_owned().unwrap();
+        events
+            .send(DaemonEvent {
+                kind: DaemonEventKind::Started,
+                revision: 1,
+                at: "2026-01-01T00:00:00Z".to_string(),
+                error: None,
+            })
+            .unwrap();
+        events
+            .send(DaemonEvent {
+                kind: DaemonEventKind::Completed,
+                revision: 2,
+                at: "2026-01-01T00:00:01Z".to_string(),
+                error: None,
+            })
+            .unwrap();
+        let mut stream = std::pin::pin!(event_stream(receiver, shutdown, permit));
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), stream.next())
+                .await
+                .expect("lagged SSE stream should close promptly")
                 .is_none()
         );
     }

@@ -33,7 +33,7 @@ pub(super) fn assemble_report(
         analysis_elapsed: context_planning_elapsed,
         assembly_started: context_assembly_started,
     })?;
-    let impact = build_impact(&prepared, &graphs, cfg, progress);
+    let impact = build_impact(&prepared, &analyzed, &graphs, cfg, progress);
     let diff_scope = diff_scope_name(cfg);
     let change_summary = build_change_summary(
         &prepared,
@@ -264,26 +264,25 @@ fn collect_resolver_configs(
     if !needed {
         return BTreeMap::new();
     }
-    let paths = planning.map_or_else(
-        || {
-            analyzed
-                .files
-                .iter()
-                .map(|file| file.path.clone())
-                .collect()
-        },
-        |analysis| {
-            let mut paths = analysis
-                .files
-                .iter()
-                .map(|file| file.path.clone())
-                .collect::<Vec<_>>();
-            paths.extend(prepared.all_report_paths.iter().cloned());
-            paths.sort();
-            paths.dedup();
-            paths
-        },
-    );
+    let paths = if let Some(analysis) = planning {
+        let mut paths = analysis
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        paths.extend(prepared.all_report_paths.iter().cloned());
+        paths.sort();
+        paths.dedup();
+        paths
+    } else if cfg.impact {
+        prepared.all_report_paths.clone()
+    } else {
+        analyzed
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .collect()
+    };
     crate::graph::collect_resolver_configs(&prepared.root, &paths, limits)
 }
 
@@ -413,6 +412,7 @@ fn build_context(inputs: ContextAssembly<'_>) -> Result<Option<ContextPlan>> {
 
 fn build_impact(
     prepared: &PreparedScan,
+    analyzed: &AnalyzedScan,
     graphs: &GraphAssembly,
     cfg: &Config,
     progress: &ScanProgress,
@@ -421,15 +421,40 @@ fn build_impact(
         return None;
     }
     progress.stage("analyzing change impact");
-    Some(graphs.planning.as_ref().map_or_else(
-        || {
-            crate::graph::impact(
-                &prepared.all_report_paths,
-                &prepared.root,
-                &prepared.impact_changed_files,
-            )
+    if let Some(analysis) = graphs.planning.as_ref() {
+        return Some(crate::graph::impact_from_analysis(
+            analysis,
+            &prepared.impact_changed_files,
+        ));
+    }
+
+    let existing = prepared
+        .all_report_paths
+        .iter()
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .collect::<HashSet<_>>();
+    let virtual_paths = prepared
+        .impact_changed_files
+        .iter()
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .filter(|path| !existing.contains(path))
+        .collect::<HashSet<_>>();
+    let mut paths = prepared.all_report_paths.clone();
+    paths.extend(virtual_paths.iter().map(PathBuf::from));
+    let analysis = crate::graph::analyze_paths_with_fallback_facts(
+        &paths,
+        &prepared.root,
+        &virtual_paths,
+        &analyzed.graph_facts,
+        Some(&graphs.resolver_configs),
+        crate::graph::GraphReadLimits {
+            deadline: prepared.deadline,
+            ..crate::graph::GraphReadLimits::from_config(cfg)
         },
-        |analysis| crate::graph::impact_from_analysis(analysis, &prepared.impact_changed_files),
+    );
+    Some(crate::graph::impact_from_analysis(
+        &analysis,
+        &prepared.impact_changed_files,
     ))
 }
 

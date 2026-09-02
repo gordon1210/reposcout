@@ -105,8 +105,9 @@ receive complexity. Never let health filtering silently change complete inventor
   OS cache directory through `directories::ProjectDirs`, keyed by a hash of the canonical scan
   root.
 - Declaration outlines are cached independently of context output. Graph source facts enrich the
-  same entry lazily for graph/context/impact/explain and do not change `AnalysisProfile`; do not
-  extract them during ordinary scans or normal daemon refreshes.
+  same entry lazily for CLI graph/context/impact/explain work and do not change `AnalysisProfile`.
+  Daemon refreshes deliberately capture those facts plus bounded resolver-config contents so a
+  revision-keyed graph never rereads mutable live sources; they still do not build graph topology.
 - `reposcout cache clear [PATH]` removes analysis and churn data for the canonical scan root;
   `--all` explicitly removes the application cache directory. Keep reset idempotent and scoped by
   default.

@@ -101,9 +101,10 @@ ask the user.
 - Configuration precedence is CLI, nearest project config, global config, then defaults. Preserve
   independent nested merges, array replacement semantics, explicit CLI list extension, and the
   `--no-project-config` trust boundary.
-- Graph source facts are added lazily only for graph/context/impact/explain work. Normal scans and
-  daemon refreshes must not pay for them. Report formats remain pure projections of shared
-  `ScanReport` facts.
+- CLI graph facts stay lazy until graph/context/impact/explain work. Daemon refreshes retain
+  revision-scoped facts and configs but defer topology to `/api/graph`, preventing old revisions
+  from rereading live files. Other scans stay graph-free without a graph consumer; report formats
+  remain pure projections of shared `ScanReport` facts.
 - Stable CLI JSON/NDJSON and shared query contracts are the automation surface. Do not add an MCP
   dependency or a second task-query implementation.
 

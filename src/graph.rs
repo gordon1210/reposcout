@@ -454,6 +454,33 @@ pub(crate) fn analyze_paths_with_facts(
     })
 }
 
+/// Build topology with any already-captured source facts and read only the
+/// remaining files under the supplied limits. Impact-only scans use this to
+/// reuse changed-file facts without falling back to unbounded default reads.
+pub(crate) fn analyze_paths_with_fallback_facts(
+    paths: &[PathBuf],
+    root: &Path,
+    virtual_paths: &HashSet<String>,
+    facts: &BTreeMap<PathBuf, SourceFacts>,
+    resolver_configs: Option<&BTreeMap<String, String>>,
+    limits: GraphReadLimits,
+) -> GraphAnalysis {
+    build_from_paths_with_query(GraphBuildRequest {
+        paths,
+        root,
+        virtual_paths,
+        source_facts: Some(facts),
+        resolver_configs,
+        limits: GraphReadLimits {
+            facts_only_sources: false,
+            ..limits
+        },
+        focus: &[],
+        direction: GraphDirection::Both,
+        depth: 1,
+    })
+}
+
 pub(crate) fn impact_from_analysis(
     analysis: &GraphAnalysis,
     changed: &HashSet<PathBuf>,

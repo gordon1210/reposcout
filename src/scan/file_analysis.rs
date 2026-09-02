@@ -567,13 +567,21 @@ pub(super) fn analyze_file(
                 cached.graph_facts.as_ref(),
             );
         }
+        let symbol_outlines = requirements
+            .symbol_outlines
+            .then_some(cached.symbol_outlines)
+            .flatten();
+        let graph_facts = requirements
+            .graph_facts
+            .then_some(cached.graph_facts)
+            .flatten();
         return AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
             report: cached.report,
             content,
             duplication_artifact,
             test_regions: cached.test_regions,
-            symbol_outlines: cached.symbol_outlines,
-            graph_facts: cached.graph_facts,
+            symbol_outlines,
+            graph_facts,
         }));
     }
 

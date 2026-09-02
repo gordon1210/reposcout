@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { daemonAuthHeaders, daemonEventsUrl } from "@/lib/daemon-auth"
 import { isDaemonSnapshot } from "@/lib/api-validation"
@@ -34,30 +34,45 @@ export function useDaemon(): DaemonState {
   const [connection, setConnection] = useState<ConnectionState>("connecting")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const activeRequest = useRef<AbortController | null>(null)
+  const requestGeneration = useRef(0)
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
+  const refresh = useCallback(async () => {
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    const generation = requestGeneration.current + 1
+    activeRequest.current = controller
+    requestGeneration.current = generation
+
     try {
-      const next = await fetchSnapshot(signal)
+      const next = await fetchSnapshot(controller.signal)
+      if (generation !== requestGeneration.current) return
       setSnapshot(next)
       setError(null)
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return
+      if (generation !== requestGeneration.current) return
       setError(
         reason instanceof Error
           ? reason.message
           : "Failed to load daemon snapshot"
       )
     } finally {
-      if (!signal?.aborted) setLoading(false)
+      if (generation === requestGeneration.current) {
+        activeRequest.current = null
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
-    const controller = new AbortController()
-    void refresh(controller.signal)
+    void refresh()
 
     const source = new EventSource(daemonEventsUrl("/api/events"))
-    source.onopen = () => setConnection("live")
+    source.onopen = () => {
+      setConnection("live")
+      void refresh()
+    }
     source.onerror = () => setConnection("offline")
     const handleScanEvent = () => void refresh()
     source.addEventListener("scan_started", handleScanEvent)
@@ -65,7 +80,9 @@ export function useDaemon(): DaemonState {
     source.addEventListener("scan_failed", handleScanEvent)
 
     return () => {
-      controller.abort()
+      requestGeneration.current += 1
+      activeRequest.current?.abort()
+      activeRequest.current = null
       source.close()
     }
   }, [refresh])

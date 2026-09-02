@@ -18,6 +18,49 @@ use crate::model::{
 use std::path::{Path, PathBuf};
 
 #[test]
+fn cached_graph_facts_are_exposed_only_when_requested() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("app.ts"), "export const app = 1;\n").unwrap();
+    std::fs::write(
+        dir.path().join("tsconfig.json"),
+        r#"{"compilerOptions":{"baseUrl":"."}}"#,
+    )
+    .unwrap();
+    let cfg = Config {
+        enabled: Enabled::none(),
+        quiet_progress: true,
+        ..Config::default()
+    };
+    crate::cache::clear_for_target(dir.path()).unwrap();
+
+    let enriched = super::run_with_artifacts(
+        dir.path(),
+        &cfg,
+        &[],
+        super::ArtifactRequirements {
+            symbol_outlines: false,
+            graph_facts: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(enriched.graph_facts.len(), 1);
+    assert!(enriched.resolver_configs.contains_key("tsconfig.json"));
+
+    let ordinary = super::run_with_artifacts(
+        dir.path(),
+        &cfg,
+        &[],
+        super::ArtifactRequirements::default(),
+    )
+    .unwrap();
+    assert!(ordinary.graph_facts.is_empty());
+    assert!(ordinary.resolver_configs.is_empty());
+    assert_eq!(ordinary.report.execution.graph_fact_files, 0);
+
+    crate::cache::clear_for_target(dir.path()).unwrap();
+}
+
+#[test]
 fn risk_order_uses_every_documented_tie_breaker() {
     let entry = |path: &str, sloc, cyclomatic, churn_commits| RiskEntry {
         path: path.to_string(),
