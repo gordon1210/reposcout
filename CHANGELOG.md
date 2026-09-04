@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-04
+
 ### Added
 
 - Added `--agent-summary`, a JSON-only scouting projection that defaults to the `agent` profile,

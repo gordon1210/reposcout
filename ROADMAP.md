@@ -46,7 +46,7 @@ evidence/confidence, payload/timing measurements, and bounded omission diagnosti
 For the common agent decision, `--agent-summary` now projects those facts into a JSON-only view
 with fixed section caps and a hard 16 KiB ceiling. Specialized graph/review/baseline questions stay
 on ordinary summary/full output so the default machine contract remains unchanged; see the
-[Unreleased changelog](CHANGELOG.md#unreleased) for the maintained delivery record.
+[0.2.1 changelog](CHANGELOG.md#021---2026-09-04) for the maintained delivery record.
 
 This is deliberately a planning contract:
 
@@ -100,11 +100,10 @@ contract; this is not permission to break post-1.0 reports casually.
 
 ## Recently delivered
 
-Releases `0.1.8` through `0.2.0` added bounded change decisions and work-scope evidence, compact
-JSON, production-focused and artifact-filtered duplication, hardened outputs/releases, the
-responsive terminal report, and runner-evidence-backed test presence. See `CHANGELOG.md` for
-details; remove this paragraph once those contracts are ordinary background rather than useful
-roadmap context.
+Releases `0.1.8` through `0.2.1` added bounded change decisions and work-scope evidence, compact
+JSON, a hard-bounded agent view, production-focused and artifact-filtered duplication, hardened
+outputs/releases, the responsive terminal report, and runner-evidence-backed test presence. See
+`CHANGELOG.md` for details; remove this paragraph once those contracts are ordinary background.
 
 ## Evidence-gated opportunities
 
