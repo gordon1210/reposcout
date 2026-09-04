@@ -43,6 +43,10 @@ objects. With a diff scope, changed paths seed a separate full-tree planning uni
 ordinary scan facts remain change-scoped. The result includes selection reasons, machine-readable
 evidence/confidence, payload/timing measurements, and bounded omission diagnostics.
 
+For the common agent decision, `--agent-summary` now projects those facts into a JSON-only view
+with fixed section caps and a hard 16 KiB ceiling. Specialized graph/review/baseline questions stay
+on ordinary summary/full output so the default machine contract remains unchanged.
+
 This is deliberately a planning contract:
 
 - It does not copy source into the report, send data over a network, use embeddings, or call a
@@ -80,10 +84,10 @@ with a hard 100-node render bound.
 
 ## Delivered foundation
 
-RepoScout's source-first health model, bounded diagnostics, agent-efficient CLI, structural context
-plans, mixed-language graph, live dashboard, and progressive skill guidance are established product
-behavior. The release-by-release record belongs in `CHANGELOG.md`; this summary should be removed
-once it no longer helps explain the remaining roadmap.
+RepoScout's source-first health model, bounded diagnostics, hard-bounded agent view, structural
+context plans, mixed-language graph, live dashboard, and progressive skill guidance are
+established product behavior. The release-by-release record belongs in `CHANGELOG.md`; this
+summary should be removed once it no longer helps explain the remaining roadmap.
 
 ## Planned 1.0 compatibility reset
 

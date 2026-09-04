@@ -45,7 +45,8 @@ facts under hard aggregate-token and file-count limits.
 - Explicit focus paths add same-directory siblings, direct dependencies, direct/transitive
   first-class-language dependents, and matching tests. Diff scopes automatically seed changed
   paths.
-- Direct configured or syntax evidence is distinct from heuristic/transitive confidence. Support
+- Explicit focus and changed paths carry structured high-confidence distance-zero evidence.
+  Direct configured or syntax evidence is distinct from heuristic/transitive confidence. Support
   files, entrypoints, graph centrality, risk, churn, and complexity are general ranking signals.
 - Selected first-class files receive cached body-free declaration headers under separate bounds:
   16 symbols or 2 KiB per file, at most four private declarations, and 16 KiB total. Outlines do

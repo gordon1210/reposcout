@@ -6,8 +6,8 @@
 
 use crate::config::Config;
 use crate::model::{
-    CapabilitiesReport, ChangeSummaryCapability, SCHEMA_VERSION, SymbolMatch, SymbolQueryReport,
-    WorkScopeCapability,
+    AgentSummaryCapability, CapabilitiesReport, ChangeSummaryCapability, SCHEMA_VERSION,
+    SymbolMatch, SymbolQueryReport, WorkScopeCapability,
 };
 use crate::scan;
 use anyhow::{Result, anyhow};
@@ -88,6 +88,7 @@ pub fn capabilities() -> CapabilitiesReport {
         error_formats: ["text", "json"].into_iter().map(str::to_string).collect(),
         max_graph_depth: MAX_GRAPH_DEPTH,
         max_symbol_results: MAX_SYMBOL_RESULTS,
+        agent_summary: agent_summary_capability(),
         change_summary: ChangeSummaryCapability {
             flag: "--change-summary".to_string(),
             requires_one_of: ["--since", "--staged", "--working"]
@@ -114,6 +115,21 @@ pub fn capabilities() -> CapabilitiesReport {
         type2_max_seed_pairs_per_pool: crate::dup::fuzzy::MAX_SEED_PAIRS_PER_POOL,
         type2_max_matches_per_pool: crate::dup::fuzzy::MAX_MATCHES_PER_POOL,
         type2_max_overlap_checks_per_pool: crate::dup::fuzzy::MAX_OVERLAP_CHECKS_PER_POOL,
+    }
+}
+
+fn agent_summary_capability() -> AgentSummaryCapability {
+    AgentSummaryCapability {
+        flag: "--agent-summary".to_string(),
+        formats: vec!["json".to_string()],
+        default_profile: "agent".to_string(),
+        strategy_version: crate::report::agent_summary::STRATEGY_VERSION,
+        max_bytes: crate::report::agent_summary::MAX_BYTES,
+        max_signal_entries: crate::report::agent_summary::MAX_SIGNAL_ENTRIES,
+        max_direct_context_entries: crate::report::agent_summary::MAX_DIRECT_CONTEXT_ENTRIES,
+        max_expansion_context_entries: crate::report::agent_summary::MAX_EXPANSION_CONTEXT_ENTRIES,
+        max_outline_only_entries: crate::report::agent_summary::MAX_OUTLINE_ONLY_ENTRIES,
+        max_unmatched_focus_entries: crate::report::agent_summary::MAX_UNMATCHED_FOCUS_ENTRIES,
     }
 }
 

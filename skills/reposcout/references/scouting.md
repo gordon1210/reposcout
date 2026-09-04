@@ -32,16 +32,22 @@ Prefer the smallest command that answers the question:
 
 ```sh
 # Cheap, compact orientation for an agent
-reposcout -f json --summary --profile agent <path>
+reposcout --agent-summary <path>
 
 # Full health, duplication, and churn evidence
-reposcout -f json --summary --profile full <path>
+reposcout --agent-summary --profile full <path>
 
 # Guardrailed scan of an untrusted checkout
-reposcout -f json --summary --profile safe <path>
+reposcout --agent-summary --profile safe <path>
 ```
 
-When the task needs only a subset, project it before reading the command result:
+The native view is JSON-only, defaults to the `agent` profile, limits each leading ranking, and
+keeps the complete document under 16 KiB. Every bounded list reports entries available, shown, and
+omitted from the projection. Coverage gaps, context-plan omissions, unavailable analyzers, and
+projection omissions remain distinct.
+
+When the task needs an explicit detail block or one narrower predicate, use ordinary summary JSON
+and project it before reading the command result:
 
 ```sh
 set -o pipefail
@@ -73,6 +79,11 @@ Use `--no-project-config` when only the repository-configuration trust boundary 
 
 ## Understand compact output
 
+`--agent-summary` retains only common scouting decisions: compact interpretation and coverage,
+inventory, assessment, leading quality/navigation signals, and optional direct-versus-expansion
+context evidence. It rejects pretty printing and detailed directory, baseline, graph, impact,
+review, snippet, or duplicate-pair requests so an explicit answer is never silently discarded.
+
 `-f json --summary` drops heavy `files[]`, raw `duplicates`, and canonical finding arrays while
 retaining aggregates and explicitly requested context, directory, graph, impact, baseline, or
 review blocks. Context retains ranked file metadata and outline totals but omits declaration
@@ -80,9 +91,9 @@ objects; remove `--summary` when signatures are required. Compact duplicate rank
 available when duplication ran. Use `--baseline-ready` only when a finding-complete compact
 baseline artifact is explicitly required.
 
-Before selecting files, inspect top-level diagnostics and `summary.assessment`. Confirm that needed
-analyzers ran, then use source-token totals, top risks, complexity violations, test presence, skip
-candidates, symbols, and top source-token files as navigation evidence.
+In agent-summary, inspect `coverage`, `assessment`, and `interpretation.analyzers` before selecting
+files, then use the bounded `signals` rankings. In ordinary summary output, inspect top-level
+`diagnostics` and `summary.assessment` first. Never turn a disabled analyzer into a clean zero.
 
 ## Use focused queries before broad search
 

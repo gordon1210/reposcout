@@ -41,6 +41,9 @@ pub struct CapabilitiesReport {
     pub error_formats: Vec<String>,
     pub max_graph_depth: usize,
     pub max_symbol_results: usize,
+    /// Contract and hard payload limits for the agent scouting projection.
+    #[serde(default)]
+    pub agent_summary: AgentSummaryCapability,
     /// Contract and hard payload limits for the change-focused projection.
     #[serde(default)]
     pub change_summary: ChangeSummaryCapability,
@@ -56,6 +59,20 @@ pub struct CapabilitiesReport {
     /// Maximum pairwise overlap checks during Type-2 suppression per pool.
     #[serde(default)]
     pub type2_max_overlap_checks_per_pool: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentSummaryCapability {
+    pub flag: String,
+    pub formats: Vec<String>,
+    pub default_profile: String,
+    pub strategy_version: u32,
+    pub max_bytes: usize,
+    pub max_signal_entries: usize,
+    pub max_direct_context_entries: usize,
+    pub max_expansion_context_entries: usize,
+    pub max_outline_only_entries: usize,
+    pub max_unmatched_focus_entries: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -396,8 +413,9 @@ pub struct ContextFile {
     pub tokens: usize,
     pub score: f64,
     pub reasons: Vec<String>,
-    /// Structured evidence behind change-aware selection. The human-readable
-    /// `reasons` remain for compatibility and compact rendering.
+    /// Structured evidence behind focus, change, and relationship selection.
+    /// The human-readable `reasons` remain for compatibility and compact
+    /// rendering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence: Vec<ContextEvidence>,
     /// Bounded declaration headers for this selected first-class-language file.
@@ -421,7 +439,8 @@ pub struct ContextOutlineOnly {
 /// Machine-readable evidence for including one file in a context plan.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContextEvidence {
-    /// `changed`, `dependency`, `dependent`, `matching-test`, or `nearby`.
+    /// `focus`, `changed`, `dependency`, `dependent`, `matching-test`, or
+    /// `nearby`.
     pub role: String,
     /// `high` for direct syntax/config-backed evidence, `partial` for
     /// heuristic or transitive reachability.

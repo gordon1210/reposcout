@@ -6,9 +6,10 @@ complete RepoScout report would waste model context. The goal is one RepoScout i
 
 ## Minimize work before minimizing output
 
-Choose the narrowest scan target and the smallest analyzer command first. `tokens`, `complexity`,
-`dup`, `churn`, and `metrics` avoid unrelated analyzer work; `--change-summary` is already a
-decision-focused change projection. Keep `-f json --summary` unless the predicate genuinely needs
+Choose the narrowest scan target and the smallest analyzer command first. Use `--agent-summary`
+when its fixed scouting view already answers the question. `tokens`, `complexity`, `dup`, `churn`,
+and `metrics` avoid unrelated analyzer work; `--change-summary` is already a decision-focused
+change projection. Keep `-f json --summary` for compound predicates unless they genuinely need
 per-file facts or the complete finding catalog.
 
 `jq` reduces what reaches model context, but it runs after RepoScout has analyzed and serialized

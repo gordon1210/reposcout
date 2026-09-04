@@ -70,6 +70,9 @@ fn write_health_scope_fixture(root: &Path) {
 #[path = "cli/core.rs"]
 mod core;
 
+#[path = "cli/agent_summary.rs"]
+mod agent_summary;
+
 #[path = "cli/context.rs"]
 mod context;
 

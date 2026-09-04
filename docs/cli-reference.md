@@ -90,6 +90,7 @@ exclude wins over an include. Ordinary `--exclude` removes a path from the entir
 
 | Flag | Description | Default |
 |---|---|---|
+| `--agent-summary` | Emit a hard-bounded JSON scouting view; defaults to the `agent` profile | off |
 | `--summary` | Remove heavy arrays from JSON while retaining requested query blocks | off |
 | `--context` | Add a deterministic, token-budgeted reading plan | off |
 | `--no-context` | Disable a context plan enabled by configuration | off |
@@ -104,6 +105,17 @@ exclude wins over an include. Ordinary `--exclude` removes a path from the entir
 
 DOT and Mermaid formats render only the requested graph projection and do not invoke an external
 graph tool.
+
+`--agent-summary` is the smallest general agent-facing report. It forces compact JSON, is capped at
+16 KiB, keeps at most three entries per health ranking, and separates up to five direct context
+files from three lower-priority expansion candidates. Every bounded list reports the entries
+available to the projection, shown, and omitted; context tiers also report exact available, shown,
+and omitted token totals. Context also preserves graph-covered seed and relationship totals;
+analyzer-specific partiality appears only when that analyzer ran. Scan and context-plan omissions
+remain separate.
+`--pretty` is rejected because it would invalidate the byte contract. Detailed directory,
+baseline, graph, impact, review, snippet, and duplicate-pair requests remain available through
+ordinary `--summary` or full output and are deliberately incompatible with this projection.
 
 ## Change, review, and baselines
 
@@ -137,11 +149,11 @@ additional analysis; `--baseline-ready` and graph-only formats omit them.
 # Human summary
 reposcout .
 
-# Compact agent payload
-reposcout -f json --summary --profile agent src/
+# Hard-bounded agent payload
+reposcout --agent-summary src/
 
 # Guardrailed scan of an untrusted checkout
-reposcout -f json --summary --profile safe .
+reposcout --agent-summary --profile safe .
 
 # Discover the installed contract
 reposcout capabilities -f json
@@ -156,11 +168,12 @@ reposcout explain src/service.ts
 ### Plan and inspect change
 
 ```sh
-# Reading plan under hard limits
-reposcout -f json --summary --context-budget 24000 --context-max-files 15 .
+# Reading plan under hard limits with a bounded result
+reposcout --agent-summary --focus src/service.ts \
+  --context-budget 24000 --context-max-files 15 .
 
 # Focus the plan on one service
-reposcout -f json --summary --focus src/service.ts .
+reposcout --agent-summary --focus src/service.ts .
 
 # Keep metrics change-scoped while consulting full-tree planning/topology
 reposcout --working --change-summary -f json .

@@ -18,7 +18,7 @@ use anyhow::{Result, bail};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 
-const STRATEGY_VERSION: u32 = 2;
+const STRATEGY_VERSION: u32 = 3;
 const MAX_OMISSION_DETAILS: usize = 10;
 const MAX_OUTLINE_BYTES: usize = 16 * 1024;
 const MAX_OUTLINE_BYTES_PER_FILE: usize = 2 * 1024;
@@ -375,6 +375,12 @@ fn score_relationships(
     if facts.seed.focused() {
         score.value += 1_200.0;
         score.reasons.push("focus path".to_string());
+        score.evidence.push(ContextEvidence {
+            role: "focus".to_string(),
+            confidence: "high".to_string(),
+            distance: Some(0),
+            resolver: None,
+        });
         if let Some(hint) = &file.skip_hint {
             score
                 .reasons

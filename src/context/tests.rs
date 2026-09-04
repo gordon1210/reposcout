@@ -238,6 +238,9 @@ fn generated_files_are_skipped_unless_explicitly_focused() {
         None,
     );
     assert_eq!(focused.files[0].path, PathBuf::from("src/generated.rs"));
+    assert!(focused.files[0].evidence.iter().any(|evidence| {
+        evidence.role == "focus" && evidence.confidence == "high" && evidence.distance == Some(0)
+    }));
 }
 
 #[test]

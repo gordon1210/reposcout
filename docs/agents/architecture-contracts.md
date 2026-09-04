@@ -71,6 +71,10 @@ main
   -> report::render
 ```
 
+`report/agent_summary.rs` is a pure, hard-bounded projection over `ScanReport`. It may classify and
+trim already-produced evidence, but must never trigger analyzers, rebuild topology, or become a
+second task-query implementation.
+
 `scan::run` remains the no-exclusions library wrapper. Diff-scoped context deliberately analyzes a
 separate cached full-tree planning universe after the primary scoped scan. This supplies unchanged
 tests, dependents, risks, and symbol outlines without widening `summary`, `files`, or findings; its

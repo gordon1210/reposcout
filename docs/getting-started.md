@@ -106,7 +106,8 @@ Interactive terminals receive the compact table report. Redirected output defaul
 ```sh
 reposcout .                         # human table
 reposcout -f json .                # complete machine report
-reposcout -f json --summary .      # compact scouting report
+reposcout --agent-summary .        # hard-bounded agent scouting view
+reposcout -f json --summary .      # compact aggregate report
 reposcout --working --change-summary -f json . # bounded change decision
 reposcout -o report.md .           # format inferred from extension
 reposcout -o report.sarif .        # SARIF 2.1.0

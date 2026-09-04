@@ -5,10 +5,16 @@ or affected by repository/global configuration.
 
 ## Inspect gaps before conclusions
 
-Check top-level diagnostics for unsupported, unreadable, oversized, or omitted files; walker
-errors; duration limits; and partial Type-2 analysis. Inspect bounded sample paths before deciding
-that an unsupported count is irrelevant. Parse, import, resolver-configuration, and test-mapping
-gaps can make an apparent absence uncertain.
+In agent-summary, start with `coverage.primary`, optional `coverage.planning_universe`, optional
+`coverage.graph`, analyzer-specific partiality, and `coverage.unavailable_signals`. For a context
+plan, compare `context.evidence.graph_covered_seed_files` with `graph_eligible_seed_files` before
+treating an empty relationship tier as a clean absence.
+
+If a coverage gap intersects the task, switch once to ordinary summary/full output and project the
+needed top-level `diagnostics` fields. That detailed block contains bounded unsupported-path
+samples, cache facts, timing, and analyzer work-limit counters that agent-summary deliberately
+omits. Parse, import, resolver-configuration, and test-mapping gaps can make an apparent absence
+uncertain.
 
 For change summaries, distinguish relevant gaps in the observed change neighborhood from
 repository-wide blind spots. For graph/context output, retain resolver provenance and do not turn a
@@ -17,10 +23,31 @@ tests remain necessary when gaps intersect the task.
 
 ## Diagnose partial Type-2 analysis
 
-When `type2_analysis_partial` is true, inspect skipped candidate buckets, seed pairs, retained
-matches, overlap work, and the reported limit reason. Retained near-duplicate groups remain useful,
-but absence is not evidence of completeness. The current CLI has no undocumented exhaustive
-override; do not invent one or silently rerun with unbounded settings.
+When `coverage.type2_analysis_partial` in agent-summary is true and duplication matters to the
+task, request the detailed counters once instead of looking for them in the bounded view:
+
+```sh
+set -o pipefail
+
+reposcout -f json --summary --profile full <path> \
+  | jq -c '{
+      diagnostics: (.diagnostics | {
+        type2_analysis_partial, type2_pools_truncated,
+        type2_candidate_buckets_skipped,
+        type2_candidate_buckets_partially_selected,
+        type2_seed_pairs_skipped, type2_match_limit_reached,
+        type2_suppression_limit_reached,
+        type2_matches_skipped_during_suppression
+      }),
+      production: .summary.assessment.production_duplication
+    }'
+```
+
+Retained near-duplicate groups remain useful, but absence is not evidence of completeness. The
+current CLI has no undocumented exhaustive override; do not invent one or silently rerun with
+unbounded settings. Treat `coverage.churn_analysis_partial` and
+`coverage.churn_deltas_omitted` the same way: escalate only when churn evidence is material to the
+decision.
 
 ## Inspect configuration without changing it
 

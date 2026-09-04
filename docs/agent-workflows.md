@@ -8,40 +8,45 @@ or inspect next without copying source into the report or calling a model.
 ## Start with a compact scout
 
 ```sh
-reposcout -f json --summary --profile agent <PATH>
+reposcout --agent-summary <PATH>
 ```
 
-`--summary` retains aggregate and top-N evidence while removing heavy per-file, duplicate-family,
-and canonical-finding arrays. Explicit context, directory, graph, impact, baseline, and review
-blocks remain when requested, but compact context omits detailed declaration objects.
+`--agent-summary` defaults to the `agent` profile and returns one complete JSON document under a
+hard 16 KiB ceiling. Its fixed caps retain coverage, inventory, assessment, analyzer availability,
+the leading decision signals, and exact projection-local omission counts without requiring a
+hand-written filter.
 
-If the task needs only a few decisions, select those fields before the report enters agent
-context. `jq -c` both filters and preserves compact JSON; bare `jq` only reformats the complete
-payload:
+Use ordinary `--summary` when the question needs a detailed graph, impact, review, baseline, or
+directory block. Then select only the relevant fields before the report enters agent context;
+`jq -c` filters, while bare `jq` only reformats the complete payload:
 
 ```sh
 reposcout -f json --summary --profile agent <PATH> \
   | jq -c '{diagnostics, assessment: .summary.assessment, source: .summary.source, work_scope}'
 ```
 
-The most useful first-pass fields are:
+The native agent view maps the most useful first-pass questions as follows:
 
 | Question | Evidence |
 |---|---|
-| Will readable source fit? | `summary.source.tokens`, `summary.assessment` |
-| How large is the complete inventory? | `summary.tokens`, `summary.files` |
-| Is cleanup worthwhile? | `summary.assessment.production_duplication`, complexity violations, risks, and assessment reasons |
-| What should be read first? | `summary.top_risks`, `summary.top_source_token_files` |
-| What can be skipped? | `summary.skip_candidates` and each reason |
-| Is a supported test runner configured, and what files do its defaults select? | `summary.test_presence` |
-| Did the scan cover the target? | top-level `diagnostics` |
-| Was Type-2 analysis complete? | `diagnostics.type2_analysis_partial` |
+| Will readable source fit? | `inventory.source.tokens`, `assessment` |
+| How large is the complete inventory? | `inventory.recognized_tokens`, `inventory.recognized_files` |
+| Is cleanup worthwhile? | `assessment`, available `signals.duplication`, complexity violations, and risks |
+| Where are the largest or riskiest source files? | `signals.top_source_files`, `signals.top_risks` |
+| What can be skipped? | `signals.skip_candidates` and each reason |
+| Is a supported test runner configured? | `signals.tests` |
+| Did the scan cover the target? | `coverage.primary` and optional `coverage.planning_universe` |
+| Was Type-2 analysis complete? | `coverage.type2_analysis_partial` when duplication was enabled |
+
+`signals.top_source_files` is a size ranking, not an automatic reading order. Cross-check it with
+`signals.skip_candidates`; use `context.direct_evidence` when the task has a focus or change seed.
 
 ## Read the work scope before choosing depth
 
-Every new scan report except `--baseline-ready` includes a versioned top-level `work_scope` block.
-It projects facts already produced by the selected workflow; it never enables graph construction,
-context planning, or another analyzer on its own.
+Ordinary scan/summary reports and change-summary include a versioned top-level `work_scope` block;
+`--baseline-ready` removes it, while `--agent-summary` projects only its compact inventory and
+confidence subsets. Work scope uses facts already produced by the selected workflow; it never
+enables graph construction, context planning, or another analyzer on its own.
 
 Read it in this order:
 
@@ -100,15 +105,15 @@ omission as a disabled analyzer.
 
 ## Discover capabilities
 
-Do not hard-code assumptions about an installed binary:
+Query capabilities only when compatibility with an unknown installed binary matters:
 
 ```sh
 reposcout capabilities -f json
 ```
 
 This command performs no repository scan. It advertises commands, output/error formats, profiles,
-language coverage, health scopes and path-exclusion support, symbol kinds, and hard graph,
-duplication, change-summary, and work-scope bounds.
+language coverage, health scopes and path-exclusion support, symbol kinds, and hard agent-summary,
+graph, duplication, change-summary, and work-scope bounds.
 
 ## Find declarations
 
@@ -131,7 +136,8 @@ not run whole-corpus duplication or Git churn.
 ## Build a bounded reading plan
 
 ```sh
-reposcout -f json --summary --context \
+reposcout --agent-summary \
+  --focus src/service.ts \
   --context-budget 24000 --context-max-files 15 .
 ```
 
@@ -145,26 +151,33 @@ include:
 - nearby risky code, churn, and complexity; and
 - useful same-directory context.
 
-RepoScout computes bounded, body-free declaration outlines without embedding source bodies.
-Summary output keeps `outline_symbols`, `outline_bytes`, and omission counts but drops each
-file's `symbols` array. `outline_details_omitted: true` appears only when at least one declaration
-object was actually removed. Omit `--summary` only when the actual declaration signatures are
-needed. Neither form exceeds the requested aggregate source-token or file budget.
+RepoScout computes bounded, body-free declaration outlines without embedding source bodies. The
+agent view keeps outline totals and bounded outline-only seeds but drops declaration objects.
+Ordinary summary output additionally keeps the complete ranked context metadata and sets
+`outline_details_omitted: true` when at least one declaration object was removed. Omit `--summary`
+only when the actual declaration signatures are needed. No form changes the requested aggregate
+source-token or file budget.
 
 Project a focused reading plan when only selection evidence is needed:
 
 ```sh
-reposcout -f json --summary --profile agent \
-  --focus src/service.ts --context-budget 24000 --context-max-files 15 . \
-  | jq -c '{diagnostics, work_scope, context: (.context | {
-      budget_tokens, selected_tokens, omitted_tokens, files, omitted
-    })}'
+reposcout --agent-summary --focus src/service.ts \
+  --context-budget 24000 --context-max-files 15 .
 ```
+
+For a focused plan, first inspect `context.outline_only.entries`: it retains explicit seeds that
+are too large for the body budget. Then start with `context.direct_evidence.entries` and read
+`expand_if_needed.entries` only when the direct files do not resolve the next decision. Without a
+focus or change seed, direct evidence is intentionally empty and the expansion tier is only a
+bounded orientation shortlist. For general orientation, prefer the ordinary agent-summary signals;
+add a focus when the task needs a reading plan. `context.budget.plan_omitted_*` describes files
+excluded by the underlying token/file plan; the bounded-list `omitted` fields describe only details
+hidden by the output projection.
 
 Focus one or more paths:
 
 ```sh
-reposcout -f json --summary \
+reposcout --agent-summary \
   --focus src/service.ts --focus tests/service.test.ts .
 ```
 
@@ -197,7 +210,8 @@ Read the dedicated projection in this order:
 The report has a hard aggregate budget of 100 serialized path entries, at most 25 detailed graph
 gaps, and at most 10 validation entries. `reposcout capabilities -f json` advertises these limits.
 Matching tests are naming/convention evidence, not measured coverage. Validation entries never
-claim that a command ran.
+claim that a command ran. Strategy 2 also retains explicit focus inputs as a high-confidence
+`focus` reading-order role.
 
 Use the detailed workflow when declaration outlines, complete context data, or the ordinary
 change-scoped aggregate is needed:
@@ -209,7 +223,7 @@ reposcout -f json --profile agent \
 
 Each context evidence record exposes:
 
-- its role (`changed`, `matching-test`, `dependency`, `dependent`, `nearby`);
+- its role (`focus`, `changed`, `matching-test`, `dependency`, `dependent`, `nearby`);
 - graph distance;
 - resolver provenance when applicable; and
 - `high` or `partial` confidence.
@@ -292,16 +306,25 @@ reposcout explain src/service.ts -f json
 Use `safe` when scouting an untrusted checkout:
 
 ```sh
-reposcout -f json --summary --profile safe .
+reposcout --agent-summary --profile safe .
 ```
 
 Explicit analyzer selection may opt back into an analyzer under the safe limits. The report's
-`execution` and `analysis_profile` blocks disclose the effective configuration and unavailable
-signals, so disabled work never appears as a confident zero.
+`interpretation.profile`, `interpretation.config_mode`, `interpretation.analyzers`, and
+`coverage.unavailable_signals` fields disclose that state in agent-summary. Ordinary reports use
+the fuller `execution` and `analysis_profile` blocks. Disabled work therefore does not appear as a
+confident zero in the agent view.
 
 ## Read diagnostics before trusting absence
 
-Every scan reports:
+Agent-summary keeps the decision-critical coverage counts in `coverage.primary`, optional
+`coverage.planning_universe`, and—when a graph consumer such as context planning ran—
+`coverage.graph`. It also exposes analyzer-specific Type-2 and churn partiality only when those
+analyzers ran. For a context plan, compare
+`context.evidence.graph_covered_seed_files` with `graph_eligible_seed_files` before treating an
+empty relationship tier as evidence that no relationship exists.
+
+Ordinary reports add the detailed `diagnostics` needed to investigate a relevant gap:
 
 - discovered, analyzed, unsupported, and unreadable file counts, plus bounded path examples for
   unsupported files;
@@ -312,17 +335,19 @@ Every scan reports:
 - broad stage timings; and
 - whether Type-2 candidate, match, or suppression bounds made duplication partial.
 
-If `type2_analysis_partial` is true, exact-clone analysis is complete but Type-2 findings and the
-combined duplication percentage are lower bounds. Read
-`summary.assessment.production_duplication.complete` for the corresponding production-source
-qualification; other discovery/read limits can also make it partial.
+If `coverage.type2_analysis_partial` in agent-summary—or
+`diagnostics.type2_analysis_partial` in ordinary output—is true, exact-clone analysis is complete
+but Type-2 findings and the combined duplication percentage are lower bounds. Read
+`assessment.production_duplication.complete` in agent-summary or
+`summary.assessment.production_duplication.complete` in ordinary output for the corresponding
+production-source qualification. `coverage.churn_analysis_partial` and
+`coverage.churn_deltas_omitted` provide the equivalent first-pass warning for churn. Switch to a
+targeted ordinary report only when one of those gaps intersects the current task.
 
 ## Suggested agent sequence
 
 ```text
-capabilities
-    ↓
-compact summary scout
+hard-bounded agent summary
     ↓
 locate / explain / focused context
     ↓
@@ -332,4 +357,5 @@ open only the selected source and tests
 ```
 
 The sequence is guidance, not a protocol dependency. JSON/NDJSON and structured errors remain the
-stable integration boundary.
+stable integration boundary. Use `capabilities` before it only when installed-version compatibility
+is itself uncertain; do not make it a routine preflight call.

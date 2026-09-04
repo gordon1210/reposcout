@@ -6,7 +6,27 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added `--agent-summary`, a JSON-only scouting projection that defaults to the `agent` profile,
+  exposes compact coverage/inventory/assessment and leading health/context evidence, records exact
+  projection-local count/token omissions, and guarantees a complete newline-terminated JSON record
+  within a hard 16 KiB limit. Context seed/graph coverage and analyzer-specific Type-2/churn
+  partiality prevent empty or partial evidence from appearing complete.
+
+### Changed
+
+- Context strategy 3 now records explicit focus paths as structured high-confidence distance-zero
+  evidence, allowing compact consumers to distinguish direct reading candidates from later
+  expansion without changing the existing ranked context plan. Change-summary strategy 2 carries
+  that focus role and confidence through its merged reading order.
+
 ### Fixed
+
+- Included context `outline_only` and `unmatched_focus` paths in the central machine-output UTF-8
+  validation used by JSON, NDJSON, SARIF, and graph renderers.
+- Documented agent-summary context tiers so oversized explicit seeds are inspected before direct
+  evidence and unseeded orientation candidates are not mistaken for task-specific evidence.
 
 - Reconciled the dashboard from the canonical snapshot on every SSE open or reconnect, closed
   lagged SSE streams so the browser can recover, and prevented older snapshot requests from

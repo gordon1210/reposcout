@@ -45,7 +45,7 @@ into the repository it scans.
 - **Structured duplication:** raw format-aware exact and consistent-rename Type-2 evidence over an
   artifact-filtered source corpus, plus a compact production-source projection with redundant
   blocks removed.
-- **Agent-ready queries:** compact summary mode, capability discovery, declaration lookup,
+- **Agent-ready queries:** a hard-bounded scouting view, capability discovery, declaration lookup,
   raw work-scope evidence, structured errors, and guardrailed execution profiles.
 - **Explainable context:** bounded reading plans that rank focus paths, changes, tests,
   dependencies, dependents, risk, and repository instructions.
@@ -103,14 +103,15 @@ change-analysis, quality, or diagnostic guidance only when the task needs it.
 # Human summary of the current repository
 reposcout
 
-# Compact agent-oriented JSON
-reposcout -f json --summary --profile agent .
+# Hard-bounded agent-oriented JSON
+reposcout --agent-summary .
 
 # Find one declaration across supported languages
 reposcout locate HttpClient . --exact -f json
 
-# Build a reading plan under hard limits
-reposcout -f json --summary --context-budget 24000 --context-max-files 15 .
+# Build a compact reading plan under hard limits
+reposcout --agent-summary --focus src/service.ts \
+  --context-budget 24000 --context-max-files 15 .
 
 # Get a bounded decision report for the current working-tree change
 reposcout --working --change-summary -f json .
@@ -119,17 +120,18 @@ reposcout --working --change-summary -f json .
 `PATH` may be a repository root, subdirectory, or single file. The surrounding Git root is
 detected automatically.
 
-Machine-readable scans include a bounded `work_scope` block with raw measurements of the observed
-repository, focus, or diff scope, including explicit production-source duplication evidence when
-that analyzer ran. RepoScout leaves decisions about reading, splitting, or delegating work to the
-caller and never enables another analyzer just to populate this block.
+Ordinary machine-readable scans include a bounded `work_scope` block with raw measurements of the
+observed repository, focus, or diff scope, including explicit production-source duplication
+evidence when that analyzer ran. `--agent-summary` projects only the decision-relevant inventory
+and confidence subset. RepoScout leaves decisions about reading, splitting, or delegating work to
+the caller and never enables another analyzer just to populate either view.
 
 ## Common workflows
 
 ### Scout an untrusted checkout
 
 ```sh
-reposcout -f json --summary --profile safe .
+reposcout --agent-summary --profile safe .
 ```
 
 The `safe` profile ignores repository configuration and applies conservative file, byte, time,

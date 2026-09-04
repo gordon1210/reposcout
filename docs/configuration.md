@@ -142,11 +142,11 @@ Disables whole-corpus duplication and Git churn unless an analyzer subcommand or
 explicitly requests them:
 
 ```sh
-reposcout -f json --summary --profile agent .
+reposcout --agent-summary --profile agent .
 ```
 
-`--change-summary` selects this profile when the caller does not pass `--profile`; explicit
-`--profile full` and `--profile safe` remain authoritative.
+`--agent-summary` and `--change-summary` select this profile when the caller does not pass
+`--profile`; explicit `--profile full` and `--profile safe` remain authoritative.
 
 ### `safe`
 

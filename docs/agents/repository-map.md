@@ -71,7 +71,7 @@ src/
     fuzzy/plan.rs    Deterministic rare-first admission and work accounting.
   git.rs             Churn, changed-file/line diffs, and rename detection.
   report/            JSON, table, Markdown, SARIF, NDJSON, DOT/Mermaid, config, explain, and
-                     query renderers.
+                     query renderers; agent_summary.rs owns the hard-bounded scouting projection.
 tests/
   cli.rs             End-to-end integration tests against bounded fixtures.
   dup_languages.rs   Detector and CLI matrix for every canonical format.

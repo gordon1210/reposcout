@@ -29,6 +29,12 @@ reposcout -f ndjson .
 JSON is compact by default for machine and agent consumption. Add `--pretty` only when a human
 needs indented JSON; the flag rejects non-JSON output instead of silently doing nothing.
 
+For ordinary agent orientation, prefer the purpose-built bounded projection:
+
+```sh
+reposcout --agent-summary .
+```
+
 When only part of a report answers the question, project it before passing stdout onward. Use
 `jq -c` to keep the selected result compact; bare `jq` pretty-prints again:
 
@@ -49,10 +55,40 @@ reposcout -o architecture.mmd --graph .
 
 The exact output path is excluded from the scan so a report cannot feed back into itself.
 
+## Agent-summary projection
+
+`--agent-summary` emits one JSON document with `report_kind: "agent-summary"`. It defaults to the
+`agent` execution profile unless `--profile` is explicit and never changes the blank invocation or
+ordinary JSON/NDJSON contracts.
+
+The projection retains compact interpretation metadata, coverage without path samples, source and
+recognized-inventory totals, assessment, available aggregate complexity/duplication/symbol/test
+signals, and at most three entries from each health ranking. Disabled analyzer signals are omitted
+instead of appearing as clean zeroes. When context was requested, it separately reports:
+
+- the original token/file budget and plan-level omissions;
+- seed, graph-covered-seed, dependent, and matching-test totals needed to qualify an empty result;
+- up to five files backed by focus, change, matching-test, or direct graph evidence;
+- up to three lower-priority `expand_if_needed` candidates;
+- up to three outline-only oversized seeds; and
+- up to three unmatched focus paths.
+
+Every bounded list records `available`, `shown`, and projection-local `omitted`; context tiers also
+record the corresponding exact token totals. Those counters do not replace scan coverage or
+context budget omissions. Analyzer-specific Type-2/churn partiality appears only when that analyzer
+ran, and graph diagnostics appear only when a graph consumer ran. `projection.entries_omitted`
+sums details removed from this view, while `projection.byte_limit_reached` says the byte ceiling
+constrained rendering. Bytes are never cut mid-document; if even the required envelope cannot fit,
+rendering fails instead of emitting invalid JSON.
+
+The fixed compact contract rejects `--pretty` and detailed directory, baseline, graph, impact,
+review, source-snippet, or duplicate-pair output. Use ordinary `--summary` plus a targeted `jq -c`
+projection when one of those explicit result blocks is the actual question.
+
 ## Compact JSON
 
 Full JSON includes every analyzed file, duplicate group, pair finding, and canonical finding. Use
-`--summary` for an agent-sized scouting payload:
+`--summary` when a smaller aggregate report must retain explicitly requested detail blocks:
 
 ```sh
 reposcout -f json --summary --profile agent .
@@ -126,6 +162,10 @@ Scan reports carry `schema_version: "2.0"`. The top-level contract is organized 
 | `files` | Per-file metrics and facts; omitted by compact modes |
 | `duplicates` | Exact/near groups, precise pairs, and coverage; omitted by compact modes |
 | `finding_catalog` | Complete versioned complexity, marker, duplication, and risk findings |
+
+In agent-summary context output, inspect `outline_only` before `direct_evidence` for oversized
+explicit seeds. Without a focus or change seed, `direct_evidence` is intentionally empty and
+`expand_if_needed` is only a bounded orientation shortlist.
 
 Optional blocks appear only when requested:
 

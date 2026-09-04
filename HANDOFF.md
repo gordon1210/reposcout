@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-03 · latest release 0.2.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-04 · latest release 0.2.0 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 16_
 
 ---
@@ -17,6 +17,10 @@ any path inside it**, so they can make decisions *before* diving in:
 
 - **Does readable source fit in a context window?** → `summary.source.tokens` and
   `summary.assessment`; `summary.tokens` and `summary.files` remain complete inventory.
+- **Give an agent only the first decision view.** → `--agent-summary` returns hard-bounded JSON
+  with coverage, inventory, assessment, leading signals, and optional direct-versus-expansion
+  context evidence. Seed/graph coverage and analyzer-specific partiality qualify empty results;
+  use ordinary summary/full output for specialized detail blocks.
 - **Just tell me the verdict.** → `summary.assessment` (`fits_context_known`, `fits_context`,
   `cleanup_worth_complete`, `cleanup_worth`, `unavailable_signals`, `reasons`) — the one-glance
   answer without treating a disabled analyzer as zero evidence.
@@ -113,8 +117,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   behind TLS.
 - **Output:** `table` (human), `json` (agent), `markdown` (PRs/issues), `sarif` (SARIF
   2.1.0 for code scanning / CI), `ndjson` (streamable), and graph-only `dot` / `mermaid`.
-  `--summary` drops heavy arrays while retaining explicitly requested context/graph/directory/
-  impact answers — the intended agent payload. Terminal tables share the detected width, shorten
+  `--agent-summary` is the smallest general agent payload: JSON-only, fixed section caps, explicit
+  projection omissions, and a hard 16 KiB document ceiling. `--summary` drops heavy arrays while
+  retaining explicitly requested context/graph/directory/impact answers. Terminal tables share the detected width, shorten
   paths from the front, omit empty language rows, use semantic color, and place detailed inventory
   first so the overview, configuration hint, and most decision-relevant verdicts remain nearest
   the prompt.
@@ -148,6 +153,7 @@ derive reusable graph analyses plus the bounded plan in `context.rs`. Diff-scope
 the primary analysis scoped and builds a distinct cached planning universe; `graph.rs` owns the
 shared topology used by both context and impact.
 `query.rs` owns task-oriented capabilities/symbol lookup over the same cached facts;
+`report/agent_summary.rs` owns the hard-bounded pure scouting projection;
 `debug_log.rs` owns the process-wide diagnostic session; `dup/fuzzy/plan.rs` owns deterministic
 rare-first Type-2 admission; and `report::render` turns the `ScanReport` into table/json/markdown.
 
@@ -229,6 +235,12 @@ that a new maintainer still needs to interpret the current architecture and road
    budget but retains a bounded `outline_only` projection for oversized explicit focus/change
    seeds, and independently caps outline symbols/bytes. Focus misses/ambiguity remain explicit. In diff mode, `context` may reference
    unchanged full-tree files even though `summary`, `files`, and findings remain diff-scoped.
+   Context strategy `3` records explicit focus as structured high-confidence distance-zero
+   evidence. Agent-summary classifies this and other direct evidence without changing the ordered
+   underlying `context.files` contract; without a focus or change seed, it keeps the direct tier
+   empty and presents general candidates only as bounded expansion. Oversized explicit seeds remain
+   visible in the outline-only tier. Change-summary strategy `2` preserves focus evidence in the
+   merged reading order.
 11. **Configured ignore-file limits do not guard the ordinary full-profile discovery walk.** The
    main walker still lets the `ignore` crate load repository and Git ignore files directly; the
    bounded reader protects snapshot/explain paths, while the `safe` profile avoids the exposure by

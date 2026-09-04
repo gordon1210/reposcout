@@ -384,6 +384,16 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
 }
 
 fn validate_scan_request(args: &ScanArgs, subcommand: bool) -> Result<()> {
+    if args.agent_summary && subcommand {
+        return Err(usage_error(
+            "--agent-summary is available only on the default scan command",
+        ));
+    }
+    if args.agent_summary && has_detailed_agent_summary_request(args) {
+        return Err(usage_error(
+            "--agent-summary cannot be combined with detailed directory, baseline, graph, impact, review, or duplication output; use --summary with an explicit JSON projection instead",
+        ));
+    }
     if args.change_summary && args.since.is_none() && !args.staged && !args.working {
         return Err(usage_error(
             "--change-summary requires exactly one of --since, --staged, or --working",
@@ -416,15 +426,39 @@ fn validate_scan_request(args: &ScanArgs, subcommand: bool) -> Result<()> {
     Ok(())
 }
 
+fn has_detailed_agent_summary_request(args: &ScanArgs) -> bool {
+    args.by_dir.is_some()
+        || args.baseline.is_some()
+        || args.graph
+        || !args.graph_focus.is_empty()
+        || args.graph_depth.is_some()
+        || args.graph_direction.is_some()
+        || args.impact
+        || args.review.is_some()
+        || args.duplication_report_snippets
+        || args.duplication_details
+}
+
 fn resolve_scan_format(args: &ScanArgs, pretty: bool) -> Result<Format> {
     let requested = choose_format(args.common.format, args.common.output.as_deref());
+    if args.agent_summary
+        && requested != Format::Json
+        && (args.common.format.is_some() || args.common.output.is_some())
+    {
+        return Err(usage_error("--agent-summary requires JSON output"));
+    }
+    if args.agent_summary && pretty {
+        return Err(usage_error(
+            "--agent-summary is hard-bounded compact JSON and cannot be combined with --pretty",
+        ));
+    }
     if args.baseline_ready
         && let Some(format) = args.common.format
         && format != OutputFormat::Json
     {
         return Err(anyhow!("--baseline-ready requires JSON output"));
     }
-    let resolved = if args.baseline_ready {
+    let resolved = if args.baseline_ready || args.agent_summary {
         Format::Json
     } else {
         requested
@@ -445,11 +479,14 @@ fn resolve_scan_config(args: &ScanArgs, sub_enabled: Option<Enabled>) -> Result<
         || !args.focus.is_empty()
         || args.change_summary;
 
-    let profile = args.common.profile.unwrap_or(if args.change_summary {
-        ExecutionProfile::Agent
-    } else {
-        ExecutionProfile::Full
-    });
+    let profile = args
+        .common
+        .profile
+        .unwrap_or(if args.change_summary || args.agent_summary {
+            ExecutionProfile::Agent
+        } else {
+            ExecutionProfile::Full
+        });
     let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
         Config::load_without_project(&args.path)?
     } else {
@@ -500,6 +537,7 @@ fn render_scan_output(
         serde_json::json!({
             "format": format!("{format:?}").to_lowercase(),
             "summary_only": args.summary,
+            "agent_summary": args.agent_summary,
             "baseline_ready": args.baseline_ready,
             "change_summary": args.change_summary,
             "pretty_json": pretty,
@@ -507,6 +545,8 @@ fn render_scan_output(
     });
     let projection = if args.change_summary {
         report::Projection::ChangeSummary
+    } else if args.agent_summary {
+        report::Projection::AgentSummary
     } else if args.baseline_ready {
         report::Projection::BaselineReady
     } else if args.summary {

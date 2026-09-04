@@ -353,10 +353,18 @@ pub struct ScanArgs {
     #[arg(long = "fail-on")]
     pub fail_on: Option<String>,
 
-    /// Emit only the aggregate summary in JSON (omit the per-file and
-    /// duplicate arrays). Ideal for agents scouting a path cheaply.
+    /// Emit the compact aggregate report while retaining requested detail
+    /// blocks. Omits the per-file and duplicate arrays in JSON.
     #[arg(long)]
     pub summary: bool,
+
+    /// Emit a bounded JSON decision view for agent repository scouting.
+    /// Defaults to the agent profile unless --profile is explicit.
+    #[arg(
+        long = "agent-summary",
+        conflicts_with_all = ["summary", "change_summary", "baseline_ready"]
+    )]
+    pub agent_summary: bool,
 
     /// Emit a bounded, change-focused decision report. Requires exactly one
     /// diff scope, defaults to the agent profile, and implies context/impact.

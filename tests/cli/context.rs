@@ -129,7 +129,7 @@ fn context_plan_projects_bounded_body_free_symbol_outlines() {
     let context = &report["context"];
     let symbols = context["files"][0]["symbols"].as_array().unwrap();
 
-    assert_eq!(context["strategy_version"], 2);
+    assert_eq!(context["strategy_version"], 3);
     assert_eq!(report["summary"]["symbols"]["functions"], 0);
     assert!(context["planning_ms"].is_number());
     assert_eq!(context["outline_symbols"], symbols.len());

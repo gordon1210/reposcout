@@ -101,6 +101,16 @@ pub fn render_capabilities(
             let _ = writeln!(out, "Error formats: {}", report.error_formats.join(", "));
             let _ = writeln!(
                 out,
+                "Agent summary: {} (JSON <= {} bytes; signals <= {}; context direct <= {}, expansion <= {}, outline-only <= {})",
+                report.agent_summary.flag,
+                report.agent_summary.max_bytes,
+                report.agent_summary.max_signal_entries,
+                report.agent_summary.max_direct_context_entries,
+                report.agent_summary.max_expansion_context_entries,
+                report.agent_summary.max_outline_only_entries
+            );
+            let _ = writeln!(
+                out,
                 "Change summary: {} (formats: {}; paths <= {}, gaps <= {}, validations <= {})",
                 report.change_summary.flag,
                 report.change_summary.formats.join(", "),

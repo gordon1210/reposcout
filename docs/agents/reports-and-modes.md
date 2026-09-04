@@ -4,9 +4,31 @@ This is a normative extension of the root [`AGENTS.md`](../../AGENTS.md). Read i
 changing report shapes, summary/change/review/baseline behavior, CLI task queries, or renderers.
 The root instructions remain in force.
 
-## Summary and baseline-ready reports
+## Agent summary, summary, and baseline-ready reports
 
-`--summary` is the compact agent-scouting mode. With `-f json --summary`, heavy `files[]`, raw
+`--agent-summary` is the smallest general agent-scouting contract. It is a pure JSON projection
+over the existing `ScanReport`, defaults to the `agent` profile unless explicitly overridden, and
+never changes blank or ordinary machine-output behavior. It retains compact interpretation,
+coverage, inventory, assessment, health rankings, and optional context decision facts under fixed
+per-section caps plus a hard 16 KiB newline-terminated JSON-record ceiling. Every projection-capped
+ranking/context tier has exact projection-local `available`/`shown`/`omitted` counts, and context
+tiers retain the corresponding token totals. Context output must retain seed/graph coverage totals;
+analyzer-specific partiality is emitted only for analyzers that ran; graph diagnostics are emitted
+only when a graph consumer ran. Scan, context-budget, analyzer, and baseline completeness stay
+separate. If path lengths force further reduction, remove whole entries in a fixed deterministic
+order and update counters; never truncate JSON bytes.
+
+Context tiers preserve evidence semantics: without a focus or change seed, the direct tier is
+empty and general ranked candidates remain expansion rather than fabricated direct evidence.
+Oversized explicit seeds remain in the bounded outline-only tier, which consumers inspect before
+the direct and expansion tiers.
+
+The mode is JSON-only and rejects pretty-printing or explicitly requested detailed directory,
+baseline, graph, impact, review, snippet, and duplicate-pair blocks. Keep those workflows on the
+ordinary summary/full contracts. Agent-summary construction must remain in
+`report/agent_summary.rs` and must never trigger analysis, topology, or a second query pipeline.
+
+`--summary` is the general compact aggregate mode. With `-f json --summary`, heavy `files[]`, raw
 `duplicates`, and canonical finding arrays are omitted while aggregate `summary` and explicitly
 requested context, directories, graph, impact, baseline, and review blocks remain. Keep the
 redundancy-filtered `summary.top_duplicates` and optional `top_production_duplicates` so the result
@@ -30,6 +52,8 @@ optional, and file classification is `unavailable` when no evidence-scoped runne
 - It requires exactly one of `--since`, `--staged`, or `--working`.
 - It defaults to the `agent` profile unless a profile was explicitly selected.
 - It implies context and impact analysis.
+- Strategy 2 preserves explicit focus evidence as a high-confidence `focus` role in the merged
+  reading order.
 - JSON/NDJSON identifies `report_kind: "change-summary"` and retains interpretation metadata,
   diagnostics, `work_scope`, and the additive `change_summary` projection. It never includes the
   ordinary aggregate, per-file facts, finding catalog, or raw context/impact blocks.
@@ -104,6 +128,8 @@ metadata are rejected because their health semantics cannot be established.
 
 - `reposcout capabilities -f json` performs no scan and describes commands, formats, profiles,
   limits, language coverage, and machine interfaces.
+- `--agent-summary` advertises its JSON format, default profile, projection strategy, total byte
+  ceiling, and per-section entry limits through capabilities.
 - `reposcout locate SYMBOL [PATH]` uses cached first-class declaration outlines with deterministic
   case-insensitive ranking or case-sensitive `--exact`, optional kind/language filters, and a hard
   100-result cap.

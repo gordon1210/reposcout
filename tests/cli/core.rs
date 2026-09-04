@@ -306,6 +306,7 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     assert_eq!(report["type2_max_seed_pairs_per_pool"], 10_000_000);
     assert_eq!(report["type2_max_matches_per_pool"], 250_000);
     assert_eq!(report["type2_max_overlap_checks_per_pool"], 10_000_000);
+    assert_agent_summary_capability(&report);
     assert_eq!(report["change_summary"]["flag"], "--change-summary");
     assert_eq!(
         report["change_summary"]["requires_one_of"],
@@ -325,6 +326,20 @@ fn capabilities_are_machine_discoverable_without_scanning() {
     assert_eq!(report["work_scope"]["strategy_version"], 2);
     assert_eq!(report["work_scope"]["max_path_entries"], 25);
     assert_eq!(report["work_scope"]["max_components"], 10);
+}
+
+fn assert_agent_summary_capability(report: &Value) {
+    let capability = &report["agent_summary"];
+    assert_eq!(capability["flag"], "--agent-summary");
+    assert_eq!(capability["formats"], serde_json::json!(["json"]));
+    assert_eq!(capability["default_profile"], "agent");
+    assert_eq!(capability["strategy_version"], 1);
+    assert_eq!(capability["max_bytes"], 16 * 1024);
+    assert_eq!(capability["max_signal_entries"], 3);
+    assert_eq!(capability["max_direct_context_entries"], 5);
+    assert_eq!(capability["max_expansion_context_entries"], 3);
+    assert_eq!(capability["max_outline_only_entries"], 3);
+    assert_eq!(capability["max_unmatched_focus_entries"], 3);
 }
 
 #[test]

@@ -28,13 +28,21 @@ explicitly authorizes it.
 For compact agent scouting, start with:
 
 ```sh
-reposcout -f json --summary --profile agent <path>
+reposcout --agent-summary <path>
 ```
 
-When only specific decisions are needed, discard unrelated fields before stdout enters model
-context. Use a targeted compact projection, not bare `jq` (which only pretty-prints the full
-payload), and do not retain bounded sample arrays unless they answer the task. In Bash or Zsh,
-preserve the producer's failure status with `pipefail`:
+This JSON-only view defaults to the `agent` profile, caps each ranking and context tier, and keeps
+the complete document under 16 KiB. Read coverage and omission counters before treating absence as
+evidence. For a focused or change-seeded plan, first check `context.outline_only.entries` for
+explicit seeds that exceed the body budget, then read `context.direct_evidence`; inspect
+`expand_if_needed` only when the direct files do not answer the next decision. An unseeded context
+plan has no direct evidence by design; its expansion entries are only a bounded orientation
+shortlist.
+
+Use ordinary `-f json --summary` only when the task needs a detailed graph, impact, review,
+baseline, directory block, or a predicate the native view does not expose. Then discard unrelated
+fields before stdout enters model context. Use a targeted compact projection, not bare `jq` (which
+only pretty-prints the full payload), and preserve the producer's status with `pipefail`:
 
 ```sh
 set -o pipefail

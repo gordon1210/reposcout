@@ -1,5 +1,6 @@
 //! Output rendering. Dispatches to table (human), JSON (agent), or markdown.
 
+pub(crate) mod agent_summary;
 mod change_summary;
 pub mod config;
 pub mod explain;
@@ -35,6 +36,7 @@ pub enum Projection {
     #[default]
     Full,
     Summary,
+    AgentSummary,
     BaselineReady,
     ChangeSummary,
 }
@@ -94,6 +96,19 @@ pub fn render(
             )),
         };
     }
+    if options.projection == Projection::AgentSummary {
+        return match format {
+            Format::Json => agent_summary::json(report, options.pretty_json),
+            Format::Table
+            | Format::Markdown
+            | Format::Sarif
+            | Format::Ndjson
+            | Format::Dot
+            | Format::Mermaid => Err(anyhow::anyhow!(
+                "agent-summary output supports compact JSON only"
+            )),
+        };
+    }
     match format {
         Format::Table => Ok(table::render(report, color, options)),
         Format::Json => json::render(report, options.projection, options.pretty_json),
@@ -125,6 +140,12 @@ fn validate_machine_paths(report: &ScanReport) -> Result<()> {
         )
         .chain(report.context.iter().flat_map(|context| {
             context
+                .unmatched_focus
+                .iter()
+                .map(std::path::PathBuf::as_path)
+        }))
+        .chain(report.context.iter().flat_map(|context| {
+            context
                 .changed_files
                 .iter()
                 .map(std::path::PathBuf::as_path)
@@ -134,6 +155,12 @@ fn validate_machine_paths(report: &ScanReport) -> Result<()> {
                 .context
                 .iter()
                 .flat_map(|context| context.files.iter().map(|file| file.path.as_path())),
+        )
+        .chain(
+            report
+                .context
+                .iter()
+                .flat_map(|context| context.outline_only.iter().map(|file| file.path.as_path())),
         )
         .chain(
             report
@@ -350,10 +377,10 @@ pub(crate) fn dup_locations(locations: &[String], copies: usize) -> String {
 mod tests {
     use super::*;
     use crate::model::{
-        Assessment, ComplexitySummary, DuplicateBlock, Duplication, DuplicationSummary,
-        FindingCatalog, FindingProfile, LanguageDuplication, LanguageStat, ProductionDuplication,
-        RiskEntry, ScanDiagnostics, ScanProfile, ScanReport, Summary, TestFramework, TestPresence,
-        WorkScope,
+        Assessment, ComplexitySummary, ContextOutlineOnly, ContextPlan, DuplicateBlock,
+        Duplication, DuplicationSummary, FindingCatalog, FindingProfile, LanguageDuplication,
+        LanguageStat, ProductionDuplication, RiskEntry, ScanDiagnostics, ScanProfile, ScanReport,
+        Summary, TestFramework, TestPresence, WorkScope,
     };
     use std::path::PathBuf;
 
@@ -407,6 +434,60 @@ mod tests {
             "src/a%20b%23c%3F.rs"
         );
         assert_eq!(sarif_uri_text("café.rs").unwrap(), "caf%C3%A9.rs");
+    }
+
+    #[cfg(unix)]
+    fn invalid_report_path() -> PathBuf {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        PathBuf::from(OsString::from_vec(vec![b'b', b'a', b'd', 0xff]))
+    }
+
+    #[cfg(unix)]
+    fn assert_invalid_context_path_is_rejected(report: &ScanReport) {
+        for projection in [Projection::Full, Projection::AgentSummary] {
+            let error = render(
+                report,
+                Format::Json,
+                false,
+                RenderOptions {
+                    projection,
+                    ..RenderOptions::default()
+                },
+            )
+            .unwrap_err()
+            .to_string();
+
+            assert!(error.contains("not valid UTF-8"), "error was: {error}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn machine_path_validation_covers_outline_only_context_entries() {
+        let mut report = report_with_summary(Summary::default());
+        report.context = Some(ContextPlan {
+            outline_only: vec![ContextOutlineOnly {
+                path: invalid_report_path(),
+                ..ContextOutlineOnly::default()
+            }],
+            ..ContextPlan::default()
+        });
+
+        assert_invalid_context_path_is_rejected(&report);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn machine_path_validation_covers_unmatched_focus_context_entries() {
+        let mut report = report_with_summary(Summary::default());
+        report.context = Some(ContextPlan {
+            unmatched_focus: vec![invalid_report_path()],
+            ..ContextPlan::default()
+        });
+
+        assert_invalid_context_path_is_rejected(&report);
     }
 
     #[test]

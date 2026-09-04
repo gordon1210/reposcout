@@ -10,7 +10,7 @@ use crate::model::{
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-pub(crate) const STRATEGY_VERSION: u32 = 1;
+pub(crate) const STRATEGY_VERSION: u32 = 2;
 pub(crate) const MAX_PATH_ENTRIES: usize = 100;
 pub(crate) const MAX_GAP_ENTRIES: usize = 25;
 pub(crate) const MAX_VALIDATIONS: usize = 10;
@@ -355,7 +355,7 @@ fn merge_context_entry(
         });
     for item in evidence {
         add_role(&mut entry.roles, &item.role);
-        if item.role == "changed" {
+        if matches!(item.role.as_str(), "changed" | "focus") {
             entry.confidence = "high".to_string();
         }
         if entry.distance.is_none() {
@@ -378,11 +378,12 @@ fn add_role(roles: &mut Vec<String>, role: &str) {
 fn role_rank(role: &str) -> usize {
     match role {
         "changed" => 0,
-        "matching-test" => 1,
-        "dependency" => 2,
-        "dependent" => 3,
-        "nearby" => 4,
-        _ => 5,
+        "focus" => 1,
+        "matching-test" => 2,
+        "dependency" => 3,
+        "dependent" => 4,
+        "nearby" => 5,
+        _ => 6,
     }
 }
 
@@ -664,7 +665,31 @@ fn is_project_configuration(path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ImpactAnalysis, ScanDiagnostics};
+    use crate::model::{ContextFile, ImpactAnalysis, ScanDiagnostics};
+
+    #[test]
+    fn explicit_focus_stays_high_confidence_in_change_reading_order() {
+        let context = ContextPlan {
+            files: vec![ContextFile {
+                path: PathBuf::from("src/focus.rs"),
+                evidence: vec![ContextEvidence {
+                    role: "focus".to_string(),
+                    confidence: "high".to_string(),
+                    distance: Some(0),
+                    resolver: None,
+                }],
+                ..ContextFile::default()
+            }],
+            ..ContextPlan::default()
+        };
+
+        let entries = context_entries(Some(&context));
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].roles, ["focus"]);
+        assert_eq!(entries[0].confidence, "high");
+        assert_eq!(entries[0].distance, Some(0));
+    }
 
     #[test]
     fn planning_truncation_lowers_discovery_completeness() {
