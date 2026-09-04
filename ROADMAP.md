@@ -45,7 +45,8 @@ evidence/confidence, payload/timing measurements, and bounded omission diagnosti
 
 For the common agent decision, `--agent-summary` now projects those facts into a JSON-only view
 with fixed section caps and a hard 16 KiB ceiling. Specialized graph/review/baseline questions stay
-on ordinary summary/full output so the default machine contract remains unchanged.
+on ordinary summary/full output so the default machine contract remains unchanged; see the
+[Unreleased changelog](CHANGELOG.md#unreleased) for the maintained delivery record.
 
 This is deliberately a planning contract:
 
