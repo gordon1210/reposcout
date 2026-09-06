@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-06 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-07 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 17_
 
 ---
@@ -58,7 +58,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 - **Godot 4 support.** GDScript/shader AST analysis and Godot scene/resource/project
   dependency context reuse the shared pipeline; 36 formats are recognized. Scope and static-analysis
-  limits are documented in [Godot support](docs/godot.md) and [0.2.2](CHANGELOG.md#022---2026-09-06).
+  limits are documented in [Godot support](docs/godot.md) and [0.2.2](CHANGELOG.md#022---2026-09-07).
 
 - **Feature-complete for the core purpose, plus a full scouting/CI layer.** Tokens
   (tiktoken `o200k_base` default / `cl100k_base`), complexity (per-function

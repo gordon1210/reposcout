@@ -6,7 +6,7 @@ within their section.
 
 ## [Unreleased]
 
-## [0.2.2] - 2026-09-06
+## [0.2.2] - 2026-09-07
 
 ### Added
 
