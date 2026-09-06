@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-06
+
 ### Added
 
 - Integrated Godot 4 scouting: GDScript and shader AST metrics/duplication; scene, resource, and
