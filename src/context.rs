@@ -827,6 +827,8 @@ fn resolver_is_precise(resolver: &str) -> bool {
             | "composer-psr-4"
             | "composer-psr-0"
             | "php-include"
+            | "godot-resource"
+            | "godot-uid"
     )
 }
 

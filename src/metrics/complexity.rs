@@ -340,6 +340,16 @@ fn is_short_circuit_assignment(node: Node<'_>, fc: FirstClass, content: &str) ->
 }
 
 fn is_catch_all_case(node: Node<'_>, fc: FirstClass, content: &str) -> bool {
+    if fc == FirstClass::GdScript && node.kind() == "pattern_section" {
+        let mut cursor = node.walk();
+        let patterns = node
+            .named_children(&mut cursor)
+            .filter(|child| child.kind() != "body")
+            .collect::<Vec<_>>();
+        return patterns.len() == 1
+            && (node_text(patterns[0], content).trim() == "_"
+                || patterns[0].kind() == "pattern_binding");
+    }
     if fc == FirstClass::Rust && node.kind() == "match_arm" {
         let Some(pattern) = node.child_by_field_name("pattern") else {
             return false;
@@ -541,7 +551,10 @@ fn is_labeled_jump(node: Node<'_>, fc: FirstClass, cfg: &LangConfig, content: &s
                     .strip_prefix("continue ")
                     .is_some_and(|label| is_identifier_like(label.trim()))
         }
-        FirstClass::Python => false,
+        FirstClass::Python
+        | FirstClass::GdScript
+        | FirstClass::GdShader
+        | FirstClass::GodotResource => false,
         FirstClass::Php => text
             .strip_prefix("break")
             .or_else(|| text.strip_prefix("continue"))
@@ -557,6 +570,25 @@ fn labeled_js_jump(text: &str, keyword: &str) -> bool {
 }
 
 fn function_name(node: Node<'_>, content: &str) -> String {
+    if node.kind() == "constructor_definition" {
+        return "_init".to_string();
+    }
+    if matches!(node.kind(), "get_body" | "set_body") {
+        let mut parent = node.parent();
+        while let Some(candidate) = parent {
+            if candidate.kind() == "variable_statement"
+                && let Some(name) = named_field_text(candidate, "name", content)
+            {
+                let accessor = if node.kind() == "get_body" {
+                    "get"
+                } else {
+                    "set"
+                };
+                return format!("{name}.{accessor}");
+            }
+            parent = candidate.parent();
+        }
+    }
     if let Some(name) = named_field_text(node, "name", content) {
         return name;
     }

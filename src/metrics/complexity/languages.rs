@@ -160,8 +160,84 @@ const PHP_NESTING: &[&str] = PHP_COGNITIVE;
 const PHP_ELSE: &[&str] = &["else_if_clause", "else_clause"];
 const PHP_JUMPS: &[&str] = &["break_statement", "continue_statement"];
 
+const GDSCRIPT_CONFIG: LangConfig = LangConfig {
+    function_kinds: &[
+        "function_definition",
+        "constructor_definition",
+        "lambda",
+        "get_body",
+        "set_body",
+    ],
+    decision_kinds: &[
+        "if_statement",
+        "elif_clause",
+        "for_statement",
+        "while_statement",
+        "conditional_expression",
+        "pattern_guard",
+    ],
+    case_kinds: &["pattern_section"],
+    cognitive_structure_kinds: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "conditional_expression",
+        "match_statement",
+    ],
+    nesting_kinds: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "conditional_expression",
+        "match_statement",
+    ],
+    else_clause_kinds: &["elif_clause", "else_clause"],
+    jump_kinds: &[],
+};
+
+const GDSHADER_CONFIG: LangConfig = LangConfig {
+    function_kinds: &["function_definition"],
+    decision_kinds: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "do_statement",
+        "ternary_expression",
+    ],
+    case_kinds: &["case_statement"],
+    cognitive_structure_kinds: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "do_statement",
+        "ternary_expression",
+        "switch_statement",
+    ],
+    nesting_kinds: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "do_statement",
+        "ternary_expression",
+        "switch_statement",
+    ],
+    else_clause_kinds: &["else_clause"],
+    jump_kinds: &[],
+};
+
 pub(super) fn config(fc: FirstClass) -> LangConfig {
     match fc {
+        FirstClass::GdScript => GDSCRIPT_CONFIG,
+        FirstClass::GdShader => GDSHADER_CONFIG,
+        FirstClass::GodotResource => LangConfig {
+            function_kinds: &[],
+            decision_kinds: &[],
+            case_kinds: &[],
+            cognitive_structure_kinds: &[],
+            nesting_kinds: &[],
+            else_clause_kinds: &[],
+            jump_kinds: &[],
+        },
         FirstClass::Rust => LangConfig {
             function_kinds: RUST_FUNCTIONS,
             decision_kinds: RUST_DECISIONS,
@@ -211,7 +287,8 @@ pub(super) fn config(fc: FirstClass) -> LangConfig {
 }
 
 pub(super) fn is_function_kind(kind: &str) -> bool {
-    RUST_FUNCTIONS.contains(&kind)
+    matches!(kind, "constructor_definition" | "get_body" | "set_body")
+        || RUST_FUNCTIONS.contains(&kind)
         || PY_FUNCTIONS.contains(&kind)
         || JS_FUNCTIONS.contains(&kind)
         || GO_FUNCTIONS.contains(&kind)

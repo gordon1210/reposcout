@@ -849,6 +849,7 @@ fn event_requires_rescan(event: &notify::Event, target: &Path, exclusions: &[Pat
                 matches!(
                     component.as_os_str(),
                     name if name == OsStr::new(".git")
+                        || name == OsStr::new(".godot")
                         || name == OsStr::new("target")
                         || name == OsStr::new("node_modules")
                         || name == OsStr::new("dist")
@@ -872,6 +873,7 @@ mod tests {
 
         for path in [
             "/repo/.git/index",
+            "/repo/.godot/imported/asset.ctex",
             "/repo/target/release/reposcout",
             "/repo/apps/web/node_modules/react/index.js",
             "/repo/apps/web/dist/index.js",

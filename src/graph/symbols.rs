@@ -110,6 +110,9 @@ impl Collector {
                 FirstClass::Python => self.extract_python(node, content, &source_context),
                 FirstClass::Rust => self.extract_rust(node, content, &source_context),
                 FirstClass::Go => self.extract_go(node, content, &source_context),
+                // Godot resource/class relationships use project-scoped file
+                // resolution, not this language-agnostic name heuristic.
+                FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {}
             }
             for index in (0..node.named_child_count()).rev() {
                 if let Some(child) = node.named_child(crate::numeric::usize_to_u32(index)) {
@@ -844,6 +847,9 @@ fn language_family(language: FirstClass) -> &'static str {
         FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx => "javascript",
         FirstClass::Go => "go",
         FirstClass::Php => "php",
+        FirstClass::GdScript => "gdscript",
+        FirstClass::GdShader => "gdshader",
+        FirstClass::GodotResource => "godot-resource",
     }
 }
 
@@ -856,6 +862,9 @@ fn language_name(language: FirstClass) -> &'static str {
         FirstClass::Tsx => "TSX",
         FirstClass::Go => "Go",
         FirstClass::Php => "PHP",
+        FirstClass::GdScript => "GDScript",
+        FirstClass::GdShader => "Godot Shader",
+        FirstClass::GodotResource => "Godot Resource",
     }
 }
 

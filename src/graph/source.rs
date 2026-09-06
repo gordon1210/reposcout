@@ -9,6 +9,8 @@ pub struct SourceFacts {
     pub(super) specifiers: Vec<ImportSpecifier>,
     pub(super) parse_errors: usize,
     pub(super) symbols: symbols::SourceFacts,
+    #[serde(default)]
+    pub(super) godot: super::godot::Facts,
 }
 
 impl SourceFacts {
@@ -24,6 +26,7 @@ impl SourceFacts {
 pub(super) struct SpecifierExtraction {
     pub(super) specifiers: Vec<ImportSpecifier>,
     pub(super) parse_errors: usize,
+    godot: super::godot::Facts,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +36,7 @@ pub(super) enum ImportSpecifier {
     PhpInclude(StaticInclude),
     Rust(RustImport),
     GoPackage(String),
+    Godot(super::godot::Reference),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +81,7 @@ pub(crate) fn extract_source_facts_from_tree(
         specifiers: extraction.specifiers,
         parse_errors: extraction.parse_errors,
         symbols: symbols::Collector::source_facts(fc, path, content, root),
+        godot: extraction.godot,
     }
 }
 
@@ -89,6 +94,15 @@ pub(super) fn extract_specifiers_from_root(
         parse_errors: count_parse_errors(root),
         ..SpecifierExtraction::default()
     };
+    if matches!(
+        fc,
+        FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource
+    ) {
+        let (facts, references) = super::godot::extract(fc, content, root);
+        extraction.godot = facts;
+        extraction.specifiers = references.into_iter().map(ImportSpecifier::Godot).collect();
+        return extraction;
+    }
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         match fc {
@@ -99,6 +113,7 @@ pub(super) fn extract_specifiers_from_root(
             FirstClass::Php => extract_php_node(node, content, &mut extraction.specifiers),
             FirstClass::Rust => extract_rust_node(node, content, &mut extraction.specifiers),
             FirstClass::Go => extract_go_node(node, content, &mut extraction.specifiers),
+            FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {}
         }
         for index in (0..node.named_child_count()).rev() {
             if let Some(child) = node.named_child(crate::numeric::usize_to_u32(index)) {
@@ -129,7 +144,8 @@ pub(super) fn module_specifiers(extraction: SpecifierExtraction) -> Vec<String> 
             ImportSpecifier::PhpNamespace(_)
             | ImportSpecifier::PhpInclude(_)
             | ImportSpecifier::Rust(_)
-            | ImportSpecifier::GoPackage(_) => None,
+            | ImportSpecifier::GoPackage(_)
+            | ImportSpecifier::Godot(_) => None,
         })
         .collect()
 }

@@ -18,6 +18,7 @@ pub(crate) const RUNNER_EVIDENCE_FILE_NAMES: &[&str] = &[
     "package.json",
     "composer.json",
     "pyproject.toml",
+    "project.godot",
     "vitest.config.js",
     "vitest.config.mjs",
     "vitest.config.cjs",
@@ -80,6 +81,7 @@ pub fn detect_frameworks<'a>(
             "package.json" => detect_package_json,
             "composer.json" => detect_composer_json,
             "pyproject.toml" => detect_pyproject,
+            "project.godot" => detect_godot,
             _ => continue,
         };
         if let BoundedText::Content(content) =
@@ -90,6 +92,45 @@ pub fn detect_frameworks<'a>(
     }
     found.sort_by(|left, right| (&left.name, &left.evidence).cmp(&(&right.name, &right.evidence)));
     found
+}
+
+fn detect_godot(content: &str, evidence: &str, found: &mut Vec<TestFramework>) {
+    let Some(tree) = crate::parse::parse(crate::lang::FirstClass::GodotResource, content) else {
+        return;
+    };
+    let root = tree.root_node();
+    if root.has_error() {
+        return;
+    }
+    let mut cursor = root.walk();
+    for section in root.named_children(&mut cursor).filter(|node| {
+        node.kind() == "section" && crate::godot::section_name(*node, content) == "editor_plugins"
+    }) {
+        let mut cursor = section.walk();
+        for property in section.named_children(&mut cursor).filter(|node| {
+            node.kind() == "property"
+                && node
+                    .named_child(0)
+                    .is_some_and(|key| crate::godot::text(key, content) == "enabled")
+        }) {
+            let mut stack = property.named_child(1).into_iter().collect::<Vec<_>>();
+            while let Some(node) = stack.pop() {
+                let runner = match crate::godot::string(node, content).as_deref() {
+                    Some("res://addons/gut/plugin.cfg") => Some("gut"),
+                    Some("res://addons/gdUnit4/plugin.cfg") => Some("gdunit4"),
+                    _ => None,
+                };
+                if let Some(runner) = runner {
+                    push_framework(found, runner, evidence);
+                }
+                for index in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(crate::numeric::usize_to_u32(index)) {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn runner_config_name(name: &str, stem: &str, extensions: &[&str]) -> bool {
@@ -437,6 +478,13 @@ fn framework_matches_path(framework: &str, relative: &str) -> bool {
         "vitest" => is_vitest_extension(file_extension(filename)) && dot_test_or_spec(filename),
         "bun-test" => bun_test_file(filename),
         "node-test" => node_test_path(relative, filename),
+        "gut" => file_extension(filename) == Some("gd") && filename.starts_with("test_"),
+        "gdunit4" => {
+            file_extension(filename) == Some("gd")
+                && (filename.starts_with("test_")
+                    || filename.ends_with("_test.gd")
+                    || filename.ends_with("Test.gd"))
+        }
         _ => false,
     }
 }
@@ -735,7 +783,7 @@ pub fn is_test_file(rel_path: &str) -> bool {
     if lower.ends_with("_spec.rb") {
         return true;
     }
-    if is_phpunit_filename(filename) {
+    if is_phpunit_filename(filename) || is_gdunit_filename(filename) {
         return true;
     }
 
@@ -776,7 +824,7 @@ pub fn test_stem_keys(rel_path: &str) -> Vec<String> {
         && normalized
             .split('/')
             .any(|component| matches!(component.to_ascii_lowercase().as_str(), "tests" | "test"));
-    let phpunit_test = is_phpunit_filename(filename);
+    let suffixed_test = is_phpunit_filename(filename) || is_gdunit_filename(filename);
     let mut components = stem_components(rel_path);
     strip_layout_components(&mut components, true);
     let raw = components.pop().unwrap_or_default();
@@ -798,7 +846,7 @@ pub fn test_stem_keys(rel_path: &str) -> Vec<String> {
     if let Some(s) = raw.strip_suffix("_spec") {
         stems.push(s.to_string());
     }
-    if phpunit_test && let Some(s) = raw.strip_suffix("test") {
+    if suffixed_test && let Some(s) = raw.strip_suffix("test") {
         stems.push(s.to_string());
     }
     if rust_cli_test {
@@ -831,6 +879,12 @@ fn is_phpunit_filename(filename: &str) -> bool {
         && stem
             .strip_suffix("Test")
             .is_some_and(|base| !base.is_empty())
+}
+
+fn is_gdunit_filename(filename: &str) -> bool {
+    filename
+        .strip_suffix("Test.gd")
+        .is_some_and(|name| !name.is_empty())
 }
 
 fn stem_components(rel_path: &str) -> Vec<String> {
@@ -903,6 +957,37 @@ mod tests {
     use super::*;
     use crate::lang::FirstClass;
     use crate::parse;
+
+    #[test]
+    fn godot_test_runners_require_enabled_plugin_evidence_and_stay_project_scoped() {
+        let mut found = Vec::new();
+        detect_godot(
+            "config_version=5\n[editor_plugins]\nenabled=PackedStringArray(\"res://addons/gut/plugin.cfg\", \"res://addons/gdUnit4/plugin.cfg\")\n",
+            "game/project.godot",
+            &mut found,
+        );
+        assert_eq!(found.len(), 2);
+        assert!(is_framework_test_file(&found, "game/tests/test_player.gd"));
+        assert!(is_framework_test_file(&found, "game/tests/PlayerTest.gd"));
+        assert!(!is_framework_test_file(
+            &found,
+            "other/tests/test_player.gd"
+        ));
+        assert!(!is_framework_test_file(&found, "game/tests/helper.gd"));
+        assert!(!is_framework_test_file(&found, "game/tests/test_player.py"));
+        assert!(is_test_file("game/PlayerTest.gd"));
+        assert!(!is_test_file("game/Contest.gd"));
+        assert!(
+            test_stem_keys("game/tests/PlayerTest.gd").contains(&source_stem("game/player.gd"))
+        );
+        let mut disabled = Vec::new();
+        detect_godot(
+            "config_version=5\n[editor_plugins]\n; enabled=PackedStringArray(\"res://addons/gut/plugin.cfg\")\nenabled=PackedStringArray()\n",
+            "game/project.godot",
+            &mut disabled,
+        );
+        assert!(disabled.is_empty());
+    }
 
     fn detect_fixture_frameworks<'a>(
         directory: &Path,

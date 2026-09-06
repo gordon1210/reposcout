@@ -16,6 +16,9 @@ pub enum FirstClass {
     Tsx,
     Go,
     Php,
+    GdScript,
+    GdShader,
+    GodotResource,
 }
 
 pub const FIRST_CLASS_LANGUAGE_NAMES: &[&str] = &[
@@ -26,9 +29,19 @@ pub const FIRST_CLASS_LANGUAGE_NAMES: &[&str] = &[
     "TSX",
     "Go",
     "PHP",
+    "GDScript",
+    "Godot Shader",
+    "Godot Scene",
+    "Godot Resource",
+    "Godot Project",
 ];
 
 pub const RECOGNIZED_LANGUAGE_NAMES: &[&str] = &[
+    "GDScript",
+    "Godot Shader",
+    "Godot Scene",
+    "Godot Resource",
+    "Godot Project",
     "Rust",
     "Python",
     "JavaScript",
@@ -66,6 +79,8 @@ pub const RECOGNIZED_LANGUAGE_NAMES: &[&str] = &[
 /// inventory still covers every recognized format; this list controls the
 /// higher-signal health corpus used by actionable analyzers and rankings.
 pub const SOURCE_LANGUAGE_NAMES: &[&str] = &[
+    "GDScript",
+    "Godot Shader",
     "Rust",
     "Python",
     "JavaScript",
@@ -93,7 +108,18 @@ pub const SOURCE_LANGUAGE_NAMES: &[&str] = &[
 /// Recognized content formats excluded from health analyzers unless callers
 /// opt in to one of them or select the all-content health scope.
 pub const OPTIONAL_HEALTH_FORMAT_NAMES: &[&str] = &[
-    "HTML", "CSS", "SCSS", "JSON", "YAML", "TOML", "Markdown", "XML", "Text",
+    "HTML",
+    "CSS",
+    "SCSS",
+    "JSON",
+    "YAML",
+    "TOML",
+    "Markdown",
+    "XML",
+    "Text",
+    "Godot Scene",
+    "Godot Resource",
+    "Godot Project",
 ];
 
 /// Breadth of the actionable health corpus.
@@ -130,6 +156,12 @@ pub enum HealthInclude {
     Markdown,
     Xml,
     Text,
+    #[serde(rename = "godot-scene")]
+    GodotScene,
+    #[serde(rename = "godot-resource")]
+    GodotResource,
+    #[serde(rename = "godot-project")]
+    GodotProject,
 }
 
 impl HealthInclude {
@@ -145,6 +177,9 @@ impl HealthInclude {
             Self::Markdown => "markdown",
             Self::Xml => "xml",
             Self::Text => "text",
+            Self::GodotScene => "godot-scene",
+            Self::GodotResource => "godot-resource",
+            Self::GodotProject => "godot-project",
         }
     }
 
@@ -160,6 +195,9 @@ impl HealthInclude {
             Self::Markdown => "Markdown",
             Self::Xml => "XML",
             Self::Text => "Text",
+            Self::GodotScene => "Godot Scene",
+            Self::GodotResource => "Godot Resource",
+            Self::GodotProject => "Godot Project",
         }
     }
 }
@@ -191,7 +229,8 @@ impl LangInfo {
     /// meaningless cyclomatic/Halstead numbers over non-code text.
     #[must_use]
     pub fn is_code(&self) -> bool {
-        self.first_class.is_some()
+        self.first_class
+            .is_some_and(|fc| fc != FirstClass::GodotResource)
             || matches!(
                 self.name,
                 "C" | "C++"
@@ -258,6 +297,13 @@ const TYPESCRIPT: LangInfo =
 const TSX: LangInfo = lang!("TSX", Some(FirstClass::Tsx), ["//"], ["/*" => "*/"]);
 const GO: LangInfo = lang!("Go", Some(FirstClass::Go), ["//"], ["/*" => "*/"]);
 const PHP: LangInfo = lang!("PHP", Some(FirstClass::Php), ["//", "#"], ["/*" => "*/"]);
+const GDSCRIPT: LangInfo = lang!("GDScript", Some(FirstClass::GdScript), ["#"], []);
+const GDSHADER: LangInfo =
+    lang!("Godot Shader", Some(FirstClass::GdShader), ["//"], ["/*" => "*/"]);
+const GODOT_SCENE: LangInfo = lang!("Godot Scene", Some(FirstClass::GodotResource), [";"], []);
+const GODOT_RESOURCE: LangInfo =
+    lang!("Godot Resource", Some(FirstClass::GodotResource), [";"], []);
+const GODOT_PROJECT: LangInfo = lang!("Godot Project", Some(FirstClass::GodotResource), [";"], []);
 
 // Generic languages (line/token metrics only).
 const C: LangInfo = lang!("C", None, ["//"], ["/*" => "*/"]);
@@ -298,6 +344,10 @@ const EXTENSION_LANGUAGES: &[(&str, &LangInfo)] = &[
     ("cts", &TYPESCRIPT),
     ("cxx", &CPP),
     ("engine", &PHP),
+    ("escn", &GODOT_SCENE),
+    ("gd", &GDSCRIPT),
+    ("gdshader", &GDSHADER),
+    ("gdshaderinc", &GDSHADER),
     ("go", &GO),
     ("h", &CHEADER),
     ("hh", &CHEADER),
@@ -345,7 +395,9 @@ const EXTENSION_LANGUAGES: &[(&str, &LangInfo)] = &[
     ("swift", &SWIFT),
     ("theme", &PHP),
     ("toml", &TOML_L),
+    ("tres", &GODOT_RESOURCE),
     ("ts", &TYPESCRIPT),
+    ("tscn", &GODOT_SCENE),
     ("tsx", &TSX),
     ("txt", &TEXT),
     ("xml", &XML),
@@ -364,6 +416,25 @@ fn detect_extension(extension: &str) -> Option<&'static LangInfo> {
 /// Detect a language from a file path (by extension, then by file name).
 #[must_use]
 pub fn detect(path: &Path) -> Option<&'static LangInfo> {
+    // Godot 4 script/shader UID sidecars are small text metadata, not source.
+    if path.extension().is_some_and(|extension| extension == "uid")
+        && path
+            .file_stem()
+            .and_then(|stem| Path::new(stem).extension())
+            .is_some_and(|extension| {
+                matches!(
+                    extension.to_str(),
+                    Some("gd" | "gdshader" | "gdshaderinc" | "cs")
+                )
+            })
+    {
+        return Some(&TEXT);
+    }
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("project.godot") => return Some(&GODOT_PROJECT),
+        Some("plugin.cfg" | "export_presets.cfg") => return Some(&GODOT_RESOURCE),
+        _ => {}
+    }
     if path
         .file_name()
         .and_then(|name| name.to_str())

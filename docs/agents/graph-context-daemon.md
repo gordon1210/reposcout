@@ -18,7 +18,13 @@ The dependency graph and impact analysis cover every first-class language heuris
 - PHP namespaces through nearest Composer `autoload` / `autoload-dev` PSR-4 and PSR-0 mappings,
   conventional PHP source roots, and static include/require expressions;
 - Rust external `mod` / `#[path]`, local `use`, and Cargo library paths;
-- Go module and relative package imports from `go.mod`.
+- Go module and relative package imports from `go.mod`;
+- Godot literal loads/preloads, path inheritance, shader includes, scene/resource external entries,
+  and project main-scene/autoload/plugin paths. `res://` uses the nearest `project.godot`; UIDs use
+  revision-scoped scene/resource headers and script/shader `.uid` sidecars. Unique UIDs take
+  precedence over path fallbacks; ambiguous UIDs remain unresolved. Project-local `class_name`
+  and singleton autoload references retain heuristic `godot-global` provenance and must not cross
+  nested project roots. Static resource/UID edges have `godot-resource`/`godot-uid` provenance.
 
 Go package imports target a deterministic representative file. This is package-level evidence, not
 a claim of an exact file reference.
@@ -33,6 +39,12 @@ Symbol topology records only explicit syntax-proven `extends`, `implements`, tra
 relations. Qualified, same-file/scope, and globally unique short names may resolve; ambiguous names
 stay unresolved. Keep symbol edges separate from import adjacency so fan-in and type reach retain
 honest meanings.
+
+Godot currently supplies file/resource dependency topology, not separate symbol topology.
+GDScript inheritance/global-name references therefore contribute file dependency edges. Do not
+infer filesystem edges from NodePaths, ordinary strings, comments, or locally shadowed names.
+Dynamic resource paths remain unresolved. Binary asset and generic C# targets are outside the
+graph's analyzable universe, not verified missing files; native/unknown global names are unindexed.
 
 Under diff scope, `--impact` reports changed graph files plus direct and transitive unchanged
 importers with conservative `high`, `partial`, or `none` confidence.

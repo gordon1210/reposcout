@@ -10,6 +10,7 @@ pub mod explain;
 pub mod findings;
 pub mod fs_budget;
 pub mod git;
+mod godot;
 pub mod graph;
 pub mod lang;
 pub mod metrics;

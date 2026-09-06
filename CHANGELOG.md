@@ -6,6 +6,19 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Integrated Godot 4 scouting: GDScript and shader AST metrics/duplication; scene, resource, and
+  project inventory; signal/property/constant/scene-node lookup; project-scoped resource, UID,
+  global-class and autoload dependency context; and GUT/GdUnit4 enabled-plugin test-presence hints.
+  Godot data formats remain outside code health by default. The canonical fixture matrix now
+  covers 36 formats, and daemon graphs retain project/UID configuration per immutable revision.
+
+### Changed
+
+- Bumped the cached analyzer version to 17 for Godot facts and symbol kinds; the additive machine
+  contract retains schema 2.0. Daemon watchers ignore generated `.godot/` events.
+
 ## [0.2.1] - 2026-09-04
 
 ### Added

@@ -556,10 +556,16 @@ pub(super) fn candidate_resolver_config_paths(
         return candidates;
     }
     for path in graph_files {
+        if super::godot::has_uid_sidecar(path) {
+            candidates.insert(format!("{path}.uid"));
+        }
         let fc = detect(Path::new(path)).and_then(|info| info.first_class);
         let mut directory = path_parent(path);
         loop {
             match fc {
+                Some(FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource) => {
+                    candidates.insert(join_graph_path(&directory, "project.godot"));
+                }
                 Some(FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx) => {
                     for name in ["tsconfig.json", "jsconfig.json", "package.json"] {
                         candidates.insert(join_graph_path(&directory, name));

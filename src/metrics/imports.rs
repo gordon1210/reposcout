@@ -32,6 +32,9 @@ pub fn extract(fc: FirstClass, content: &str, tree: &Tree) -> Vec<String> {
         }
         FirstClass::Go => extract_go(node, content, &mut add),
         FirstClass::Php => extract_php(node, content, &mut add),
+        // Godot's project-local resource and class references belong to the
+        // dependency graph, not the external package inventory.
+        FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {}
     });
 
     imports

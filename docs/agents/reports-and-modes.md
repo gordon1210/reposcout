@@ -137,7 +137,7 @@ metadata are rejected because their health semantics cannot be established.
   churn, to populate the ordinary scan cache. Do not create a second query-only parser, index, or
   cache profile.
 - Capability tests compare advertised commands with Clap, symbol kinds with parser output, and
-  language names with the canonical 31-format fixture matrix.
+  language names with the canonical 36-format fixture matrix.
 - `--error-format json` emits one structured stderr object for usage and runtime failures.
 - Do not add an MCP dependency or parallel query implementation. Stable CLI JSON/NDJSON and shared
   query contracts are the automation surface; the roadmap keeps MCP out of scope.

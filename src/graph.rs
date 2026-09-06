@@ -12,6 +12,7 @@
 //! already parsed the source. Any residual filesystem access is budgeted,
 //! symlink-safe, and optional for sources when facts are supplied.
 
+mod godot;
 mod symbols;
 
 use crate::cli::GraphDirection;
@@ -667,6 +668,7 @@ struct GraphUniverse {
 }
 
 struct Resolvers {
+    godot: godot::GodotResolver,
     javascript: JsResolver,
     python: PythonResolver,
     php: PhpResolver,
@@ -708,14 +710,44 @@ struct TopologyExtractor<'a> {
     source_facts: Option<&'a BTreeMap<PathBuf, SourceFacts>>,
     facts_only_sources: bool,
     universe: &'a GraphUniverse,
-    resolvers: &'a Resolvers,
+    resolvers: &'a mut Resolvers,
 }
 
 impl TopologyExtractor<'_> {
-    fn run(&self, budget: &mut ReadBudget) -> (Topology, Vec<String>) {
+    fn run(&mut self, budget: &mut ReadBudget) -> (Topology, Vec<String>) {
         let mut state = TopologyState::new(self.universe.files.len());
+        // Register project-global classes/UIDs before resolving any Godot file.
+        // Retain only Godot facts here; no second source read or parse is needed.
+        let mut godot_facts = BTreeMap::new();
+        for (index, path) in self
+            .universe
+            .files
+            .iter()
+            .enumerate()
+            .filter(|(_, path)| godot::is_godot(path))
+        {
+            let Some(language) = detect(Path::new(path)).and_then(|info| info.first_class) else {
+                continue;
+            };
+            let facts = self.load_source_facts(index, path, language, budget, &mut state);
+            if let Some(facts) = &facts {
+                self.resolvers.godot.add_source(path, facts);
+            }
+            godot_facts.insert(index, facts);
+        }
         for (index, path) in self.universe.files.iter().enumerate() {
-            self.process_file(index, path, budget, &mut state);
+            let facts = if let Some(facts) = godot_facts.remove(&index) {
+                facts
+            } else {
+                detect(Path::new(path))
+                    .and_then(|info| info.first_class)
+                    .and_then(|language| {
+                        self.load_source_facts(index, path, language, budget, &mut state)
+                    })
+            };
+            if let Some(facts) = facts {
+                self.process_file(index, path, facts, &mut state);
+            }
         }
         let self_cycles = std::mem::take(&mut state.self_cycles).into_iter().collect();
         (self.finish(state), self_cycles)
@@ -725,13 +757,10 @@ impl TopologyExtractor<'_> {
         &self,
         index: usize,
         path: &str,
-        budget: &mut ReadBudget,
+        facts: SourceFacts,
         state: &mut TopologyState,
     ) {
         let Some(language) = detect(Path::new(path)).and_then(|info| info.first_class) else {
-            return;
-        };
-        let Some(facts) = self.load_source_facts(index, path, language, budget, state) else {
             return;
         };
         state.symbols.add_facts(facts.symbols);
@@ -786,6 +815,11 @@ impl TopologyExtractor<'_> {
         specifier: ImportSpecifier,
     ) -> ImportResolution {
         match specifier {
+            ImportSpecifier::Godot(reference) => {
+                self.resolvers
+                    .godot
+                    .resolve(importer, reference, &self.universe.node_set)
+            }
             ImportSpecifier::Module(specifier) if language == FirstClass::Python => self
                 .resolvers
                 .python
@@ -881,6 +915,7 @@ impl Resolvers {
             snapshot: resolver_configs,
         };
         Self {
+            godot: godot::GodotResolver::discover(files, &mut access),
             javascript: JsResolver::discover(files, &mut access),
             python: PythonResolver::discover(files),
             php: PhpResolver::discover(files, &mut access),
@@ -895,10 +930,12 @@ impl Resolvers {
             .saturating_add(self.php.config_errors)
             .saturating_add(self.rust.config_errors)
             .saturating_add(self.go.config_errors)
+            .saturating_add(self.godot.config_errors_by_path.values().sum())
     }
 
     fn config_errors_by_path(&self) -> BTreeMap<String, usize> {
         combined_config_errors([
+            &self.godot.config_errors_by_path,
             &self.javascript.config_errors_by_path,
             &self.php.config_errors_by_path,
             &self.rust.config_errors_by_path,
@@ -908,6 +945,7 @@ impl Resolvers {
 
     fn config_files(&self) -> Vec<String> {
         combined_config_files([
+            self.godot.config_files.as_slice(),
             self.javascript.config_files.as_slice(),
             self.php.config_files.as_slice(),
             self.rust.config_files.as_slice(),
@@ -919,19 +957,19 @@ impl Resolvers {
 fn build_from_paths_with_query(request: GraphBuildRequest<'_>) -> GraphAnalysis {
     let mut budget = request.limits.budget();
     let universe = select_graph_universe(request.paths);
-    let resolvers = Resolvers::discover(
+    let mut resolvers = Resolvers::discover(
         &universe.files,
         request.root,
         request.resolver_configs,
         &mut budget,
     );
-    let extractor = TopologyExtractor {
+    let mut extractor = TopologyExtractor {
         root: request.root,
         virtual_paths: request.virtual_paths,
         source_facts: request.source_facts,
         facts_only_sources: request.limits.facts_only_sources,
         universe: &universe,
-        resolvers: &resolvers,
+        resolvers: &mut resolvers,
     };
     let (topology, self_cycles) = extractor.run(&mut budget);
     let (fan_in, fan_out) = fan_counts(universe.files.len(), &topology.edges);

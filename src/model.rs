@@ -733,7 +733,8 @@ pub struct SymbolCounts {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SymbolOutline {
     pub name: String,
-    /// `function`, `method`, `type`, `class`, `interface`, `enum`, or `trait`.
+    /// Declaration kind from `metrics::symbols::OUTLINE_KINDS`, including Godot
+    /// signals, constants, properties, and scene nodes.
     pub kind: String,
     pub signature: String,
     pub line: usize,

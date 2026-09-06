@@ -54,9 +54,10 @@ into the repository it scans.
 - **Live local dashboard:** an optional daemon and React interface for repository health,
   findings, files, and mixed-language architecture.
 
-First-class AST languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, and PHP**.
-RepoScout recognizes 31 source and content formats for complete inventory and structured
-duplication.
+First-class AST code languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP,
+GDScript, and Godot shaders**. Godot scenes, resources, and project files also have syntax-aware
+inventory and dependency analysis. RepoScout recognizes **36 formats** for complete inventory and
+structured duplication. See [Godot support](docs/godot.md) for scope and examples.
 
 ## Install
 
@@ -160,8 +161,8 @@ reposcout --graph-focus src/service.ts --graph-direction dependents \
   --graph-depth 2 -f mermaid -o service-radius.mmd .
 ```
 
-The graph covers imports and explicit type relationships across every first-class language while
-keeping resolver provenance and ambiguity visible.
+The graph covers first-class-language imports, explicit type relationships where supported, and
+Godot's project/resource dependencies while keeping resolver provenance and ambiguity visible.
 
 ### Run the live dashboard
 

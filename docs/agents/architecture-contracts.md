@@ -86,11 +86,13 @@ Do not introduce another analyzer pipeline for it.
 
 ## Language and health scope
 
-First-class tree-sitter languages are Rust, Python, JavaScript, TypeScript/TSX, Go, and PHP. Every
-recognized format contributes to complete inventory, token/context size, and line facts.
+First-class tree-sitter code languages are Rust, Python, JavaScript, TypeScript/TSX, Go, PHP,
+GDScript, and Godot Shader. Godot Scene, Resource, and Project formats also have bundled parsers
+but are not code. Every recognized format contributes to complete inventory, token/context size,
+and line facts.
 
 Health analysis defaults to programming/build source. HTML, CSS/SCSS, JSON, YAML, TOML, Markdown,
-XML, and text require `health_includes` / `--health-include` or explicit
+XML, text, and Godot scene/resource/project data require `health_includes` / `--health-include` or explicit
 `health_scope = "all"` / `--health-scope all`.
 `health_excludes` / `--health-exclude` then removes repository-relative globs from complexity,
 markers, duplication, risk, test-presence, and cleanup signals while inventory, tokens, lines,
@@ -99,6 +101,10 @@ and path excludes last; path excludes win.
 
 Generic code languages use heuristic complexity with `approximate: true`. Non-code formats do not
 receive complexity. Never let health filtering silently change complete inventory semantics.
+
+Godot syntax helpers live in `godot.rs`; dependency extraction/resolution stays in `graph/godot.rs`.
+Do not execute Godot, import assets, or create `.godot/` state while scanning. UID sidecars use the
+existing bounded no-follow resolver-config snapshots, not a second filesystem/index pipeline.
 
 ## Discovery, configuration, outputs, and cache placement
 

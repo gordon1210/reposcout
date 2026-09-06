@@ -65,7 +65,7 @@ Skill CI runs the check whenever the canonical package, mirror, sync script, or 
 
 Integration tests live in `tests/` and run the compiled CLI against bounded fixtures.
 
-`tests/fixtures/dup_languages.toml` is the canonical 31-format duplication corpus. Every format has
+`tests/fixtures/dup_languages.toml` is the canonical 36-format duplication corpus. Every format has
 multi-line exact and Type-2 examples tested through both the frozen detector adapters and an
 end-to-end `reposcout dup` scan.
 

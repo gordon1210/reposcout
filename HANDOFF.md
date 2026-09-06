@@ -5,8 +5,8 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-04 · latest release 0.2.1 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 16_
+_Last updated: 2026-09-06 · latest release 0.2.1 · JSON `SCHEMA_VERSION` 2.0 ·
+`ANALYZER_VERSION` 17 (unreleased)_
 
 ---
 
@@ -55,6 +55,10 @@ The design bias is therefore **high signal, low noise, machine-readable, fast**.
 doubt, optimize for "an agent can trust and act on this in one glance" over completeness.
 
 ## Current state
+
+- **Godot 4 support (unreleased).** GDScript/shader AST analysis and Godot scene/resource/project
+  dependency context reuse the shared pipeline; 36 formats are recognized. Scope and static-analysis
+  limits are documented in [Godot support](docs/godot.md) and [Unreleased](CHANGELOG.md#unreleased).
 
 - **Feature-complete for the core purpose, plus a full scouting/CI layer.** Tokens
   (tiktoken `o200k_base` default / `cl100k_base`), complexity (per-function
@@ -190,7 +194,7 @@ that a new maintainer still needs to interpret the current architecture and road
    `--health-exclude` to retain such paths only as inventory/navigation facts, or `excludes` /
    `--exclude` to remove them from the complete scan. `.gitignore` is respected by default;
    lockfiles are excluded by default.
-4. **First-class complexity is limited to Rust, Python, JS, TS/TSX, Go, and PHP.** Generic code
+4. **First-class complexity covers Rust, Python, JS, TS/TSX, Go, PHP, GDScript, and Godot shaders.** Generic code
    languages get tokens/lines/markers/dup plus *heuristic* complexity flagged `approximate`
    (contributes to `mi_avg`/`mi_min` but not to per-function cyclomatic/cognitive stats).
    Non-source formats always retain inventory/line facts and receive health analysis only when
@@ -220,7 +224,9 @@ that a new maintainer still needs to interpret the current architecture and road
 8. **The dependency graph and `--impact` cover every first-class language heuristically.** `graph.rs`
    resolves relative imports, TypeScript `baseUrl`/`paths`, deterministic local package metadata,
    unambiguous Python absolute/`src` imports, Composer PSR-4/PSR-0 maps, and static PHP includes,
-   plus Rust module/Cargo-local paths and Go module-local package imports. It is not a compiler,
+   plus Rust module/Cargo-local paths, Go module-local package imports, and project-scoped Godot
+   resource/UID/global-name relationships. Godot inheritance is file-level dependency evidence,
+   not separate symbol topology. It is not a compiler,
    package manager, or SCIP/language-server index. Custom package conditions, external packages,
    symbol-level Rust references, and exact intra-package Go file references remain outside the
    graph. Each edge names its resolver; unresolved imports, parse/config errors,

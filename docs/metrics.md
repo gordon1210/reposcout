@@ -28,7 +28,8 @@ order is scope, then format includes, then path excludes; an exclude always wins
 
 ## Line metrics
 
-Rust, Python, JavaScript, TypeScript/TSX, Go, and PHP classify comments from tree-sitter ranges.
+Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, GDScript, Godot shaders, and Godot text
+scene/resource/project files classify comments from tree-sitter ranges.
 Comment delimiters inside strings therefore remain code.
 
 Other formats use a quote-aware fallback. Full JSON marks those files with
@@ -47,7 +48,9 @@ For first-class languages, RepoScout records each named or anonymous callable in
 - Python lambdas;
 - JavaScript/TypeScript arrows and function expressions;
 - Go function literals; and
-- PHP closures and arrows.
+- PHP closures and arrows;
+- GDScript methods, constructors, lambdas, and property accessors; and
+- Godot shader functions.
 
 ### Cyclomatic complexity
 

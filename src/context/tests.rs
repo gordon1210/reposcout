@@ -659,6 +659,8 @@ fn evidence_confidence_distinguishes_configured_and_inferred_resolvers() {
         "composer-psr-4",
         "composer-psr-0",
         "php-include",
+        "godot-resource",
+        "godot-uid",
     ] {
         assert_eq!(
             graph_evidence("dependency", 1, Some(resolver.to_string())).confidence,
@@ -673,6 +675,7 @@ fn evidence_confidence_distinguishes_configured_and_inferred_resolvers() {
         "package-index",
         "heuristic-alias",
         "php-namespace-heuristic",
+        "godot-global",
     ] {
         assert_eq!(
             graph_evidence("dependency", 1, Some(resolver.to_string())).confidence,

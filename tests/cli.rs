@@ -94,6 +94,9 @@ mod explain;
 #[path = "cli/graph_output.rs"]
 mod graph_output;
 
+#[path = "cli/godot.rs"]
+mod godot;
+
 #[path = "cli/filesystem.rs"]
 mod filesystem;
 

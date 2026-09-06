@@ -46,6 +46,8 @@ src/
   cache.rs           OS-cache-backed incremental facts, manual reset, profile validation, and
                      ANALYZER_VERSION invalidation.
   parse/mod.rs       Tree-sitter Language and parse() for first-class languages.
+  godot.rs           Shared Godot text/AST helpers, with no filesystem access.
+  graph/godot.rs     Cacheable Godot references and project/UID-scoped resolution.
   php.rs             PHP namespace-use and static-include normalization.
   graph.rs           Opt-in structural graph, resolver provenance, package/module metadata,
                      focus queries, cycles, orphans, virtual deletions, and reverse impact.
@@ -77,7 +79,7 @@ tests/
   dup_languages.rs   Detector and CLI matrix for every canonical format.
   support/           Shared fixture and CLI-command helpers.
   fixtures/dup_languages.toml
-                     Exact and Type-2 samples for all 31 formats.
+                     Exact and Type-2 samples for all 36 formats.
   fixtures/sample/   Small multi-language fixture tree.
 ```
 

@@ -1,4 +1,131 @@
 [[language]]
+name = "GDScript"
+slug = "gdscript"
+filename = "sample.gd"
+exact = '''
+func calculate(values: Array) -> int:
+    var total = 0
+    for value in values:
+        total += value
+    return total
+'''
+near_a = '''
+func calculate(values: Array) -> int:
+    var total = 0
+    for value in values:
+        total += value
+    return total
+'''
+near_b = '''
+func calculate(items: Array) -> int:
+    var sum = 0
+    for item in items:
+        sum += item
+    return sum
+'''
+
+[[language]]
+name = "Godot Shader"
+slug = "godot_shader"
+filename = "sample.gdshader"
+exact = '''
+shader_type canvas_item;
+void fragment() {
+    vec4 tint = vec4(0.1, 0.2, 0.3, 1.0);
+    COLOR = tint;
+}
+'''
+near_a = '''
+shader_type canvas_item;
+void fragment() {
+    vec4 tint = vec4(0.1, 0.2, 0.3, 1.0);
+    COLOR = tint;
+}
+'''
+near_b = '''
+shader_type canvas_item;
+void fragment() {
+    vec4 shade = vec4(0.2, 0.3, 0.4, 1.0);
+    COLOR = shade;
+}
+'''
+
+[[language]]
+name = "Godot Scene"
+slug = "godot_scene"
+filename = "sample.tscn"
+exact = '''
+[gd_scene format=3]
+[node name="Player" type="Node2D"]
+position = Vector2(10, 20)
+rotation = 0.5
+'''
+near_a = '''
+[gd_scene format=3]
+[node name="Player" type="Node2D"]
+position = Vector2(10, 20)
+rotation = 0.5
+'''
+near_b = '''
+[gd_scene format=3]
+[node name="Enemy" type="Node2D"]
+position = Vector2(30, 40)
+rotation = 0.7
+'''
+
+[[language]]
+name = "Godot Resource"
+slug = "godot_resource"
+filename = "sample.tres"
+exact = '''
+[gd_resource type="Resource" format=3]
+[resource]
+resource_name = "Player"
+health = 100
+speed = 20
+'''
+near_a = '''
+[gd_resource type="Resource" format=3]
+[resource]
+resource_name = "Player"
+health = 100
+speed = 20
+'''
+near_b = '''
+[gd_resource type="Resource" format=3]
+[resource]
+resource_name = "Enemy"
+health = 80
+speed = 30
+'''
+
+[[language]]
+name = "Godot Project"
+slug = "godot_project"
+filename = "project.godot"
+exact = '''
+config_version=5
+[application]
+config/name="Example"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+'''
+near_a = '''
+config_version=5
+[application]
+config/name="Example"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+'''
+near_b = '''
+config_version=5
+[application]
+config/name="Demo"
+run/main_scene="res://game.tscn"
+config/features=PackedStringArray("4.5", "Mobile")
+'''
+
+[[language]]
 name = "Rust"
 slug = "rust"
 filename = "sample.rs"

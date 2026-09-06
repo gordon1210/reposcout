@@ -93,6 +93,7 @@ pub(crate) fn is_entrypoint(rel: &str) -> bool {
             | "artisan"
             | "lib.rs"
             | "build.rs"
+            | "project.godot"
     ) {
         return true;
     }

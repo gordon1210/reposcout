@@ -233,8 +233,8 @@ query, while matching dependents may live elsewhere in the repository.
 
 ## Graph coverage
 
-`--graph` combines import topology and explicit type relationships across every first-class
-language:
+`--graph` combines first-class import/resource topology and explicit type relationships where
+supported:
 
 | Language | Local resolution |
 |---|---|
@@ -243,10 +243,12 @@ language:
 | PHP | Composer PSR-4/PSR-0 autoload maps, conventional source roots, and static include/require paths |
 | Rust | External modules, `#[path]`, local `crate`/`self`/`super` uses, and unambiguous Cargo-local library names |
 | Go | `go.mod` module imports and relative packages, targeting a deterministic package representative |
+| Godot | Project-scoped `res://`, relative/UID resource paths, GDScript global classes/autoloads, scene/resource links and shader includes; see [Godot support](godot.md) |
 
 Full machine output exposes path-sorted adjacency and edge records with resolver provenance.
 Explicit `extends`, `implements`, trait, and embedding relations appear in separate symbol edges;
-they are never folded into import fan-in.
+they are never folded into import fan-in. Godot currently emits file/resource adjacency instead
+of separate symbol topology, including file dependencies established by GDScript inheritance.
 
 Ambiguous short names, duplicate package names, invalid resolver configuration, syntax errors, and
 unresolved local imports remain diagnostic. The graph does not invent confidence:

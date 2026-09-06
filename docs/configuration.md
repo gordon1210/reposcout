@@ -65,6 +65,7 @@ excludes = ["vendor/**", "*.min.js"]
 markers = ["TODO", "FIXME", "HACK", "XXX", "BUG"]
 health_scope = "source"             # source or all
 health_includes = []                # html, css, scss, json, yaml, toml, markdown, xml, text
+                                   # also godot-scene, godot-resource, godot-project
 health_excludes = []                # repository-relative path globs, e.g. vendor/**
 
 min_dup_tokens = 50

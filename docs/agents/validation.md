@@ -167,6 +167,9 @@ ask the user.
   test harness, and process-I/O tests use bounded synthetic trees.
 - `tests/dup_languages.rs` consumes `tests/fixtures/dup_languages.toml` and requires actionable
   exact and Type-2 findings for every canonical `lang::detect` format through the frozen detector
-  APIs and CLI JSON contract. Keep its explicit 31-format set synchronized with language support.
+  APIs and CLI JSON contract. Keep its explicit 36-format set synchronized with language support.
+- Godot regressions use bounded synthetic sources/configs: graph scoping/UID ambiguity, snapshot
+  integrity/no-follow reads, syntax-aware metrics/outlines, cache enrichment, and CLI projections.
+  They must not start the engine or write generated import state into a user project.
 - The sample fixture intentionally contains a duplicated block and TODO/FIXME/HACK markers. Keep
   them when editing fixtures or update the tests with the fixture.

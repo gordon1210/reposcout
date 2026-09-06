@@ -6,7 +6,8 @@ behavior. The root instructions remain in force.
 
 ## Lines and markers
 
-- Line metrics are syntax-aware for Rust, Python, JavaScript, TypeScript/TSX, Go, and PHP, using
+- Line metrics are syntax-aware for Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, GDScript,
+  Godot Shader, and Godot Scene/Resource/Project formats, using
   tree-sitter comment ranges for comment-only lines. Other formats use a quote-aware fallback and
   expose `line_metrics_approximate: true`; the summary counts them in
   `line_metrics_approximate_files`.
@@ -29,7 +30,9 @@ Complexity is calculated per function and only for code.
   `summary.top_functions` is threshold-independent, and every callable remains in per-file
   `complexity.functions[]`.
 - First-class callable scopes include named functions and methods, JavaScript arrows/function
-  expressions, Rust closures, Python lambdas, Go function literals, and PHP closures/arrows.
+  expressions, Rust closures, Python lambdas, Go function literals, PHP closures/arrows, and
+  GDScript constructors/lambdas/property accessors. GDScript wildcard/binding match patterns are
+  catch-alls only without a guard; shader functions use their own grammar's control-flow nodes.
   Anonymous scopes inherit binding names where possible and must not inflate the enclosing
   function.
 - `--fail-on max-cyclomatic>N` gates on the single worst function.
@@ -119,6 +122,8 @@ Duplication is structured, format-scoped, similarity-scored, and line-filtered.
 All scouting signals live in `summary` and are designed for agent decisions:
 
 - `symbols` aggregates function/type/export counts from first-class files.
+- Godot adds `signal`, `constant`, `property`, and scene `node` outline kinds. Scene-node outlines
+  retain only headers, not properties/source bodies. GDScript publicness is a name heuristic.
 - `skip_candidates` lists generated, minified, bundled, and vendored files that are not worth
   reading, with the same `reason` exposed as each file's `skip_hint`.
 - `test_presence` is omitted unless discovered manifests or runner configuration establish a
@@ -129,6 +134,9 @@ All scouting signals live in `summary` and are designed for agent decisions:
   Git root; this supplies project context without widening the analyzed file scope. Candidate
   manifests use bounded no-follow reads. Aggregate output does not publish inferred source-to-test
   matches, `untested_*` fields, or matching-test risk reasons.
+- Godot runner evidence comes from enabled GUT/GdUnit4 plugins in `project.godot`, not test-looking
+  filenames alone. GUT uses `test_*.gd`; GdUnit4 also recognizes `*_test.gd` and `*Test.gd`, within
+  the evidence directory. Custom runner discovery and actual coverage are not inferred.
 - `top_risks` uses algorithm 5: `0.40·size + 0.40·complexity + 0.20·churn`. Each continuous factor
   is `value / (value + half_saturation_anchor)` with anchors of 1,000 SLOC, cyclomatic 100, and 20
   commits. Entries carry `algorithm_version` and raw inputs; ties break by those inputs then path.

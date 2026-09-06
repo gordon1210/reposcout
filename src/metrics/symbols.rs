@@ -41,6 +41,10 @@ define_outline_kinds! {
     Method => "method",
     Trait => "trait",
     Type => "type",
+    Signal => "signal",
+    Constant => "constant",
+    Property => "property",
+    Node => "node",
 }
 
 #[derive(Debug, Clone, Default)]
@@ -71,10 +75,29 @@ pub fn count(fc: FirstClass, content: &str, tree: &Tree) -> SymbolCounts {
         FirstClass::TypeScript | FirstClass::Tsx => count_typescript(root),
         FirstClass::Go => count_go(root, src),
         FirstClass::Php => count_php(root, src),
+        FirstClass::GdScript | FirstClass::GdShader => {
+            let mut counts = SymbolCounts::default();
+            walk(root, |node| {
+                if let Some((kind, _)) = declaration_kind(fc, node) {
+                    counts.functions +=
+                        usize::from(matches!(kind, OutlineKind::Function | OutlineKind::Method));
+                    counts.types +=
+                        usize::from(matches!(kind, OutlineKind::Class | OutlineKind::Enum));
+                    counts.exports += usize::from(
+                        declaration_name(node, src).is_some_and(|name| !name.starts_with('_')),
+                    );
+                }
+            });
+            counts
+        }
+        FirstClass::GodotResource => SymbolCounts::default(),
     }
 }
 
 fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
+    if fc == FirstClass::GodotResource {
+        return godot_nodes(content, tree);
+    }
     let src = content.as_bytes();
     let named_exports = named_module_exports(fc, tree.root_node(), src);
     let mut outlines = Vec::new();
@@ -93,7 +116,7 @@ fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
         }
         let exported = declaration_exported(fc, node, &base_name, src, &named_exports);
         let reason = if exported {
-            if fc == FirstClass::Python {
+            if matches!(fc, FirstClass::Python | FirstClass::GdScript) {
                 "public-name heuristic"
             } else {
                 "exported/public declaration"
@@ -127,6 +150,23 @@ fn declaration_kind(fc: FirstClass, node: Node<'_>) -> Option<(OutlineKind, Node
         FirstClass::TypeScript | FirstClass::Tsx => typescript_declaration_kind(node),
         FirstClass::Go => go_declaration_kind(node),
         FirstClass::Php => php_declaration_kind(node),
+        FirstClass::GdScript => match node.kind() {
+            "function_definition" | "constructor_definition" => Some(OutlineKind::Method),
+            "class_definition" | "class_name_statement" => Some(OutlineKind::Class),
+            "enum_definition" => Some(OutlineKind::Enum),
+            "signal_statement" => Some(OutlineKind::Signal),
+            "const_statement" if !ancestor(node, |parent| is_callable_scope(parent.kind())) => {
+                Some(OutlineKind::Constant)
+            }
+            "variable_statement" if !ancestor(node, |parent| is_callable_scope(parent.kind())) => {
+                Some(OutlineKind::Property)
+            }
+            _ => None,
+        },
+        FirstClass::GdShader => {
+            (node.kind() == "function_definition").then_some(OutlineKind::Function)
+        }
+        FirstClass::GodotResource => None,
     }?;
     let declaration = if fc == FirstClass::Python {
         node.parent()
@@ -200,6 +240,42 @@ fn php_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
     }
 }
 
+fn godot_nodes(content: &str, tree: &Tree) -> Vec<SymbolOutline> {
+    let mut outlines = Vec::new();
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    for section in root.named_children(&mut cursor) {
+        if section.kind() != "section" || crate::godot::section_name(section, content) != "node" {
+            continue;
+        }
+        let Some(name) = crate::godot::attribute(section, "name", content) else {
+            continue;
+        };
+        let parent = crate::godot::attribute(section, "parent", content);
+        let name = parent
+            .filter(|parent| parent != ".")
+            .map_or_else(|| name.clone(), |parent| format!("{parent}/{name}"));
+        let mut cursor = section.walk();
+        let end = section
+            .children(&mut cursor)
+            .find(|child| child.kind() == "]")
+            .map_or(section.start_byte(), |close| close.end_byte());
+        let signature = content[section.start_byte()..end]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        outlines.push(SymbolOutline {
+            name,
+            kind: OutlineKind::Node.as_str().to_string(),
+            signature: signature.chars().take(MAX_SIGNATURE_CHARS).collect(),
+            line: section.start_position().row + 1,
+            exported: false,
+            reasons: vec!["scene node declaration; not a filesystem path".to_string()],
+        });
+    }
+    outlines
+}
+
 fn variable_callable(node: Node<'_>) -> bool {
     node.child_by_field_name("value").is_some_and(|value| {
         matches!(
@@ -236,6 +312,9 @@ fn callable_kind(node: Node<'_>) -> OutlineKind {
 }
 
 fn declaration_name(node: Node<'_>, src: &[u8]) -> Option<String> {
+    if node.kind() == "constructor_definition" {
+        return Some("_init".to_string());
+    }
     name_text(node, src).map(str::to_string).or_else(|| {
         node.child_by_field_name("declarator")
             .and_then(|name| name.utf8_text(src).ok())
@@ -251,12 +330,12 @@ fn qualified_name(fc: FirstClass, node: Node<'_>, name: &str, src: &[u8]) -> Str
         }
         let is_container = match fc {
             FirstClass::Rust => matches!(candidate.kind(), "impl_item" | "trait_item"),
-            FirstClass::Python => candidate.kind() == "class_definition",
+            FirstClass::Python | FirstClass::GdScript => candidate.kind() == "class_definition",
+            FirstClass::GdShader | FirstClass::GodotResource | FirstClass::Go => false,
             FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx => matches!(
                 candidate.kind(),
                 "class_declaration" | "interface_declaration"
             ),
-            FirstClass::Go => false,
             FirstClass::Php => matches!(
                 candidate.kind(),
                 "class_declaration"
@@ -295,6 +374,9 @@ fn is_callable_scope(kind: &str) -> bool {
             | "method_definition"
             | "method_declaration"
             | "anonymous_function"
+            | "constructor_definition"
+            | "get_body"
+            | "set_body"
     )
 }
 
@@ -320,6 +402,11 @@ fn declaration_exported(
         }
         FirstClass::Go => name.chars().next().is_some_and(char::is_uppercase),
         FirstClass::Php => php_declaration_is_public(node, src),
+        FirstClass::GdScript => {
+            !name.starts_with('_') && !ancestor(node, |parent| is_callable_scope(parent.kind()))
+        }
+        FirstClass::GdShader => true,
+        FirstClass::GodotResource => false,
     }
 }
 
@@ -500,11 +587,16 @@ fn signature_text(fc: FirstClass, node: Node<'_>, content: &str) -> String {
     };
     let mut end = node.end_byte();
     let mut omitted_body = false;
-    if let Some(body) = header.child_by_field_name("body").or_else(|| {
-        header
-            .child_by_field_name("value")
-            .and_then(|value| value.child_by_field_name("body"))
-    }) {
+    if let Some(body) = header
+        .child_by_field_name("body")
+        .or_else(|| header.child_by_field_name("block"))
+        .or_else(|| header.child_by_field_name("setget"))
+        .or_else(|| {
+            header
+                .child_by_field_name("value")
+                .and_then(|value| value.child_by_field_name("body"))
+        })
+    {
         end = if fc == FirstClass::Python {
             let mut cursor = header.walk();
             header
@@ -697,6 +789,14 @@ mod tests {
     #[test]
     fn outline_kinds_are_a_closed_capability_set() {
         let samples = [
+            (
+                FirstClass::GdScript,
+                "class_name Actor\nextends Node\nsignal moved\nconst SPEED = 1\nvar position = 0\n",
+            ),
+            (
+                FirstClass::GodotResource,
+                "[gd_scene format=3]\n[node name=\"Main\" type=\"Node\"]\n",
+            ),
             (
                 FirstClass::Rust,
                 r"

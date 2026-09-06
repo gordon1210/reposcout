@@ -35,6 +35,8 @@ file.
 `locate` ranks case-insensitive matches by qualified exact, simple exact, prefix, and substring
 quality. Add `--exact`, `--kind`, `--language`, or `--limit` to narrow the result. It supports
 table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
+Godot support adds `signal`, `constant`, `property`, and scene `node` kinds; use
+`reposcout capabilities -f json` for the complete kind and language lists.
 
 ## Core options
 

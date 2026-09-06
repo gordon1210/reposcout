@@ -89,10 +89,10 @@ ask the user.
   [`architecture-contracts.md`](docs/agents/architecture-contracts.md) stay stable. In particular,
   `dup::exact::detect` and `dup::fuzzy::detect` are frozen adapters. Cross-cutting duplication
   policy belongs in `src/dup/mod.rs` orchestration.
-- Complete inventory and actionable health are separate contracts. Every recognized format keeps
-  inventory/token/line/navigation facts; health scope controls complexity, markers, duplication,
-  risk, test-presence, and cleanup evidence. Path exclusions apply last. Never let health policy
-  silently narrow inventory.
+- Inventory and health are separate: every recognized format keeps token/line/navigation facts.
+  Health scope controls complexity, markers, duplication, risk, test-presence, and cleanup evidence;
+  path exclusions apply last. Godot scenes/resources/project files are data, not code. Health
+  policy must never narrow inventory.
 - Minified and recognized bundled/chunk output remains visible to inventory/navigation but is
   excluded from duplication by default. Only explicit `--dup-include-artifacts` or
   `duplication_include_artifacts = true` opts it back in.
