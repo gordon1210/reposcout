@@ -125,6 +125,9 @@ pub fn render_capabilities(
                 report.work_scope.max_path_entries,
                 report.work_scope.max_components
             );
+            if let Some(source) = &report.source_query {
+                out.push_str(&super::source::capability_table(source));
+            }
             Ok(out)
         }
     }

@@ -48,6 +48,9 @@ with fixed section caps and a hard 16 KiB ceiling. Specialized graph/review/base
 on ordinary summary/full output so the default machine contract remains unchanged; see the
 [0.2.1 changelog](CHANGELOG.md#021---2026-09-04) for the maintained delivery record.
 
+Explicit worktree definition retrieval is a separate, budgeted query; it does not turn the context
+plan into a source bundle. See the [Unreleased changelog](CHANGELOG.md#unreleased).
+
 This is deliberately a planning contract:
 
 - It does not copy source into the report, send data over a network, use embeddings, or call a

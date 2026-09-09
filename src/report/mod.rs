@@ -11,6 +11,7 @@ pub mod ndjson;
 mod projection;
 pub mod query;
 pub mod sarif;
+pub(crate) mod source;
 pub mod table;
 mod work_scope;
 

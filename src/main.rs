@@ -5,7 +5,7 @@ use clap::{Parser, error::ErrorKind};
 use reposcout::cli::{
     CacheArgs, CacheCommand, CapabilitiesArgs, Cli, Command, CommonArgs, ConfigArgs,
     ConfigOutputFormat, DaemonArgs, DaemonProfile, ErrorFormat, ExecutionProfile, ExplainArgs,
-    LocateArgs, OutputFormat, ScanArgs,
+    LocateArgs, OutputFormat, ReadArgs, ScanArgs,
 };
 use reposcout::config::{Config, Enabled};
 use reposcout::debug_log;
@@ -120,7 +120,25 @@ fn validate_debug_log_paths(cli: &Cli) -> Result<()> {
     {
         return Err(anyhow!("debug log path cannot also be the output path"));
     }
+    if let Some(Command::Read(args)) = &cli.command {
+        for selected in read_selector_paths(args) {
+            let selected = rooted_read_path(&args.path, selected);
+            if debug_identity == walk::exact_path_identity(&selected)? {
+                return Err(anyhow!(
+                    "debug log path cannot overwrite a selected source file"
+                ));
+            }
+        }
+    }
     Ok(())
+}
+
+fn read_selector_paths(args: &ReadArgs) -> impl Iterator<Item = &Path> {
+    args.symbol
+        .chunks_exact(2)
+        .map(|pair| Path::new(&pair[0]))
+        .chain(args.line.chunks_exact(2).map(|pair| Path::new(&pair[0])))
+        .chain(args.outline.iter().map(PathBuf::as_path))
 }
 
 fn command_target(cli: &Cli) -> Option<&Path> {
@@ -135,6 +153,7 @@ fn command_target(cli: &Cli) -> Option<&Path> {
         ) => Some(&args.path),
         Some(Command::Explain(args)) => Some(&args.file),
         Some(Command::Locate(args)) => Some(&args.path),
+        Some(Command::Read(args)) => Some(&args.path),
         Some(Command::Config(args)) => Some(&args.path),
         Some(Command::Daemon(args)) => Some(&args.path),
         Some(Command::Cache(args)) => {
@@ -157,6 +176,7 @@ fn command_output(cli: &Cli) -> Option<&Path> {
         ) => args.common.output.as_deref(),
         Some(Command::Explain(args)) => args.common.output.as_deref(),
         Some(Command::Locate(args)) => args.common.output.as_deref(),
+        Some(Command::Read(args)) => args.common.output.as_deref(),
         Some(
             Command::Capabilities(_)
             | Command::Cache(_)
@@ -200,6 +220,10 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
             command: Some(Command::Locate(args)),
             ..
         } => run_locate(args, pretty),
+        Cli {
+            command: Some(Command::Read(args)),
+            ..
+        } => run_read(&args, pretty),
         Cli {
             command: Some(Command::Update),
             ..
@@ -703,6 +727,178 @@ fn run_locate(args: LocateArgs, pretty: bool) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+fn run_read(args: &ReadArgs, pretty: bool) -> Result<ExitCode> {
+    let format = choose_format(args.common.format, args.common.output.as_deref());
+    if matches!(format, Format::Sarif | Format::Dot | Format::Mermaid) {
+        return Err(usage_error(
+            "read supports table, JSON, Markdown, or NDJSON output",
+        ));
+    }
+    require_json_for_pretty(pretty, format == Format::Json)?;
+
+    let targets = source_query_targets(args)?;
+    validate_read_output_path(args, &targets)?;
+
+    let profile = args.common.profile.unwrap_or(ExecutionProfile::Agent);
+    let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
+        Config::load_without_project(&args.path)?
+    } else {
+        Config::load(&args.path)?
+    };
+    apply_execution_profile(&mut cfg, profile);
+    apply_common_overrides(&mut cfg, &args.common);
+    enforce_absolute_limits(&mut cfg);
+    if profile == ExecutionProfile::Safe {
+        enforce_safe_limits(&mut cfg);
+    }
+    log_configuration("read", &args.path, &cfg);
+
+    let exclusions = command_exclusions(args.common.output.as_deref());
+    let output = reposcout::query::read_source(
+        &args.path,
+        &cfg,
+        &exclusions,
+        &reposcout::query::SourceQueryOptions {
+            targets,
+            token_budget: args.budget,
+            byte_budget: args.max_output_bytes,
+            format,
+            pretty_json: pretty,
+        },
+    )?;
+    match args.common.output.as_deref() {
+        Some(path) => write_file_output(path, output.rendered.as_bytes(), &args.path)?,
+        None => write_stdout(&output.rendered)?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQueryTarget>> {
+    use reposcout::query::{SourceQueryTarget, SourceSelector};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let mut expected_hashes = BTreeMap::<PathBuf, String>::new();
+    for pair in args.expect_hash.chunks_exact(2) {
+        let path = read_path_match_key(&args.path, Path::new(&pair[0]));
+        let hash = pair[1].to_ascii_lowercase();
+        if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(usage_error(
+                "--expect-hash requires exactly 64 hexadecimal SHA-256 digits",
+            ));
+        }
+        if let Some(existing) = expected_hashes.get(&path)
+            && existing != &hash
+        {
+            return Err(usage_error(format!(
+                "conflicting --expect-hash values for {}",
+                pair[0]
+            )));
+        }
+        expected_hashes.insert(path, hash);
+    }
+
+    let mut targets = Vec::new();
+    for pair in args.symbol.chunks_exact(2) {
+        if pair[1].trim().is_empty() || pair[1].len() > 1_024 {
+            return Err(usage_error(
+                "--symbol requires a non-empty name of at most 1024 bytes",
+            ));
+        }
+        targets.push(SourceQueryTarget {
+            path: PathBuf::from(&pair[0]),
+            selector: SourceSelector::Symbol(pair[1].clone()),
+            expected_hash: None,
+        });
+    }
+    for pair in args.line.chunks_exact(2) {
+        let line = pair[1].parse::<usize>().map_err(|_| {
+            usage_error(format!(
+                "--line requires a positive one-based line number, got '{}'",
+                pair[1]
+            ))
+        })?;
+        if line == 0 {
+            return Err(usage_error(
+                "--line requires a positive one-based line number",
+            ));
+        }
+        targets.push(SourceQueryTarget {
+            path: PathBuf::from(&pair[0]),
+            selector: SourceSelector::Line(line),
+            expected_hash: None,
+        });
+    }
+    for path in &args.outline {
+        targets.push(SourceQueryTarget {
+            path: path.clone(),
+            selector: SourceSelector::Outline,
+            expected_hash: None,
+        });
+    }
+    if targets.is_empty() {
+        return Err(usage_error(
+            "read requires at least one --symbol, --line, or --outline selector",
+        ));
+    }
+    if targets.len() > 32 {
+        return Err(usage_error("read accepts at most 32 targets"));
+    }
+
+    let mut matched_hash_paths = BTreeSet::new();
+    for target in &mut targets {
+        let path = read_path_match_key(&args.path, &target.path);
+        if let Some(hash) = expected_hashes.get(&path) {
+            target.expected_hash = Some(hash.clone());
+            matched_hash_paths.insert(path);
+        }
+    }
+    if let Some(path) = expected_hashes
+        .keys()
+        .find(|path| !matched_hash_paths.contains(*path))
+    {
+        return Err(usage_error(format!(
+            "--expect-hash path is not selected: {}",
+            path.display()
+        )));
+    }
+    Ok(targets)
+}
+
+fn rooted_read_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
+fn read_path_match_key(root: &Path, path: &Path) -> PathBuf {
+    let rooted = rooted_read_path(root, path);
+    walk::exact_path_identity(&rooted).unwrap_or(rooted)
+}
+
+fn validate_read_output_path(
+    args: &ReadArgs,
+    targets: &[reposcout::query::SourceQueryTarget],
+) -> Result<()> {
+    let Some(output) = args.common.output.as_deref() else {
+        return Ok(());
+    };
+    let output_identity = walk::exact_path_identity(output)?;
+    if output_identity == walk::exact_path_identity(&args.path)? {
+        return Err(anyhow!("output path cannot be the query root"));
+    }
+    for target in targets {
+        let selected = rooted_read_path(&args.path, &target.path);
+        if output_identity == walk::exact_path_identity(&selected)? {
+            return Err(anyhow!(
+                "output path cannot overwrite a selected source file"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn write_file_output(path: &Path, bytes: &[u8], target: &Path) -> Result<()> {
     let untrusted_root = if target.is_dir() {
         target
@@ -816,6 +1012,7 @@ fn split(cli: Cli) -> (ScanArgs, Option<Enabled>) {
         ),
         Some(Command::Explain(_)) => unreachable!("explain is dispatched before scan splitting"),
         Some(Command::Locate(_)) => unreachable!("locate is dispatched before scan splitting"),
+        Some(Command::Read(_)) => unreachable!("read is dispatched before scan splitting"),
         Some(Command::Capabilities(_)) => {
             unreachable!("capabilities is dispatched before scan splitting")
         }

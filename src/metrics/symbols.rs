@@ -6,7 +6,9 @@
 //! - `exports`:   publicly accessible symbols (language-specific heuristic)
 
 use crate::lang::FirstClass;
-use crate::model::{SymbolCounts, SymbolOutline};
+use crate::model::{
+    DefinitionFact, DefinitionFacts, DefinitionStatus, SourceSpan, SymbolCounts, SymbolOutline,
+};
 use std::collections::HashSet;
 use tree_sitter::{Node, Tree};
 
@@ -51,14 +53,17 @@ define_outline_kinds! {
 pub(crate) struct SymbolAnalysis {
     pub(crate) counts: SymbolCounts,
     pub(crate) outlines: Vec<SymbolOutline>,
+    pub(crate) definitions: DefinitionFacts,
 }
 
 /// Analyze structural declarations once, retaining the historical aggregate
 /// counts plus compact declaration headers for context-plan projection.
 pub(crate) fn analyze(fc: FirstClass, content: &str, tree: &Tree) -> SymbolAnalysis {
+    let (outlines, definitions) = declarations(fc, content, tree);
     SymbolAnalysis {
         counts: count(fc, content, tree),
-        outlines: outline(fc, content, tree),
+        outlines,
+        definitions,
     }
 }
 
@@ -94,14 +99,26 @@ pub fn count(fc: FirstClass, content: &str, tree: &Tree) -> SymbolCounts {
     }
 }
 
-fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
+fn declarations(
+    fc: FirstClass,
+    content: &str,
+    tree: &Tree,
+) -> (Vec<SymbolOutline>, DefinitionFacts) {
     if fc == FirstClass::GodotResource {
-        return godot_nodes(content, tree);
+        return (
+            godot_nodes(content, tree),
+            DefinitionFacts {
+                status: DefinitionStatus::Unsupported,
+                definitions: Vec::new(),
+            },
+        );
     }
     let src = content.as_bytes();
     let named_exports = named_module_exports(fc, tree.root_node(), src);
     let mut outlines = Vec::new();
     let mut seen = HashSet::new();
+    let mut definition_seen = HashSet::new();
+    let mut definitions = Vec::new();
     walk(tree.root_node(), |node| {
         let Some((kind, declaration)) = declaration_kind(fc, node) else {
             return;
@@ -111,9 +128,7 @@ fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
         };
         let name = qualified_name(fc, node, &base_name, src);
         let line = node.start_position().row + 1;
-        if !seen.insert((line, name.clone(), kind)) {
-            return;
-        }
+        let include_outline = seen.insert((line, name.clone(), kind));
         let exported = declaration_exported(fc, node, &base_name, src, &named_exports);
         let reason = if exported {
             if matches!(fc, FirstClass::Python | FirstClass::GdScript) {
@@ -124,14 +139,30 @@ fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
         } else {
             "representative file-local declaration"
         };
-        outlines.push(SymbolOutline {
+        let symbol = SymbolOutline {
             name,
             kind: kind.as_str().to_string(),
             signature: signature_text(fc, declaration, content),
             line,
             exported,
             reasons: vec![reason.to_string()],
-        });
+        };
+        if definition_seen.insert((
+            node.start_byte(),
+            node.end_byte(),
+            symbol.name.clone(),
+            kind,
+        )) {
+            let (declaration_span, source_span) = definition_spans(fc, node, declaration, content);
+            definitions.push(DefinitionFact {
+                symbol: symbol.clone(),
+                declaration_span,
+                source_span,
+            });
+        }
+        if include_outline {
+            outlines.push(symbol);
+        }
     });
     outlines.sort_by(|left, right| {
         left.line
@@ -139,7 +170,152 @@ fn outline(fc: FirstClass, content: &str, tree: &Tree) -> Vec<SymbolOutline> {
             .then_with(|| left.kind.cmp(&right.kind))
             .then_with(|| left.name.cmp(&right.name))
     });
-    outlines
+    definitions.sort_by(|left, right| {
+        left.declaration_span
+            .start_byte
+            .cmp(&right.declaration_span.start_byte)
+            .then_with(|| left.symbol.kind.cmp(&right.symbol.kind))
+            .then_with(|| left.symbol.name.cmp(&right.symbol.name))
+    });
+    (
+        outlines,
+        DefinitionFacts {
+            status: if tree.root_node().has_error() {
+                DefinitionStatus::ParseErrors
+            } else {
+                DefinitionStatus::Available
+            },
+            definitions,
+        },
+    )
+}
+
+/// Return the canonical declaration kinds supported for precise retrieval in this language.
+#[must_use]
+pub fn definition_kinds(fc: FirstClass) -> &'static [&'static str] {
+    match fc {
+        FirstClass::Rust => &["enum", "function", "method", "trait", "type"],
+        FirstClass::Python | FirstClass::JavaScript => &["class", "function", "method"],
+        FirstClass::TypeScript | FirstClass::Tsx => {
+            &["class", "enum", "function", "interface", "method", "type"]
+        }
+        FirstClass::Go => &["function", "method", "type"],
+        FirstClass::Php => &["class", "enum", "function", "interface", "method", "trait"],
+        FirstClass::GdScript => &["class", "constant", "enum", "method", "property", "signal"],
+        FirstClass::GdShader => &["function"],
+        FirstClass::GodotResource => &[],
+    }
+}
+
+fn node_span(node: Node<'_>) -> SourceSpan {
+    SourceSpan {
+        start_byte: node.start_byte(),
+        end_byte: node.end_byte(),
+        start_line: node.start_position().row + 1,
+        end_line: (node.end_position().row + usize::from(node.end_position().column != 0))
+            .max(node.start_position().row + 1),
+    }
+}
+
+fn definition_spans(
+    fc: FirstClass,
+    node: Node<'_>,
+    declaration: Node<'_>,
+    content: &str,
+) -> (SourceSpan, Option<SourceSpan>) {
+    let mut declaration_span = node_span(declaration);
+    let mut source = declaration;
+    if matches!(
+        fc,
+        FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx
+    ) {
+        if node.kind() == "variable_declarator" {
+            let Some(parent) = node.parent().filter(|parent| {
+                matches!(
+                    parent.kind(),
+                    "lexical_declaration" | "variable_declaration" | "using_declaration"
+                )
+            }) else {
+                return (declaration_span, None);
+            };
+            source = parent;
+        }
+        if let Some(export) = source
+            .parent()
+            .filter(|parent| parent.kind() == "export_statement")
+        {
+            source = export;
+        }
+    } else if fc == FirstClass::Go && matches!(node.kind(), "type_spec" | "type_alias") {
+        let Some(parent) = node
+            .parent()
+            .filter(|parent| parent.kind() == "type_declaration")
+        else {
+            return (declaration_span, None);
+        };
+        source = parent;
+    }
+    let mut span = node_span(source);
+    let mut valid = !source.has_error() && !source.is_missing();
+    if fc == FirstClass::Rust {
+        let mut previous = source.prev_named_sibling();
+        let mut adjacent_start = source.start_byte();
+        while let Some(prefix) = previous {
+            if !content
+                .get(prefix.end_byte()..adjacent_start)
+                .is_some_and(|gap| gap.chars().all(char::is_whitespace))
+            {
+                break;
+            }
+            let raw = content.get(prefix.byte_range()).unwrap_or_default();
+            let is_outer_doc = (raw.starts_with("///") && !raw.starts_with("////"))
+                || (raw.starts_with("/**") && !raw.starts_with("/***"));
+            if prefix.kind() == "attribute_item" || is_outer_doc {
+                span.start_byte = prefix.start_byte();
+                span.start_line = prefix.start_position().row + 1;
+                valid &= !prefix.has_error() && !prefix.is_missing();
+            } else if !matches!(prefix.kind(), "line_comment" | "block_comment")
+                || raw.starts_with("//!")
+                || raw.starts_with("/*!")
+            {
+                break;
+            }
+            adjacent_start = prefix.start_byte();
+            previous = prefix.prev_named_sibling();
+        }
+        declaration_span.start_byte = span.start_byte;
+        declaration_span.start_line = span.start_line;
+    } else if fc == FirstClass::GdScript {
+        let mut previous = source.prev_named_sibling();
+        let mut adjacent_start = source.start_byte();
+        while let Some(prefix) = previous {
+            if !content
+                .get(prefix.end_byte()..adjacent_start)
+                .is_some_and(|gap| gap.chars().all(char::is_whitespace))
+            {
+                break;
+            }
+            if matches!(prefix.kind(), "annotation" | "annotations") {
+                span.start_byte = prefix.start_byte();
+                span.start_line = prefix.start_position().row + 1;
+                valid &= !prefix.has_error() && !prefix.is_missing();
+            } else if prefix.kind() != "comment" {
+                break;
+            }
+            adjacent_start = prefix.start_byte();
+            previous = prefix.prev_named_sibling();
+        }
+        declaration_span.start_byte = span.start_byte;
+        declaration_span.start_line = span.start_line;
+    } else if source.id() != declaration.id()
+        && node.kind() != "variable_declarator"
+        && !matches!(node.kind(), "type_spec" | "type_alias")
+    {
+        declaration_span = span;
+    }
+    valid &=
+        span.start_byte < span.end_byte && content.get(span.start_byte..span.end_byte).is_some();
+    (declaration_span, valid.then_some(span))
 }
 
 fn declaration_kind(fc: FirstClass, node: Node<'_>) -> Option<(OutlineKind, Node<'_>)> {
@@ -785,6 +961,396 @@ mod tests {
     use super::*;
     use crate::parse;
     use std::collections::BTreeSet;
+
+    fn extracted(fc: FirstClass, source: &str) -> DefinitionFacts {
+        analyze(fc, source, &parse::parse(fc, source).unwrap()).definitions
+    }
+
+    fn source_of<'a>(source: &'a str, definition: &DefinitionFact) -> &'a str {
+        let span = definition.source_span.unwrap();
+        &source[span.start_byte..span.end_byte]
+    }
+
+    type ExpectedDefinition = (&'static str, &'static str, &'static str);
+    type DefinitionFixture = (FirstClass, &'static str, &'static [ExpectedDefinition]);
+    const DEFINITION_FIXTURES: &[DefinitionFixture] = &[
+        (
+            FirstClass::Rust,
+            "struct Item;\nenum Mode { Ready }\ntrait Runner { fn run(&self); }\nfn execute() {}\n",
+            &[
+                ("Item", "type", "struct Item;"),
+                ("Mode", "enum", "enum Mode { Ready }"),
+                ("Runner", "trait", "trait Runner { fn run(&self); }"),
+                ("Runner.run", "method", "fn run(&self);"),
+                ("execute", "function", "fn execute() {}"),
+            ],
+        ),
+        (
+            FirstClass::Python,
+            "class Item:\n    def run(self):\n        return 1\n\ndef execute():\n    return 2\n",
+            &[
+                (
+                    "Item",
+                    "class",
+                    "class Item:\n    def run(self):\n        return 1",
+                ),
+                ("Item.run", "method", "def run(self):\n        return 1"),
+                ("execute", "function", "def execute():\n    return 2"),
+            ],
+        ),
+        (
+            FirstClass::JavaScript,
+            "class Item { run() { return 1; } }\nfunction execute() { return 2; }\n",
+            &[
+                ("Item", "class", "class Item { run() { return 1; } }"),
+                ("Item.run", "method", "run() { return 1; }"),
+                ("execute", "function", "function execute() { return 2; }"),
+            ],
+        ),
+        (
+            FirstClass::TypeScript,
+            "class Item { run(): number { return 1; } }\ninterface Runner { run(): void; }\ntype Name = string;\nenum Mode { Ready }\nfunction execute(): void {}\n",
+            &[
+                (
+                    "Item",
+                    "class",
+                    "class Item { run(): number { return 1; } }",
+                ),
+                ("Item.run", "method", "run(): number { return 1; }"),
+                ("Runner", "interface", "interface Runner { run(): void; }"),
+                ("Runner.run", "method", "run(): void"),
+                ("Name", "type", "type Name = string;"),
+                ("Mode", "enum", "enum Mode { Ready }"),
+                ("execute", "function", "function execute(): void {}"),
+            ],
+        ),
+        (
+            FirstClass::Tsx,
+            "class Item { run(): number { return 1; } }\ninterface Runner { run(): void; }\ntype Name = string;\nenum Mode { Ready }\nconst View = () => <div />;\n",
+            &[
+                (
+                    "Item",
+                    "class",
+                    "class Item { run(): number { return 1; } }",
+                ),
+                ("Item.run", "method", "run(): number { return 1; }"),
+                ("Runner", "interface", "interface Runner { run(): void; }"),
+                ("Runner.run", "method", "run(): void"),
+                ("Name", "type", "type Name = string;"),
+                ("Mode", "enum", "enum Mode { Ready }"),
+                ("View", "function", "const View = () => <div />;"),
+            ],
+        ),
+        (
+            FirstClass::Go,
+            "package sample\ntype Item struct{}\nfunc (item Item) Run() {}\nfunc Execute() {}\n",
+            &[
+                ("Item", "type", "type Item struct{}"),
+                ("Run", "method", "func (item Item) Run() {}"),
+                ("Execute", "function", "func Execute() {}"),
+            ],
+        ),
+        (
+            FirstClass::Php,
+            "<?php\nclass Item { public function run(): void {} }\ninterface Runner {}\ntrait Shared {}\nenum Mode { case Ready; }\nfunction execute(): void {}\n",
+            &[
+                (
+                    "Item",
+                    "class",
+                    "class Item { public function run(): void {} }",
+                ),
+                ("Item.run", "method", "public function run(): void {}"),
+                ("Runner", "interface", "interface Runner {}"),
+                ("Shared", "trait", "trait Shared {}"),
+                ("Mode", "enum", "enum Mode { case Ready; }"),
+                ("execute", "function", "function execute(): void {}"),
+            ],
+        ),
+        (
+            FirstClass::GdScript,
+            "class_name Item\nsignal moved\nconst SPEED = 1\nvar position = 0\nenum Mode { READY }\nfunc run():\n    return 1\n",
+            &[
+                ("Item", "class", "class_name Item"),
+                ("moved", "signal", "signal moved"),
+                ("SPEED", "constant", "const SPEED = 1"),
+                ("position", "property", "var position = 0"),
+                ("Mode", "enum", "enum Mode { READY }"),
+                ("run", "method", "func run():\n    return 1"),
+            ],
+        ),
+        (
+            FirstClass::GdShader,
+            "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(1.0); }\n",
+            &[(
+                "fragment",
+                "function",
+                "void fragment() { ALBEDO = vec3(1.0); }",
+            )],
+        ),
+    ];
+
+    #[test]
+    fn every_advertised_language_kind_has_an_exact_source_span() {
+        for &(language, source, expected) in DEFINITION_FIXTURES {
+            let facts = extracted(language, source);
+            assert_eq!(facts.status, DefinitionStatus::Available, "{language:?}");
+            assert_eq!(facts.definitions.len(), expected.len(), "{language:?}");
+            let observed_kinds = facts
+                .definitions
+                .iter()
+                .map(|definition| definition.symbol.kind.as_str())
+                .collect::<BTreeSet<_>>();
+            let advertised_kinds = definition_kinds(language)
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            assert_eq!(observed_kinds, advertised_kinds, "{language:?}");
+            for &(name, kind, exact_source) in expected {
+                let definition = facts
+                    .definitions
+                    .iter()
+                    .find(|definition| {
+                        definition.symbol.name == name && definition.symbol.kind == kind
+                    })
+                    .unwrap_or_else(|| panic!("missing {language:?} {kind} {name}"));
+                assert_eq!(
+                    source_of(source, definition),
+                    exact_source,
+                    "{language:?} {kind} {name}"
+                );
+                let span = definition.source_span.unwrap();
+                let preceding = &source[..span.start_byte];
+                let start_line = preceding.bytes().filter(|byte| *byte == b'\n').count() + 1;
+                let end_line = start_line
+                    + exact_source
+                        .trim_end_matches('\n')
+                        .bytes()
+                        .filter(|byte| *byte == b'\n')
+                        .count();
+                assert_eq!(
+                    (span.start_line, span.end_line),
+                    (start_line, end_line),
+                    "{language:?} {kind} {name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn definition_spans_preserve_complete_source_across_code_languages() {
+        for (language, source, name, expected) in [
+            (
+                FirstClass::Rust,
+                "#[inline]\n// attached\n#[must_use]\npub fn run() -> u32 { 42 }\n",
+                "run",
+                "#[inline]\n// attached\n#[must_use]\npub fn run() -> u32 { 42 }",
+            ),
+            (
+                FirstClass::Python,
+                "@first\n@second(1)\ndef run():\n    return 42\n",
+                "run",
+                "@first\n@second(1)\ndef run():\n    return 42",
+            ),
+            (
+                FirstClass::JavaScript,
+                "export function run() { return 42; }\n",
+                "run",
+                "export function run() { return 42; }",
+            ),
+            (
+                FirstClass::TypeScript,
+                "export const run = (): number => 42;\n",
+                "run",
+                "export const run = (): number => 42;",
+            ),
+            (
+                FirstClass::Tsx,
+                "export const View = () => <div>hello</div>;\n",
+                "View",
+                "export const View = () => <div>hello</div>;",
+            ),
+            (
+                FirstClass::Go,
+                "package sample\nfunc Run() int { return 42 }\n",
+                "Run",
+                "func Run() int { return 42 }",
+            ),
+            (
+                FirstClass::Php,
+                "<?php\n#[Example]\nfunction run(): int { return 42; }\n",
+                "run",
+                "#[Example]\nfunction run(): int { return 42; }",
+            ),
+            (
+                FirstClass::GdScript,
+                "@rpc\nfunc run():\n    return 42\n",
+                "run",
+                "@rpc\nfunc run():\n    return 42",
+            ),
+            (
+                FirstClass::GdShader,
+                "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(1.0); }\n",
+                "fragment",
+                "void fragment() { ALBEDO = vec3(1.0); }",
+            ),
+        ] {
+            let facts = extracted(language, source);
+            assert_eq!(facts.status, DefinitionStatus::Available, "{language:?}");
+            let definition = facts
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol.name == name)
+                .unwrap();
+            assert_eq!(source_of(source, definition), expected, "{language:?}");
+            assert!(definition_kinds(language).contains(&definition.symbol.kind.as_str()));
+        }
+    }
+
+    #[test]
+    fn grouped_declarations_share_source_but_retain_identity_spans() {
+        for (language, source) in [
+            (
+                FirstClass::JavaScript,
+                "export const one = () => 1, two = () => 2;",
+            ),
+            (
+                FirstClass::Go,
+                "package sample\ntype (\nOne int\nTwo string\n)\n",
+            ),
+        ] {
+            let facts = extracted(language, source);
+            assert_eq!(facts.status, DefinitionStatus::Available, "{language:?}");
+            assert_eq!(facts.definitions.len(), 2);
+            assert_eq!(
+                facts.definitions[0].source_span,
+                facts.definitions[1].source_span
+            );
+            assert_ne!(
+                facts.definitions[0].declaration_span,
+                facts.definitions[1].declaration_span
+            );
+        }
+    }
+
+    #[test]
+    fn bodyless_declarations_retain_terminators_and_no_neighbour_body() {
+        for (language, source, name, expected) in [
+            (
+                FirstClass::Rust,
+                "trait Run { fn run(&self); fn other(&self) {} }",
+                "Run.run",
+                "fn run(&self);",
+            ),
+            (
+                FirstClass::TypeScript,
+                "interface Run { run(): void; other(): void; }",
+                "Run.run",
+                "run(): void",
+            ),
+            (
+                FirstClass::Php,
+                "<?php interface Run { public function run(): void; }",
+                "Run.run",
+                "public function run(): void;",
+            ),
+            (
+                FirstClass::GdScript,
+                "@abstract\nfunc run()\n",
+                "run",
+                "@abstract\nfunc run()",
+            ),
+        ] {
+            let facts = extracted(language, source);
+            assert_eq!(facts.status, DefinitionStatus::Available, "{language:?}");
+            let definition = facts
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol.name == name)
+                .unwrap();
+            assert_eq!(source_of(source, definition), expected, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn definitions_are_not_deduplicated_by_same_line_name() {
+        let source = "fn one() { fn nested() {} } fn two() { fn nested() {} }";
+        let analysis = analyze(
+            FirstClass::Rust,
+            source,
+            &parse::parse(FirstClass::Rust, source).unwrap(),
+        );
+        assert_eq!(
+            analysis
+                .definitions
+                .definitions
+                .iter()
+                .filter(|definition| definition.symbol.name == "nested")
+                .count(),
+            2
+        );
+        assert_eq!(
+            analysis
+                .outlines
+                .iter()
+                .filter(|outline| outline.name == "nested")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn parse_errors_preserve_clean_siblings_without_trusting_broken_source() {
+        let source = "fn good() {}\nfn broken() { let value = ; }";
+        let facts = extracted(FirstClass::Rust, source);
+        assert_eq!(facts.status, DefinitionStatus::ParseErrors);
+        let good = facts
+            .definitions
+            .iter()
+            .find(|definition| definition.symbol.name == "good")
+            .unwrap();
+        assert_eq!(source_of(source, good), "fn good() {}");
+        let broken = facts
+            .definitions
+            .iter()
+            .find(|definition| definition.symbol.name == "broken")
+            .unwrap();
+        assert!(broken.source_span.is_none());
+    }
+
+    #[test]
+    fn byte_spans_preserve_unicode_crlf_and_final_line_without_newline() {
+        let source = "// ü\r\nfn café() { let value = \"😀\"; }";
+        let facts = extracted(FirstClass::Rust, source);
+        assert_eq!(facts.status, DefinitionStatus::Available);
+        let definition = &facts.definitions[0];
+        let span = definition.source_span.unwrap();
+        assert_eq!(
+            source_of(source, definition),
+            "fn café() { let value = \"😀\"; }"
+        );
+        assert_eq!((span.start_line, span.end_line), (2, 2));
+        assert_eq!(span.end_byte, source.len());
+    }
+
+    #[test]
+    fn resource_outlines_do_not_claim_code_definition_support() {
+        let facts = extracted(
+            FirstClass::GodotResource,
+            "[gd_scene format=3]\n[node name=\"Root\" type=\"Node\"]\n",
+        );
+        assert_eq!(facts.status, DefinitionStatus::Unsupported);
+        assert!(facts.definitions.is_empty());
+        assert!(definition_kinds(FirstClass::GodotResource).is_empty());
+    }
+
+    #[test]
+    fn source_spans_are_independent_of_signature_caps() {
+        let source = format!("fn run() {{ let body = \"{}\"; }}", "x".repeat(600));
+        let facts = extracted(FirstClass::Rust, &source);
+        let definition = &facts.definitions[0];
+        assert_eq!(source_of(&source, definition), source);
+        assert!(definition.symbol.signature.len() < 280);
+    }
 
     #[test]
     fn outline_kinds_are_a_closed_capability_set() {

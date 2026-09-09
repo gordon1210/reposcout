@@ -523,6 +523,26 @@ pub(super) fn analyze_file(
         walk::BoundedText::Oversized(bytes) => return AnalysisOutcome::Oversized(bytes),
         walk::BoundedText::Unreadable => return AnalysisOutcome::Unreadable,
     };
+    analyze_loaded_file(
+        report_path,
+        content,
+        cfg,
+        health_policy,
+        counter,
+        cache,
+        requirements,
+    )
+}
+
+pub(super) fn analyze_loaded_file(
+    report_path: &Path,
+    content: String,
+    cfg: &Config,
+    health_policy: &HealthPolicy,
+    counter: Option<&TokenCounter>,
+    cache: &Cache,
+    requirements: ArtifactRequirements,
+) -> AnalysisOutcome {
     let rel = report_path.to_path_buf();
     let rel_str = rel.to_string_lossy().to_string();
 
@@ -530,17 +550,18 @@ pub(super) fn analyze_file(
     if let Some(mut cached) = cache.get(&rel_str, hash) {
         let duplication_artifact =
             classify::hint_is_duplication_artifact(cached.report.skip_hint.as_deref());
-        let needs_outlines = requirements.symbol_outlines && cached.symbol_outlines.is_none();
+        let needs_outlines = requirements.symbol_outlines
+            && (cached.symbol_outlines.is_none() || cached.definitions.is_none());
         let needs_graph = requirements.graph_facts && cached.graph_facts.is_none();
         let mut enriched = false;
         if needs_outlines || needs_graph {
             let first_class = lang::detect(report_path).and_then(|info| info.first_class);
             let tree = first_class.and_then(|fc| parse::parse(fc, &content));
             if needs_outlines {
-                cached.symbol_outlines = Some(match (first_class, tree.as_ref()) {
-                    (Some(fc), Some(tree)) => symbols::analyze(fc, &content, tree).outlines,
-                    _ => Vec::new(),
-                });
+                let (outlines, definitions) =
+                    declaration_facts(first_class, &content, tree.as_ref());
+                cached.symbol_outlines = Some(outlines);
+                cached.definitions = Some(definitions);
                 enriched = true;
             }
             if needs_graph && let Some(fc) = first_class {
@@ -565,6 +586,7 @@ pub(super) fn analyze_file(
                 &cached.test_regions,
                 cached.symbol_outlines.as_deref(),
                 cached.graph_facts.as_ref(),
+                cached.definitions.as_ref(),
             );
         }
         let symbol_outlines = requirements
@@ -576,6 +598,7 @@ pub(super) fn analyze_file(
             .then_some(cached.graph_facts)
             .flatten();
         return AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
+            definitions: cached.definitions,
             report: cached.report,
             content,
             duplication_artifact,
@@ -603,8 +626,10 @@ pub(super) fn analyze_file(
         &analysis.test_regions,
         analysis.symbol_outlines.as_deref(),
         analysis.graph_facts.as_ref(),
+        analysis.definitions.as_ref(),
     );
     AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
+        definitions: analysis.definitions,
         report: analysis.report,
         content,
         duplication_artifact: analysis.duplication_artifact,
@@ -663,7 +688,8 @@ pub(super) fn analyze_source_details(
         health_eligible,
     );
     let import_list = import_facts(info, content, tree.as_ref(), cfg);
-    let (sym, symbol_outlines) = symbol_facts(info, content, tree.as_ref(), cfg, requirements);
+    let (sym, symbol_outlines, definitions) =
+        symbol_facts(info, content, tree.as_ref(), cfg, requirements);
     let graph_facts = graph_facts(info, &rel_str, content, tree.as_ref(), requirements);
     let test_facts = rust_test_facts(info, content, tree.as_ref());
     let comment_ratio = percentage_ratio(line_stats.comment_lines, line_stats.loc);
@@ -692,6 +718,7 @@ pub(super) fn analyze_source_details(
         duplication_artifact: classification.is_duplication_artifact(),
         test_regions: test_facts.regions,
         symbol_outlines,
+        definitions,
         graph_facts,
     })
 }
@@ -742,27 +769,61 @@ fn import_facts(
     }
 }
 
+fn declaration_facts(
+    first_class: Option<lang::FirstClass>,
+    content: &str,
+    tree: Option<&Tree>,
+) -> (Vec<SymbolOutline>, crate::model::DefinitionFacts) {
+    match (first_class, tree) {
+        (Some(language), Some(tree)) => {
+            let analysis = symbols::analyze(language, content, tree);
+            (analysis.outlines, analysis.definitions)
+        }
+        _ => (
+            Vec::new(),
+            crate::model::DefinitionFacts {
+                status: if first_class.is_some() {
+                    crate::model::DefinitionStatus::Unavailable
+                } else {
+                    crate::model::DefinitionStatus::Unsupported
+                },
+                definitions: Vec::new(),
+            },
+        ),
+    }
+}
+
 fn symbol_facts(
     info: &lang::LangInfo,
     content: &str,
     tree: Option<&Tree>,
     cfg: &Config,
     requirements: ArtifactRequirements,
-) -> (Option<SymbolCounts>, Option<Vec<SymbolOutline>>) {
+) -> (
+    Option<SymbolCounts>,
+    Option<Vec<SymbolOutline>>,
+    Option<crate::model::DefinitionFacts>,
+) {
     let needs_counts = cfg.enabled.complexity || cfg.enabled.imports;
-    match (info.first_class, tree) {
-        (Some(language), Some(tree)) if requirements.symbol_outlines => {
+    if requirements.symbol_outlines {
+        if let (Some(language), Some(tree)) = (info.first_class, tree) {
             let analysis = symbols::analyze(language, content, tree);
-            (
+            return (
                 needs_counts.then_some(analysis.counts),
                 Some(analysis.outlines),
-            )
+                Some(analysis.definitions),
+            );
         }
-        (Some(language), Some(tree)) if needs_counts => {
-            (Some(symbols::count(language, content, tree)), None)
-        }
-        (_, _) if requirements.symbol_outlines => (None, Some(Vec::new())),
-        _ => (None, None),
+        let (outlines, definitions) = declaration_facts(info.first_class, content, tree);
+        (None, Some(outlines), Some(definitions))
+    } else {
+        let counts = match (info.first_class, tree) {
+            (Some(language), Some(tree)) if needs_counts => {
+                Some(symbols::count(language, content, tree))
+            }
+            _ => None,
+        };
+        (counts, None, None)
     }
 }
 

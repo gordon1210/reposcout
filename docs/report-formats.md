@@ -147,6 +147,24 @@ Stable executive reason codes are `no-graph-eligible-changes`, `no-graph-covered
 `project-configuration`, `inspect-non-graph-change`, and `specialist-review`; their text is
 guidance, not evidence that validation ran.
 
+## Explicit source-query output
+
+`reposcout read` supports JSON, NDJSON, table and Markdown over the same bounded query facts.
+Ordinary scan, locate, context and agent-summary defaults retain their body-free meaning. The read
+command returns complete supported definitions only when explicitly selected, or body-free
+declarations with `--outline`.
+
+The source-query token and byte limits cover the final rendered response, including metadata,
+formatting and newline. Pretty JSON counts toward those limits. Output omissions remain distinct
+from input-policy, extraction and stale-content states; serialized bytes and source bodies are
+never cut to satisfy the budget. See [Read explicit definitions](source-queries.md) for selectors,
+content hashes and the precise result contract.
+
+Source-query NDJSON is one compact `source_query` record with a final newline. JSON and NDJSON
+preserve source after string decoding. Table and Markdown keep source newlines and tabs but
+visibly escape other control characters, including carriage returns; they are readable
+representations rather than byte-preserving source exports.
+
 ## Stable JSON contract
 
 Scan reports carry `schema_version: "2.0"`. The top-level contract is organized around:

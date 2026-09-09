@@ -145,6 +145,150 @@ pub fn read_text(path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
     }
 }
 
+/// Read bounded text through root-anchored, no-follow traversal; fail closed where that traversal is unavailable.
+pub(crate) fn read_text_under_root(
+    root: &Path,
+    relative: &Path,
+    budget: &mut ReadBudget,
+) -> ReadOutcome {
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return ReadOutcome::NotRegularFile;
+    }
+    if budget
+        .deadline
+        .is_some_and(|deadline| Instant::now() >= deadline)
+    {
+        return ReadOutcome::DeadlineExceeded;
+    }
+    if budget.remaining_files == 0 || budget.remaining_total_bytes == 0 {
+        return ReadOutcome::BudgetExceeded;
+    }
+    let (mut file, _parents) = match open_under_root(root, relative) {
+        Ok(file) => file,
+        Err(outcome) => return outcome,
+    };
+    let Ok(metadata) = file.metadata() else {
+        return ReadOutcome::Unreadable;
+    };
+    if !metadata.is_file() {
+        return ReadOutcome::NotRegularFile;
+    }
+    let cap = budget.max_file_bytes.min(budget.remaining_total_bytes);
+    if metadata.len() > budget.max_file_bytes {
+        return ReadOutcome::Oversized(metadata.len());
+    }
+    if metadata.len() > cap {
+        return ReadOutcome::BudgetExceeded;
+    }
+    let mut bytes = Vec::new();
+    if file
+        .by_ref()
+        .take(cap.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return ReadOutcome::Unreadable;
+    }
+    let len = usize_to_u64(bytes.len());
+    budget.consume(len);
+    if len > cap {
+        return if cap < budget.max_file_bytes {
+            ReadOutcome::BudgetExceeded
+        } else {
+            ReadOutcome::Oversized(len)
+        };
+    }
+    if budget
+        .deadline
+        .is_some_and(|deadline| Instant::now() >= deadline)
+    {
+        return ReadOutcome::DeadlineExceeded;
+    }
+    match String::from_utf8(bytes) {
+        Ok(content) => ReadOutcome::Content(content),
+        Err(_) => ReadOutcome::Unreadable,
+    }
+}
+
+#[cfg(unix)]
+fn open_under_root(root: &Path, relative: &Path) -> Result<(File, Vec<File>), ReadOutcome> {
+    use rustix::fs::{Mode, OFlags};
+    let mut directory = open_output_directory(root).map_err(|_| ReadOutcome::NotRegularFile)?;
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(ReadOutcome::NotRegularFile);
+        };
+        let mut flags = OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK;
+        if components.peek().is_some() {
+            flags |= OFlags::DIRECTORY;
+        }
+        let opened = rustix::fs::openat(&directory, name, flags, Mode::empty()).map_err(
+            |error| match error {
+                rustix::io::Errno::LOOP | rustix::io::Errno::NOTDIR => ReadOutcome::NotRegularFile,
+                _ => ReadOutcome::Unreadable,
+            },
+        )?;
+        if components.peek().is_none() {
+            return Ok((File::from(opened), Vec::new()));
+        }
+        directory = opened;
+    }
+    Err(ReadOutcome::NotRegularFile)
+}
+
+#[cfg(windows)]
+fn open_under_root(root: &Path, relative: &Path) -> Result<(File, Vec<File>), ReadOutcome> {
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const SHARE_READ: u32 = 1;
+    const REPARSE_POINT: u32 = 0x400;
+    let mut parents = Vec::new();
+    let mut candidate = std::path::PathBuf::new();
+    let combined = root.join(relative);
+    let mut components = combined.components().peekable();
+    while let Some(component) = components.next() {
+        match component {
+            std::path::Component::Prefix(_) => {
+                candidate.push(component);
+                continue;
+            }
+            std::path::Component::RootDir | std::path::Component::Normal(_) => {
+                candidate.push(component)
+            }
+            _ => return Err(ReadOutcome::NotRegularFile),
+        }
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(SHARE_READ)
+            .custom_flags(OPEN_REPARSE_POINT | BACKUP_SEMANTICS)
+            .open(&candidate)
+            .map_err(|_| ReadOutcome::Unreadable)?;
+        let metadata = file.metadata().map_err(|_| ReadOutcome::Unreadable)?;
+        if metadata.file_attributes() & REPARSE_POINT != 0 {
+            return Err(ReadOutcome::NotRegularFile);
+        }
+        if components.peek().is_none() {
+            return Ok((file, parents));
+        }
+        if !metadata.is_dir() {
+            return Err(ReadOutcome::NotRegularFile);
+        }
+        parents.push(file);
+    }
+    Err(ReadOutcome::NotRegularFile)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn open_under_root(_root: &Path, _relative: &Path) -> Result<(File, Vec<File>), ReadOutcome> {
+    Err(ReadOutcome::NotRegularFile)
+}
+
 /// Read a regular file with a single-file size cap (no shared total budget).
 #[must_use]
 pub fn read_text_limited(path: &Path, max_file_bytes: u64) -> ReadOutcome {

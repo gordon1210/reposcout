@@ -61,6 +61,8 @@ pub enum Command {
     Explain(ExplainArgs),
     /// Locate declarations by symbol name across first-class languages
     Locate(LocateArgs),
+    /// Read explicitly selected worktree definitions under a shared output budget
+    Read(ReadArgs),
     /// Update an installer-managed copy from the latest stable GitHub release
     Update,
     /// Show layered global/project configuration and effective values
@@ -325,6 +327,84 @@ pub struct LocateArgs {
     /// Maximum returned matches (1..=100)
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
+}
+
+/// Select definitions or body-free file outlines from current worktree contents.
+#[derive(Args, Debug, Clone)]
+pub struct ReadArgs {
+    /// Repository or directory containing the selected files [default: .]
+    #[arg(default_value = ".")]
+    pub path: PathBuf,
+
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// Select a definition by file and exact symbol name; repeat to share one budget
+    #[arg(
+        long,
+        value_names = ["FILE", "SYMBOL"],
+        num_args = 2,
+        action = clap::ArgAction::Append,
+        conflicts_with = "outline"
+    )]
+    pub symbol: Vec<String>,
+
+    /// Select the innermost declaration containing a one-based file line; repeatable
+    #[arg(
+        long,
+        value_names = ["FILE", "LINE"],
+        num_args = 2,
+        action = clap::ArgAction::Append,
+        conflicts_with = "outline"
+    )]
+    pub line: Vec<String>,
+
+    /// List body-free declarations from a selected file; conflicts with --symbol and --line
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["symbol", "line"])]
+    pub outline: Vec<PathBuf>,
+
+    /// Require the selected file to match this SHA-256 hash; mismatches return no source
+    #[arg(
+        long,
+        value_names = ["FILE", "SHA256"],
+        num_args = 2,
+        action = clap::ArgAction::Append
+    )]
+    pub expect_hash: Vec<String>,
+
+    /// Maximum tokens in the complete rendered output, including metadata and the final newline
+    #[arg(
+        long,
+        default_value_t = 4096,
+        value_parser = parse_source_token_budget
+    )]
+    pub budget: usize,
+
+    /// Maximum bytes in the complete rendered output, including metadata and the final newline
+    #[arg(
+        long,
+        default_value_t = 65_536,
+        value_parser = parse_source_byte_budget
+    )]
+    pub max_output_bytes: usize,
+}
+
+fn parse_source_token_budget(value: &str) -> Result<usize, String> {
+    parse_source_budget(value, 256, 65_536)
+}
+
+fn parse_source_byte_budget(value: &str) -> Result<usize, String> {
+    parse_source_budget(value, 1_024, 1_048_576)
+}
+
+fn parse_source_budget(value: &str, minimum: usize, maximum: usize) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("expected an integer from {minimum} to {maximum}"))?;
+    if !(minimum..=maximum).contains(&parsed) {
+        return Err(format!("expected an integer from {minimum} to {maximum}"));
+    }
+    Ok(parsed)
 }
 
 #[derive(Args, Debug, Clone)]

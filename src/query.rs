@@ -14,6 +14,11 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+mod source;
+pub use source::{
+    SourceQueryOptions, SourceQueryOutput, SourceQueryTarget, SourceSelector, read_source,
+};
+
 pub const MAX_SYMBOL_RESULTS: usize = 100;
 pub const MAX_GRAPH_DEPTH: usize = 64;
 
@@ -31,6 +36,7 @@ pub fn capabilities() -> CapabilitiesReport {
             "metrics",
             "explain",
             "locate",
+            "read",
             "update",
             "cache",
             "config",
@@ -112,6 +118,7 @@ pub fn capabilities() -> CapabilitiesReport {
             max_path_entries: crate::work_scope::MAX_PATH_ENTRIES,
             max_components: crate::work_scope::MAX_COMPONENTS,
         },
+        source_query: Some(source::capability()),
         type2_max_seed_pairs_per_pool: crate::dup::fuzzy::MAX_SEED_PAIRS_PER_POOL,
         type2_max_matches_per_pool: crate::dup::fuzzy::MAX_MATCHES_PER_POOL,
         type2_max_overlap_checks_per_pool: crate::dup::fuzzy::MAX_OVERLAP_CHECKS_PER_POOL,

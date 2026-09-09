@@ -95,6 +95,12 @@ In agent-summary, inspect `coverage`, `assessment`, and `interpretation.analyzer
 files, then use the bounded `signals` rankings. In ordinary summary output, inspect top-level
 `diagnostics` and `summary.assessment` first. Never turn a disabled analyzer into a clean zero.
 
+## Read known targets directly
+
+A known file and symbol or line can go straight to `reposcout read`; it does not require a
+scouting, outline or locate round. Use a normal small read when that already answers the question.
+See [source queries](source-queries.md) for batch selection, output budgets and content identity.
+
 ## Use focused queries before broad search
 
 Locate a declaration without a full cross-file analysis:

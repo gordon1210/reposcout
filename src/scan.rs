@@ -37,6 +37,7 @@ struct AnalyzedFile {
     duplication_artifact: bool,
     test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
+    definitions: Option<crate::model::DefinitionFacts>,
     graph_facts: Option<crate::graph::SourceFacts>,
 }
 
@@ -45,6 +46,7 @@ struct SourceAnalysis {
     duplication_artifact: bool,
     test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
+    definitions: Option<crate::model::DefinitionFacts>,
     graph_facts: Option<crate::graph::SourceFacts>,
 }
 
@@ -701,7 +703,11 @@ use report::{assemble_report, path_is_within_target, scan_profile};
 mod baseline;
 use baseline::compute_baseline_delta;
 
+mod explicit_source;
 mod file_analysis;
+pub(crate) use explicit_source::{
+    ExplicitSourceBatch, ExplicitSourceFailure, load_explicit_sources,
+};
 pub(crate) use file_analysis::analyze_source;
 use file_analysis::{
     analyze_cross_file_metrics, analyze_files, analyze_planning_universe, percentage,

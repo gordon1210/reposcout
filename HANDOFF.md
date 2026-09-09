@@ -5,8 +5,8 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-07 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 17_
+_Last updated: 2026-09-10 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
+`ANALYZER_VERSION` 18_
 
 ---
 
@@ -37,6 +37,10 @@ any path inside it**, so they can make decisions *before* diving in:
   plus `--change-summary` returns a bounded decision report with reading order, known impact,
   matching-test evidence, confidence gaps, and validation categories rather than a generic health
   dump.
+- **Read a known definition without guessing its end?** → `reposcout read [PATH]` with repeatable
+  `--symbol FILE SYMBOL` or `--line FILE LINE`; `--outline FILE` is a body-free alternative.
+  Worktree-only source, SHA-256 expectations and complete rendered token/byte budgets preserve
+  identity and visible omissions. See [source queries](docs/source-queries.md).
 - **Where is a declaration, and what can this binary do?** → `reposcout locate SYMBOL [PATH]`
   and zero-scan `reposcout capabilities -f json`.
 - **Need to invalidate persistent facts while debugging?** → `reposcout cache clear [PATH]`
@@ -55,6 +59,12 @@ The design bias is therefore **high signal, low noise, machine-readable, fast**.
 doubt, optimize for "an agent can trust and act on this in one glance" over completeness.
 
 ## Current state
+
+- **Explicit source queries (unreleased).** `read` selects known definitions or body-free file
+  outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
+  The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
+  newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
+  Cached definition facts use analyzer version 18 while the additive schema remains 2.0.
 
 - **Godot 4 support.** GDScript/shader AST analysis and Godot scene/resource/project
   dependency context reuse the shared pipeline; 36 formats are recognized. Scope and static-analysis
@@ -113,7 +123,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   unsupported/unreadable files, bounded unsupported-path examples, walker errors, and partial
   Type-2 reasons/omitted work); malformed config files fail loudly instead of silently falling
   back to defaults.
-- **Security boundaries.** Scan/explain/locate output files use symlink-safe atomic replacement,
+- **Security boundaries.** Scan/explain/locate/read output files use symlink-safe atomic replacement,
   including anchored Unix parent traversal. Release tags are validated, shell context crosses
   through environment variables, release commits must be reachable from `main`, and published
   assets receive attestations. The daemon is loopback-first and bearer-token authenticated;
@@ -156,7 +166,9 @@ orchestrates: discover files (`walk`), analyze each in parallel (`rayon`), consu
 derive reusable graph analyses plus the bounded plan in `context.rs`. Diff-scoped context keeps
 the primary analysis scoped and builds a distinct cached planning universe; `graph.rs` owns the
 shared topology used by both context and impact.
-`query.rs` owns task-oriented capabilities/symbol lookup over the same cached facts;
+`query.rs` owns task-oriented capabilities/symbol lookup and explicit source queries over shared
+analysis facts; definition spans, hashes and returned bytes belong to the same captured file
+content, without an atomic cross-file snapshot guarantee;
 `report/agent_summary.rs` owns the hard-bounded pure scouting projection;
 `debug_log.rs` owns the process-wide diagnostic session; `dup/fuzzy/plan.rs` owns deterministic
 rare-first Type-2 admission; and `report::render` turns the `ScanReport` into table/json/markdown.

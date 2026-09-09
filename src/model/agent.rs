@@ -50,6 +50,8 @@ pub struct CapabilitiesReport {
     /// Contract and hard payload limits for raw work-scope evidence.
     #[serde(default)]
     pub work_scope: WorkScopeCapability,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_query: Option<super::SourceQueryCapability>,
     /// Maximum Type-2 candidate seed pairs examined in one format pool.
     #[serde(default)]
     pub type2_max_seed_pairs_per_pool: u64,

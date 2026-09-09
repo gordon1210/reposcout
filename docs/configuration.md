@@ -205,6 +205,10 @@ Per-file entries are keyed by canonical scan root, content hash, analyzer versio
 and every runtime setting that changes file facts. Subpath and diff scans merge refreshed entries;
 only a complete root scan prunes files that disappeared.
 
+Definition facts for explicit reads enrich the same per-file cache entry under the ordinary
+analysis profile; source bytes remain invocation-local. Targeted queries merge entries without
+pruning unrelated cached files.
+
 Declaration outlines enrich lazily for context and symbol lookup. Graph source facts—import
 specifiers, parse diagnostics, and type-relation declarations/references—enrich lazily for graph,
 context, impact, and explain. Ordinary scans and daemon refreshes do not pay those query-only AST

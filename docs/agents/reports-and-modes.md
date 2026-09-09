@@ -136,6 +136,25 @@ metadata are rejected because their health semantics cannot be established.
 - Locate's cold path intentionally performs configured per-file analyzers, but not duplication or
   churn, to populate the ordinary scan cache. Do not create a second query-only parser, index, or
   cache profile.
+- `reposcout read [PATH]` accepts repeatable `--symbol FILE SYMBOL` and `--line FILE LINE`, or
+  mutually exclusive repeatable `--outline FILE` and defaults to the `agent` profile. It reads
+  explicit worktree targets only; no preceding scout/outline/locate is required. Target-relative paths and absolute paths inside the
+  target retain discovery, exclusion, configuration and no-follow policy. CLI target order is all
+  symbol pairs followed by all line pairs, preserving input order within each group; target IDs
+  are one-based and budget admission follows that order. The query API preserves vector order.
+- Source-query budgets cover the complete rendered response in the selected format, including
+  metadata and newline: 4,096 tokens / 65,536 bytes by default, with allowed ranges 256–65,536
+  tokens and 1,024–1,048,576 bytes. Below-minimum requests are invalid and return the documented
+  minimum error envelope, not a falsely budget-compliant success.
+- Source queries return complete definitions or explicit omissions, never implicit partial bodies.
+  Cap targets at 32, ambiguity candidates at eight and outline declarations at 100; retain
+  extraction/input coverage separately from output omissions. `--expect-hash FILE SHA256` only
+  applies to selected files; stale files return no source.
+- Source-query renderers project shared facts and perform no analysis or I/O. JSON, NDJSON, table
+  and Markdown all respect the final output budget; pretty formatting and newlines count.
+  NDJSON emits one compact `source_query` record. JSON strings preserve decoded source; human
+  output retains newlines/tabs and visibly escapes other control characters, including CR.
+  Ordinary locate, context and agent-summary remain body-free. Debug logs never contain source.
 - Capability tests compare advertised commands with Clap, symbol kinds with parser output, and
   language names with the canonical 36-format fixture matrix.
 - `--error-format json` emits one structured stderr object for usage and runtime failures.

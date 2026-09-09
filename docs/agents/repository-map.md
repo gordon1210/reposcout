@@ -43,6 +43,14 @@ src/
   snapshot.rs        Worktree/tree/index adapters and shared snapshot policy.
   explain.rs         Repository scan projected onto one requested file.
   query.rs           Capabilities and bounded symbol lookup.
+  query/source.rs    Explicit worktree targets, content identity and rendered output budgets.
+  scan/explicit_source.rs
+                     Policy-checked explicit-file capture through shared analysis/cache facts.
+  model/definitions.rs
+                     Exact declaration/retrieval spans and extraction availability.
+  model/source_query.rs
+                     Stable source-query results, shared chunks and capability limits.
+  report/source.rs   Pure source-query rendering and human capability details.
   cache.rs           OS-cache-backed incremental facts, manual reset, profile validation, and
                      ANALYZER_VERSION invalidation.
   parse/mod.rs       Tree-sitter Language and parse() for first-class languages.

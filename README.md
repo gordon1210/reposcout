@@ -31,6 +31,7 @@ RepoScout combines signals that usually require several tools:
 | **Is cleanup worthwhile?** | Exact and Type-2 duplication, markers, hotspots, and an evidence-qualified assessment |
 | **How broad is the work?** | Raw seed, context-budget, dependent, test, graph-component, and confidence counts |
 | **What should be read next?** | A deterministic context plan under hard token and file budgets |
+| **Read a known definition?** | Explicit worktree source or body-free outlines under a shared output budget |
 | **What could this change affect?** | Diff-scoped review, dependency/type graphs, and direct/transitive impact |
 
 Everything runs locally. RepoScout does not upload source, call a model, or write analysis state
@@ -46,7 +47,8 @@ into the repository it scans.
   artifact-filtered source corpus, plus a compact production-source projection with redundant
   blocks removed.
 - **Agent-ready queries:** a hard-bounded scouting view, capability discovery, declaration lookup,
-  raw work-scope evidence, structured errors, and guardrailed execution profiles.
+  budgeted explicit definition reads, raw work-scope evidence, structured errors, and guardrailed
+  execution profiles.
 - **Explainable context:** bounded reading plans that rank focus paths, changes, tests,
   dependencies, dependents, risk, and repository instructions.
 - **Change intelligence:** Git diff scopes, changed-line/deep review, finding baselines, impact
@@ -109,6 +111,9 @@ reposcout --agent-summary .
 
 # Find one declaration across supported languages
 reposcout locate HttpClient . --exact -f json
+
+# Read a known definition without a preceding scout or outline
+reposcout read . --symbol src/service.ts Service.start --budget 4096 -f json
 
 # Build a compact reading plan under hard limits
 reposcout --agent-summary --focus src/service.ts \
@@ -184,6 +189,7 @@ retains token authentication, and is intended only behind a TLS proxy. See
 | [Getting started](docs/getting-started.md) | Installation, first scan, formats, languages, and defaults |
 | [CLI reference](docs/cli-reference.md) | Commands, grouped options, examples, gates, and debug logs |
 | [Agent workflows](docs/agent-workflows.md) | Summary scouting, context, locate, explain, impact, and review |
+| [Read explicit definitions](docs/source-queries.md) | Worktree source, batch targets, body-free outlines, hashes, budgets, and coverage |
 | [Metrics and interpretation](docs/metrics.md) | Complexity, duplication, risk, tests, assessment, and limits |
 | [Configuration and caching](docs/configuration.md) | Precedence, profiles, project policy, ignores, and cache behavior |
 | [Reports and machine formats](docs/report-formats.md) | JSON, NDJSON, SARIF, Markdown, DOT, Mermaid, and exit codes |

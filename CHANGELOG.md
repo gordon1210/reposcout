@@ -6,6 +6,18 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added explicit `read` queries for known worktree definitions by file and exact symbol or line,
+  batch targets under a shared token/byte output budget, and optional body-free file outlines.
+  Content hashes, stale checks, ambiguity and omission states preserve the boundaries of each
+  response; ordinary scouting and context defaults stay body-free.
+
+### Changed
+
+- Bumped the cached analyzer version to 18 for precise definition facts. The additive machine
+  contract retains schema 2.0 and reuses the ordinary analysis/cache pipeline.
+
 ## [0.2.2] - 2026-09-07
 
 ### Added

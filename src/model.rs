@@ -787,5 +787,11 @@ pub use agent::*;
 mod analysis;
 pub use analysis::*;
 
+mod definitions;
+pub use definitions::*;
+
+mod source_query;
+pub use source_query::*;
+
 #[cfg(test)]
 mod tests;

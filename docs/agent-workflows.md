@@ -2,8 +2,23 @@
 
 ← [Documentation index](README.md)
 
-RepoScout is a local, deterministic scouting layer. It helps an agent decide what to read, skip,
-or inspect next without copying source into the report or calling a model.
+RepoScout is a local, deterministic scouting and query layer. Ordinary scouting and context
+reports help an agent decide what to read without embedding source bodies. An explicit `read`
+query can deliver a known definition under a shared output budget. Neither workflow calls a model.
+
+## Start from the evidence already available
+
+If a file and symbol or line are known and source is needed, read the definition directly:
+
+```sh
+reposcout read . --symbol src/service.ts Service.start -f json
+reposcout read . --line src/service.ts 42 --line src/client.ts 27 --budget 4096 -f json
+```
+
+A normal small read may already be enough. Do not repeat unchanged source retained in model
+context. Use `--outline <FILE>` only when a body-free declaration surface answers the question; it
+is not a prerequisite for reading. See [Read explicit definitions](source-queries.md) for budget,
+identity and coverage rules. Start with scouting when repository orientation is actually needed.
 
 ## Start with a compact scout
 
@@ -348,16 +363,15 @@ targeted ordinary report only when one of those gaps intersects the current task
 
 ## Suggested agent sequence
 
-```text
-hard-bounded agent summary
-    ↓
-locate / explain / focused context
-    ↓
-bounded change summary, detailed impact, or review when a change exists
-    ↓
-open only the selected source and tests
-```
+Choose the entry point that answers the next question:
 
-The sequence is guidance, not a protocol dependency. JSON/NDJSON and structured errors remain the
+- Known file and definition or line: explicit `read`, or a normal short read when sufficient.
+- Need only a file's declaration surface: `read --outline`.
+- Unknown declaration location: `locate` or ordinary text search.
+- Repository orientation: hard-bounded agent summary.
+- Multi-file reading decision: focused context.
+- Change decision: bounded change summary, detailed impact, or review.
+
+These are independent entry points, not a required sequence. JSON/NDJSON and structured errors remain the
 stable integration boundary. Use `capabilities` before it only when installed-version compatibility
 is itself uncertain; do not make it a routine preflight call.

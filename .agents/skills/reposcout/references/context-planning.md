@@ -26,8 +26,9 @@ Treat the agent view's `context.direct_evidence.entries` and `expand_if_needed.e
 Open only the highest-ranked source needed to test the next hypothesis, then stop when the task has
 enough evidence. `context.budget.selected_tokens` in the agent view (`context.selected_tokens` in
 ordinary output) is the potential source cost if every selected body were read; it is not the size
-of RepoScout's output or a requirement to spend the whole budget. RepoScout never embeds source
-bodies.
+of RepoScout's output or a requirement to spend the whole budget. Context plans never embed source
+bodies. An explicit [source query](source-queries.md) can read a known definition separately; its
+output budget measures the complete rendered response, including metadata.
 
 Agent-summary output keeps direct selection evidence, a small expansion tier, aggregate outline
 counts, and bounded outline-only seeds without declaration objects. Use ordinary `--summary` when

@@ -1,13 +1,13 @@
 ---
 name: reposcout
-description: Scout and query software repositories with the RepoScout CLI to plan codebase reading, locate symbols, measure repository health, explain files, map dependencies, assess change impact, and review diffs. Use before exploring an unfamiliar codebase, planning implementation or refactoring work, selecting files for an agent context, investigating declarations or dependencies, reviewing staged, working-tree, or branch changes, or evaluating complexity, duplication, churn, risk, and test presence.
+description: Scout and query software repositories with the RepoScout CLI to plan codebase reading, locate symbols, read known definitions, measure repository health, explain files, map dependencies, assess change impact, and review diffs. Use before exploring an unfamiliar codebase, planning implementation or refactoring work, selecting files for an agent context, investigating declarations or dependencies, reviewing staged, working-tree, or branch changes, or evaluating complexity, duplication, churn, risk, and test presence.
 ---
 
 # RepoScout
 
-Use RepoScout as an evidence-gathering pass before reading a repository broadly. It reports facts,
-rankings, bounds, and confidence gaps; it does not return source bodies or replace direct source
-inspection. The coding agent—not RepoScout—decides what to read, whether to delegate or split work,
+Use RepoScout to gather evidence before reading a repository broadly, or to read an explicitly
+known definition under a shared output budget. Ordinary scouting and context reports retain
+body-free facts, rankings and confidence gaps. The coding agent decides which source is needed
 and which validations the task requires.
 
 ## Start safely
@@ -24,6 +24,11 @@ Never start `reposcout daemon`, a frontend, or another long-running process unle
 explicitly authorizes it.
 
 ## Choose the smallest start
+
+If a file and symbol or line are already known and its source is needed, use `reposcout read`
+directly; load the focused source-query guidance below. A normal short read may be sufficient.
+Do not repeat unchanged source already available in context. Optional `--outline` is not a required
+first step.
 
 For compact agent scouting, start with:
 
@@ -71,6 +76,7 @@ those workflows.
 | Representative task | Read |
 |---|---|
 | Repository scouting | [scouting.md](references/scouting.md) |
+| Known definition or body-free file outline | [source-queries.md](references/source-queries.md) |
 | Context planning | [context-planning.md](references/context-planning.md) |
 | Change analysis | [change-analysis.md](references/change-analysis.md) |
 | Quality assessment | [quality.md](references/quality.md) |

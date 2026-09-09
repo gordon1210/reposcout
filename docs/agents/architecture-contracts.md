@@ -84,6 +84,19 @@ topology is reused by impact when both modes run.
 the requested file's discovery, risk, tests, graph adjacency, and findings into `ExplainReport`.
 Do not introduce another analyzer pipeline for it.
 
+`reposcout read` uses scanner-owned explicit-file orchestration with the same discovery policy,
+per-file analyzer/profile, parser and cache. It does not create a query-only pipeline or run
+whole-corpus duplication, churn or graph topology. Definition identity, own declaration span and
+optional wrapper-expanded retrieval span are distinct facts derived from the same captured file
+bytes. Each file is captured once per query; the batch is not an atomic cross-file or Git snapshot.
+The targeted snapshot accepts at most 8 MiB per file, 32 MiB total and 32 files, with stricter
+configured limits preserved. The explicitly selected target directory is canonicalized once;
+no-follow traversal applies to source components below that anchor, not to every ancestor of the
+chosen root alias. File selectors reject `..`, stay within target scope and are capped at 4,096
+UTF-8 bytes; symbol selectors are capped at 1,024 bytes. Source hashes identify captured content;
+stale expectations never
+permit old spans to be applied to new bytes.
+
 ## Language and health scope
 
 First-class tree-sitter code languages are Rust, Python, JavaScript, TypeScript/TSX, Go, PHP,

@@ -25,6 +25,7 @@ file.
 | `reposcout metrics [PATH]` | Run tokens, line/language metrics, markers, and imports |
 | `reposcout explain FILE` | Explain one file in its full repository context |
 | `reposcout locate SYMBOL [PATH]` | Find declarations across first-class languages |
+| `reposcout read [PATH]` | Read explicit worktree definitions or body-free file outlines |
 | `reposcout capabilities` | Describe the installed machine contract without scanning |
 | `reposcout config [PATH]` | Inspect layered configuration and effective values |
 | `reposcout cache clear [PATH]` | Clear one repository's analysis and Git-history caches |
@@ -37,6 +38,29 @@ quality. Add `--exact`, `--kind`, `--language`, or `--limit` to narrow the resul
 table, JSON, Markdown, and NDJSON output and reuses the ordinary scan cache.
 Godot support adds `signal`, `constant`, `property`, and scene `node` kinds; use
 `reposcout capabilities -f json` for the complete kind and language lists.
+
+## Explicit definition reads
+
+```sh
+reposcout read . --symbol src/service.ts Service.start -f json
+reposcout read . --line src/service.ts 42 --line src/client.ts 27 --budget 4096
+reposcout read . --outline src/service.ts -f json
+```
+
+`--symbol <FILE> <SYMBOL>` and `--line <FILE> <LINE>` are repeatable selectors.
+`--outline <FILE>` is a repeatable body-free alternative that conflicts with both. Paths are
+relative to the directory `[PATH]` (default `.`); absolute file paths must remain inside it.
+At most 32 targets share one output budget: CLI order is all symbol pairs, then all line pairs,
+preserving input order within each group. One-based target IDs and budget admission use that order.
+`--expect-hash <FILE> <SHA256>` guards selected files
+against stale content. The command defaults to the `agent` profile; `--profile safe` applies its
+stricter input and configuration limits.
+
+`--budget` defaults to 4,096 tokens (256–65,536); `--max-output-bytes` defaults to 65,536 bytes
+(1,024–1,048,576). Both include the complete rendered response, metadata and final newline.
+JSON, NDJSON, table and Markdown are supported; pretty JSON also has to fit. Full definitions that
+do not fit are explicitly omitted. There is no partial-source mode. See
+[Read explicit definitions](source-queries.md) for matching, support, input limits and error states.
 
 ## Core options
 

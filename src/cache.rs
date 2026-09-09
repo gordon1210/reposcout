@@ -31,6 +31,8 @@ struct Entry {
     symbol_outlines: Option<Vec<SymbolOutline>>,
     #[serde(default)]
     graph_facts: Option<crate::graph::SourceFacts>,
+    #[serde(default)]
+    definitions: Option<crate::model::DefinitionFacts>,
 }
 
 pub(crate) struct CachedAnalysis {
@@ -38,6 +40,7 @@ pub(crate) struct CachedAnalysis {
     pub test_regions: Vec<LineRange>,
     pub symbol_outlines: Option<Vec<SymbolOutline>>,
     pub graph_facts: Option<crate::graph::SourceFacts>,
+    pub definitions: Option<crate::model::DefinitionFacts>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -105,7 +108,7 @@ pub struct CacheClearResult {
 }
 
 /// Bump when cached per-file analysis facts are added or changed.
-const ANALYZER_VERSION: &str = "17";
+const ANALYZER_VERSION: &str = "18";
 
 /// The configuration that can change a cached per-file analysis entry.
 ///
@@ -251,9 +254,14 @@ impl Cache {
             test_regions: entry.test_regions.clone(),
             symbol_outlines: entry.symbol_outlines.clone(),
             graph_facts: entry.graph_facts.clone(),
+            definitions: entry.definitions.clone(),
         })
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one cache entry preserves shared report and lazy source facts"
+    )]
     pub(crate) fn put(
         &self,
         rel: &str,
@@ -262,6 +270,7 @@ impl Cache {
         test_regions: &[LineRange],
         symbol_outlines: Option<&[SymbolOutline]>,
         graph_facts: Option<&crate::graph::SourceFacts>,
+        definitions: Option<&crate::model::DefinitionFacts>,
     ) {
         if !self.enabled {
             return;
@@ -274,6 +283,7 @@ impl Cache {
                 test_regions: test_regions.to_vec(),
                 symbol_outlines: symbol_outlines.map(<[SymbolOutline]>::to_vec),
                 graph_facts: graph_facts.cloned(),
+                definitions: definitions.cloned(),
             },
         );
     }
@@ -499,6 +509,7 @@ mod tests {
             test_regions: Vec::new(),
             symbol_outlines: None,
             graph_facts: None,
+            definitions: None,
         }
     }
 
@@ -705,7 +716,7 @@ mod tests {
             misses: AtomicUsize::default(),
             enrichments: AtomicUsize::default(),
         };
-        cache.put("new.rs", 2, &report("new.rs"), &[], None, None);
+        cache.put("new.rs", 2, &report("new.rs"), &[], None, None, None);
         cache.save(false).unwrap();
         let merged = load(&path, "test-key").unwrap();
         assert_eq!(merged.len(), 2);
@@ -722,7 +733,7 @@ mod tests {
             misses: AtomicUsize::default(),
             enrichments: AtomicUsize::default(),
         };
-        cache.put("new.rs", 2, &report("new.rs"), &[], None, None);
+        cache.put("new.rs", 2, &report("new.rs"), &[], None, None, None);
         cache.save(true).unwrap();
         let pruned = load(&cache.path, "test-key").unwrap();
         assert_eq!(
@@ -760,6 +771,7 @@ mod tests {
             &[LineRange { start: 8, end: 12 }],
             Some(&[outline]),
             None,
+            None,
         );
         cache.save(true).unwrap();
         let loaded = Cache {
@@ -785,6 +797,43 @@ mod tests {
     }
 
     #[test]
+    fn cached_definition_facts_round_trip_and_reject_changed_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Cache {
+            enabled: true,
+            path: dir.path().join("cache.json"),
+            key: "test-key".to_string(),
+            loaded: HashMap::default(),
+            fresh: Mutex::default(),
+            hits: AtomicUsize::default(),
+            misses: AtomicUsize::default(),
+            enrichments: AtomicUsize::default(),
+        };
+        let content = "fn value() {}\n";
+        let tree = crate::parse::parse(crate::lang::FirstClass::Rust, content).unwrap();
+        let facts = crate::metrics::symbols::analyze(crate::lang::FirstClass::Rust, content, &tree)
+            .definitions;
+        cache.put(
+            "lib.rs",
+            42,
+            &report("lib.rs"),
+            &[],
+            None,
+            None,
+            Some(&facts),
+        );
+        cache.save(false).unwrap();
+        let loaded = Cache {
+            loaded: load(&cache.path, "test-key").unwrap(),
+            ..cache
+        };
+        let cached = loaded.get("lib.rs", 42).unwrap().definitions.unwrap();
+        assert_eq!(cached.definitions.len(), 1);
+        assert_eq!(cached.definitions[0].symbol.name, "value");
+        assert!(loaded.get("lib.rs", 43).is_none());
+    }
+
+    #[test]
     fn cached_graph_facts_round_trip_without_changing_the_profile() {
         let dir = tempfile::tempdir().unwrap();
         let cache = Cache {
@@ -802,7 +851,15 @@ mod tests {
             "lib.rs",
             "pub trait Service {}\npub struct App;\nimpl Service for App {}\n",
         );
-        cache.put("lib.rs", 42, &report("lib.rs"), &[], None, Some(&facts));
+        cache.put(
+            "lib.rs",
+            42,
+            &report("lib.rs"),
+            &[],
+            None,
+            Some(&facts),
+            None,
+        );
         cache.save(true).unwrap();
 
         let loaded = Cache {
