@@ -135,9 +135,17 @@ fn validate_debug_log_paths(cli: &Cli) -> Result<()> {
 
 fn read_selector_paths(args: &ReadArgs) -> impl Iterator<Item = &Path> {
     args.symbol
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| Path::new(&pair[0]))
-        .chain(args.line.chunks_exact(2).map(|pair| Path::new(&pair[0])))
+        .chain(
+            args.line
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| Path::new(&pair[0])),
+        )
         .chain(args.outline.iter().map(PathBuf::as_path))
 }
 
@@ -778,7 +786,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
     use std::collections::{BTreeMap, BTreeSet};
 
     let mut expected_hashes = BTreeMap::<PathBuf, String>::new();
-    for pair in args.expect_hash.chunks_exact(2) {
+    for pair in args.expect_hash.as_chunks::<2>().0 {
         let path = read_path_match_key(&args.path, Path::new(&pair[0]));
         let hash = pair[1].to_ascii_lowercase();
         if hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -798,7 +806,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
     }
 
     let mut targets = Vec::new();
-    for pair in args.symbol.chunks_exact(2) {
+    for pair in args.symbol.as_chunks::<2>().0 {
         if pair[1].trim().is_empty() || pair[1].len() > 1_024 {
             return Err(usage_error(
                 "--symbol requires a non-empty name of at most 1024 bytes",
@@ -810,7 +818,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
             expected_hash: None,
         });
     }
-    for pair in args.line.chunks_exact(2) {
+    for pair in args.line.as_chunks::<2>().0 {
         let line = pair[1].parse::<usize>().map_err(|_| {
             usage_error(format!(
                 "--line requires a positive one-based line number, got '{}'",
