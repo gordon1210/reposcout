@@ -39,7 +39,7 @@ any path inside it**, so they can make decisions *before* diving in:
   dump.
 - **Read a known definition without guessing its end?** → `reposcout read [PATH]` with repeatable
   `--symbol FILE SYMBOL` or `--line FILE LINE`; `--outline FILE` is a body-free alternative.
-  Worktree-only source, SHA-256 expectations and complete rendered token/byte budgets preserve
+  Unix-only worktree source, SHA-256 expectations and complete rendered token/byte budgets preserve
   identity and visible omissions. See [source queries](docs/source-queries.md).
 - **Where is a declaration, and what can this binary do?** → `reposcout locate SYMBOL [PATH]`
   and zero-scan `reposcout capabilities -f json`.
@@ -60,11 +60,14 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 ## Current state
 
-- **Explicit source queries (unreleased).** `read` selects known definitions or body-free file
+- **Explicit source queries (unreleased).** On Unix, `read` selects known definitions or body-free file
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
   Cached definition facts use analyzer version 18 while the additive schema remains 2.0.
+  Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
+  `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
+  inventory behavior is unchanged.
 
 - **Godot 4 support.** GDScript/shader AST analysis and Godot scene/resource/project
   dependency context reuse the shared pipeline; 36 formats are recognized. Scope and static-analysis

@@ -167,7 +167,7 @@ pub(crate) fn read_text_under_root(
     if budget.remaining_files == 0 || budget.remaining_total_bytes == 0 {
         return ReadOutcome::BudgetExceeded;
     }
-    let (mut file, _parents) = match open_under_root(root, relative) {
+    let mut file = match open_under_root(root, relative) {
         Ok(file) => file,
         Err(outcome) => return outcome,
     };
@@ -215,7 +215,7 @@ pub(crate) fn read_text_under_root(
 }
 
 #[cfg(unix)]
-fn open_under_root(root: &Path, relative: &Path) -> Result<(File, Vec<File>), ReadOutcome> {
+fn open_under_root(root: &Path, relative: &Path) -> Result<File, ReadOutcome> {
     use rustix::fs::{Mode, OFlags};
     let mut directory = open_output_directory(root).map_err(|_| ReadOutcome::NotRegularFile)?;
     let mut components = relative.components().peekable();
@@ -234,58 +234,15 @@ fn open_under_root(root: &Path, relative: &Path) -> Result<(File, Vec<File>), Re
             },
         )?;
         if components.peek().is_none() {
-            return Ok((File::from(opened), Vec::new()));
+            return Ok(File::from(opened));
         }
         directory = opened;
     }
     Err(ReadOutcome::NotRegularFile)
 }
 
-#[cfg(windows)]
-fn open_under_root(root: &Path, relative: &Path) -> Result<(File, Vec<File>), ReadOutcome> {
-    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-    const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-    const BACKUP_SEMANTICS: u32 = 0x0200_0000;
-    const SHARE_READ: u32 = 1;
-    const REPARSE_POINT: u32 = 0x400;
-    let mut parents = Vec::new();
-    let mut candidate = std::path::PathBuf::new();
-    let combined = root.join(relative);
-    let mut components = combined.components().peekable();
-    while let Some(component) = components.next() {
-        match component {
-            std::path::Component::Prefix(_) => {
-                candidate.push(component);
-                continue;
-            }
-            std::path::Component::RootDir | std::path::Component::Normal(_) => {
-                candidate.push(component)
-            }
-            _ => return Err(ReadOutcome::NotRegularFile),
-        }
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .share_mode(SHARE_READ)
-            .custom_flags(OPEN_REPARSE_POINT | BACKUP_SEMANTICS)
-            .open(&candidate)
-            .map_err(|_| ReadOutcome::Unreadable)?;
-        let metadata = file.metadata().map_err(|_| ReadOutcome::Unreadable)?;
-        if metadata.file_attributes() & REPARSE_POINT != 0 {
-            return Err(ReadOutcome::NotRegularFile);
-        }
-        if components.peek().is_none() {
-            return Ok((file, parents));
-        }
-        if !metadata.is_dir() {
-            return Err(ReadOutcome::NotRegularFile);
-        }
-        parents.push(file);
-    }
-    Err(ReadOutcome::NotRegularFile)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn open_under_root(_root: &Path, _relative: &Path) -> Result<(File, Vec<File>), ReadOutcome> {
+#[cfg(not(unix))]
+fn open_under_root(_root: &Path, _relative: &Path) -> Result<File, ReadOutcome> {
     Err(ReadOutcome::NotRegularFile)
 }
 

@@ -183,7 +183,7 @@ fn read_failure(outcome: &ReadOutcome) -> ExplicitSourceFailure {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

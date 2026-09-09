@@ -63,15 +63,16 @@ pub struct SourceQueryOutput {
 ///
 /// # Errors
 ///
-/// Returns an error for invalid query options or target roots, unrecoverable source-loading or analysis
-/// failures, token-counter initialization or serialization failures, or a budget that cannot hold
-/// the minimal status envelope.
+/// Returns an error on non-Unix platforms before source I/O, or for invalid query options or target
+/// roots, unrecoverable source-loading or analysis failures, token-counter initialization or
+/// serialization failures, or a budget that cannot hold the minimal status envelope.
 pub fn read_source(
     target: &Path,
     cfg: &Config,
     exclusions: &[PathBuf],
     options: &SourceQueryOptions,
 ) -> Result<SourceQueryOutput> {
+    ensure!(cfg!(unix), "read is available only on Unix platforms");
     validate_options(options)?;
     let root = target
         .canonicalize()
@@ -119,6 +120,36 @@ pub fn read_source(
         "source output exceeded the validated budget"
     );
     Ok(SourceQueryOutput { report, rendered })
+}
+
+#[cfg(all(test, not(unix)))]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_platform_rejects_source_before_resolving_the_root() {
+        let options = SourceQueryOptions {
+            targets: vec![SourceQueryTarget {
+                path: PathBuf::from("lib.rs"),
+                selector: SourceSelector::Symbol("example".to_string()),
+                expected_hash: None,
+            }],
+            token_budget: DEFAULT_TOKENS,
+            byte_budget: DEFAULT_BYTES,
+            format: Format::Json,
+            pretty_json: false,
+        };
+        assert!(!capability().available);
+        let result = read_source(
+            Path::new("missing-source-root"),
+            &Config::default(),
+            &[],
+            &options,
+        );
+        assert!(
+            matches!(result, Err(error) if error.to_string() == "read is available only on Unix platforms")
+        );
+    }
 }
 
 fn with_file_expectations(
@@ -318,6 +349,8 @@ pub(super) fn capability() -> SourceQueryCapability {
     .collect();
     SourceQueryCapability {
         command: "read".to_string(),
+        available: cfg!(unix),
+        platforms: vec!["unix".to_string()],
         formats: ["table", "json", "markdown", "ndjson"]
             .map(str::to_string)
             .to_vec(),

@@ -97,7 +97,7 @@ files, then use the bounded `signals` rankings. In ordinary summary output, insp
 
 ## Read known targets directly
 
-A known file and symbol or line can go straight to `reposcout read`; it does not require a
+On Unix, a known file and symbol or line can go straight to `reposcout read`; it does not require a
 scouting, outline or locate round. Use a normal small read when that already answers the question.
 See [source queries](source-queries.md) for batch selection, output budgets and content identity.
 

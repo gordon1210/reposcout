@@ -192,6 +192,12 @@ pub(super) fn capability_table(source: &SourceQueryCapability) -> String {
         "Source query: {} ({}, {})\n",
         source.command, source.snapshot, source.hash_algorithm
     );
+    let _ = writeln!(
+        output,
+        "  Available: {}; platforms: {}",
+        source.available,
+        source.platforms.join(", ")
+    );
     let _ = writeln!(output, "  Selectors: {}", source.selectors.join("; "));
     let _ = writeln!(output, "  Formats: {}", source.formats.join(", "));
     let _ = writeln!(

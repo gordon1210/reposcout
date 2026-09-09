@@ -8,14 +8,15 @@ query can deliver a known definition under a shared output budget. Neither workf
 
 ## Start from the evidence already available
 
-If a file and symbol or line are known and source is needed, read the definition directly:
+On Unix, if a file and symbol or line are known and source is needed, read the definition directly:
 
 ```sh
 reposcout read . --symbol src/service.ts Service.start -f json
 reposcout read . --line src/service.ts 42 --line src/client.ts 27 --budget 4096 -f json
 ```
 
-A normal small read may already be enough. Do not repeat unchanged source retained in model
+`read` and its outline mode are unavailable on Windows and other non-Unix builds; use ordinary
+source tools there. A normal small read may already be enough. Do not repeat unchanged source retained in model
 context. Use `--outline <FILE>` only when a body-free declaration surface answers the question; it
 is not a prerequisite for reading. See [Read explicit definitions](source-queries.md) for budget,
 identity and coverage rules. Start with scouting when repository orientation is actually needed.

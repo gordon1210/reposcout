@@ -6,6 +6,12 @@ Use `reposcout read` when a file and symbol or line are already known and the ne
 that definition's source. It returns complete supported definitions under one shared output budget.
 It does not choose which function is relevant from a bare file path.
 
+`read`, including `--outline`, is available on Unix platforms. The project's release targets are
+Apple Silicon macOS and x86-64 Linux. Windows and other non-Unix builds reject the command before source I/O,
+without a fallback reader. This restriction does not change repository inventory support.
+Capabilities expose `source_query.available` for the current platform and
+`source_query.platforms: ["unix"]` for the supported platform family.
+
 A normal short read can still be enough, especially for a small file. Do not reread unchanged
 source already available in the agent's context. There is no required scout, outline, or lookup
 call before an explicit read.
@@ -38,12 +44,12 @@ anchor or the original target alias, but must remain beneath that target. Compon
 anchor are opened without following symlinks; legitimate aliases in the chosen root path do not
 bypass that source-file boundary. File selectors must be UTF-8, contain no `..` component and use
 at most 4,096 bytes. Symbol selectors accept at most 1,024 bytes. Symbol matching is case-sensitive:
-qualified exact matches take
-precedence over simple-name exact matches; multiple matches within the selected tier are ambiguous.
+qualified exact matches take precedence over simple-name exact matches; multiple matches within
+the selected tier are ambiguous.
 
 Line positions are one-based. Only containing parent declarations are removed when choosing an
-innermost span. Equal spans
-with multiple identities and sibling declarations on the same line remain ambiguous; the shorter
+innermost span. Equal spans with multiple identities and sibling declarations on the same line
+remain ambiguous; the shorter
 sibling does not win merely because it occupies fewer bytes. Attribute or decorator lines can
 belong to that declaration, including supported standalone
 GDScript annotations. A newline after the declaration can lie outside its source span; omitting
@@ -181,8 +187,8 @@ substitute for a complete `sources[].content`.
 
 File extraction states (`available`, `parse-errors`, `unsupported`, `unavailable`) are separate
 from these per-target results. A successful command can contain unresolved, stale or omitted
-targets; inspect the result statuses and omission totals rather than relying only on exit code. A compact output or zero delivered chunks does not by itself prove
-complete extraction or absence of a definition.
+targets; inspect the result statuses and omission totals rather than relying only on exit code. A compact output or zero delivered chunks does not by
+itself prove complete extraction or absence of a definition.
 
 ## Formats and agent routing
 
@@ -196,8 +202,9 @@ the exact decoded source content is needed.
 
 Existing structured CLI errors remain available through `--error-format json`. Invalid options or
 roots, unrecoverable source-loading or analysis failures, token-counter initialization or
-serialization failures, and an unavoidable status envelope that cannot fit produce an error rather than a successful
-partial document.
+serialization failures, and an unavoidable status envelope that cannot fit produce an error
+rather than a successful partial document. On non-Unix platforms the command returns
+`read is available only on Unix platforms` before reading source.
 
 Choose the entry point already available:
 

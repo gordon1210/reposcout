@@ -1,3 +1,4 @@
+#![cfg(unix)]
 #![allow(
     clippy::expect_used,
     clippy::panic,

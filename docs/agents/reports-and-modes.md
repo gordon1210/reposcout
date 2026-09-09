@@ -142,6 +142,9 @@ metadata are rejected because their health semantics cannot be established.
   target retain discovery, exclusion, configuration and no-follow policy. CLI target order is all
   symbol pairs followed by all line pairs, preserving input order within each group; target IDs
   are one-based and budget admission follows that order. The query API preserves vector order.
+  Source and outline queries are Unix-only; `source_query.available` reflects the current build
+  and `source_query.platforms` is `["unix"]`. Non-Unix calls fail before source I/O, without a
+  fallback. Existing repository inventory support is unchanged.
 - Source-query budgets cover the complete rendered response in the selected format, including
   metadata and newline: 4,096 tokens / 65,536 bytes by default, with allowed ranges 256–65,536
   tokens and 1,024–1,048,576 bytes. Below-minimum requests are invalid and return the documented

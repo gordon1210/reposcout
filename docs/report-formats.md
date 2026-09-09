@@ -149,7 +149,9 @@ guidance, not evidence that validation ran.
 
 ## Explicit source-query output
 
-`reposcout read` supports JSON, NDJSON, table and Markdown over the same bounded query facts.
+`reposcout read` supports JSON, NDJSON, table and Markdown over the same bounded query facts on
+Unix. Capabilities expose `source_query.available` for the current platform and
+`source_query.platforms: ["unix"]`; non-Unix commands fail before source I/O.
 Ordinary scan, locate, context and agent-summary defaults retain their body-free meaning. The read
 command returns complete supported definitions only when explicitly selected, or body-free
 declarations with `--outline`.

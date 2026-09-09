@@ -5,6 +5,11 @@ declaration surface answers the next question. Do not run a scout, outline or lo
 prerequisite. A normal short read may already be sufficient; avoid rereading unchanged source that
 is still available in model context.
 
+`read` and `--outline` are Unix-only. Windows and other non-Unix builds reject them before source
+I/O, without a fallback reader; use ordinary source tools on those platforms. Repository inventory
+support is unchanged. When compatibility is uncertain, capabilities disclose
+`source_query.available` and `source_query.platforms: ["unix"]`; no routine preflight is required.
+
 ## Read known definitions
 
 ```sh

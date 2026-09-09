@@ -1,3 +1,4 @@
+#![cfg(unix)]
 #![allow(
     clippy::expect_used,
     clippy::panic,
@@ -58,6 +59,8 @@ fn assert_no_sources(report: &Value) {
 #[test]
 fn capabilities_match_the_read_cli_defaults_limits_and_language_matrix() {
     let capability = reposcout::query::capabilities().source_query.unwrap();
+    assert!(capability.available);
+    assert_eq!(capability.platforms, ["unix"]);
     let parsed =
         Cli::try_parse_from(["reposcout", "read", "--symbol", "lib.rs", "helper"]).unwrap();
     let Command::Read(read) = parsed.command.unwrap() else {

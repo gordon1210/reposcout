@@ -25,7 +25,7 @@ explicitly authorizes it.
 
 ## Choose the smallest start
 
-If a file and symbol or line are already known and its source is needed, use `reposcout read`
+On Unix, if a file and symbol or line are already known and its source is needed, use `reposcout read`
 directly; load the focused source-query guidance below. A normal short read may be sufficient.
 Do not repeat unchanged source already available in context. Optional `--outline` is not a required
 first step.

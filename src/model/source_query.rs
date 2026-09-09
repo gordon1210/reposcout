@@ -103,10 +103,16 @@ pub struct SourceQueryChunk {
     pub content: String,
 }
 
-/// The advertised selectors, formats, limits and language support of explicit source queries.
+/// The advertised availability, platforms, selectors, formats, limits and language support of explicit source queries.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SourceQueryCapability {
     pub command: String,
+    /// Whether explicit source queries are available on the current platform.
+    #[serde(default)]
+    pub available: bool,
+    /// Platform families supporting explicit source queries; currently Unix only.
+    #[serde(default)]
+    pub platforms: Vec<String>,
     pub formats: Vec<String>,
     pub selectors: Vec<String>,
     pub snapshot: String,

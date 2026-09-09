@@ -8,10 +8,11 @@ within their section.
 
 ### Added
 
-- Added explicit `read` queries for known worktree definitions by file and exact symbol or line,
+- Added Unix-only explicit `read` queries for known worktree definitions by file and exact symbol or line,
   batch targets under a shared token/byte output budget, and optional body-free file outlines.
   Content hashes, stale checks, ambiguity and omission states preserve the boundaries of each
-  response; ordinary scouting and context defaults stay body-free.
+  response; ordinary scouting and context defaults stay body-free. Non-Unix builds reject source
+  and outline queries before source I/O; capabilities expose platform availability.
 
 ### Changed
 

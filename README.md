@@ -31,7 +31,7 @@ RepoScout combines signals that usually require several tools:
 | **Is cleanup worthwhile?** | Exact and Type-2 duplication, markers, hotspots, and an evidence-qualified assessment |
 | **How broad is the work?** | Raw seed, context-budget, dependent, test, graph-component, and confidence counts |
 | **What should be read next?** | A deterministic context plan under hard token and file budgets |
-| **Read a known definition?** | Explicit worktree source or body-free outlines under a shared output budget |
+| **Read a known definition?** | Explicit worktree source or body-free outlines on Unix under a shared output budget |
 | **What could this change affect?** | Diff-scoped review, dependency/type graphs, and direct/transitive impact |
 
 Everything runs locally. RepoScout does not upload source, call a model, or write analysis state

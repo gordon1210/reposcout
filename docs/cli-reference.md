@@ -25,7 +25,7 @@ file.
 | `reposcout metrics [PATH]` | Run tokens, line/language metrics, markers, and imports |
 | `reposcout explain FILE` | Explain one file in its full repository context |
 | `reposcout locate SYMBOL [PATH]` | Find declarations across first-class languages |
-| `reposcout read [PATH]` | Read explicit worktree definitions or body-free file outlines |
+| `reposcout read [PATH]` | Read explicit worktree definitions or body-free file outlines on Unix |
 | `reposcout capabilities` | Describe the installed machine contract without scanning |
 | `reposcout config [PATH]` | Inspect layered configuration and effective values |
 | `reposcout cache clear [PATH]` | Clear one repository's analysis and Git-history caches |
@@ -40,6 +40,10 @@ Godot support adds `signal`, `constant`, `property`, and scene `node` kinds; use
 `reposcout capabilities -f json` for the complete kind and language lists.
 
 ## Explicit definition reads
+
+`read` and its `--outline` mode are available on Unix. Non-Unix builds, including Windows, reject
+the command before source I/O. Capability output reports platform availability; repository
+inventory support is unchanged.
 
 ```sh
 reposcout read . --symbol src/service.ts Service.start -f json
