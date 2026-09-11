@@ -396,6 +396,47 @@ fn changes_and_parent_mode_reject_invalid_contracts_and_protected_output() {
 }
 
 #[test]
+fn file_scoped_changes_reject_output_that_would_overwrite_a_sibling_change() {
+    let directory = tempfile::tempdir().unwrap();
+    let repo = Repository::init(directory.path()).unwrap();
+    fs::write(
+        directory.path().join("target.rs"),
+        function_source("target", "TARGET_BASE"),
+    )
+    .unwrap();
+    fs::write(
+        directory.path().join("sibling.rs"),
+        function_source("sibling", "SIBLING_BASE"),
+    )
+    .unwrap();
+    stage_all(&repo);
+    commit_index(&repo, "base");
+    fs::write(
+        directory.path().join("target.rs"),
+        function_source("target", "TARGET_CHANGED"),
+    )
+    .unwrap();
+    let sibling = function_source("sibling", "SIBLING_CHANGED");
+    fs::write(directory.path().join("sibling.rs"), &sibling).unwrap();
+
+    reposcout_command()
+        .arg("changes")
+        .arg(directory.path().join("target.rs"))
+        .args(["--working", "--output", "sibling.rs"])
+        .current_dir(directory.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "changes output path cannot be inside the selected repository",
+        ));
+
+    assert_eq!(
+        fs::read_to_string(directory.path().join("sibling.rs")).unwrap(),
+        sibling
+    );
+}
+
+#[test]
 fn change_summary_can_embed_body_free_definition_evidence() {
     let fixture = fixture();
     let output = reposcout_command()

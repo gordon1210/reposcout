@@ -1027,9 +1027,16 @@ fn validate_changes_output_path(args: &ChangesArgs) -> Result<()> {
     let Some(output) = args.common.output.as_deref() else {
         return Ok(());
     };
-    let root_identity = walk::exact_path_identity(&args.path)?;
+    let target_identity = walk::exact_path_identity(&args.path)?;
+    let root_identity = if target_identity.is_file() {
+        target_identity
+            .parent()
+            .ok_or_else(|| anyhow!("changes file target has no parent directory"))?
+    } else {
+        &target_identity
+    };
     let output_identity = walk::exact_path_identity(output)?;
-    if output_identity.starts_with(&root_identity) {
+    if output_identity.starts_with(root_identity) {
         return Err(anyhow!(
             "changes output path cannot be inside the selected repository"
         ));
