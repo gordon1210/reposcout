@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-12 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-12 · latest release 0.2.3 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 18_
 
 ---
@@ -63,7 +63,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 ## Current state
 
-- **Snapshot reads and changed definitions (unreleased).** `read --snapshot worktree|index|REF`
+- **Snapshot reads and changed definitions.** `read --snapshot worktree|index|REF`
   selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with
   worktree/index or a supplied ref directly with the worktree and derives hunks, mappings and
   returned source from the same captured buffers. It accounts separately for capture gaps,
@@ -72,7 +72,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   `--changed-definitions` embeds body-free evidence in change-summary/review under its own
   4,096-token / 16,384-byte compact-JSON budget. Agent-summary remains unchanged.
 
-- **Explicit source queries (unreleased).** On Unix, `read` selects known definitions or body-free file
+- **Explicit source queries.** On Unix, `read` selects known definitions or body-free file
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
@@ -138,8 +138,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   unsupported/unreadable files, bounded unsupported-path examples, walker errors, and partial
   Type-2 reasons/omitted work); malformed config files fail loudly instead of silently falling
   back to defaults.
-- **Security boundaries.** Scan/explain/locate/read output files use symlink-safe atomic replacement,
-  including anchored Unix parent traversal. Release tags are validated, shell context crosses
+- **Security boundaries.** Scan/explain/locate/read/changes output files use symlink-safe atomic replacement,
+  including anchored Unix parent traversal. A file-target `changes` query protects its parent
+  directory against output writes, including sibling source paths. Release tags are validated, shell context crosses
   through environment variables, release commits must be reachable from `main`, and published
   assets receive attestations. The daemon is loopback-first and bearer-token authenticated;
   unauthenticated mode is loopback-only, while remote plain HTTP is explicit and intended only

@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-12
+
 ### Added
 
 - Added Unix-only `changes` queries for body-free changed-definition selection and explicit
@@ -24,6 +26,16 @@ within their section.
 
 - Bumped the cached analyzer version to 18 for precise definition facts. The additive machine
   contract retains schema 2.0 and reuses the ordinary analysis/cache pipeline.
+
+### Fixed
+
+- Protected the parent directory of an existing-file `changes` target against output writes,
+  preventing an output path from overwriting a sibling source file.
+
+### Documentation
+
+- Updated the bundled skill with direct known-definition and changed-definition routes,
+  snapshot selection, explicit source delivery, shared budgets and coverage-aware follow-up.
 
 ## [0.2.2] - 2026-09-07
 
