@@ -25,7 +25,8 @@ file.
 | `reposcout metrics [PATH]` | Run tokens, line/language metrics, markers, and imports |
 | `reposcout explain FILE` | Explain one file in its full repository context |
 | `reposcout locate SYMBOL [PATH]` | Find declarations across first-class languages |
-| `reposcout read [PATH]` | Read explicit worktree definitions or body-free file outlines on Unix |
+| `reposcout read [PATH]` | Read explicit snapshot definitions or body-free file outlines on Unix |
+| `reposcout changes [PATH]` | Select changed definitions, with source only when explicitly requested |
 | `reposcout capabilities` | Describe the installed machine contract without scanning |
 | `reposcout config [PATH]` | Inspect layered configuration and effective values |
 | `reposcout cache clear [PATH]` | Clear one repository's analysis and Git-history caches |
@@ -57,7 +58,9 @@ relative to the directory `[PATH]` (default `.`); absolute file paths must remai
 At most 32 targets share one output budget: CLI order is all symbol pairs, then all line pairs,
 preserving input order within each group. One-based target IDs and budget admission use that order.
 `--expect-hash <FILE> <SHA256>` guards selected files
-against stale content. The command defaults to the `agent` profile; `--profile safe` applies its
+against stale content in the selected snapshot. `--snapshot worktree|index|REF` applies to all
+targets and defaults to `worktree`; other revisions resolve once to a tree object ID.
+The command defaults to the `agent` profile; `--profile safe` applies its
 stricter input and configuration limits.
 
 `--budget` defaults to 4,096 tokens (256–65,536); `--max-output-bytes` defaults to 65,536 bytes
@@ -65,6 +68,27 @@ stricter input and configuration limits.
 JSON, NDJSON, table and Markdown are supported; pretty JSON also has to fit. Full definitions that
 do not fit are explicitly omitted. There is no partial-source mode. See
 [Read explicit definitions](source-queries.md) for matching, support, input limits and error states.
+
+## Changed definitions
+
+```sh
+reposcout changes . --working -f json
+reposcout changes . --staged --source --budget 4096 -f json
+reposcout changes . --since main -f json
+```
+
+`changes [PATH]` takes a directory or existing file (default `.`), defaults to the `agent` profile and requires
+exactly one scope: `--working` compares HEAD with captured worktree content including staged,
+unstaged and untracked changes; `--staged` compares HEAD with the captured index; `--since REF`
+compares that revision directly with the worktree, without a merge-base. Output is body-free
+unless `--source` is requested. It shares `read`'s formats and complete-response budgets and is
+Unix-only. See [source and changed-definition queries](source-queries.md) for side identity,
+capture limits and mapping gaps.
+
+For existing workflows, `--changed-definitions` requires `--change-summary` or `--review` and one
+diff scope. It adds a body-free `definition_changes` block in table/JSON/Markdown/NDJSON and rejects
+SARIF/DOT/Mermaid, `--agent-summary` and `--baseline-ready`. Its compact-JSON budget is separately
+fixed at 4,096 tokens / 16,384 bytes; the surrounding report is not limited to that budget.
 
 ## Core options
 
@@ -155,6 +179,7 @@ ordinary `--summary` or full output and are deliberately incompatible with this 
 | `--staged` | Scan staged changes | off |
 | `--working` | Scan uncommitted working-tree changes | off |
 | `--change-summary` | Emit a bounded change decision and imply context/impact | off |
+| `--changed-definitions` | Add bounded body-free definition evidence to change-summary/review | off |
 | `--impact` | Report direct and transitive internal dependents for a diff scope | off |
 | `--review[=lines\|deep]` | Filter current findings or compare both Git snapshots | off |
 | `--fail-on-review` | Exit `2` for actionable review findings | off |

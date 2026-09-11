@@ -80,6 +80,11 @@ pub fn render(
     color: bool,
     options: RenderOptions,
 ) -> Result<String> {
+    if report.definition_changes.is_some()
+        && matches!(format, Format::Sarif | Format::Dot | Format::Mermaid)
+    {
+        anyhow::bail!("changed definitions support table, JSON, Markdown, or NDJSON output");
+    }
     if matches!(
         format,
         Format::Json | Format::Ndjson | Format::Sarif | Format::Dot | Format::Mermaid
@@ -87,7 +92,7 @@ pub fn render(
         validate_machine_paths(report)?;
     }
     if options.projection == Projection::ChangeSummary {
-        return match format {
+        let rendered = match format {
             Format::Table => change_summary::table(report),
             Format::Json => change_summary::json(report, options.pretty_json),
             Format::Markdown => change_summary::markdown(report),
@@ -95,7 +100,8 @@ pub fn render(
             Format::Sarif | Format::Dot | Format::Mermaid => Err(anyhow::anyhow!(
                 "change-summary output supports table, JSON, Markdown, or NDJSON"
             )),
-        };
+        }?;
+        return append_definition_changes(rendered, report, format);
     }
     if options.projection == Projection::AgentSummary {
         return match format {
@@ -110,7 +116,7 @@ pub fn render(
             )),
         };
     }
-    match format {
+    let rendered = match format {
         Format::Table => Ok(table::render(report, color, options)),
         Format::Json => json::render(report, options.projection, options.pretty_json),
         Format::Markdown => Ok(markdown::render(report, options)),
@@ -126,7 +132,22 @@ pub fn render(
             .as_ref()
             .map(graph::mermaid)
             .context("Mermaid output requires graph analysis"),
+    }?;
+    append_definition_changes(rendered, report, format)
+}
+
+fn append_definition_changes(
+    mut rendered: String,
+    report: &ScanReport,
+    format: Format,
+) -> Result<String> {
+    if matches!(format, Format::Table | Format::Markdown)
+        && let Some(changes) = &report.definition_changes
+    {
+        rendered.push('\n');
+        rendered.push_str(&source::render(changes, format, false)?);
     }
+    Ok(rendered)
 }
 
 fn validate_machine_paths(report: &ScanReport) -> Result<()> {
@@ -406,6 +427,7 @@ mod tests {
             diagnostics: ScanDiagnostics::default(),
             impact: None,
             change_summary: None,
+            definition_changes: None,
             review: None,
         }
     }

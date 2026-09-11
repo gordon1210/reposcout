@@ -3,7 +3,7 @@ mod fail_gate;
 use anyhow::{Result, anyhow};
 use clap::{Parser, error::ErrorKind};
 use reposcout::cli::{
-    CacheArgs, CacheCommand, CapabilitiesArgs, Cli, Command, CommonArgs, ConfigArgs,
+    CacheArgs, CacheCommand, CapabilitiesArgs, ChangesArgs, Cli, Command, CommonArgs, ConfigArgs,
     ConfigOutputFormat, DaemonArgs, DaemonProfile, ErrorFormat, ExecutionProfile, ExplainArgs,
     LocateArgs, OutputFormat, ReadArgs, ScanArgs,
 };
@@ -162,6 +162,7 @@ fn command_target(cli: &Cli) -> Option<&Path> {
         Some(Command::Explain(args)) => Some(&args.file),
         Some(Command::Locate(args)) => Some(&args.path),
         Some(Command::Read(args)) => Some(&args.path),
+        Some(Command::Changes(args)) => Some(&args.path),
         Some(Command::Config(args)) => Some(&args.path),
         Some(Command::Daemon(args)) => Some(&args.path),
         Some(Command::Cache(args)) => {
@@ -185,6 +186,7 @@ fn command_output(cli: &Cli) -> Option<&Path> {
         Some(Command::Explain(args)) => args.common.output.as_deref(),
         Some(Command::Locate(args)) => args.common.output.as_deref(),
         Some(Command::Read(args)) => args.common.output.as_deref(),
+        Some(Command::Changes(args)) => args.common.output.as_deref(),
         Some(
             Command::Capabilities(_)
             | Command::Cache(_)
@@ -232,6 +234,10 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
             command: Some(Command::Read(args)),
             ..
         } => run_read(&args, pretty),
+        Cli {
+            command: Some(Command::Changes(args)),
+            ..
+        } => run_changes(&args, pretty),
         Cli {
             command: Some(Command::Update),
             ..
@@ -441,6 +447,26 @@ fn validate_scan_request(args: &ScanArgs, subcommand: bool) -> Result<()> {
             "--change-summary cannot be combined with --baseline-ready",
         ));
     }
+    if args.changed_definitions && !args.change_summary && args.review.is_none() {
+        return Err(usage_error(
+            "--changed-definitions requires --change-summary or --review",
+        ));
+    }
+    if args.changed_definitions && args.agent_summary {
+        return Err(usage_error(
+            "--changed-definitions cannot be combined with --agent-summary",
+        ));
+    }
+    if args.changed_definitions && args.baseline_ready {
+        return Err(usage_error(
+            "--changed-definitions cannot be combined with --baseline-ready",
+        ));
+    }
+    if args.changed_definitions && args.since.is_none() && !args.staged && !args.working {
+        return Err(usage_error(
+            "--changed-definitions requires exactly one of --since, --staged, or --working",
+        ));
+    }
     if args
         .graph_depth
         .is_some_and(|depth| depth > reposcout::query::MAX_GRAPH_DEPTH)
@@ -499,6 +525,13 @@ fn resolve_scan_format(args: &ScanArgs, pretty: bool) -> Result<Format> {
     if args.change_summary && matches!(requested, Format::Sarif | Format::Dot | Format::Mermaid) {
         return Err(usage_error(
             "--change-summary supports table, JSON, Markdown, or NDJSON output",
+        ));
+    }
+    if args.changed_definitions
+        && matches!(requested, Format::Sarif | Format::Dot | Format::Mermaid)
+    {
+        return Err(usage_error(
+            "--changed-definitions supports table, JSON, Markdown, or NDJSON output",
         ));
     }
     Ok(resolved)
@@ -781,10 +814,77 @@ fn run_read(args: &ReadArgs, pretty: bool) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+fn run_changes(args: &ChangesArgs, pretty: bool) -> Result<ExitCode> {
+    let format = choose_format(args.common.format, args.common.output.as_deref());
+    if matches!(format, Format::Sarif | Format::Dot | Format::Mermaid) {
+        return Err(usage_error(
+            "changes supports table, JSON, Markdown, or NDJSON output",
+        ));
+    }
+    require_json_for_pretty(pretty, format == Format::Json)?;
+    let scope = change_query_scope(args)?;
+    validate_changes_output_path(args)?;
+
+    let profile = args.common.profile.unwrap_or(ExecutionProfile::Agent);
+    let mut cfg = if args.common.no_project_config || profile == ExecutionProfile::Safe {
+        Config::load_without_project(&args.path)?
+    } else {
+        Config::load(&args.path)?
+    };
+    apply_execution_profile(&mut cfg, profile);
+    apply_common_overrides(&mut cfg, &args.common);
+    enforce_absolute_limits(&mut cfg);
+    if profile == ExecutionProfile::Safe {
+        enforce_safe_limits(&mut cfg);
+    }
+    log_configuration("changes", &args.path, &cfg);
+
+    let exclusions = command_exclusions(args.common.output.as_deref());
+    let output = reposcout::query::query_changes(
+        &args.path,
+        &cfg,
+        &exclusions,
+        &reposcout::query::ChangeQueryOptions {
+            scope,
+            include_source: args.source,
+            token_budget: args.budget,
+            byte_budget: args.max_output_bytes,
+            format,
+            pretty_json: pretty,
+        },
+    )?;
+    match args.common.output.as_deref() {
+        Some(path) => write_file_output(path, output.rendered.as_bytes(), &args.path)?,
+        None => write_stdout(&output.rendered)?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn change_query_scope(args: &ChangesArgs) -> Result<reposcout::git::DiffScope> {
+    if let Some(reference) = &args.since {
+        if reference.is_empty() || reference.len() > 1_024 {
+            return Err(usage_error(
+                "--since requires a non-empty Git revision of at most 1024 bytes",
+            ));
+        }
+        return Ok(reposcout::git::DiffScope::Since(reference.clone()));
+    }
+    if args.staged {
+        return Ok(reposcout::git::DiffScope::Staged);
+    }
+    if args.working {
+        return Ok(reposcout::git::DiffScope::Working);
+    }
+    Err(usage_error(
+        "changes requires exactly one of --since, --staged, or --working",
+    ))
+}
+
 fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQueryTarget>> {
     use reposcout::query::{SourceQueryTarget, SourceSelector};
     use std::collections::{BTreeMap, BTreeSet};
 
+    let snapshot = parse_source_revision(&args.snapshot)?;
     let mut expected_hashes = BTreeMap::<PathBuf, String>::new();
     for pair in args.expect_hash.as_chunks::<2>().0 {
         let path = read_path_match_key(&args.path, Path::new(&pair[0]));
@@ -816,6 +916,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
             path: PathBuf::from(&pair[0]),
             selector: SourceSelector::Symbol(pair[1].clone()),
             expected_hash: None,
+            snapshot: snapshot.clone(),
         });
     }
     for pair in args.line.as_chunks::<2>().0 {
@@ -834,6 +935,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
             path: PathBuf::from(&pair[0]),
             selector: SourceSelector::Line(line),
             expected_hash: None,
+            snapshot: snapshot.clone(),
         });
     }
     for path in &args.outline {
@@ -841,6 +943,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
             path: path.clone(),
             selector: SourceSelector::Outline,
             expected_hash: None,
+            snapshot: snapshot.clone(),
         });
     }
     if targets.is_empty() {
@@ -870,6 +973,19 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
         )));
     }
     Ok(targets)
+}
+
+fn parse_source_revision(value: &str) -> Result<reposcout::model::SourceRevision> {
+    if value.is_empty() || value.len() > 1_024 {
+        return Err(usage_error(
+            "--snapshot requires worktree, index, or a Git revision of at most 1024 bytes",
+        ));
+    }
+    Ok(match value {
+        "worktree" => reposcout::model::SourceRevision::Worktree,
+        "index" => reposcout::model::SourceRevision::Index,
+        reference => reposcout::model::SourceRevision::Tree(reference.to_owned()),
+    })
 }
 
 fn rooted_read_path(root: &Path, path: &Path) -> PathBuf {
@@ -903,6 +1019,20 @@ fn validate_read_output_path(
                 "output path cannot overwrite a selected source file"
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_changes_output_path(args: &ChangesArgs) -> Result<()> {
+    let Some(output) = args.common.output.as_deref() else {
+        return Ok(());
+    };
+    let root_identity = walk::exact_path_identity(&args.path)?;
+    let output_identity = walk::exact_path_identity(output)?;
+    if output_identity.starts_with(&root_identity) {
+        return Err(anyhow!(
+            "changes output path cannot be inside the selected repository"
+        ));
     }
     Ok(())
 }
@@ -1021,6 +1151,7 @@ fn split(cli: Cli) -> (ScanArgs, Option<Enabled>) {
         Some(Command::Explain(_)) => unreachable!("explain is dispatched before scan splitting"),
         Some(Command::Locate(_)) => unreachable!("locate is dispatched before scan splitting"),
         Some(Command::Read(_)) => unreachable!("read is dispatched before scan splitting"),
+        Some(Command::Changes(_)) => unreachable!("changes is dispatched before scan splitting"),
         Some(Command::Capabilities(_)) => {
             unreachable!("capabilities is dispatched before scan splitting")
         }
@@ -1060,6 +1191,7 @@ fn apply_report_overrides(cfg: &mut Config, args: &ScanArgs) {
     };
     cfg.baseline_path.clone_from(&args.baseline);
     cfg.fail_on_regression = args.fail_on_regression;
+    cfg.changed_definitions = args.changed_definitions;
 }
 
 fn apply_graph_overrides(cfg: &mut Config, args: &ScanArgs) {

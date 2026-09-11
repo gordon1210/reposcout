@@ -52,6 +52,9 @@ pub struct CapabilitiesReport {
     pub work_scope: WorkScopeCapability,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_query: Option<super::SourceQueryCapability>,
+    /// Availability, supported scopes and limits for direct and embedded changed-definition queries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_query: Option<super::ChangeQueryCapability>,
     /// Maximum Type-2 candidate seed pairs examined in one format pool.
     #[serde(default)]
     pub type2_max_seed_pairs_per_pool: u64,

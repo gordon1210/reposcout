@@ -41,11 +41,16 @@ src/
                      comparison, and rename remapping.
   review.rs          Changed-line filtering and deep Git-snapshot comparison.
   snapshot.rs        Worktree/tree/index adapters and shared snapshot policy.
+  snapshot/explicit.rs
+                     Pinned Git trees/index and bounded regular-file source-blob capture.
   explain.rs         Repository scan projected onto one requested file.
   query.rs           Capabilities and bounded symbol lookup.
-  query/source.rs    Explicit worktree targets, content identity and rendered output budgets.
+  query/source.rs    Explicit snapshot targets, content identity and rendered output budgets.
+  query/changes.rs   Captured old/new changed-definition selection and shared output admission.
+  query/changed_mapping.rs
+                     Buffer-derived hunks and bounded, I/O-free declaration ownership mapping.
   scan/explicit_source.rs
-                     Policy-checked explicit-file capture through shared analysis/cache facts.
+                     Policy-checked explicit and changed-file capture through shared analysis/cache facts.
   model/definitions.rs
                      Exact declaration/retrieval spans and extraction availability.
   model/source_query.rs

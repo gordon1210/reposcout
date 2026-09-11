@@ -27,6 +27,7 @@ pub fn render(report: &ScanReport, projection: Projection, pretty: bool) -> Resu
                 obj.remove("impact");
                 obj.remove("baseline");
                 obj.remove("review");
+                obj.remove("definition_changes");
                 obj.remove("context");
                 obj.remove("work_scope");
             }

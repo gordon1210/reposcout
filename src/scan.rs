@@ -706,7 +706,7 @@ use baseline::compute_baseline_delta;
 mod explicit_source;
 mod file_analysis;
 pub(crate) use explicit_source::{
-    ExplicitSourceBatch, ExplicitSourceFailure, load_explicit_sources,
+    ExplicitSourceBatch, ExplicitSourceFailure, capture_changed_sources, load_revision_sources,
 };
 pub(crate) use file_analysis::analyze_source;
 use file_analysis::{

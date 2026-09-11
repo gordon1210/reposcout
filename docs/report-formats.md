@@ -167,6 +167,20 @@ preserve source after string decoding. Table and Markdown keep source newlines a
 visibly escape other control characters, including carriage returns; they are readable
 representations rather than byte-preserving source exports.
 
+### Snapshot and changed-definition evidence
+
+Explicit reads identify each file's captured snapshot side and pinned tree revision where
+applicable, alongside its SHA-256. Changed-definition queries use the same shared source chunks
+and output budgeting, retain old/new evidence and are body-free unless `changes --source` is
+explicit. Capture failures, mapping/work-limit gaps and output omissions are distinct.
+
+An opt-in `definition_changes` block is also available on change-summary or review reports via
+`--changed-definitions`. Its body-free compact JSON is bounded to 4,096 tokens / 16,384 bytes;
+that limit does not cover the surrounding report. Parent projection limits retain their meaning.
+Table/JSON/Markdown/NDJSON support the block; SARIF/DOT/Mermaid, agent-summary and baseline-ready
+reject it. The embedded capture is internally consistent but independent of the earlier parent
+scan; live edits can make the two sets of metadata differ. See [source and changed-definition queries](source-queries.md) for exact snapshot pairs.
+
 ## Stable JSON contract
 
 Scan reports carry `schema_version: "2.0"`. The top-level contract is organized around:

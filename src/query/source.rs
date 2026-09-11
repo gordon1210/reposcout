@@ -4,7 +4,7 @@ use crate::lang::FirstClass;
 use crate::metrics::tokens::TokenCounter;
 use crate::model::{
     DefinitionStatus, SCHEMA_VERSION, SourceQueryCapability, SourceQueryFile, SourceQueryLanguage,
-    SourceQueryReport,
+    SourceQueryReport, SourceRevision,
 };
 use crate::report::Format;
 use crate::scan;
@@ -14,8 +14,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 
-mod budget;
-mod selection;
+pub(super) mod budget;
+pub(super) mod selection;
 
 const DEFAULT_TOKENS: usize = 4_096;
 const MIN_TOKENS: usize = 256;
@@ -36,12 +36,13 @@ pub enum SourceSelector {
     Outline,
 }
 
-/// An explicit file-and-symbol, file-and-line, or body-free outline selection.
+/// An explicit file-and-symbol, file-and-line, or body-free outline selection within the requested snapshot.
 #[derive(Debug, Clone)]
 pub struct SourceQueryTarget {
     pub path: PathBuf,
     pub selector: SourceSelector,
     pub expected_hash: Option<String>,
+    pub snapshot: SourceRevision,
 }
 
 #[derive(Debug, Clone)]
@@ -59,13 +60,13 @@ pub struct SourceQueryOutput {
     pub rendered: String,
 }
 
-/// Resolve explicit worktree targets and render complete definitions or body-free outlines within the shared token and byte budgets.
+/// Resolve explicit targets in the requested source snapshot and render complete definitions or body-free outlines within shared output budgets.
 ///
 /// # Errors
 ///
-/// Returns an error on non-Unix platforms before source I/O, or for invalid query options or target
-/// roots, unrecoverable source-loading or analysis failures, token-counter initialization or
-/// serialization failures, or a budget that cannot hold the minimal status envelope.
+/// Returns an error on non-Unix platforms before source I/O, or for invalid options, target roots or
+/// unresolvable revisions, unrecoverable capture or analysis failures, token-counter initialization
+/// or serialization failures, or a budget that cannot hold the minimal status envelope.
 pub fn read_source(
     target: &Path,
     cfg: &Config,
@@ -85,15 +86,51 @@ pub fn read_source(
         .map(|target| normalize_path(&root, &root_alias, &target.path))
         .collect::<Vec<_>>();
     let targets = with_file_expectations(&options.targets, &paths)?;
-    let selected_paths = paths.iter().flatten().cloned().collect::<Vec<_>>();
-    let mut query_cfg = declaration_query_config(cfg);
-    query_cfg.max_file_bytes = query_cfg.max_file_bytes.min(MAX_INPUT_FILE_BYTES);
-    query_cfg.max_total_bytes = query_cfg.max_total_bytes.min(MAX_INPUT_TOTAL_BYTES);
-    query_cfg.max_files = query_cfg.max_files.min(MAX_TARGETS);
-    let batch = scan::load_explicit_sources(&root, &selected_paths, &query_cfg, exclusions)?;
-    let files = describe_files(&batch, &selected_paths);
+    let mut groups = BTreeMap::<SourceRevision, Vec<PathBuf>>::new();
+    for (target, path) in targets.iter().zip(&paths) {
+        if let Some(path) = path {
+            groups
+                .entry(target.snapshot.clone())
+                .or_default()
+                .push(path.clone());
+        }
+    }
+    let requests = groups.into_iter().collect::<Vec<_>>();
+    let query_cfg = query_config(cfg);
+    let batches = scan::load_revision_sources(&root, &requests, &query_cfg, exclusions)?;
+    let target_groups = targets
+        .iter()
+        .map(|target| {
+            requests
+                .iter()
+                .position(|(revision, _)| *revision == target.snapshot)
+        })
+        .collect::<Vec<_>>();
+    let mut canonical_targets = targets;
+    for (target, group) in canonical_targets.iter_mut().zip(&target_groups) {
+        if let Some(group) = group {
+            target.snapshot = batches[*group].0.clone();
+        }
+    }
+    let targets = with_file_expectations(&canonical_targets, &paths)?;
+    let mut identities = BTreeMap::new();
+    let files = batches
+        .iter()
+        .zip(&requests)
+        .map(|((revision, batch), (_, paths))| {
+            let mut files = describe_files(batch, paths);
+            for file in files.values_mut() {
+                let next_id = identities.len() + 1;
+                file.id = *identities
+                    .entry((revision.clone(), file.path.clone()))
+                    .or_insert(next_id);
+                file.snapshot = revision.clone();
+            }
+            files
+        })
+        .collect::<Vec<_>>();
     let counter = TokenCounter::new(&cfg.encoding)?;
-    let mut report = empty_report(&batch.root, options, counter.name());
+    let mut report = empty_report(&root, options, counter.name());
     if !budget::fits(&report, options, &counter)? {
         report.root = None;
         report.root_omitted = true;
@@ -104,14 +141,26 @@ pub fn read_source(
     );
     let mut outline_remaining = MAX_OUTLINE_DECLARATIONS;
     for (index, (target, path)) in targets.iter().zip(&paths).enumerate() {
-        let resolved = selection::resolve(
-            index + 1,
-            target,
-            path.as_deref(),
-            &batch,
-            &files,
-            &mut outline_remaining,
-        );
+        let group = target_groups[index];
+        let resolved = if let Some(group) = group {
+            selection::resolve(
+                index + 1,
+                target,
+                path.as_deref(),
+                &batches[group].1,
+                &files[group],
+                &mut outline_remaining,
+            )
+        } else {
+            selection::ResolvedTarget {
+                file: None,
+                result: crate::model::SourceQueryResult {
+                    status: crate::model::SourceQueryStatus::InvalidPath,
+                    ..selection::empty_result(index + 1, None)
+                },
+                source: None,
+            }
+        };
         budget::admit(&mut report, resolved, options, &counter)?;
     }
     let rendered = crate::report::source::render(&report, options.format, options.pretty_json)?;
@@ -120,6 +169,14 @@ pub fn read_source(
         "source output exceeded the validated budget"
     );
     Ok(SourceQueryOutput { report, rendered })
+}
+
+pub(super) fn query_config(cfg: &Config) -> Config {
+    let mut query_cfg = declaration_query_config(cfg);
+    query_cfg.max_file_bytes = query_cfg.max_file_bytes.min(MAX_INPUT_FILE_BYTES);
+    query_cfg.max_total_bytes = query_cfg.max_total_bytes.min(MAX_INPUT_TOTAL_BYTES);
+    query_cfg.max_files = query_cfg.max_files.min(MAX_TARGETS);
+    query_cfg
 }
 
 #[cfg(all(test, not(unix)))]
@@ -133,6 +190,7 @@ mod platform_tests {
                 path: PathBuf::from("lib.rs"),
                 selector: SourceSelector::Symbol("example".to_string()),
                 expected_hash: None,
+                snapshot: SourceRevision::Worktree,
             }],
             token_budget: DEFAULT_TOKENS,
             byte_budget: DEFAULT_BYTES,
@@ -156,16 +214,17 @@ fn with_file_expectations(
     targets: &[SourceQueryTarget],
     paths: &[Option<PathBuf>],
 ) -> Result<Vec<SourceQueryTarget>> {
-    let mut expectations = BTreeMap::<&Path, String>::new();
+    let mut expectations = BTreeMap::<(SourceRevision, PathBuf), String>::new();
     for (target, path) in targets.iter().zip(paths) {
         if let (Some(hash), Some(path)) = (&target.expected_hash, path) {
-            if let Some(previous) = expectations.get(path.as_path()) {
+            let key = (target.snapshot.clone(), path.clone());
+            if let Some(previous) = expectations.get(&key) {
                 ensure!(
                     previous.eq_ignore_ascii_case(hash),
                     "conflicting expected hashes for a selected file"
                 );
             }
-            expectations.insert(path.as_path(), hash.to_ascii_lowercase());
+            expectations.insert(key, hash.to_ascii_lowercase());
         }
     }
     Ok(targets
@@ -175,7 +234,7 @@ fn with_file_expectations(
             let mut target = target.clone();
             if let Some(hash) = path
                 .as_ref()
-                .and_then(|path| expectations.get(path.as_path()))
+                .and_then(|path| expectations.get(&(target.snapshot.clone(), path.clone())))
             {
                 target.expected_hash = Some(hash.clone());
             }
@@ -184,11 +243,16 @@ fn with_file_expectations(
         .collect())
 }
 
-fn validate_options(options: &SourceQueryOptions) -> Result<()> {
+pub(super) fn validate_options(options: &SourceQueryOptions) -> Result<()> {
     ensure!(
         (1..=MAX_TARGETS).contains(&options.targets.len()),
         "source query requires between 1 and 32 targets"
     );
+    validate_output_options(options)?;
+    validate_targets(options)
+}
+
+pub(super) fn validate_output_options(options: &SourceQueryOptions) -> Result<()> {
     ensure!(
         (MIN_TOKENS..=MAX_TOKENS).contains(&options.token_budget),
         "source token budget must be between 256 and 65536"
@@ -208,8 +272,22 @@ fn validate_options(options: &SourceQueryOptions) -> Result<()> {
         !options.pretty_json || options.format == Format::Json,
         "pretty output requires JSON format"
     );
+    Ok(())
+}
+
+fn validate_targets(options: &SourceQueryOptions) -> Result<()> {
     let outline = matches!(options.targets[0].selector, SourceSelector::Outline);
     for target in &options.targets {
+        match &target.snapshot {
+            SourceRevision::Tree(reference) => ensure!(
+                !reference.is_empty() && reference.len() <= 1_024,
+                "source revision must contain between 1 and 1024 bytes"
+            ),
+            SourceRevision::Empty => {
+                anyhow::bail!("an empty base is not an explicit source revision")
+            }
+            SourceRevision::Worktree | SourceRevision::Index => {}
+        }
         ensure!(
             matches!(target.selector, SourceSelector::Outline) == outline,
             "outline selections cannot be combined with source selections"
@@ -253,7 +331,7 @@ fn normalize_path(root: &Path, root_alias: &Path, path: &Path) -> Option<PathBuf
     .then_some(normalized)
 }
 
-fn describe_files(
+pub(super) fn describe_files(
     batch: &scan::ExplicitSourceBatch,
     paths: &[PathBuf],
 ) -> BTreeMap<PathBuf, SourceQueryFile> {
@@ -275,6 +353,11 @@ fn describe_files(
                 SourceQueryFile {
                     id: index + 1,
                     path: path.clone(),
+                    snapshot: SourceRevision::Worktree,
+                    status: batch
+                        .failures
+                        .get(path)
+                        .map(|failure| selection::failure_status(*failure)),
                     language: loaded.map(|file| file.language.clone()),
                     sha256: loaded.map(|file| source_hash(&file.content)),
                     extraction: loaded.map(|file| file.definitions.status),
@@ -303,14 +386,22 @@ fn source_hash(content: &str) -> String {
         })
 }
 
-fn empty_report(root: &Path, options: &SourceQueryOptions, encoding: &str) -> SourceQueryReport {
+pub(super) fn empty_report(
+    root: &Path,
+    options: &SourceQueryOptions,
+    encoding: &str,
+) -> SourceQueryReport {
     SourceQueryReport {
         kind: "source_query".to_string(),
         schema_version: SCHEMA_VERSION.to_string(),
         root: root.to_str().map(|_| root.to_path_buf()),
         root_omitted: root.to_str().is_none(),
         encoding: encoding.to_string(),
-        mode: if matches!(options.targets[0].selector, SourceSelector::Outline) {
+        mode: if options
+            .targets
+            .first()
+            .is_some_and(|target| matches!(target.selector, SourceSelector::Outline))
+        {
             "outline"
         } else {
             "source"
@@ -320,6 +411,7 @@ fn empty_report(root: &Path, options: &SourceQueryOptions, encoding: &str) -> So
         byte_budget: options.byte_budget,
         requested_targets: options.targets.len(),
         omitted_targets: options.targets.len(),
+        change: None,
         files: Vec::new(),
         results: Vec::new(),
         sources: Vec::new(),
@@ -358,6 +450,9 @@ pub(super) fn capability() -> SourceQueryCapability {
             .map(str::to_string)
             .to_vec(),
         snapshot: "worktree".to_string(),
+        snapshots: ["worktree", "index", "git-tree"]
+            .map(str::to_string)
+            .to_vec(),
         hash_algorithm: "sha256".to_string(),
         default_tokens: DEFAULT_TOKENS,
         min_tokens: MIN_TOKENS,

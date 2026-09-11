@@ -18,6 +18,8 @@ struct Projection<'a> {
     diagnostics: &'a crate::model::ScanDiagnostics,
     work_scope: &'a WorkScope,
     change_summary: &'a ChangeSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    definition_changes: &'a Option<crate::model::SourceQueryReport>,
 }
 
 fn projection(report: &ScanReport) -> Result<Projection<'_>> {
@@ -41,6 +43,7 @@ fn projection(report: &ScanReport) -> Result<Projection<'_>> {
         diagnostics: &report.diagnostics,
         work_scope,
         change_summary,
+        definition_changes: &report.definition_changes,
     })
 }
 

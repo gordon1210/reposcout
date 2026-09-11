@@ -1,5 +1,8 @@
 //! Source snapshots used by changed-line review.
 
+mod explicit;
+pub(crate) use explicit::{GitCapture, GitCaptureFailure};
+
 use crate::config::Config;
 use crate::fs_budget::{self, IgnoreLimits};
 use crate::git::DiffScope;
@@ -222,7 +225,7 @@ impl SourceSnapshot {
                     snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(size);
                     snapshot.scan_truncated = true;
                 }
-                Err(()) => snapshot.unreadable_files += 1,
+                Err(_) => snapshot.unreadable_files += 1,
             }
             TreeWalkResult::Ok
         });
@@ -305,7 +308,7 @@ impl SourceSnapshot {
                     snapshot.oversized_bytes = snapshot.oversized_bytes.saturating_add(size);
                     snapshot.scan_truncated = true;
                 }
-                Err(()) => snapshot.unreadable_files += 1,
+                Err(_) => snapshot.unreadable_files += 1,
             }
         }
         Ok(snapshot)
@@ -489,19 +492,28 @@ fn blob_size_hint(repo: &Repository, id: git2::Oid) -> Option<u64> {
     }
 }
 
-fn load_blob_text(repo: &Repository, id: git2::Oid, max_bytes: u64) -> Result<Option<String>, ()> {
+enum BlobTextError {
+    Binary,
+    Unreadable,
+}
+
+fn load_blob_text(
+    repo: &Repository,
+    id: git2::Oid,
+    max_bytes: u64,
+) -> Result<Option<String>, BlobTextError> {
     if let Some(size) = blob_size_hint(repo, id)
         && size > max_bytes
     {
         return Ok(None);
     }
-    let blob = repo.find_blob(id).map_err(|_| ())?;
+    let blob = repo.find_blob(id).map_err(|_| BlobTextError::Unreadable)?;
     if blob.size() as u64 > max_bytes {
         return Ok(None);
     }
     match std::str::from_utf8(blob.content()) {
         Ok(content) => Ok(Some(content.to_string())),
-        Err(_) => Err(()),
+        Err(_) => Err(BlobTextError::Binary),
     }
 }
 

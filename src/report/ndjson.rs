@@ -49,6 +49,12 @@ pub fn render(report: &ScanReport, summary_only: bool) -> Result<String> {
     if let Some(impact) = &report.impact {
         map.insert("impact".to_string(), serde_json::to_value(impact)?);
     }
+    if let Some(changes) = &report.definition_changes {
+        map.insert(
+            "definition_changes".to_string(),
+            serde_json::to_value(changes)?,
+        );
+    }
     if let Some(graph) = &report.graph {
         map.insert("graph".to_string(), serde_json::to_value(graph)?);
     }

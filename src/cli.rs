@@ -61,8 +61,10 @@ pub enum Command {
     Explain(ExplainArgs),
     /// Locate declarations by symbol name across first-class languages
     Locate(LocateArgs),
-    /// Read explicitly selected worktree definitions under a shared output budget
+    /// Read explicitly selected snapshot definitions under a shared output budget
     Read(ReadArgs),
+    /// Select changed definitions from a Git diff, with source included only when requested
+    Changes(ChangesArgs),
     /// Update an installer-managed copy from the latest stable GitHub release
     Update,
     /// Show layered global/project configuration and effective values
@@ -329,7 +331,7 @@ pub struct LocateArgs {
     pub limit: usize,
 }
 
-/// Select definitions or body-free file outlines from current worktree contents.
+/// Select definitions or body-free file outlines from the requested source snapshot.
 #[derive(Args, Debug, Clone)]
 pub struct ReadArgs {
     /// Repository or directory containing the selected files [default: .]
@@ -338,6 +340,10 @@ pub struct ReadArgs {
 
     #[command(flatten)]
     pub common: CommonArgs,
+
+    /// Read from worktree, index, or a Git revision resolved once for this query
+    #[arg(long, default_value = "worktree", value_name = "SNAPSHOT")]
+    pub snapshot: String,
 
     /// Select a definition by file and exact symbol name; repeat to share one budget
     #[arg(
@@ -371,6 +377,49 @@ pub struct ReadArgs {
         action = clap::ArgAction::Append
     )]
     pub expect_hash: Vec<String>,
+
+    /// Maximum tokens in the complete rendered output, including metadata and the final newline
+    #[arg(
+        long,
+        default_value_t = 4096,
+        value_parser = parse_source_token_budget
+    )]
+    pub budget: usize,
+
+    /// Maximum bytes in the complete rendered output, including metadata and the final newline
+    #[arg(
+        long,
+        default_value_t = 65_536,
+        value_parser = parse_source_byte_budget
+    )]
+    pub max_output_bytes: usize,
+}
+
+/// Select changed definitions with body-free output by default and explicitly requested source.
+#[derive(Args, Debug, Clone)]
+pub struct ChangesArgs {
+    /// Repository, directory, or existing file defining the changed-file scope
+    #[arg(default_value = ".")]
+    pub path: PathBuf,
+
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// Compare HEAD with captured worktree content, including staged, unstaged and untracked changes
+    #[arg(long, conflicts_with_all = ["staged", "since"])]
+    pub working: bool,
+
+    /// Compare HEAD with the captured index
+    #[arg(long, conflicts_with_all = ["working", "since"])]
+    pub staged: bool,
+
+    /// Compare this Git revision directly with captured worktree content, without a merge-base
+    #[arg(long, value_name = "REF", conflicts_with_all = ["working", "staged"])]
+    pub since: Option<String>,
+
+    /// Include complete source for selected changed definitions within the shared output budget
+    #[arg(long)]
+    pub source: bool,
 
     /// Maximum tokens in the complete rendered output, including metadata and the final newline
     #[arg(
@@ -450,6 +499,10 @@ pub struct ScanArgs {
     /// diff scope, defaults to the agent profile, and implies context/impact.
     #[arg(long = "change-summary", conflicts_with = "no_context")]
     pub change_summary: bool,
+
+    /// Add body-free changed-definition evidence to change-summary or review output
+    #[arg(long = "changed-definitions")]
+    pub changed_definitions: bool,
 
     /// Emit compact JSON suitable for complete aggregate and finding-level
     /// baseline comparisons.

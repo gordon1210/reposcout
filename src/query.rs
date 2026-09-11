@@ -14,7 +14,10 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+pub(crate) mod changed_mapping;
+mod changes;
 mod source;
+pub use changes::{ChangeQueryOptions, query_changes};
 pub use source::{
     SourceQueryOptions, SourceQueryOutput, SourceQueryTarget, SourceSelector, read_source,
 };
@@ -37,6 +40,7 @@ pub fn capabilities() -> CapabilitiesReport {
             "explain",
             "locate",
             "read",
+            "changes",
             "update",
             "cache",
             "config",
@@ -95,33 +99,59 @@ pub fn capabilities() -> CapabilitiesReport {
         max_graph_depth: MAX_GRAPH_DEPTH,
         max_symbol_results: MAX_SYMBOL_RESULTS,
         agent_summary: agent_summary_capability(),
-        change_summary: ChangeSummaryCapability {
-            flag: "--change-summary".to_string(),
-            requires_one_of: ["--since", "--staged", "--working"]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            implies: ["summary", "context", "impact"]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            formats: ["table", "json", "markdown", "ndjson"]
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
-            max_path_entries: crate::change_summary::MAX_PATH_ENTRIES,
-            max_gap_entries: crate::change_summary::MAX_GAP_ENTRIES,
-            max_validations: crate::change_summary::MAX_VALIDATIONS,
-        },
+        change_summary: change_summary_capability(),
         work_scope: WorkScopeCapability {
             strategy_version: crate::work_scope::STRATEGY_VERSION,
             max_path_entries: crate::work_scope::MAX_PATH_ENTRIES,
             max_components: crate::work_scope::MAX_COMPONENTS,
         },
         source_query: Some(source::capability()),
+        change_query: Some(change_query_capability()),
         type2_max_seed_pairs_per_pool: crate::dup::fuzzy::MAX_SEED_PAIRS_PER_POOL,
         type2_max_matches_per_pool: crate::dup::fuzzy::MAX_MATCHES_PER_POOL,
         type2_max_overlap_checks_per_pool: crate::dup::fuzzy::MAX_OVERLAP_CHECKS_PER_POOL,
+    }
+}
+
+fn change_summary_capability() -> ChangeSummaryCapability {
+    ChangeSummaryCapability {
+        flag: "--change-summary".to_string(),
+        requires_one_of: ["--since", "--staged", "--working"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        implies: ["summary", "context", "impact"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        formats: ["table", "json", "markdown", "ndjson"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        max_path_entries: crate::change_summary::MAX_PATH_ENTRIES,
+        max_gap_entries: crate::change_summary::MAX_GAP_ENTRIES,
+        max_validations: crate::change_summary::MAX_VALIDATIONS,
+    }
+}
+
+fn change_query_capability() -> crate::model::ChangeQueryCapability {
+    crate::model::ChangeQueryCapability {
+        command: "changes".to_string(),
+        available: cfg!(unix),
+        formats: ["table", "json", "markdown", "ndjson"]
+            .map(str::to_string)
+            .to_vec(),
+        requires_one_of: ["--working", "--staged", "--since"]
+            .map(str::to_string)
+            .to_vec(),
+        source_flag: "--source".to_string(),
+        max_changed_file_pairs: 32,
+        max_result_targets: 128,
+        max_hunks_per_file: 4_096,
+        max_mapping_work_per_side: 1_000_000,
+        embedded_flag: "--changed-definitions".to_string(),
+        embedded_tokens: 4_096,
+        embedded_bytes: 16_384,
     }
 }
 

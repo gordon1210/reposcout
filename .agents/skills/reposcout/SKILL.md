@@ -28,7 +28,9 @@ explicitly authorizes it.
 On Unix, if a file and symbol or line are already known and its source is needed, use `reposcout read`
 directly; load the focused source-query guidance below. A normal short read may be sufficient.
 Do not repeat unchanged source already available in context. Optional `--outline` is not a required
-first step.
+first step. For a known diff scope, use body-free `reposcout changes` directly when the next
+decision needs changed definitions; request `--source` only for bodies needed by that decision.
+The change-analysis guidance describes this route and optional broader report integration.
 
 For compact agent scouting, start with:
 

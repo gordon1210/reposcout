@@ -1,16 +1,19 @@
-# Read explicit definitions
+# Source and changed-definition queries
 
 ← [Documentation index](README.md)
 
 Use `reposcout read` when a file and symbol or line are already known and the next decision needs
 that definition's source. It returns complete supported definitions under one shared output budget.
-It does not choose which function is relevant from a bare file path.
+It does not choose which function is relevant from a bare file path. Use `reposcout changes` when
+the entry point is a working-tree, staged or revision-based diff instead of a known symbol.
 
-`read`, including `--outline`, is available on Unix platforms. The project's release targets are
+`read`, including `--outline` and snapshot selection, and `changes` are available on Unix platforms. The project's release targets are
 Apple Silicon macOS and x86-64 Linux. Windows and other non-Unix builds reject the command before source I/O,
 without a fallback reader. This restriction does not change repository inventory support.
 Capabilities expose `source_query.available` for the current platform and
 `source_query.platforms: ["unix"]` for the supported platform family.
+`change_query.available` advertises direct changed-definition availability and its capability
+block lists the scopes, work limits and embedded-report limits.
 
 A normal short read can still be enough, especially for a small file. Do not reread unchanged
 source already available in the agent's context. There is no required scout, outline, or lookup
@@ -60,9 +63,113 @@ Selection and retrieval ranges are therefore separate facts. Duplicate or overla
 are handled deterministically without repeating the same source merely because multiple targets
 selected it.
 
-The first implementation reads the current worktree. It does not read Git's index or a base
-revision, map changed lines, search task descriptions, or trace calls. Those are separate planned
-features. Ordinary `locate`, scouting and context output retain their existing body-free defaults.
+## Choose the source snapshot
+
+```sh
+# Worktree remains the default.
+reposcout read . --symbol src/service.ts Service.start -f json
+
+# Read exactly the staged version, including its body-free outline.
+reposcout read . --snapshot index --symbol src/service.ts Service.start -f json
+reposcout read . --snapshot index --outline src/service.ts -f json
+
+# Read a definition from a Git revision, even if its file was deleted in the worktree.
+reposcout read . --snapshot HEAD --symbol src/deleted.ts OldHandler -f json
+```
+
+`--snapshot` applies to every target in the call. The case-sensitive names `worktree` and `index`
+select the current worktree or the captured Git index; any other value is a Git revision resolved
+once to a tree object ID. To name a branch that collides with a reserved name, use its qualified
+ref, such as `refs/heads/index`.
+
+The returned file snapshot identifies its content side and the pinned tree revision where
+applicable. Its SHA-256 identifies the captured file bytes. Use the path belonging to that side:
+a Git-detected rename does not make an old path or old symbol name interchangeable with its new
+one. Missing, unsupported or unreadable index/base content never silently falls back to worktree
+bytes. Existing `--expect-hash` checks apply to the selected snapshot. In the shared query API, ref
+aliases resolving to the same tree and path share file identity and hash expectations after
+pinning; conflicting expectations are rejected rather than allowing an alias to bypass them.
+
+## Select changed definitions
+
+```sh
+# Identify definitions touched by all uncommitted changes, without source bodies.
+reposcout changes . --working -f json
+
+# Read complete old/new definitions needed to inspect the staged change.
+reposcout changes . --staged --source --budget 4096 -f json
+
+# Compare a revision directly with captured worktree content.
+reposcout changes . --since main -f json
+```
+
+`changes [PATH]` targets a directory or an existing file, defaults to `.`, and requires exactly one
+diff scope. Use a directory scope for a file deleted from the worktree. It
+uses the `agent` profile by default. The content pairs are:
+
+| Scope | Old side | New side |
+|---|---|---|
+| `--working` | `HEAD` tree | Captured worktree, including staged, unstaged and untracked changes |
+| `--staged` | `HEAD` tree | Captured index |
+| `--since REF` | Resolved `REF` tree | Captured worktree |
+
+`--since` compares the specified revision directly, not its merge-base with the current branch.
+Git supplies candidate paths and detected renames. Exact changed hunks, definition facts and any
+returned source are derived from the same captured buffers. Source remains absent unless
+`--source` is explicit; this option uses the same complete-response token/byte budget as `read`.
+
+Selection distinguishes directly changed innermost definitions, wrapper-only changes, ranges
+outside supported declarations, ambiguous same-line siblings and ranges left unprocessed by a
+work limit. Direct and wrapper-only candidates share one innermost comparison: a direct hit uses
+its declaration span, while a wrapper-only hit uses its source span. Editing one declaration
+does not mark a sibling merely because they share a retrieval wrapper. A change to their shared
+wrapper header can retain multiple equally specific candidates as ambiguous. Multiple hunks
+touching one definition are deduplicated. Zero-length insertion or
+deletion anchors retain their old/new coordinates; they are not invented changed lines on an
+empty side. Deleted definitions can be selected and read from the old side.
+
+A rename crossing the selected target can have an old or new side outside scope. That side is
+explicitly marked and is not read; it is not treated as an actually absent file. Conflicted index
+entries, missing blobs, binary content and unreadable sources remain distinct capture outcomes.
+Git capture accepts regular-file modes, not symlink or submodule targets.
+
+A changes query captures at most 32 changed-file pairs, or the stricter configured file limit,
+with up to 64 file-side captures. Both sides share 32 MiB total and an 8 MiB per-file ceiling;
+stricter configured limits, including the Git-blob limit, still apply. These are source-capture
+limits: Git candidate and rename discovery can perform additional I/O outside that 32 MiB
+allowance. At most 4,096 hunks per file pair and 1,000,000 mapping-work units per side are
+processed; omitted hunks and unprocessed ranges remain explicit. At most 128 derived result
+targets proceed to metadata/source admission. `requested_targets` still counts every derived
+target; `omitted_targets` includes both this projection cap and token/byte omissions. Capture gaps, mapping or
+work-limit gaps and output omissions remain distinct. A large changeset is not presented as
+fully covered merely because its bounded result fits. Output ordering and source deduplication
+retain the content side: identical paths or line numbers in different snapshots are not the same
+source chunk.
+
+Neither snapshot retrieval nor changed-definition selection performs semantic rename guessing,
+free-text task search or call tracing. Ordinary `locate`, scouting and context output keep their
+body-free defaults.
+
+## Add definitions to an existing change report
+
+```sh
+reposcout --working --change-summary --changed-definitions -f json .
+reposcout --staged --review=deep --changed-definitions -f json .
+```
+
+`--changed-definitions` adds the body-free `definition_changes` block to a change-summary or review
+with exactly one diff scope. It supports table, JSON, Markdown and NDJSON; SARIF, DOT and Mermaid
+are rejected. It conflicts with `--agent-summary` and `--baseline-ready` rather than silently
+omitting the requested evidence.
+
+The embedded block has its own fixed 4,096-token and 16,384-byte budget, measured on its compact
+JSON representation. This does not cap the complete surrounding report. Existing parent
+projection limits retain their meaning; `definition_changes` carries separate capture, selection
+and output accounting. The block captures its source independently after the surrounding scan.
+Its own diff, spans and source identity agree, but a live edit can make its captured content differ
+from earlier parent-report metadata; the combined report is not an atomic snapshot. Use the
+separate `changes --source` command when source is needed.
+
 
 ## Inspect body-free declarations when useful
 
@@ -112,15 +219,17 @@ every selection from that file. A mismatch is stale and returns no source for th
 Range extraction and returned bytes always use the same captured content; old spans are never
 silently applied to changed worktree bytes.
 
-Each file is captured once per invocation. The batch is not an atomic snapshot across files or a
-Git snapshot, and files can change afterward. A file's hash, spans and returned source always refer
-to that same captured file content. A local analysis-cache hit does not mean the agent still has
+Each requested file side is captured once per invocation. A worktree batch is not an atomic
+snapshot across files, and files can change afterward. Git revisions are pinned to tree object
+IDs and the index is captured for the query. A file's hash, diff ranges, spans and returned source
+always refer to that same captured content. A local analysis-cache hit does not mean the agent still has
 the source in its context.
 
 ## Coverage and discovery boundaries
 
-Source-input limits are separate from output limits: at most 8 MiB per file, 32 MiB across the
-query and 32 files. Stricter configured limits also apply. Explicit targets retain the existing
+For explicit `read` targets, source-input limits are separate from output limits: at most 8 MiB
+per file, 32 MiB across the query and 32 files. Changed-definition queries use the side/pair limits
+described above. Stricter configured limits also apply. Explicit targets retain the existing
 ignore, exclusion, configuration, target and no-follow boundaries; a direct path is not permission
 to bypass discovery policy. The command defaults to the `agent` profile; `--profile safe` retains
 its stricter limits and ignores project configuration. Common configuration and exclusion options
@@ -152,10 +261,11 @@ particular file; the file's extraction state and result status qualify that fact
 
 ## Interpret machine results
 
-The report identifies itself with `kind: "source_query"` and `mode: "source"` or `"outline"`.
+An explicit-read report identifies itself with `kind: "source_query"` and `mode: "source"` or
+`"outline"`.
 It keeps file facts, target outcomes and source content separate:
 
-- `files` identifies selected files with `id`, `path`, optional `language`, captured `sha256`,
+- `files` identifies selected file sides with `id`, `path`, `snapshot`, optional `language`, captured `sha256`,
   extraction status and available declaration/source-definition counts.
 - `results` associates each one-based input `target` with a `status`, optional file/definition/source
   references,
@@ -167,6 +277,21 @@ It keeps file facts, target outcomes and source content separate:
 - `requested_targets` and `omitted_targets` preserve target accounting when the output budget
   removes detailed responses. If the root path is omitted to fit, `root_omitted` says so.
 
+Changed-definition reports use `kind: "change_query"` and `mode: "changes"` or `"changes-source"`.
+Here target IDs enumerate derived selections and gap records, not caller-supplied selectors.
+Their top-level `change` object records `scope`, `base`, `current`, changed-file admission
+(`total_files`, `processed_files`, `omitted_files`), mapped definitions, unmapped ranges,
+unavailable sides, and total/omitted hunks and unprocessed ranges. These counts describe capture
+and mapping before output admission; `omitted_targets` separately describes output omissions.
+
+Each changed result can carry `change` evidence with `side` (`base` or `current`), Git
+`file_status`, optional counterpart path, `reason`, direct `ranges`, separate `wrapper_ranges`
+and an ambiguity flag. A `changed` result may represent a definition or a file change without
+changed lines, such as a pure path rename; inspect its evidence and optional definition.
+Ambiguous changed-line ownership is marked on evidence and is not an exact unique match.
+Snapshot objects use `kind: "worktree"`, `"index"`, `"tree"` or `"empty"`; tree snapshots carry
+`revision` with the pinned tree OID. `empty` represents an absent base tree.
+
 A definition's `declaration_span` determines selection; optional `source_span` describes the
 complete retrievable range, which can include a static wrapper. Spans use half-open byte offsets
 and inclusive one-based line bounds. The optional `signature` is body-free metadata, not a
@@ -176,6 +301,9 @@ substitute for a complete `sources[].content`.
 |---|---|
 | `complete` | A complete selected source range was delivered |
 | `outline` | Body-free declaration information was returned |
+| `changed` | Body-free changed-definition or file-change evidence was returned |
+| `unmapped` | Changed ranges lie outside extracted declarations |
+| `binary`, `conflict` | Captured content is binary or the index entry is conflicted |
 | `ambiguous` | Multiple identities match; inspect candidate totals and omissions |
 | `not-found` | The selector did not resolve within the observed extraction |
 | `stale` | The captured file hash differs from the supplied expectation; no source |
@@ -194,7 +322,8 @@ itself prove complete extraction or absence of a definition.
 
 The command supports JSON, NDJSON, table and Markdown. Captured stdout defaults to JSON; an
 interactive terminal defaults to table. Each format describes the same query facts and respects
-the selected total budget. NDJSON emits one compact `source_query` record followed by a newline.
+the selected total budget. NDJSON emits one compact `source_query` or `change_query` record,
+according to the command, followed by a newline.
 JSON and NDJSON preserve source bytes after JSON string decoding. Table and Markdown present
 human-readable metadata and complete source ranges: newlines and tabs remain literal, while
 other control characters, including carriage returns, are visibly escaped. Use JSON or NDJSON when
@@ -204,12 +333,14 @@ Existing structured CLI errors remain available through `--error-format json`. I
 roots, unrecoverable source-loading or analysis failures, token-counter initialization or
 serialization failures, and an unavoidable status envelope that cannot fit produce an error
 rather than a successful partial document. On non-Unix platforms the command returns
-`read is available only on Unix platforms` before reading source.
+`read is available only on Unix platforms` or `changes is available only on Unix platforms`
+before reading source.
 
 Choose the entry point already available:
 
 - Known file and symbol or line: request the definition directly if its source is needed.
-- Need a file's declaration surface: request its body-free outline.
+- Need a file's declaration surface: request its body-free outline from the relevant snapshot.
+- Known diff scope: use `changes` for changed definitions and request `--source` only when needed.
 - Unknown symbol location: use existing `locate` or ordinary text search, then read only the
   selected definition when necessary.
 - Need a bounded multi-file reading plan: use context planning and inspect its evidence before

@@ -91,6 +91,9 @@ pub struct ScanReport {
     /// `--change-summary`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change_summary: Option<ChangeSummary>,
+    /// Body-free changed-definition evidence requested for a diff-scoped parent report, independently bounded and captured; the parent scan is not an atomic snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_changes: Option<SourceQueryReport>,
     /// Changed-line review, populated only by `--review`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<ReviewReport>,

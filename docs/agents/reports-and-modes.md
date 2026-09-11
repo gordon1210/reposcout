@@ -138,24 +138,35 @@ metadata are rejected because their health semantics cannot be established.
   cache profile.
 - `reposcout read [PATH]` accepts repeatable `--symbol FILE SYMBOL` and `--line FILE LINE`, or
   mutually exclusive repeatable `--outline FILE` and defaults to the `agent` profile. It reads
-  explicit worktree targets only; no preceding scout/outline/locate is required. Target-relative paths and absolute paths inside the
+  explicit targets from `--snapshot worktree|index|REF` (default worktree); no preceding scout or
+  outline/locate is required. Target-relative paths and absolute paths inside the
   target retain discovery, exclusion, configuration and no-follow policy. CLI target order is all
   symbol pairs followed by all line pairs, preserving input order within each group; target IDs
   are one-based and budget admission follows that order. The query API preserves vector order.
   Source and outline queries are Unix-only; `source_query.available` reflects the current build
   and `source_query.platforms` is `["unix"]`. Non-Unix calls fail before source I/O, without a
   fallback. Existing repository inventory support is unchanged.
+- `reposcout changes [PATH]` requires one working/staged/since diff scope and defaults to the agent
+  profile. Selection is body-free unless `--source` is explicit. Both source sides, pinned revision
+  identity, mapping/capture gaps and output omissions survive bounded rendering. It uses the same
+  Unix platform restriction and shared response budgets as explicit reads.
+- `--changed-definitions` requires change-summary or review plus exactly one diff scope. It supports
+  table/JSON/Markdown/NDJSON and rejects SARIF/DOT/Mermaid, agent-summary and baseline-ready.
+  The body-free `definition_changes` block is bounded separately to 4,096 tokens and 16,384 bytes
+  of its compact JSON representation. This is not a bound on the whole surrounding report;
+  existing parent projection limits remain unchanged. Do not silently drop the requested block.
 - Source-query budgets cover the complete rendered response in the selected format, including
   metadata and newline: 4,096 tokens / 65,536 bytes by default, with allowed ranges 256–65,536
   tokens and 1,024–1,048,576 bytes. Below-minimum requests are invalid and return the documented
   minimum error envelope, not a falsely budget-compliant success.
 - Source queries return complete definitions or explicit omissions, never implicit partial bodies.
-  Cap targets at 32, ambiguity candidates at eight and outline declarations at 100; retain
+  Cap explicit read targets at 32, ambiguity candidates at eight and outline declarations at 100;
+  admit at most 128 derived change targets while retaining exact total/omitted counts. Retain
   extraction/input coverage separately from output omissions. `--expect-hash FILE SHA256` only
   applies to selected files; stale files return no source.
 - Source-query renderers project shared facts and perform no analysis or I/O. JSON, NDJSON, table
   and Markdown all respect the final output budget; pretty formatting and newlines count.
-  NDJSON emits one compact `source_query` record. JSON strings preserve decoded source; human
+  NDJSON emits one compact `source_query` or `change_query` record according to the query. JSON strings preserve decoded source; human
   output retains newlines/tabs and visibly escapes other control characters, including CR.
   Ordinary locate, context and agent-summary remain body-free. Debug logs never contain source.
 - Capability tests compare advertised commands with Clap, symbol kinds with parser output, and

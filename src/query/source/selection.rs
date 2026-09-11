@@ -7,10 +7,10 @@ use crate::scan::{ExplicitSourceBatch, ExplicitSourceFailure};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub(super) struct ResolvedTarget<'a> {
-    pub(super) file: Option<SourceQueryFile>,
-    pub(super) result: SourceQueryResult,
-    pub(super) source: Option<(&'a str, SourceSpan)>,
+pub(crate) struct ResolvedTarget<'a> {
+    pub(crate) file: Option<SourceQueryFile>,
+    pub(crate) result: SourceQueryResult,
+    pub(crate) source: Option<(&'a str, SourceSpan)>,
 }
 
 pub(super) fn resolve<'a>(
@@ -110,11 +110,12 @@ pub(super) fn resolve<'a>(
     resolved
 }
 
-fn empty_result(target: usize, file: Option<usize>) -> SourceQueryResult {
+pub(crate) fn empty_result(target: usize, file: Option<usize>) -> SourceQueryResult {
     SourceQueryResult {
         target,
         file,
         status: SourceQueryStatus::Unavailable,
+        change: None,
         selection: None,
         definition: None,
         source: None,
@@ -192,7 +193,7 @@ fn innermost(matches: Vec<&DefinitionFact>) -> Vec<&DefinitionFact> {
         .collect()
 }
 
-fn describe(definition: &DefinitionFact, outline: bool) -> SourceQueryDefinition {
+pub(crate) fn describe(definition: &DefinitionFact, outline: bool) -> SourceQueryDefinition {
     SourceQueryDefinition {
         name: definition.symbol.name.clone(),
         kind: definition.symbol.kind.clone(),
@@ -202,7 +203,7 @@ fn describe(definition: &DefinitionFact, outline: bool) -> SourceQueryDefinition
     }
 }
 
-fn failure_status(failure: ExplicitSourceFailure) -> SourceQueryStatus {
+pub(crate) fn failure_status(failure: ExplicitSourceFailure) -> SourceQueryStatus {
     match failure {
         ExplicitSourceFailure::InvalidPath => SourceQueryStatus::InvalidPath,
         ExplicitSourceFailure::Excluded => SourceQueryStatus::Excluded,
@@ -213,5 +214,8 @@ fn failure_status(failure: ExplicitSourceFailure) -> SourceQueryStatus {
         ExplicitSourceFailure::Oversized => SourceQueryStatus::Oversized,
         ExplicitSourceFailure::BudgetExceeded => SourceQueryStatus::InputBudgetExceeded,
         ExplicitSourceFailure::DeadlineExceeded => SourceQueryStatus::DeadlineExceeded,
+        ExplicitSourceFailure::Missing => SourceQueryStatus::NotFound,
+        ExplicitSourceFailure::Binary => SourceQueryStatus::Binary,
+        ExplicitSourceFailure::Conflict => SourceQueryStatus::Conflict,
     }
 }

@@ -57,6 +57,7 @@ pub(super) fn assemble_report(
         diff_scope,
         changed: &prepared.scoped_changed_files,
     });
+    let definition_changes = build_definition_changes(&prepared, cfg)?;
     let graph = cfg
         .graph
         .then(|| graphs.scoped.map(|analysis| analysis.report))
@@ -100,12 +101,40 @@ pub(super) fn assemble_report(
             diagnostics: analyzed.diagnostics,
             impact,
             change_summary,
+            definition_changes,
             review: foundation.review,
         },
         symbol_outlines,
         graph_facts,
         resolver_configs: graphs.resolver_configs,
     })
+}
+
+fn build_definition_changes(
+    prepared: &PreparedScan,
+    cfg: &Config,
+) -> Result<Option<crate::model::SourceQueryReport>> {
+    if !cfg.changed_definitions {
+        return Ok(None);
+    }
+    let scope = cfg
+        .diff_scope
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("changed definitions require a diff scope"))?;
+    let output = crate::query::query_changes(
+        &prepared.discovered.target,
+        cfg,
+        &prepared.effective_exclusions,
+        &crate::query::ChangeQueryOptions {
+            scope,
+            include_source: false,
+            token_budget: 4_096,
+            byte_budget: 16_384,
+            format: crate::report::Format::Json,
+            pretty_json: false,
+        },
+    )?;
+    Ok(Some(output.report))
 }
 
 struct ReportFoundation {

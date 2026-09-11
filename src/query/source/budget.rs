@@ -7,7 +7,7 @@ use crate::model::{
 };
 use anyhow::{Result, anyhow};
 
-pub(super) fn fits(
+pub(crate) fn fits(
     report: &SourceQueryReport,
     options: &SourceQueryOptions,
     counter: &TokenCounter,
@@ -16,7 +16,7 @@ pub(super) fn fits(
     Ok(rendered.len() <= options.byte_budget && counter.count(&rendered) <= options.token_budget)
 }
 
-pub(super) fn admit(
+pub(crate) fn admit(
     report: &mut SourceQueryReport,
     resolved: ResolvedTarget<'_>,
     options: &SourceQueryOptions,
@@ -59,6 +59,7 @@ pub(super) fn admit(
     result.selection = None;
     result.definition = None;
     result.source = None;
+    result.change = None;
     let mut candidate = appended(report, None, result);
     if fit_candidate(&mut candidate, options, counter)? {
         *report = candidate;

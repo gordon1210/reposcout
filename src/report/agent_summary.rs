@@ -703,6 +703,7 @@ mod tests {
             diagnostics: ScanDiagnostics::default(),
             impact: None,
             change_summary: None,
+            definition_changes: None,
             review: None,
         }
     }

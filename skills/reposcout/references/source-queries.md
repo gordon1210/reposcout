@@ -5,7 +5,7 @@ declaration surface answers the next question. Do not run a scout, outline or lo
 prerequisite. A normal short read may already be sufficient; avoid rereading unchanged source that
 is still available in model context.
 
-`read` and `--outline` are Unix-only. Windows and other non-Unix builds reject them before source
+`read`, `--outline`, snapshot reads and `changes` are Unix-only. Windows and other non-Unix builds reject them before source
 I/O, without a fallback reader; use ordinary source tools on those platforms. Repository inventory
 support is unchanged. When compatibility is uncertain, capabilities disclose
 `source_query.available` and `source_query.platforms: ["unix"]`; no routine preflight is required.
@@ -52,6 +52,34 @@ so use machine output when exact decoded source is required. Ambiguous selection
 most eight candidates; choose based on
 actual task evidence rather than silently taking the first.
 
+## Read the correct snapshot or select changed definitions
+
+```sh
+reposcout read . --snapshot index --symbol src/service.ts Service.start -f json
+reposcout read . --snapshot HEAD --symbol src/deleted.ts OldHandler -f json
+reposcout changes . --working -f json
+reposcout changes . --staged --source --budget 4096 -f json
+```
+
+`--snapshot` applies to all explicit targets, including outlines. The case-sensitive names
+`worktree` and `index` are reserved; another Git ref resolves once to a tree OID. Use the path and
+symbol belonging to that side. Missing old/index source never silently uses worktree bytes.
+
+`changes [PATH]` takes a directory or existing file, defaults to `.` and requires one scope. Use a
+directory scope for worktree-deleted files. Working compares
+HEAD with worktree (staged, unstaged and untracked changes), staged compares HEAD with index,
+and since compares the supplied ref directly with worktree, not a merge-base. Default output is
+body-free; request `--source` only when source helps the next decision. The rendered response
+uses the same budget as `read`.
+
+At most 32 changed pairs and 64 side captures share a 32 MiB input limit and 8 MiB per-file bound,
+or stricter configured limits. Git candidate/rename discovery can perform I/O outside that
+capture allowance. At most 128 derived targets enter output admission; omitted-target counts
+include this cap and byte/token omissions. Inspect capture gaps, directly mapped definitions, wrapper-only
+changes, uncovered/ambiguous ranges, work-limit gaps and output omissions separately. A compact
+result is not proof that a larger changeset was fully mapped. Do not infer semantic renames from
+matching names; use Git-detected path evidence.
+
 ## Request outlines only when needed
 
 ```sh
@@ -65,15 +93,15 @@ already known.
 
 ## Keep identity and coverage honest
 
-The command reads current worktree content, not a Git index or base revision. Source ranges and
-returned bytes belong to the same captured file content. Each file is captured once, but the batch
-is not an atomic snapshot across files or a Git snapshot. The returned SHA-256 identity can guard
+Source ranges, exact diff hunks and returned bytes belong to the same captured file side. Each
+side is captured once; worktree capture is not atomic across files. Git refs are pinned to tree
+OIDs and index reads use the captured index. The returned SHA-256 identity can guard
 a later
 read with repeatable `--expect-hash <file> <sha256>`; only selected files may be named. A stale
 expectation returns no source for that file. A hash is not a guarantee that the file remains
 unchanged after the command finishes.
 
-Input limits are distinct from output limits: 8 MiB per file, 32 MiB total and 32 files, or stricter
+Explicit-read input limits are distinct from output limits: 8 MiB per file, 32 MiB total and 32 files, or stricter
 configured limits. The command defaults to the `agent` profile; use `--profile safe` for an
 untrusted checkout. Explicit paths retain ignore, exclusion, target and no-follow policy. Unsupported
 languages/declaration kinds, parser/extraction gaps, policy-ineligible input, stale content and

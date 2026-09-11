@@ -193,6 +193,8 @@ pub struct Config {
     pub impact: bool,
     /// Assemble the bounded, change-focused decision report.
     pub change_summary: bool,
+    /// Add body-free changed-definition evidence to diff-scoped parent reports for this invocation only.
+    pub changed_definitions: bool,
     /// Filter findings to changed lines, optionally comparing both snapshots.
     pub review: Option<crate::cli::ReviewMode>,
     /// Built-in runtime execution profile selected by the caller.
@@ -264,6 +266,7 @@ impl Default for Config {
             graph_direction: crate::cli::GraphDirection::Both,
             impact: false,
             change_summary: false,
+            changed_definitions: false,
             review: None,
             execution_profile: "full".to_string(),
             config_mode: "defaults".to_string(),

@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-10 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-12 · latest release 0.2.2 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 18_
 
 ---
@@ -39,8 +39,11 @@ any path inside it**, so they can make decisions *before* diving in:
   dump.
 - **Read a known definition without guessing its end?** → `reposcout read [PATH]` with repeatable
   `--symbol FILE SYMBOL` or `--line FILE LINE`; `--outline FILE` is a body-free alternative.
-  Unix-only worktree source, SHA-256 expectations and complete rendered token/byte budgets preserve
+  Unix-only worktree/index/revision source, SHA-256 expectations and rendered token/byte budgets preserve
   identity and visible omissions. See [source queries](docs/source-queries.md).
+- **Which definitions changed?** → `reposcout changes [PATH]` with one diff scope returns body-free
+  old/new definition evidence; `--source` explicitly delivers complete captured definitions.
+  `--changed-definitions` adds a separately bounded body-free block to change-summary or review.
 - **Where is a declaration, and what can this binary do?** → `reposcout locate SYMBOL [PATH]`
   and zero-scan `reposcout capabilities -f json`.
 - **Need to invalidate persistent facts while debugging?** → `reposcout cache clear [PATH]`
@@ -59,6 +62,15 @@ The design bias is therefore **high signal, low noise, machine-readable, fast**.
 doubt, optimize for "an agent can trust and act on this in one glance" over completeness.
 
 ## Current state
+
+- **Snapshot reads and changed definitions (unreleased).** `read --snapshot worktree|index|REF`
+  selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with
+  worktree/index or a supplied ref directly with the worktree and derives hunks, mappings and
+  returned source from the same captured buffers. It accounts separately for capture gaps,
+  wrapper/unmapped/ambiguous evidence, work limits and output omissions. Up to 32 changed pairs
+  share a 32 MiB input ceiling; the direct output defaults remain 4,096 tokens / 65,536 bytes.
+  `--changed-definitions` embeds body-free evidence in change-summary/review under its own
+  4,096-token / 16,384-byte compact-JSON budget. Agent-summary remains unchanged.
 
 - **Explicit source queries (unreleased).** On Unix, `read` selects known definitions or body-free file
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.

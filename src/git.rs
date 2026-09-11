@@ -740,6 +740,144 @@ pub enum DiffScope {
     Working,
 }
 
+/// Collect path and rename candidates from the supplied base tree and index without resolving refs again.
+pub(crate) fn candidate_changes(
+    repo: &Repository,
+    base: Option<&git2::Tree<'_>>,
+    index: Option<&git2::Index>,
+    scope: &DiffScope,
+) -> Result<Vec<ReviewChangedFile>> {
+    anyhow::ensure!(
+        index.is_some(),
+        "changed-source capture requires a pinned index"
+    );
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_typechange(true);
+    let mut diff = repo.diff_tree_to_index(base, index, Some(&mut opts))?;
+    if !matches!(scope, DiffScope::Staged) {
+        let worktree = repo.diff_index_to_workdir(index, Some(&mut opts))?;
+        diff.merge(&worktree)?;
+    }
+    let mut find = DiffFindOptions::new();
+    find.renames(true).for_untracked(true);
+    diff.find_similar(Some(&mut find))?;
+    let mut files = diff
+        .deltas()
+        .map(|delta| {
+            let (old_path, path) = review_paths(&delta);
+            ReviewChangedFile {
+                old_path,
+                path,
+                status: delta_status(delta.status()).to_string(),
+                old_ranges: Vec::new(),
+                ranges: Vec::new(),
+                binary: delta.flags().is_binary(),
+            }
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| {
+        left.path
+            .as_ref()
+            .or(left.old_path.as_ref())
+            .cmp(&right.path.as_ref().or(right.old_path.as_ref()))
+    });
+    Ok(files)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "synthetic Git fixtures must fail immediately on invalid setup"
+)]
+mod candidate_tests {
+    use super::*;
+
+    #[test]
+    fn candidates_use_captured_index_instead_of_reopening_disk_index() {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = Repository::init(directory.path()).unwrap();
+        std::fs::write(directory.path().join("first.rs"), "fn first() {}\n").unwrap();
+        let mut pinned = repo.index().unwrap();
+        pinned.add_path(Path::new("first.rs")).unwrap();
+        pinned.write().unwrap();
+        std::fs::write(directory.path().join("second.rs"), "fn second() {}\n").unwrap();
+        let later_repo = Repository::open(directory.path()).unwrap();
+        let mut later = later_repo.index().unwrap();
+        later.add_path(Path::new("second.rs")).unwrap();
+        later.write().unwrap();
+        let files = candidate_changes(&repo, None, Some(&pinned), &DiffScope::Staged).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path.as_deref(), Some(Path::new("first.rs")));
+        assert!(files[0].old_path.is_none());
+        let working = candidate_changes(&repo, None, Some(&pinned), &DiffScope::Working).unwrap();
+        assert_eq!(working.len(), 2);
+        assert!(
+            working
+                .iter()
+                .all(|file| file.ranges.is_empty() && file.old_ranges.is_empty())
+        );
+    }
+
+    #[test]
+    fn candidates_preserve_rename_paths_against_supplied_tree_without_head() {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = Repository::init(directory.path()).unwrap();
+        std::fs::write(
+            directory.path().join("old.rs"),
+            "fn retained() { let value = 12; }\n",
+        )
+        .unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("old.rs")).unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        std::fs::rename(
+            directory.path().join("old.rs"),
+            directory.path().join("new.rs"),
+        )
+        .unwrap();
+        index.remove_path(Path::new("old.rs")).unwrap();
+        index.add_path(Path::new("new.rs")).unwrap();
+        let files =
+            candidate_changes(&repo, Some(&tree), Some(&index), &DiffScope::Staged).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].status, "renamed");
+        assert_eq!(files[0].old_path.as_deref(), Some(Path::new("old.rs")));
+        assert_eq!(files[0].path.as_deref(), Some(Path::new("new.rs")));
+    }
+
+    #[test]
+    fn candidates_keep_regular_symlink_typechanges_as_one_two_sided_pair() {
+        for (old_mode, new_mode) in [(0o100_644, 0o120_000), (0o120_000, 0o100_644)] {
+            let directory = tempfile::tempdir().unwrap();
+            let repo = Repository::init(directory.path()).unwrap();
+            std::fs::write(directory.path().join("source.rs"), "fn original() {}\n").unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("source.rs")).unwrap();
+            let mut entry = index.get_path(Path::new("source.rs"), 0).unwrap();
+            entry.mode = old_mode;
+            entry.id = repo.blob(b"before").unwrap();
+            index.add(&entry).unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            entry.mode = new_mode;
+            entry.id = repo.blob(b"after").unwrap();
+            index.add(&entry).unwrap();
+
+            let files =
+                candidate_changes(&repo, Some(&tree), Some(&index), &DiffScope::Staged).unwrap();
+            assert_eq!(files.len(), 1, "{old_mode:o} -> {new_mode:o}");
+            assert_eq!(files[0].status, "typechange");
+            assert_eq!(files[0].old_path.as_deref(), Some(Path::new("source.rs")));
+            assert_eq!(files[0].path.as_deref(), Some(Path::new("source.rs")));
+            assert!(files[0].old_ranges.is_empty());
+            assert!(files[0].ranges.is_empty());
+        }
+    }
+}
+
 /// Resolve the exact Git tree used as the base of a diff-scoped scan.
 ///
 /// # Errors

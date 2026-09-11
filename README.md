@@ -31,7 +31,7 @@ RepoScout combines signals that usually require several tools:
 | **Is cleanup worthwhile?** | Exact and Type-2 duplication, markers, hotspots, and an evidence-qualified assessment |
 | **How broad is the work?** | Raw seed, context-budget, dependent, test, graph-component, and confidence counts |
 | **What should be read next?** | A deterministic context plan under hard token and file budgets |
-| **Read a known definition?** | Explicit worktree source or body-free outlines on Unix under a shared output budget |
+| **Read a known or changed definition?** | Worktree, index or revision source and body-free change selection on Unix under shared output budgets |
 | **What could this change affect?** | Diff-scoped review, dependency/type graphs, and direct/transitive impact |
 
 Everything runs locally. RepoScout does not upload source, call a model, or write analysis state
@@ -119,6 +119,9 @@ reposcout read . --symbol src/service.ts Service.start --budget 4096 -f json
 reposcout --agent-summary --focus src/service.ts \
   --context-budget 24000 --context-max-files 15 .
 
+# Select staged definitions without source; add --source when their bodies are needed
+reposcout changes . --staged -f json
+
 # Get a bounded decision report for the current working-tree change
 reposcout --working --change-summary -f json .
 ```
@@ -189,7 +192,7 @@ retains token authentication, and is intended only behind a TLS proxy. See
 | [Getting started](docs/getting-started.md) | Installation, first scan, formats, languages, and defaults |
 | [CLI reference](docs/cli-reference.md) | Commands, grouped options, examples, gates, and debug logs |
 | [Agent workflows](docs/agent-workflows.md) | Summary scouting, context, locate, explain, impact, and review |
-| [Read explicit definitions](docs/source-queries.md) | Worktree source, batch targets, body-free outlines, hashes, budgets, and coverage |
+| [Source and changed-definition queries](docs/source-queries.md) | Snapshot reads, changed definitions, outlines, hashes, budgets, and coverage |
 | [Metrics and interpretation](docs/metrics.md) | Complexity, duplication, risk, tests, assessment, and limits |
 | [Configuration and caching](docs/configuration.md) | Precedence, profiles, project policy, ignores, and cache behavior |
 | [Reports and machine formats](docs/report-formats.md) | JSON, NDJSON, SARIF, Markdown, DOT, Mermaid, and exit codes |

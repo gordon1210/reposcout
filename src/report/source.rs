@@ -1,6 +1,7 @@
 use super::{Format, json_string, markdown_text, terminal_text};
 use crate::model::{
-    SourceQueryCapability, SourceQueryDefinition, SourceQueryReport, SourceQueryResult, SourceSpan,
+    SourceQueryCapability, SourceQueryDefinition, SourceQueryReport, SourceQueryResult,
+    SourceRevision, SourceSpan,
 };
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -49,28 +50,33 @@ fn human(report: &SourceQueryReport, markdown: bool) -> Result<String> {
     } else if report.root_omitted {
         writeln!(output, "Root: omitted")?;
     }
-    for file in &report.files {
+    if let Some(change) = &report.change {
         writeln!(
             output,
-            "\nFile {}: {}",
-            file.id,
-            safe_text(&file.path.to_string_lossy(), markdown)
+            "Change scope: {}; {} → {}",
+            change.scope,
+            snapshot_text(&change.base),
+            snapshot_text(&change.current)
         )?;
-        if let Some(language) = &file.language {
-            writeln!(output, "Language: {}", safe_text(language, markdown))?;
-        }
-        if let Some(hash) = &file.sha256 {
-            writeln!(output, "SHA-256: {hash}")?;
-        }
-        if let Some(extraction) = &file.extraction {
-            writeln!(output, "Extraction: {}", label(extraction)?)?;
-        }
-        if let (Some(declarations), Some(sources)) = (file.declarations, file.source_definitions) {
-            writeln!(
-                output,
-                "Declarations: {declarations}; available source definitions: {sources}"
-            )?;
-        }
+        writeln!(
+            output,
+            "Files: {} total, {} processed, {} omitted; mapped definitions: {}; unmapped ranges: {}; unavailable sides: {}; unprocessed ranges: {}",
+            change.total_files,
+            change.processed_files,
+            change.omitted_files,
+            change.mapped_definitions,
+            change.unmapped_ranges,
+            change.unavailable_sides,
+            change.unprocessed_ranges
+        )?;
+        writeln!(
+            output,
+            "Hunks: {}; omitted: {}",
+            change.total_hunks, change.omitted_hunks
+        )?;
+    }
+    for file in &report.files {
+        render_file(&mut output, file, markdown)?;
     }
     for result in &report.results {
         render_result(&mut output, result, markdown)?;
@@ -100,6 +106,43 @@ fn human(report: &SourceQueryReport, markdown: bool) -> Result<String> {
     Ok(output)
 }
 
+fn render_file(
+    output: &mut String,
+    file: &crate::model::SourceQueryFile,
+    markdown: bool,
+) -> Result<()> {
+    writeln!(
+        output,
+        "\nFile {}: {}",
+        file.id,
+        safe_text(&file.path.to_string_lossy(), markdown)
+    )?;
+    if let Some(language) = &file.language {
+        writeln!(output, "Language: {}", safe_text(language, markdown))?;
+    }
+    writeln!(
+        output,
+        "Snapshot: {}",
+        safe_text(&snapshot_text(&file.snapshot), markdown)
+    )?;
+    if let Some(status) = &file.status {
+        writeln!(output, "Status: {}", label(status)?)?;
+    }
+    if let Some(hash) = &file.sha256 {
+        writeln!(output, "SHA-256: {hash}")?;
+    }
+    if let Some(extraction) = &file.extraction {
+        writeln!(output, "Extraction: {}", label(extraction)?)?;
+    }
+    if let (Some(declarations), Some(sources)) = (file.declarations, file.source_definitions) {
+        writeln!(
+            output,
+            "Declarations: {declarations}; available source definitions: {sources}"
+        )?;
+    }
+    Ok(())
+}
+
 fn render_result(output: &mut String, result: &SourceQueryResult, markdown: bool) -> Result<()> {
     write!(
         output,
@@ -117,6 +160,35 @@ fn render_result(output: &mut String, result: &SourceQueryResult, markdown: bool
         write!(output, " · source {source}")?;
     }
     output.push('\n');
+    if let Some(change) = &result.change {
+        writeln!(
+            output,
+            "  Change: {} · {} · {}{}",
+            change.side,
+            change.file_status,
+            change.reason,
+            if change.ambiguous {
+                " · ambiguous physical-line attribution"
+            } else {
+                ""
+            }
+        )?;
+        if let Some(path) = &change.counterpart {
+            writeln!(
+                output,
+                "  Counterpart: {}",
+                safe_text(&path.to_string_lossy(), markdown)
+            )?;
+        }
+        for (name, ranges) in [
+            ("Changed lines", &change.ranges),
+            ("Wrapper lines", &change.wrapper_ranges),
+        ] {
+            for range in ranges {
+                writeln!(output, "  {name}: {}–{}", range.start, range.end)?;
+            }
+        }
+    }
     if let Some(definition) = &result.definition {
         render_definition(output, definition, markdown)?;
     }
@@ -163,6 +235,15 @@ fn span_text(span: SourceSpan) -> String {
     )
 }
 
+fn snapshot_text(snapshot: &SourceRevision) -> String {
+    match snapshot {
+        SourceRevision::Worktree => "worktree".to_string(),
+        SourceRevision::Index => "index".to_string(),
+        SourceRevision::Tree(revision) => format!("tree {revision}"),
+        SourceRevision::Empty => "empty base".to_string(),
+    }
+}
+
 fn safe_text(value: &str, markdown: bool) -> String {
     if markdown {
         markdown_text(value)
@@ -199,6 +280,7 @@ pub(super) fn capability_table(source: &SourceQueryCapability) -> String {
         source.platforms.join(", ")
     );
     let _ = writeln!(output, "  Selectors: {}", source.selectors.join("; "));
+    let _ = writeln!(output, "  Snapshots: {}", source.snapshots.join(", "));
     let _ = writeln!(output, "  Formats: {}", source.formats.join(", "));
     let _ = writeln!(
         output,

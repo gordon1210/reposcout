@@ -8,6 +8,12 @@ within their section.
 
 ### Added
 
+- Added Unix-only `changes` queries for body-free changed-definition selection and explicit
+  `--source` delivery across working, staged and direct revision comparisons. Snapshot reads via
+  `read --snapshot worktree|index|REF` retain pinned content identity, including deleted source.
+  `--changed-definitions` adds separately bounded body-free evidence to change-summary/review;
+  capture, mapping/work-limit and output gaps remain distinct.
+
 - Added Unix-only explicit `read` queries for known worktree definitions by file and exact symbol or line,
   batch targets under a shared token/byte output budget, and optional body-free file outlines.
   Content hashes, stale checks, ambiguity and omission states preserve the boundaries of each

@@ -9,7 +9,20 @@ impact analysis; and finding-level review.
 - `--staged` for index changes.
 - `--since <ref>` for changes since a branch, tag, or commit.
 
-Start with the decision-oriented projection:
+If the next decision needs changed definitions rather than repository-wide change context, use:
+
+```sh
+reposcout changes <directory> --working -f json
+reposcout changes <directory> --staged --source --budget 4096 -f json
+```
+
+The direct query is body-free by default; source is explicit and uses one output budget. Working
+compares HEAD with worktree including staged, unstaged and untracked changes; staged compares
+HEAD with the captured index; since compares the specified ref directly with worktree rather
+than a merge-base. Read [source-query guidance](source-queries.md) for snapshot identity, Unix
+support, capture limits and mapping gaps. No preceding scout is required.
+
+When the decision needs the broader change context, use the decision-oriented projection:
 
 ```sh
 reposcout --working --change-summary -f json <path>
@@ -23,6 +36,14 @@ older installed binary rejects `--change-summary`, use:
 reposcout -f json --summary --profile agent \
   --working --context --impact <path>
 ```
+
+To include body-free changed definitions in that report, add `--changed-definitions`. It requires
+change-summary or review plus exactly one scope. The separate `definition_changes` block has a
+4,096-token / 16,384-byte compact-JSON budget, not a cap on the whole surrounding report. The flag
+supports table/JSON/Markdown/NDJSON and rejects agent-summary, baseline-ready and graph/SARIF
+formats. Its capture is independent of the earlier parent scan; live edits can make parent
+metadata differ from this internally consistent block. Use `changes --source` when the actual
+bodies are needed.
 
 ## Interpret the decision report
 

@@ -89,7 +89,8 @@ same discovery policy,
 per-file analyzer/profile, parser and cache. It does not create a query-only pipeline or run
 whole-corpus duplication, churn or graph topology. Definition identity, own declaration span and
 optional wrapper-expanded retrieval span are distinct facts derived from the same captured file
-bytes. Each file is captured once per query; the batch is not an atomic cross-file or Git snapshot.
+bytes. Each requested file side is captured once per query. Worktree batches have no atomic
+cross-file guarantee; tree revisions resolve once to OIDs and index reads use the captured index.
 The targeted snapshot accepts at most 8 MiB per file, 32 MiB total and 32 files, with stricter
 configured limits preserved. The explicitly selected target directory is canonicalized once;
 no-follow traversal applies to source components below that anchor, not to every ancestor of the
@@ -99,6 +100,26 @@ stale expectations never permit old spans to be applied to new bytes.
 The reader uses Unix handle-relative no-follow traversal. Non-Unix queries fail before source
 I/O; do not substitute path-based or best-effort fallback reads. Repository inventory behavior
 is outside this query-specific platform boundary.
+
+`read --snapshot worktree|index|REF` shares the snapshot adapters, analysis and policy machinery.
+Old/index content must never silently fall back to live worktree bytes. `changes` uses supplied,
+pinned Git inputs for path/rename candidates, then derives zero-context hunks, definition facts
+and returned source from the same captured buffers. Working scope is HEAD to worktree (including
+staged, unstaged and untracked changes); staged is HEAD to index; since is the selected ref directly
+to worktree, not a merge-base. Only Git-detected path renames are evidence; do not infer semantic
+symbol renames. The mapper compares direct candidates by declaration span and wrapper-only
+candidates by source span in one innermost selection. An edit inside one declaration must not
+select a sibling through their shared wrapper; equally specific shared-header ownership remains
+ambiguous. The pure mapper distinguishes direct innermost, wrapper-only, uncovered,
+ambiguous and unprocessed evidence without I/O.
+
+Changed queries capture at most 32 file pairs, or stricter configured file limits, with at most
+64 side captures sharing 32 MiB total and 8 MiB per file. Respect stricter configured limits,
+including Git-blob bounds. Capture, hunk/mapping work limits and output omissions are separate
+completeness dimensions. Git candidate/rename discovery I/O is outside the source-capture byte
+allowance. Shared source deduplication includes the snapshot side as identity. An embedded
+`definition_changes` block captures independently after the ordinary scan; its internal evidence
+is consistent, but live edits can make it differ from earlier parent metadata.
 
 ## Language and health scope
 

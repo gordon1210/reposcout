@@ -23,6 +23,7 @@ fn options(path: &str, names: &[&str]) -> SourceQueryOptions {
                 path: PathBuf::from(path),
                 selector: SourceSelector::Symbol((*name).to_string()),
                 expected_hash: None,
+                snapshot: reposcout::model::SourceRevision::Worktree,
             })
             .collect(),
         token_budget: 2_048,
@@ -110,6 +111,7 @@ fn same_line_siblings_remain_ambiguous_while_nested_line_selection_is_precise() 
             path: PathBuf::from("lib.rs"),
             selector: SourceSelector::Line(line),
             expected_hash: None,
+            snapshot: reposcout::model::SourceRevision::Worktree,
         })
         .collect();
     let output = read_source(directory.path(), &config(), &[], &query).unwrap();
@@ -141,6 +143,7 @@ fn many_same_line_siblings_have_bounded_candidates_and_exact_ambiguity_count() {
         path: PathBuf::from("lib.rs"),
         selector: SourceSelector::Line(1),
         expected_hash: None,
+        snapshot: reposcout::model::SourceRevision::Worktree,
     });
     let output = read_source(directory.path(), &config(), &[], &query).unwrap();
     let result = &output.report.results[0];

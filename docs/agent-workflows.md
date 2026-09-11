@@ -201,6 +201,20 @@ An oversized explicit focus may appear as `outline_only`: its source does not fi
 its path and selection evidence remain visible. Full JSON also carries its bounded declarations.
 Unmatched focus values stay explicit rather than becoming invented seeds.
 
+## Select changed definitions directly
+
+```sh
+reposcout changes . --working -f json
+reposcout changes . --staged --source --budget 4096 -f json
+```
+
+Use this when the next question concerns the definitions touched by a diff. Default output stays
+body-free; `--source` delivers complete captured old/new definitions under the shared output
+budget. `--working` is HEAD to worktree, `--staged` is HEAD to index, and `--since REF` is the ref
+directly to worktree. Inspect capture, mapping and omission evidence before treating a small
+result as complete. Known targets can also be read directly from `--snapshot index` or a Git ref.
+See [source and changed-definition queries](source-queries.md) for Unix support and limits.
+
 ## Plan from a change
 
 ```sh
@@ -212,6 +226,10 @@ reposcout --since main --change-summary -f json src/
 compact rendering, context planning, and impact analysis. The primary scan remains diff-scoped;
 the shared full-tree planning/topology universe supplies unchanged tests, dependencies, and
 dependents without adding general health rankings to the result.
+
+Add `--changed-definitions` when the same report also needs body-free definition evidence. Its
+`definition_changes` block has an independent 4,096-token / 16,384-byte compact-JSON budget; use
+`changes --source` for actual source. This opt-in does not change agent-summary.
 
 Read the dedicated projection in this order:
 

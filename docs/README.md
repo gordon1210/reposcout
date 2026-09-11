@@ -9,7 +9,7 @@ a reference manual.
 | [Getting started](getting-started.md) | Install RepoScout, run the first scan, and understand its defaults |
 | [CLI reference](cli-reference.md) | Find commands, flags, examples, gates, and debugging options |
 | [Agent workflows](agent-workflows.md) | Produce hard-bounded scouting, change decisions, context, impact, review, and symbol-query results |
-| [Read explicit definitions](source-queries.md) | Read known worktree definitions or body-free outlines under one output budget |
+| [Source and changed-definition queries](source-queries.md) | Read snapshot definitions or inspect changed definitions under bounded output contracts |
 | [Godot support](godot.md) | Scout GDScript, shaders, scenes, resources, and project dependencies |
 | [Metrics and interpretation](metrics.md) | Understand complexity, duplication, risk, test matching, and analysis limits |
 | [Configuration and caching](configuration.md) | Set personal or project defaults and inspect what RepoScout resolved |
