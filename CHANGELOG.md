@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the tree-sitter runtime to 0.27.0 and adapted child-count indexing to its API.
+  Analyzer version 19 invalidates cached parse-derived facts for the updated parser recovery
+  behavior; grammar versions and JSON schema 2.0 remain unchanged.
+
 ## [0.2.3] - 2026-09-12
 
 ### Added

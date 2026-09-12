@@ -158,7 +158,7 @@ pub(super) fn count_parse_errors(root: Node<'_>) -> usize {
             errors = errors.saturating_add(1);
         }
         for index in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(crate::numeric::usize_to_u32(index)) {
+            if let Some(child) = node.child(index) {
                 stack.push(child);
             }
         }

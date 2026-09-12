@@ -146,7 +146,7 @@ fn analyze_scope(
         };
 
         for i in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(usize_to_u32(i)) {
+            if let Some(child) = node.child(i) {
                 stack.push((child, child_nesting));
             }
         }
@@ -169,7 +169,7 @@ fn collect_functions(
             nodes.push(node);
         }
         for i in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(usize_to_u32(i)) {
+            if let Some(child) = node.child(i) {
                 stack.push(child);
             }
         }
@@ -218,7 +218,7 @@ fn directly_calls(root: Node<'_>, cfg: &LangConfig, content: &str, name: &str) -
             return true;
         }
         for index in (0..node.child_count()).rev() {
-            if let Some(child) = node.child(usize_to_u32(index)) {
+            if let Some(child) = node.child(index) {
                 stack.push(child);
             }
         }
@@ -448,7 +448,7 @@ fn count_boolean_operators(node: Node<'_>, fc: FirstClass, content: &str) -> u32
             count = count.saturating_add(1);
         }
         for i in (0..current.child_count()).rev() {
-            if let Some(child) = current.child(usize_to_u32(i)) {
+            if let Some(child) = current.child(i) {
                 stack.push(child);
             }
         }
@@ -482,7 +482,7 @@ fn collect_boolean_ops_in_order(
             ops.push(op);
         }
         for i in (0..current.child_count()).rev() {
-            if let Some(child) = current.child(usize_to_u32(i)) {
+            if let Some(child) = current.child(i) {
                 stack.push(child);
             }
         }
@@ -681,7 +681,7 @@ fn named_field_text(node: Node<'_>, field: &str, content: &str) -> Option<String
 
 fn first_child_text_of_kind(node: Node<'_>, kind: &str, content: &str) -> Option<String> {
     for i in 0..node.child_count() {
-        let child = node.child(usize_to_u32(i))?;
+        let child = node.child(i)?;
         if child.kind() == kind {
             let text = node_text(child, content).trim();
             if !text.is_empty() {
@@ -719,7 +719,7 @@ fn halstead_from_ast(root: Node<'_>, content: &str) -> Halstead {
             }
         } else {
             for i in (0..node.child_count()).rev() {
-                if let Some(child) = node.child(usize_to_u32(i)) {
+                if let Some(child) = node.child(i) {
                     stack.push(child);
                 }
             }

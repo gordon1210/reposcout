@@ -6,7 +6,7 @@ reference it routes to under `docs/agents/` for *how to work in the repo*. Use `
 user-facing behavior.
 
 _Last updated: 2026-09-12 · latest release 0.2.3 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 18_
+`ANALYZER_VERSION` 19_
 
 ---
 
@@ -76,7 +76,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
-  Cached definition facts use analyzer version 18 while the additive schema remains 2.0.
+  Cached definition facts use analyzer version 19 while the additive schema remains 2.0.
+  The tree-sitter 0.27.0 runtime changes parser recovery behavior; the cache version invalidates
+  earlier parse-derived facts. Grammar versions remain unchanged.
   Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
   `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
   inventory behavior is unchanged.
