@@ -677,6 +677,7 @@ mod tests {
                     confidence: "high".to_string(),
                     distance: Some(0),
                     resolver: None,
+                    diagnostic_ids: Vec::new(),
                 }],
                 ..ContextFile::default()
             }],

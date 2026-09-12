@@ -146,8 +146,9 @@ fully covered merely because its bounded result fits. Output ordering and source
 retain the content side: identical paths or line numbers in different snapshots are not the same
 source chunk.
 
-Neither snapshot retrieval nor changed-definition selection performs semantic rename guessing,
-free-text task search or call tracing. Ordinary `locate`, scouting and context output keep their
+Neither snapshot retrieval nor changed-definition selection performs semantic rename guessing.
+Separate [task queries](task-queries.md) provide lexical search, definition plans and conservative
+consumer lookup. Ordinary `locate`, scouting and context output keep their
 body-free defaults.
 
 ## Add definitions to an existing change report
@@ -341,7 +342,7 @@ Choose the entry point already available:
 - Known file and symbol or line: request the definition directly if its source is needed.
 - Need a file's declaration surface: request its body-free outline from the relevant snapshot.
 - Known diff scope: use `changes` for changed definitions and request `--source` only when needed.
-- Unknown symbol location: use existing `locate` or ordinary text search, then read only the
+- Unknown symbol location: use `locate`, lexical `find` or ordinary text search, then read only the
   selected definition when necessary.
 - Need a bounded multi-file reading plan: use context planning and inspect its evidence before
   reading additional source.

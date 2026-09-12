@@ -210,7 +210,7 @@ mod platform_tests {
     }
 }
 
-fn with_file_expectations(
+pub(super) fn with_file_expectations(
     targets: &[SourceQueryTarget],
     paths: &[Option<PathBuf>],
 ) -> Result<Vec<SourceQueryTarget>> {
@@ -310,7 +310,7 @@ fn validate_targets(options: &SourceQueryOptions) -> Result<()> {
     Ok(())
 }
 
-fn normalize_path(root: &Path, root_alias: &Path, path: &Path) -> Option<PathBuf> {
+pub(super) fn normalize_path(root: &Path, root_alias: &Path, path: &Path) -> Option<PathBuf> {
     let relative = if path.is_absolute() {
         path.strip_prefix(root)
             .or_else(|_| path.strip_prefix(root_alias))

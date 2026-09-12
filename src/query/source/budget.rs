@@ -22,6 +22,17 @@ pub(crate) fn admit(
     options: &SourceQueryOptions,
     counter: &TokenCounter,
 ) -> Result<()> {
+    admit_with_fit(report, resolved, options, |candidate| {
+        fits(candidate, options, counter)
+    })
+}
+
+pub(crate) fn admit_with_fit(
+    report: &mut SourceQueryReport,
+    resolved: ResolvedTarget<'_>,
+    options: &SourceQueryOptions,
+    fits: impl Fn(&SourceQueryReport) -> Result<bool>,
+) -> Result<()> {
     let mut result = resolved.result;
     if let Some((content, span)) = resolved.source {
         if span.end_byte.saturating_sub(span.start_byte) <= options.byte_budget {
@@ -33,7 +44,7 @@ pub(crate) fn admit(
             if let Some(last) = candidate.results.last_mut() {
                 last.source = Some(source_id);
             }
-            if fit_candidate(&mut candidate, options, counter)? {
+            if fit_candidate_with(&mut candidate, &fits)? {
                 *report = candidate;
                 return Ok(());
             }
@@ -43,7 +54,7 @@ pub(crate) fn admit(
     }
     loop {
         let mut candidate = appended(report, resolved.file.as_ref(), result.clone());
-        if fit_candidate(&mut candidate, options, counter)? {
+        if fit_candidate_with(&mut candidate, &fits)? {
             *report = candidate;
             return Ok(());
         }
@@ -61,7 +72,7 @@ pub(crate) fn admit(
     result.source = None;
     result.change = None;
     let mut candidate = appended(report, None, result);
-    if fit_candidate(&mut candidate, options, counter)? {
+    if fit_candidate_with(&mut candidate, &fits)? {
         *report = candidate;
     }
     Ok(())
@@ -86,17 +97,16 @@ fn appended(
     candidate
 }
 
-fn fit_candidate(
+fn fit_candidate_with(
     candidate: &mut SourceQueryReport,
-    options: &SourceQueryOptions,
-    counter: &TokenCounter,
+    fits: &impl Fn(&SourceQueryReport) -> Result<bool>,
 ) -> Result<bool> {
-    if fits(candidate, options, counter)? {
+    if fits(candidate)? {
         return Ok(true);
     }
     if candidate.root.take().is_some() {
         candidate.root_omitted = true;
-        return fits(candidate, options, counter);
+        return fits(candidate);
     }
     Ok(false)
 }

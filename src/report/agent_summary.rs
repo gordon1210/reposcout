@@ -8,7 +8,8 @@ use crate::model::{
     AnalyzerProfile, Assessment, ComplexitySummary, ContextEvidence, ContextFile,
     ContextOutlineOnly, DuplicateBlock, DuplicationProfile, FileRef, FunctionHotspot,
     HealthProfile, RiskEntry, ScanDiagnostics, ScanReport, SkipCandidate, SourceSummary,
-    SymbolCounts, TestFramework, WorkScopeCoverage,
+    SymbolCounts, TaskDiagnostic, TaskDiagnosticEvidence, TaskDiagnosticFormat,
+    TaskDiagnosticStatus, TestFramework, WorkScopeCoverage,
 };
 use anyhow::{Context as _, Result, bail};
 use serde::Serialize;
@@ -21,6 +22,7 @@ pub(crate) const MAX_DIRECT_CONTEXT_ENTRIES: usize = 5;
 pub(crate) const MAX_EXPANSION_CONTEXT_ENTRIES: usize = 3;
 pub(crate) const MAX_OUTLINE_ONLY_ENTRIES: usize = 3;
 pub(crate) const MAX_UNMATCHED_FOCUS_ENTRIES: usize = 3;
+pub(crate) const MAX_TASK_DIAGNOSTIC_ENTRIES: usize = 3;
 
 #[derive(Serialize)]
 struct AgentSummary<'a> {
@@ -175,6 +177,8 @@ struct TestSignals<'a> {
 #[derive(Serialize)]
 struct AgentContext<'a> {
     strategy_version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_evidence: Option<AgentTaskEvidence<'a>>,
     budget: ContextBudget,
     evidence: ContextEvidenceSummary,
     focus_files: usize,
@@ -184,6 +188,26 @@ struct AgentContext<'a> {
     direct_evidence: ContextBoundedList<ContextEntry<'a>>,
     expand_if_needed: ContextBoundedList<ContextEntry<'a>>,
     outline_only: ContextBoundedList<OutlineEntry<'a>>,
+}
+
+#[derive(Serialize)]
+struct AgentTaskEvidence<'a> {
+    format: TaskDiagnosticFormat,
+    status: &'a str,
+    bytes_read: usize,
+    parsed_records: usize,
+    deduplicated_records: usize,
+    resolved_records: usize,
+    unresolved_records: usize,
+    out_of_scope_records: usize,
+    parse_errors: usize,
+    ignored_records: usize,
+    input_truncated: bool,
+    records_truncated: bool,
+    omitted_records: usize,
+    omitted_records_exact: bool,
+    omitted_details: usize,
+    diagnostics: BoundedList<&'a TaskDiagnostic>,
 }
 
 #[derive(Serialize)]
@@ -437,10 +461,15 @@ impl<'a> AgentSummary<'a> {
     }
 
     fn trim_one(&mut self) -> bool {
-        self.signals
-            .tests
+        self.context
             .as_mut()
-            .is_some_and(|tests| tests.frameworks.remove_last())
+            .and_then(|context| context.task_evidence.as_mut())
+            .is_some_and(|evidence| evidence.diagnostics.remove_last())
+            || self
+                .signals
+                .tests
+                .as_mut()
+                .is_some_and(|tests| tests.frameworks.remove_last())
             || self.signals.skip_candidates.remove_last()
             || self
                 .signals
@@ -527,11 +556,47 @@ impl AgentContext<'_> {
             + self.direct_evidence.omitted
             + self.expand_if_needed.omitted
             + self.outline_only.omitted
+            + self
+                .task_evidence
+                .as_ref()
+                .map_or(0, |evidence| evidence.diagnostics.omitted)
     }
 }
 
 fn bounded_refs<T>(entries: &[T], maximum: usize) -> BoundedList<&T> {
     BoundedList::new(entries.iter().collect(), maximum)
+}
+
+fn task_evidence(evidence: &TaskDiagnosticEvidence) -> AgentTaskEvidence<'_> {
+    let unresolved = evidence
+        .diagnostics
+        .iter()
+        .filter(|record| record.status != TaskDiagnosticStatus::Resolved);
+    let resolved = evidence
+        .diagnostics
+        .iter()
+        .filter(|record| record.status == TaskDiagnosticStatus::Resolved);
+    AgentTaskEvidence {
+        format: evidence.format,
+        status: &evidence.status,
+        bytes_read: evidence.bytes_read,
+        parsed_records: evidence.parsed_records,
+        deduplicated_records: evidence.deduplicated_records,
+        resolved_records: evidence.resolved_records,
+        unresolved_records: evidence.unresolved_records,
+        out_of_scope_records: evidence.out_of_scope_records,
+        parse_errors: evidence.parse_errors,
+        ignored_records: evidence.ignored_records,
+        input_truncated: evidence.input_truncated,
+        records_truncated: evidence.records_truncated,
+        omitted_records: evidence.omitted_records,
+        omitted_records_exact: evidence.omitted_records_exact,
+        omitted_details: evidence.omitted_details,
+        diagnostics: BoundedList::new(
+            unresolved.chain(resolved).collect(),
+            MAX_TASK_DIAGNOSTIC_ENTRIES,
+        ),
+    }
 }
 
 fn build_context(context: &crate::model::ContextPlan) -> AgentContext<'_> {
@@ -548,6 +613,7 @@ fn build_context(context: &crate::model::ContextPlan) -> AgentContext<'_> {
 
     AgentContext {
         strategy_version: context.strategy_version,
+        task_evidence: context.task_evidence.as_ref().map(task_evidence),
         budget: ContextBudget {
             budget_tokens: context.budget_tokens,
             selected_files: context.files.len(),
@@ -608,7 +674,7 @@ fn outline_entry(file: &ContextOutlineOnly) -> OutlineEntry<'_> {
 
 fn is_direct(evidence: &ContextEvidence) -> bool {
     match evidence.role.as_str() {
-        "focus" | "changed" | "matching-test" => true,
+        "focus" | "changed" | "matching-test" | "diagnostic" => true,
         "dependency" | "dependent" => evidence.distance.is_none_or(|distance| distance <= 1),
         _ => false,
     }
@@ -762,6 +828,7 @@ mod tests {
                         confidence: "high".to_string(),
                         distance: Some(0),
                         resolver: None,
+                        diagnostic_ids: Vec::new(),
                     }],
                     ..ContextFile::default()
                 })
@@ -812,5 +879,94 @@ mod tests {
         assert_eq!(value["coverage"]["type2_analysis_partial"], true);
         assert_eq!(value["coverage"]["churn_analysis_partial"], true);
         assert_eq!(value["coverage"]["churn_deltas_omitted"], 17);
+    }
+    #[test]
+    fn task_diagnostic_projection_keeps_totals_prioritizes_gaps_and_direct_ids() -> Result<()> {
+        let mut scan = report(Summary::default());
+        let mut diagnostics = (0..6)
+            .map(|index| TaskDiagnostic {
+                id: format!("diagnostic-{index}"),
+                status: if index == 5 {
+                    TaskDiagnosticStatus::Unresolved
+                } else {
+                    TaskDiagnosticStatus::Resolved
+                },
+                message: "bounded message".into(),
+                ..TaskDiagnostic::default()
+            })
+            .collect::<Vec<_>>();
+        diagnostics[5].original_path = Some("missing.rs".into());
+        scan.context = Some(ContextPlan {
+            task_evidence: Some(TaskDiagnosticEvidence {
+                format: TaskDiagnosticFormat::RustcJson,
+                status: "partial".into(),
+                parsed_records: 12,
+                deduplicated_records: 2,
+                resolved_records: 9,
+                unresolved_records: 1,
+                omitted_details: 4,
+                parse_errors: 1,
+                diagnostics,
+                ..TaskDiagnosticEvidence::default()
+            }),
+            files: vec![ContextFile {
+                path: "src/lib.rs".into(),
+                evidence: vec![ContextEvidence {
+                    role: "diagnostic".into(),
+                    diagnostic_ids: vec!["diagnostic-0".into()],
+                    ..ContextEvidence::default()
+                }],
+                ..ContextFile::default()
+            }],
+            ..ContextPlan::default()
+        });
+        let value: serde_json::Value = serde_json::from_str(&json(&scan, false)?)?;
+        let task = &value["context"]["task_evidence"];
+        assert_eq!(task["parsed_records"], 12);
+        assert_eq!(task["omitted_details"], 4);
+        assert_eq!(task["diagnostics"]["available"], 6);
+        assert_eq!(task["diagnostics"]["shown"], 3);
+        assert_eq!(task["diagnostics"]["omitted"], 3);
+        assert_eq!(task["diagnostics"]["entries"][0]["id"], "diagnostic-5");
+        assert_eq!(value["context"]["direct_evidence"]["shown"], 1);
+        assert_eq!(
+            value["context"]["direct_evidence"]["entries"][0]["evidence"][0]["diagnostic_ids"][0],
+            "diagnostic-0"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn task_diagnostic_details_are_pruned_without_losing_input_coverage() -> Result<()> {
+        let mut scan = report(Summary::default());
+        scan.context = Some(ContextPlan {
+            task_evidence: Some(TaskDiagnosticEvidence {
+                status: "partial".into(),
+                parsed_records: 3,
+                unresolved_records: 3,
+                input_truncated: true,
+                records_truncated: true,
+                diagnostics: (0..3)
+                    .map(|index| TaskDiagnostic {
+                        id: format!("diagnostic-{index}"),
+                        original_path: Some("🚀".repeat(4096)),
+                        ..TaskDiagnostic::default()
+                    })
+                    .collect(),
+                ..TaskDiagnosticEvidence::default()
+            }),
+            ..ContextPlan::default()
+        });
+        let rendered = json(&scan, false)?;
+        assert!(rendered.len() <= MAX_BYTES);
+        let value: serde_json::Value = serde_json::from_str(&rendered)?;
+        let task = &value["context"]["task_evidence"];
+        assert_eq!(task["input_truncated"], true);
+        assert_eq!(task["records_truncated"], true);
+        assert_eq!(task["unresolved_records"], 3);
+        assert_eq!(task["diagnostics"]["shown"], 0);
+        assert_eq!(task["diagnostics"]["omitted"], 3);
+        assert_eq!(value["projection"]["byte_limit_reached"], true);
+        Ok(())
     }
 }

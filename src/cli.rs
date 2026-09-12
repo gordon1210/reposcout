@@ -1,6 +1,11 @@
 //! Command-line interface. The default invocation (`reposcout [PATH]`) runs a
 //! full scan; focused subcommands narrow the analyzer set.
 
+mod task_queries;
+pub use task_queries::{FindArgs, FindMatchArg, PlanArgs, TaskDiagnosticFormatArg};
+mod consumers;
+pub use consumers::{ConsumersArgs, ConsumersDirectionArg};
+
 use crate::dup::{DuplicationFormatScope, DuplicationMode};
 use crate::lang::{HealthInclude, HealthScope};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -61,6 +66,12 @@ pub enum Command {
     Explain(ExplainArgs),
     /// Locate declarations by symbol name across first-class languages
     Locate(LocateArgs),
+    /// Find body-free declaration candidates with deterministic lexical matching
+    Find(FindArgs),
+    /// Plan selected definitions and bounded environment, with source included only when requested
+    Plan(PlanArgs),
+    /// Find conservatively resolved consumers of selected or changed definitions
+    Consumers(ConsumersArgs),
     /// Read explicitly selected snapshot definitions under a shared output budget
     Read(ReadArgs),
     /// Select changed definitions from a Git diff, with source included only when requested
@@ -570,6 +581,14 @@ pub struct ScanArgs {
     /// a diff scope automatically seeds it from changed paths
     #[arg(long)]
     pub context: bool,
+
+    /// Use a bounded diagnostic file, or - for stdin, as context-planning evidence
+    #[arg(long, value_name = "PATH|-", conflicts_with = "no_context")]
+    pub task_diagnostics: Option<PathBuf>,
+
+    /// Select diagnostic input format; requires --task-diagnostics
+    #[arg(long, value_enum, requires = "task_diagnostics")]
+    pub task_diagnostics_format: Option<TaskDiagnosticFormatArg>,
 
     /// Disable context planning enabled by a configuration file
     #[arg(long = "no-context", conflicts_with = "context")]

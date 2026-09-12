@@ -38,6 +38,8 @@ struct AnalyzedFile {
     test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
     definitions: Option<crate::model::DefinitionFacts>,
+    lexical_facts: Option<crate::model::LexicalFileFacts>,
+    definition_plans: Option<crate::model::DefinitionPlanningFacts>,
     graph_facts: Option<crate::graph::SourceFacts>,
 }
 
@@ -47,6 +49,8 @@ struct SourceAnalysis {
     test_regions: Vec<LineRange>,
     symbol_outlines: Option<Vec<SymbolOutline>>,
     definitions: Option<crate::model::DefinitionFacts>,
+    lexical_facts: Option<crate::model::LexicalFileFacts>,
+    definition_plans: Option<crate::model::DefinitionPlanningFacts>,
     graph_facts: Option<crate::graph::SourceFacts>,
 }
 
@@ -111,6 +115,9 @@ struct AnalyzedScan {
     files: Vec<FileReport>,
     test_regions: BTreeMap<PathBuf, Vec<LineRange>>,
     symbol_outlines: BTreeMap<PathBuf, Vec<SymbolOutline>>,
+    definitions: BTreeMap<PathBuf, crate::model::DefinitionFacts>,
+    lexical_facts: BTreeMap<PathBuf, crate::model::LexicalFileFacts>,
+    definition_plans: BTreeMap<PathBuf, crate::model::DefinitionPlanningFacts>,
     graph_facts: BTreeMap<PathBuf, crate::graph::SourceFacts>,
     duplication: Duplication,
     duplicate_coverage: DuplicateCoverage,
@@ -135,17 +142,37 @@ struct PlanningAnalysis {
     cache_stats: cache::CacheStats,
 }
 
+/// A scan report and the shared captured facts retained for its requested consumers.
 pub struct ScanArtifacts {
     pub report: ScanReport,
     pub symbol_outlines: BTreeMap<PathBuf, Vec<SymbolOutline>>,
+    /// Precise declaration facts retained for requested artifact consumers.
+    pub definitions: BTreeMap<PathBuf, crate::model::DefinitionFacts>,
+    /// Bounded content-identified lexical facts retained for requested search consumers.
+    pub lexical_facts: BTreeMap<PathBuf, crate::model::LexicalFileFacts>,
+    /// Captured declaration costs and environment facts retained for pure definition planning.
+    pub definition_plans: BTreeMap<PathBuf, crate::model::DefinitionPlanningFacts>,
     pub graph_facts: BTreeMap<PathBuf, crate::graph::SourceFacts>,
     pub resolver_configs: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+/// The optional shared fact families a scan or explicit source capture must retain.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Artifact families are independent subscriptions that callers may combine, rather than exclusive operation states"
+)]
 pub struct ArtifactRequirements {
     pub symbol_outlines: bool,
+    pub lexical_facts: bool,
+    pub definition_plans: bool,
     pub graph_facts: bool,
+}
+
+impl ArtifactRequirements {
+    fn needs_definitions(self) -> bool {
+        self.symbol_outlines || self.lexical_facts || self.definition_plans || self.graph_facts
+    }
 }
 
 impl ScanProgress {
@@ -242,6 +269,8 @@ pub fn run_with_exclusions(
         exclusions,
         ArtifactRequirements {
             symbol_outlines: cfg.context,
+            lexical_facts: false,
+            definition_plans: false,
             graph_facts: cfg.graph || cfg.context || cfg.impact,
         },
     )
@@ -260,6 +289,10 @@ pub fn run_with_artifacts(
     exclusions: &[PathBuf],
     requirements: ArtifactRequirements,
 ) -> Result<ScanArtifacts> {
+    anyhow::ensure!(
+        !requirements.definition_plans || cfg.enabled.tokens,
+        "definition planning facts require enabled token analysis"
+    );
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(cfg.jobs.max(1))
         .build()?;
@@ -707,6 +740,7 @@ mod explicit_source;
 mod file_analysis;
 pub(crate) use explicit_source::{
     ExplicitSourceBatch, ExplicitSourceFailure, capture_changed_sources, load_revision_sources,
+    load_revision_sources_with_requirements,
 };
 pub(crate) use file_analysis::analyze_source;
 use file_analysis::{

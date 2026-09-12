@@ -12,6 +12,7 @@
 //! already parsed the source. Any residual filesystem access is budgeted,
 //! symlink-safe, and optional for sources when facts are supplied.
 
+pub mod calls;
 mod godot;
 mod symbols;
 
@@ -993,6 +994,64 @@ fn build_from_paths_with_query(request: GraphBuildRequest<'_>) -> GraphAnalysis 
         signals,
         topology,
     }
+}
+
+/// Resolve captured call and reference facts through existing module evidence without changing import or type-topology semantics.
+pub(crate) fn resolve_call_references(
+    root: &Path,
+    facts: &BTreeMap<PathBuf, SourceFacts>,
+    resolver_configs: &BTreeMap<String, String>,
+    limits: GraphReadLimits,
+) -> crate::model::CallReferenceTopology {
+    use crate::model::{CallModuleResolution, CallResolutionStatus};
+    let paths: Vec<_> = facts.keys().cloned().collect();
+    let universe = select_graph_universe(&paths);
+    let mut budget = limits.budget();
+    let resolvers = Resolvers::discover(&universe.files, root, Some(resolver_configs), &mut budget);
+    let calls: Vec<_> = facts
+        .values()
+        .filter_map(|fact| fact.call_references.clone())
+        .collect();
+    let modules = calls::module_requests(&calls)
+        .into_iter()
+        .map(|request| {
+            let resolution = match request.language.as_str() {
+                "JavaScript" | "TypeScript" | "TSX" => resolvers.javascript.resolve(
+                    &request.source_path,
+                    &request.module_specifier,
+                    &universe.node_set,
+                ),
+                "Rust" => resolvers.rust.resolve(
+                    &request.source_path,
+                    &RustImport::Use {
+                        path: request.module_specifier.clone(),
+                        inline_modules: request.inline_modules.clone(),
+                    },
+                    &universe.node_set,
+                ),
+                _ => ImportResolution::Unresolved,
+            };
+            let (target_path, resolver, status) = match resolution {
+                ImportResolution::Resolved { target, resolver } => (
+                    Some(target),
+                    Some(resolver.to_string()),
+                    CallResolutionStatus::Resolved,
+                ),
+                ImportResolution::Local => (None, None, CallResolutionStatus::Local),
+                ImportResolution::External | ImportResolution::NonGraph => {
+                    (None, None, CallResolutionStatus::External)
+                }
+                ImportResolution::Unresolved => (None, None, CallResolutionStatus::Unresolved),
+            };
+            CallModuleResolution {
+                request,
+                target_path,
+                resolver,
+                status,
+            }
+        })
+        .collect::<Vec<_>>();
+    calls::resolve(&calls, &modules)
 }
 
 fn select_graph_universe(paths: &[PathBuf]) -> GraphUniverse {

@@ -13,7 +13,7 @@ pub(crate) struct ResolvedTarget<'a> {
     pub(crate) source: Option<(&'a str, SourceSpan)>,
 }
 
-pub(super) fn resolve<'a>(
+pub(crate) fn resolve<'a>(
     index: usize,
     target: &SourceQueryTarget,
     path: Option<&Path>,

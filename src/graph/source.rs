@@ -1,4 +1,6 @@
 use super::{Deserialize, FirstClass, Node, Serialize, StaticInclude, parse, php, symbols};
+use sha2::{Digest as _, Sha256};
+use std::fmt::Write as _;
 
 // ---------------------------------------------------------------------------
 // Import specifier extractors
@@ -11,6 +13,8 @@ pub struct SourceFacts {
     pub(super) symbols: symbols::SourceFacts,
     #[serde(default)]
     pub(super) godot: super::godot::Facts,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) call_references: Option<crate::model::CallReferenceFacts>,
 }
 
 impl SourceFacts {
@@ -67,7 +71,24 @@ pub(crate) fn extract_source_facts(fc: FirstClass, path: &str, content: &str) ->
     let Some(tree) = parse::parse(fc, content) else {
         return SourceFacts::parse_error();
     };
-    extract_source_facts_from_tree(fc, path, content, tree.root_node())
+    let definitions = crate::metrics::symbols::analyze(fc, content, &tree).definitions;
+    let source_hash = Sha256::digest(content.as_bytes()).iter().fold(
+        String::with_capacity(64),
+        |mut hash, byte| {
+            let _ = write!(hash, "{byte:02x}");
+            hash
+        },
+    );
+    let mut facts = extract_source_facts_from_tree(fc, path, content, tree.root_node());
+    facts.call_references = Some(super::calls::extract(
+        fc,
+        path,
+        &source_hash,
+        content,
+        tree.root_node(),
+        &definitions,
+    ));
+    facts
 }
 
 pub(crate) fn extract_source_facts_from_tree(
@@ -82,6 +103,7 @@ pub(crate) fn extract_source_facts_from_tree(
         parse_errors: extraction.parse_errors,
         symbols: symbols::Collector::source_facts(fc, path, content, root),
         godot: extraction.godot,
+        call_references: None,
     }
 }
 

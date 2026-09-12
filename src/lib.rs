@@ -23,6 +23,7 @@ pub mod report;
 pub mod review;
 pub mod scan;
 mod snapshot;
+pub mod task_diagnostics;
 pub mod update;
 pub mod walk;
 mod work_scope;

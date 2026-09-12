@@ -1,0 +1,917 @@
+{
+  "cases": [
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "385,387p",
+            "src/inventory.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F1",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "isolated",
+      "oracle": {
+        "definitions": [
+          "cap_quantity"
+        ],
+        "evidence": [
+          {
+            "end_line": 387,
+            "path": "src/inventory.rs",
+            "start_line": 385,
+            "symbol": "cap_quantity"
+          }
+        ],
+        "values": [
+          0,
+          10
+        ]
+      },
+      "oracle_sha256": "2405ab81a19cebcf14b737cc3d0602659dcf37451fe52e6870d1e94594affb06",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "inputs": [
+          {
+            "limit": 10,
+            "value": -3
+          },
+          {
+            "limit": 10,
+            "value": 14
+          }
+        ],
+        "operation": "evaluate",
+        "selector": {
+          "end_line": 387,
+          "path": "src/inventory.rs",
+          "start_line": 385,
+          "symbol": "cap_quantity"
+        }
+      },
+      "task_id": "F1:known-definition:isolated",
+      "task_sha256": "96ee0a6e6e4d6fb2d33397c355a6d4cf1662fad879efe4efacfe8697ea499d8b"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "cap|quantity|limit",
+            "src"
+          ]
+        ],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "385,387p",
+            "src/inventory.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F1",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "end-to-end",
+      "oracle": {
+        "definitions": [
+          "cap_quantity"
+        ],
+        "evidence": [
+          {
+            "end_line": 387,
+            "path": "src/inventory.rs",
+            "start_line": 385,
+            "symbol": "cap_quantity"
+          }
+        ],
+        "values": [
+          0,
+          10
+        ]
+      },
+      "oracle_sha256": "2405ab81a19cebcf14b737cc3d0602659dcf37451fe52e6870d1e94594affb06",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "inputs": [
+          {
+            "limit": 10,
+            "value": -3
+          },
+          {
+            "limit": 10,
+            "value": 14
+          }
+        ],
+        "operation": "find-and-evaluate",
+        "query": "cap requested quantity to allowed range"
+      },
+      "task_id": "F1:known-definition:end-to-end",
+      "task_sha256": "93ad46e625668ba4cc533b08b8312d980be2811124bc69cccae82a986725318c"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "385,387p",
+            "src/inventory.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F2",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "isolated",
+      "oracle": {
+        "definitions": [
+          "cap_quantity"
+        ],
+        "evidence": [
+          {
+            "end_line": 387,
+            "path": "src/inventory.rs",
+            "start_line": 385,
+            "symbol": "cap_quantity"
+          }
+        ],
+        "values": [
+          0
+        ]
+      },
+      "oracle_sha256": "5974fbe37d9701953b01d36c86e0f01d5e55b18f5f7ce25ea4c02c0c16a80c60",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "after": "src/inventory.rs",
+        "before": "before/src/inventory.rs",
+        "inputs": [
+          {
+            "limit": 10,
+            "value": -3
+          }
+        ],
+        "operation": "identify-changed-definition-and-evaluate"
+      },
+      "task_id": "F2:changed-definition:isolated",
+      "task_sha256": "1aedb559d2c337d7613a3051c63f107ad4aa6b5588af935d4c5f6b88f39ad763"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "pub fn cap_quantity",
+            "src"
+          ]
+        ],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "385,387p",
+            "src/inventory.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F2",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "end-to-end",
+      "oracle": {
+        "definitions": [
+          "cap_quantity"
+        ],
+        "evidence": [
+          {
+            "end_line": 387,
+            "path": "src/inventory.rs",
+            "start_line": 385,
+            "symbol": "cap_quantity"
+          }
+        ],
+        "values": [
+          0
+        ]
+      },
+      "oracle_sha256": "5974fbe37d9701953b01d36c86e0f01d5e55b18f5f7ce25ea4c02c0c16a80c60",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "after": "src/inventory.rs",
+        "before": "before/src/inventory.rs",
+        "inputs": [
+          {
+            "limit": 10,
+            "value": -3
+          }
+        ],
+        "operation": "identify-changed-definition-and-evaluate"
+      },
+      "task_id": "F2:changed-definition:end-to-end",
+      "task_sha256": "1aedb559d2c337d7613a3051c63f107ad4aa6b5588af935d4c5f6b88f39ad763"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "1,4p",
+            "src/payments.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F3",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "isolated",
+      "oracle": {
+        "definitions": [
+          "retry_delay"
+        ],
+        "evidence": [
+          {
+            "end_line": 4,
+            "path": "src/payments.rs",
+            "start_line": 1,
+            "symbol": "retry_delay"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "9f0e0353b9a02b35c939ea602acd4381a934e18275ea92c7499bcde9f17a2483",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "operation": "find",
+        "query": "retry delay duplicate payment"
+      },
+      "task_id": "F3:unknown-entry:isolated",
+      "task_sha256": "4f9a612ca7d5e74b29a78c55853c434b186196a0b7991b1bc78239729eb29c35"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "retry|duplicate_payment",
+            "src"
+          ],
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "pub fn retry_delay",
+            "src"
+          ]
+        ],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "1,4p",
+            "src/payments.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F3",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "end-to-end",
+      "oracle": {
+        "definitions": [
+          "retry_delay"
+        ],
+        "evidence": [
+          {
+            "end_line": 4,
+            "path": "src/payments.rs",
+            "start_line": 1,
+            "symbol": "retry_delay"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "9f0e0353b9a02b35c939ea602acd4381a934e18275ea92c7499bcde9f17a2483",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "operation": "find",
+        "query": "retry delay duplicate payment"
+      },
+      "task_id": "F3:unknown-entry:end-to-end",
+      "task_sha256": "4f9a612ca7d5e74b29a78c55853c434b186196a0b7991b1bc78239729eb29c35"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "5,9p",
+            "src/billing.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "1,3p",
+            "src/checkout.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F4",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "isolated",
+      "oracle": {
+        "definitions": [
+          "checkout_total",
+          "invoice_total"
+        ],
+        "evidence": [
+          {
+            "end_line": 9,
+            "path": "src/billing.rs",
+            "start_line": 5,
+            "symbol": "invoice_total"
+          },
+          {
+            "end_line": 3,
+            "path": "src/checkout.rs",
+            "start_line": 1,
+            "symbol": "checkout_total"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "74009bd34ab9dd42266e3bd5b9eb8aaf1f11c069c9d94f92021d6f425bbc17b9",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "diagnostics": "diagnostics.jsonl",
+        "operation": "identify-diagnostic-definitions"
+      },
+      "task_id": "F4:multi-location-diagnostics:isolated",
+      "task_sha256": "e6ce4c1514b9b270acc61ddcc1426939cbe4939c578431f973009342966fc7ad"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "pub fn invoice_total|pub fn checkout_total",
+            "src"
+          ]
+        ],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "5,9p",
+            "src/billing.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "1,3p",
+            "src/checkout.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F4",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "end-to-end",
+      "oracle": {
+        "definitions": [
+          "checkout_total",
+          "invoice_total"
+        ],
+        "evidence": [
+          {
+            "end_line": 9,
+            "path": "src/billing.rs",
+            "start_line": 5,
+            "symbol": "invoice_total"
+          },
+          {
+            "end_line": 3,
+            "path": "src/checkout.rs",
+            "start_line": 1,
+            "symbol": "checkout_total"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "74009bd34ab9dd42266e3bd5b9eb8aaf1f11c069c9d94f92021d6f425bbc17b9",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "diagnostics": "diagnostics.jsonl",
+        "operation": "identify-diagnostic-definitions"
+      },
+      "task_id": "F4:multi-location-diagnostics:end-to-end",
+      "task_sha256": "e6ce4c1514b9b270acc61ddcc1426939cbe4939c578431f973009342966fc7ad"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "5,9p",
+            "src/billing.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "385,387p",
+            "src/inventory.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "1,3p",
+            "src/billing.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F5",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "isolated",
+      "oracle": {
+        "definitions": [
+          "cap_quantity",
+          "invoice_total",
+          "tax_for"
+        ],
+        "evidence": [
+          {
+            "end_line": 9,
+            "path": "src/billing.rs",
+            "start_line": 5,
+            "symbol": "invoice_total"
+          },
+          {
+            "end_line": 387,
+            "path": "src/inventory.rs",
+            "start_line": 385,
+            "symbol": "cap_quantity"
+          },
+          {
+            "end_line": 3,
+            "path": "src/billing.rs",
+            "start_line": 1,
+            "symbol": "tax_for"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "ba0a58a32ada261a23f33c5c499fe3fd409a7550cf7681288fafa22968725554",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "operation": "plan-direct-local-dependencies",
+        "selector": {
+          "end_line": 9,
+          "path": "src/billing.rs",
+          "start_line": 5,
+          "symbol": "invoice_total"
+        }
+      },
+      "task_id": "F5:definition-plan:isolated",
+      "task_sha256": "a1ce9338dc60c81c6ef3b27776968324374d572e5e2d4404fd589ca4fc4ccd53"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "pub fn invoice_total",
+            "src"
+          ],
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "cap_quantity|tax_for",
+            "src"
+          ]
+        ],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "5,9p",
+            "src/billing.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "385,387p",
+            "src/inventory.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "1,3p",
+            "src/billing.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F5",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "end-to-end",
+      "oracle": {
+        "definitions": [
+          "cap_quantity",
+          "invoice_total",
+          "tax_for"
+        ],
+        "evidence": [
+          {
+            "end_line": 9,
+            "path": "src/billing.rs",
+            "start_line": 5,
+            "symbol": "invoice_total"
+          },
+          {
+            "end_line": 387,
+            "path": "src/inventory.rs",
+            "start_line": 385,
+            "symbol": "cap_quantity"
+          },
+          {
+            "end_line": 3,
+            "path": "src/billing.rs",
+            "start_line": 1,
+            "symbol": "tax_for"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "ba0a58a32ada261a23f33c5c499fe3fd409a7550cf7681288fafa22968725554",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "operation": "plan-direct-local-dependencies",
+        "selector": {
+          "end_line": 9,
+          "path": "src/billing.rs",
+          "start_line": 5,
+          "symbol": "invoice_total"
+        }
+      },
+      "task_id": "F5:definition-plan:end-to-end",
+      "task_sha256": "a1ce9338dc60c81c6ef3b27776968324374d572e5e2d4404fd589ca4fc4ccd53"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "1,3p",
+            "src/checkout.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "5,7p",
+            "src/checkout.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F6",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "isolated",
+      "oracle": {
+        "definitions": [
+          "checkout_total",
+          "preview_total"
+        ],
+        "evidence": [
+          {
+            "end_line": 3,
+            "path": "src/checkout.rs",
+            "start_line": 1,
+            "symbol": "checkout_total"
+          },
+          {
+            "end_line": 7,
+            "path": "src/checkout.rs",
+            "start_line": 5,
+            "symbol": "preview_total"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "15f53395c91c28b3f1738d5caff1fe64fb78de8ea2473e1a5c8b05ea9be150f6",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "operation": "identify-direct-callers",
+        "selector": {
+          "end_line": 9,
+          "path": "src/billing.rs",
+          "start_line": 5,
+          "symbol": "invoice_total"
+        }
+      },
+      "task_id": "F6:consumers:isolated",
+      "task_sha256": "297b32a8e06c31cf97448fe9ae9900eae433d49c19fb2aed73c48f385ac00f8d"
+    },
+    {
+      "baseline": {
+        "allow_refinement": true,
+        "allow_whole_file_when_justified": true,
+        "search": [
+          [
+            "rg",
+            "-n",
+            "--max-count",
+            "8",
+            "--",
+            "invoice_total\\(",
+            "src"
+          ]
+        ],
+        "targeted_reads": [
+          [
+            "sed",
+            "-n",
+            "1,3p",
+            "src/checkout.rs"
+          ],
+          [
+            "sed",
+            "-n",
+            "5,7p",
+            "src/checkout.rs"
+          ]
+        ]
+      },
+      "execution": "not-run",
+      "feature": "F6",
+      "fixture_files": {
+        "@before/src/inventory.rs": "9f73af91b831a6b4c783d02929adc5410edf7b7fece0993d41017a52290be23c",
+        "@diagnostics.jsonl": "44b1c5dffd6dd8a5cb65221cbbb0c42f0b457193ee511cddf15e4d5fd7f65c89",
+        "src/billing.rs": "7ed2bb43cd4aca24f024544c84aedc346adaf38633e5ddbea2b748d40a5d9e9e",
+        "src/checkout.rs": "81339e8af689c76c31b57b2d4700215a0a16b23c134a658f07d5ee79eb838478",
+        "src/inventory.rs": "fd783bc0aae106383b2ee088284f058f12de4114ac245818f07ded930c65c0a2",
+        "src/lib.rs": "18521da3d9c467658251929590961c9ed07ae036e85a51ce1646e0906e277fff",
+        "src/payments.rs": "2c2c2c0e7a263c1827c65b60d9fa5cfff7e996674eb0e2ee0994b896977c31ee"
+      },
+      "fixture_sha256": "f1fe86bd557402c409e250517f53d8d3b4fba929d25d3fc3e269eae75278df9f",
+      "mode": "end-to-end",
+      "oracle": {
+        "definitions": [
+          "checkout_total",
+          "preview_total"
+        ],
+        "evidence": [
+          {
+            "end_line": 3,
+            "path": "src/checkout.rs",
+            "start_line": 1,
+            "symbol": "checkout_total"
+          },
+          {
+            "end_line": 7,
+            "path": "src/checkout.rs",
+            "start_line": 5,
+            "symbol": "preview_total"
+          }
+        ],
+        "values": null
+      },
+      "oracle_sha256": "15f53395c91c28b3f1738d5caff1fe64fb78de8ea2473e1a5c8b05ea9be150f6",
+      "required_external": [
+        "agent model usage export",
+        "pinned model and harness",
+        "quality answer"
+      ],
+      "schema": 1,
+      "task": {
+        "operation": "identify-direct-callers",
+        "selector": {
+          "end_line": 9,
+          "path": "src/billing.rs",
+          "start_line": 5,
+          "symbol": "invoice_total"
+        }
+      },
+      "task_id": "F6:consumers:end-to-end",
+      "task_sha256": "297b32a8e06c31cf97448fe9ae9900eae433d49c19fb2aed73c48f385ac00f8d"
+    }
+  ],
+  "evidence_kind": "synthetic",
+  "schema": 1
+}

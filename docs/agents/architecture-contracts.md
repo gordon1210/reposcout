@@ -121,6 +121,27 @@ allowance. Shared source deduplication includes the snapshot side as identity. A
 `definition_changes` block captures independently after the ordinary scan; its internal evidence
 is consistent, but live edits can make it differ from earlier parent metadata.
 
+## Approved task-query expansion
+
+The remaining task-query program is approved and in implementation. Lexical search facts,
+definition-planning environment facts and call/reference facts must reuse ordinary scanner-owned
+source capture, analyzers, parser and cache entries. Their cached semantics use analyzer version
+20; the additive serialized contract remains schema 2.0. New runtime settings that change cached
+facts belong in the existing analysis-profile contract. Do not introduce a parallel index, parser,
+source reader or cache namespace.
+
+Lexical search stores bounded normalized field terms and declaration/content identity, not bodies.
+Health ranking and exclusion must not narrow navigation facts. Definition planning consumes
+already captured facts without I/O, preserves explicit seeds and accounts for overlapping source
+ranges once. Environment additions require syntax or existing graph evidence and remain bounded;
+a complete source definition is not proof of complete task context.
+
+Call/reference extraction is a separate fact family from file imports and explicit type relations.
+CLI enrichment remains lazy; ordinary reads and lexical search do not require call topology.
+Daemon revision inputs retain any captured relation facts without rereading live files for an older
+revision. Resolution and rendering consume those facts separately, preserving unresolved forms,
+provenance and extraction/work/output gaps.
+
 ## Language and health scope
 
 First-class tree-sitter code languages are Rust, Python, JavaScript, TypeScript/TSX, Go, PHP,

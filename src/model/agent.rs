@@ -55,6 +55,18 @@ pub struct CapabilitiesReport {
     /// Availability, supported scopes and limits for direct and embedded changed-definition queries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change_query: Option<super::ChangeQueryCapability>,
+    /// Supported lexical-search fields, matching modes and query limits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub find_query: Option<super::FindQueryCapability>,
+    /// Availability and limits for explicit definition planning and source delivery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_plan: Option<super::DefinitionPlanCapability>,
+    /// Availability, supported binding forms and limits for call/reference consumer queries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_query: Option<super::ConsumersQueryCapability>,
+    /// Supported diagnostic input formats and normal/safe normalization limits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_diagnostics: Option<super::TaskDiagnosticCapability>,
     /// Maximum Type-2 candidate seed pairs examined in one format pool.
     #[serde(default)]
     pub type2_max_seed_pairs_per_pool: u64,
@@ -78,6 +90,8 @@ pub struct AgentSummaryCapability {
     pub max_expansion_context_entries: usize,
     pub max_outline_only_entries: usize,
     pub max_unmatched_focus_entries: usize,
+    #[serde(default)]
+    pub max_task_diagnostic_entries: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -333,6 +347,8 @@ pub struct WorkScopeCoverage {
 /// A bounded, deterministic set of files an agent should read first.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ContextPlan {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_evidence: Option<crate::model::TaskDiagnosticEvidence>,
     pub strategy_version: u32,
     /// Milliseconds spent in the incremental context-planning phase after the
     /// ordinary scoped scan. Change-aware plans include their full-tree facts
@@ -444,6 +460,8 @@ pub struct ContextOutlineOnly {
 /// Machine-readable evidence for including one file in a context plan.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContextEvidence {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostic_ids: Vec<String>,
     /// `focus`, `changed`, `dependency`, `dependent`, `matching-test`, or
     /// `nearby`.
     pub role: String,

@@ -738,6 +738,7 @@ async fn scan_once(
             scan::ArtifactRequirements {
                 symbol_outlines: false,
                 graph_facts: true,
+                ..scan::ArtifactRequirements::default()
             },
         )
     })
@@ -1093,14 +1094,11 @@ mod tests {
         .unwrap();
         std::fs::write(
             dir.path().join("src/dependency.ts"),
-            "export const dependency = 1;\n",
+            "export function dependency() {}\n",
         )
         .unwrap();
-        std::fs::write(
-            dir.path().join("src/importer.ts"),
-            "import { dependency } from '@app/dependency';\nvoid dependency;\n",
-        )
-        .unwrap();
+        let importer_source = "import { dependency } from '@app/dependency';\nexport function importer() { dependency(); }\n";
+        std::fs::write(dir.path().join("src/importer.ts"), importer_source).unwrap();
         let mut config = Config::default();
         config.enabled = crate::config::Enabled::none();
         config.use_cache = false;
@@ -1121,14 +1119,37 @@ mod tests {
         }));
 
         scan_once(dir.path(), &config, &snapshot, &events, &[]).await;
-        {
+        let (revision_facts, revision_configs, revision_limits) = {
             let completed = snapshot.read().await;
             assert_eq!(completed.revision, 1);
             assert_eq!(completed.status, DaemonStatus::Ready);
             assert!(completed.report.as_ref().unwrap().graph.is_none());
             assert_eq!(completed.graph_facts.len(), 2);
             assert!(completed.resolver_configs.contains_key("tsconfig.json"));
-        }
+            (
+                completed.graph_facts.clone(),
+                completed.resolver_configs.clone(),
+                completed.graph_limits,
+            )
+        };
+        let revision_calls = crate::graph::resolve_call_references(
+            dir.path(),
+            &revision_facts,
+            &revision_configs,
+            revision_limits,
+        );
+        let call = revision_calls
+            .edges
+            .iter()
+            .find(|edge| {
+                edge.source.path == "src/importer.ts" && edge.target.path == "src/dependency.ts"
+            })
+            .unwrap();
+        assert_eq!(
+            &importer_source[call.site.start_byte..call.site.end_byte],
+            "dependency()"
+        );
+        let revision_source_hash = call.source.source_hash.clone();
 
         std::fs::write(
             dir.path().join("tsconfig.json"),
@@ -1140,6 +1161,16 @@ mod tests {
             "export const importer = 1;\n",
         )
         .unwrap();
+        let calls_after_live_edit = crate::graph::resolve_call_references(
+            dir.path(),
+            &revision_facts,
+            &revision_configs,
+            revision_limits,
+        );
+        assert_eq!(calls_after_live_edit, revision_calls);
+        assert!(calls_after_live_edit.edges.iter().any(|edge| {
+            edge.source.path == "src/importer.ts" && edge.source.source_hash == revision_source_hash
+        }));
 
         let (trigger, _) = mpsc::channel(1);
         let (_, shutdown) = watch::channel(false);

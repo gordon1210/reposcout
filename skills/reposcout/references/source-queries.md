@@ -2,8 +2,9 @@
 
 Use this reference when a file and definition or line are already known, or when a file's body-free
 declaration surface answers the next question. Do not run a scout, outline or locate merely as a
-prerequisite. A normal short read may already be sufficient; avoid rereading unchanged source that
-is still available in model context.
+prerequisite. If the exact complete small span is already known and no snapshot, hash or coverage
+evidence is needed, prefer a targeted native read. Avoid rereading unchanged source that is still
+available in model context.
 
 `read`, `--outline`, snapshot reads and `changes` are Unix-only. Windows and other non-Unix builds reject them before source
 I/O, without a fallback reader; use ordinary source tools on those platforms. Repository inventory
@@ -112,3 +113,21 @@ A complete returned definition is syntactically complete within the supported co
 still need related types, imports, callers or tests for the task. Read further only when the next
 hypothesis requires it. Local cache reuse saves local work; it does not prove the agent retains
 source and does not itself demonstrate lower model-token consumption.
+
+## Find candidates only for an unknown entry point
+
+```sh
+reposcout find 'retry delay duplicate payment' . --match all --limit 10 -f json
+```
+
+Names, paths, signatures, comments and bounded code provide lexical evidence; no bodies are
+returned. Matching defaults to every deduplicated query term (`all`); `any` permits one. Unicode
+lowercase and identifier splitting are lexical rules, not semantic task understanding. Exact
+case-insensitive language/kind filters and stable field-based ranking keep the candidate set
+predictable. Health risk and graph popularity are not relevance evidence.
+
+Inspect search coverage separately from hit-limit and output-budget omissions. A truncated field
+or unsupported file can hide a relevant declaration. Follow a chosen hit's structured read target
+with its expected hash; after-edit mismatches need a fresh decision. A matching name can still be
+ambiguous. Do not perform a new search when the source location is already known or reread retained
+unchanged code merely because it appears in another result.

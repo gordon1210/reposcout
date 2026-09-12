@@ -10,6 +10,9 @@ a reference manual.
 | [CLI reference](cli-reference.md) | Find commands, flags, examples, gates, and debugging options |
 | [Agent workflows](agent-workflows.md) | Produce hard-bounded scouting, change decisions, context, impact, review, and symbol-query results |
 | [Source and changed-definition queries](source-queries.md) | Read snapshot definitions or inspect changed definitions under bounded output contracts |
+| [Search, definition plans and consumers](task-queries.md) | Find unknown code, plan known definitions and inspect proven consumers |
+| [External task diagnostics](task-diagnostics.md) | Turn bounded diagnostic input into context seeds |
+| [Agent evaluation](../scripts/agent-eval/README.md) | Reproduce bounded tasks and account for actual model usage |
 | [Godot support](godot.md) | Scout GDScript, shaders, scenes, resources, and project dependencies |
 | [Metrics and interpretation](metrics.md) | Understand complexity, duplication, risk, test matching, and analysis limits |
 | [Configuration and caching](configuration.md) | Set personal or project defaults and inspect what RepoScout resolved |
@@ -40,3 +43,5 @@ reposcout capabilities -f json
 It describes the installed commands, formats, execution profiles, supported languages,
 health scopes, agent-summary/change-summary/work-scope contracts, and hard analysis bounds without
 scanning a repository.
+
+- [Observed agent evaluation](agent-evaluation.md): 38-run native pilot, token outcomes and evidence limits.

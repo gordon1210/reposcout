@@ -394,3 +394,12 @@ Choose the entry point that answers the next question:
 These are independent entry points, not a required sequence. JSON/NDJSON and structured errors remain the
 stable integration boundary. Use `capabilities` before it only when installed-version compatibility
 is itself uncertain; do not make it a routine preflight call.
+
+## Start from the evidence already available
+
+For an unknown declaration, use lexical `find`; for known definitions across large files, use
+`plan` and request source only if needed; for a known symbol's consumers, use bounded `consumers`.
+These are alternative task entry points, not a mandatory sequence. See [task queries](task-queries.md).
+A diagnostic file can instead seed the existing context planner through
+[external diagnostics](task-diagnostics.md). Keep hashes when following query results and count
+any previously read logs or source as already spent context.

@@ -796,5 +796,16 @@ pub use definitions::*;
 mod source_query;
 pub use source_query::*;
 
+mod definition_plan;
+pub use definition_plan::*;
+mod find_query;
+pub use find_query::*;
+pub mod task_diagnostics;
+pub use task_diagnostics::*;
+mod call_graph;
+pub use call_graph::*;
+mod consumers_query;
+pub use consumers_query::*;
+
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,10 @@
 pub mod classify;
 pub mod complexity;
 pub mod imports;
+pub mod lexical;
 pub mod lines;
 pub mod markers;
+pub mod planning;
 pub mod risk;
 pub mod symbols;
 pub mod testcov;

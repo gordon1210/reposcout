@@ -441,6 +441,46 @@ fn render_baseline(out: &mut String, report: &ScanReport, color: bool) {
     let _ = writeln!(out);
 }
 
+fn render_task_evidence(out: &mut String, evidence: &crate::model::TaskDiagnosticEvidence) {
+    let format = match evidence.format {
+        crate::model::TaskDiagnosticFormat::Auto => "auto",
+        crate::model::TaskDiagnosticFormat::Sarif => "sarif",
+        crate::model::TaskDiagnosticFormat::RustcJson => "rustc-json",
+        crate::model::TaskDiagnosticFormat::Text => "text",
+    };
+    let summary = format!(
+        "Format: {format}; status: {status}; parsed: {parsed}; resolved: {resolved}; unresolved: {unresolved}; out of scope: {out_of_scope}; parse errors: {parse_errors}.",
+        status = terminal_text(&evidence.status),
+        parsed = evidence.parsed_records,
+        resolved = evidence.resolved_records,
+        unresolved = evidence.unresolved_records,
+        out_of_scope = evidence.out_of_scope_records,
+        parse_errors = evidence.parse_errors
+    );
+    let limits = format!(
+        "Input truncated: {input_truncated}; records truncated: {records_truncated}; omitted details: {omitted_details}.",
+        input_truncated = evidence.input_truncated,
+        records_truncated = evidence.records_truncated,
+        omitted_details = evidence.omitted_details
+    );
+    let omitted = if evidence.omitted_records_exact {
+        format!(
+            "Omitted records: {omitted_records}.",
+            omitted_records = evidence.omitted_records
+        )
+    } else {
+        format!(
+            "Omitted records: at least {omitted_records}; total unknown.",
+            omitted_records = evidence.omitted_records
+        )
+    };
+    kv(
+        out,
+        "Task diagnostics",
+        &format!("{summary} {limits} {omitted}"),
+    );
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "context table rendering follows the serialized plan fields in a fixed human-readable order"
@@ -450,6 +490,9 @@ fn render_context(out: &mut String, report: &ScanReport, color: bool) {
         return;
     };
     let _ = writeln!(out, "{}", header("Agent context plan", color));
+    if let Some(evidence) = &context.task_evidence {
+        render_task_evidence(out, evidence);
+    }
     kv(out, "Planning time", &format!("{} ms", context.planning_ms));
     if !context.graph_languages.is_empty() {
         kv(

@@ -16,6 +16,10 @@ reposcout changes <directory> --working -f json
 reposcout changes <directory> --staged --source --budget 4096 -f json
 ```
 
+When the comparison is already supplied, inspect this bounded changed-definition evidence before
+a broad source read. Request source only when the task needs bodies, then use the reported ranges;
+retain focused native fallback for missing or uncertain evidence.
+
 The direct query is body-free by default; source is explicit and uses one output budget. Working
 compares HEAD with worktree including staged, unstaged and untracked changes; staged compares
 HEAD with the captured index; since compares the specified ref directly with worktree rather
@@ -79,3 +83,24 @@ Report `new`, `worsened`, `resolved`, and `improved` separately. Bare `--review`
 findings to changed lines; deep review analyzes both snapshots and handles staged content and
 renames. Do not add failure gates, create baselines, or write SARIF/output files unless the user
 asked for CI or persistent artifacts.
+
+## Inspect proven consumers when import impact is too broad
+
+```sh
+reposcout consumers . --symbol src/billing.rs invoice_total \
+  --direction incoming --depth 1 --limit 20 --path-limit 20 -f json
+```
+
+Use this query when the next decision requires proven calls or references. A definition plan's
+signature-type environment does not establish body-call dependencies.
+
+The worktree query follows conservative call/reference bindings in Rust and JS/TS/TSX. Incoming
+is the default; outgoing and both are explicit alternatives. Receiver/dynamic forms, shadowing,
+overloads, missing modules and truncated facts remain unresolved. Zero resolved consumers is not
+proof of zero actual callers. Keep relation kinds separate from file-import impact.
+
+Inspect input/extraction/resolution coverage, then depth/path/result/output omissions. Results
+represent unique reachable symbols and shortest evidence, not every path through a cycle. Follow
+a returned qualified-symbol/hash target through `read` if source is needed; the command itself has no source
+or snapshot option. A stale or ambiguous seed fails rather than producing a guessed graph. For a
+diff, use the changed-definition evidence to choose the relevant current-side target explicitly.

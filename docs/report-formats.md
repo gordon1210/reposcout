@@ -339,3 +339,16 @@ RepoScout writes one JSON object to stderr.
 | `2` | Parser/change-summary usage error, requested gate, or regression condition |
 
 See [CLI reference](cli-reference.md#ci-gates) for metric, review, and baseline gates.
+
+## Lexical, definition-plan and consumer projections
+
+The task-query commands use independent shared model reports rather than adding bodies to ordinary
+scouting. `find` separates search coverage from limit/budget omissions and carries hash-guarded
+read targets. `plan` distinguishes discovery, source-planning cost and output omissions; its optional
+`source` block shares the total rendered-response budget. `consumers` separates extraction,
+resolution, depth/path/result limits and output coverage, with exact qualified-symbol/hash worktree read handoffs.
+See [task queries](task-queries.md) for the complete interface.
+
+External diagnostics appear under `context.task_evidence`, separate from top-level scan
+`diagnostics` and health findings. Agent-summary keeps bounded counts and gap-first details;
+human output uses compact coverage lines. See [task diagnostics](task-diagnostics.md).

@@ -175,6 +175,35 @@ metadata are rejected because their health semantics cannot be established.
 - Do not add an MCP dependency or parallel query implementation. Stable CLI JSON/NDJSON and shared
   query contracts are the automation surface; the roadmap keeps MCP out of scope.
 
+## Lexical, definition-plan and consumer query contracts
+
+- `find` uses deterministic lexical field evidence and independent search-coverage and output
+  omission counters. It returns body-free candidates with content-checked read targets; it never
+  infers relevance from health rank or silently changes `locate` semantics.
+- `plan` uses pure captured-fact selection with separate source-union and rendered-output budgets.
+  Its optional shared source block must fit the complete combined response. Unresolved seeds,
+  uncosted facts, missing environment and output projection remain separate coverage dimensions.
+- `consumers` is worktree-only and returns bounded unique reachable symbols with shortest evidence.
+  Seed identity and expected hashes fail closed; read handoffs use qualified symbols and hashes,
+  not a line heuristic that might select a nested declaration. Call/reference topology never
+  changes import impact or type-reach meanings. Truncated fact sets cannot establish safe bindings.
+- All three preserve bounded table/JSON/Markdown/NDJSON formats, structured errors and pure
+  renderers. Keep actual fields, limits and supported syntax synchronized with capabilities and
+  [task-query documentation](../task-queries.md).
+
+## External task diagnostics
+
+`--task-diagnostics` is explicit runtime-only file/stdin input and implies context. Its format flag
+requires input. SARIF/DOT/Mermaid output and `--no-context` are rejected; agent-summary remains
+allowed under its existing output ceiling. No tool execution, project-configured input path,
+raw-log persistence or health-finding conversion is permitted.
+
+External coverage lives in `context.task_evidence`, never replacing top-level scan diagnostics.
+Normal/safe input, record and detail limits are independent. Lower-bound omitted-record counts
+must carry `omitted_records_exact: false`; compact detail omission is counted separately. Human
+output uses compact counts, while agent-summary retains at most three gap-first details and exact
+projection omissions. See [task diagnostics](../task-diagnostics.md).
+
 ## Renderer contracts
 
 SARIF, NDJSON, DOT, and Mermaid are pure renderers over the same `ScanReport`.

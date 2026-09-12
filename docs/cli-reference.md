@@ -27,6 +27,9 @@ file.
 | `reposcout locate SYMBOL [PATH]` | Find declarations across first-class languages |
 | `reposcout read [PATH]` | Read explicit snapshot definitions or body-free file outlines on Unix |
 | `reposcout changes [PATH]` | Select changed definitions, with source only when explicitly requested |
+| `reposcout find QUERY [PATH]` | Rank body-free lexical declaration candidates |
+| `reposcout plan [PATH]` | Plan definitions and supported environment; source opt-in |
+| `reposcout consumers [PATH]` | Inspect conservative worktree call/reference reachability |
 | `reposcout capabilities` | Describe the installed machine contract without scanning |
 | `reposcout config [PATH]` | Inspect layered configuration and effective values |
 | `reposcout cache clear [PATH]` | Clear one repository's analysis and Git-history caches |
@@ -89,6 +92,23 @@ For existing workflows, `--changed-definitions` requires `--change-summary` or `
 diff scope. It adds a body-free `definition_changes` block in table/JSON/Markdown/NDJSON and rejects
 SARIF/DOT/Mermaid, `--agent-summary` and `--baseline-ready`. Its compact-JSON budget is separately
 fixed at 4,096 tokens / 16,384 bytes; the surrounding report is not limited to that budget.
+
+## Task queries and external diagnostics
+
+`find QUERY [PATH]` defaults to `--match all`; `any`, exact case-insensitive `--language`/`--kind`
+and `--limit` narrow candidates. `plan [PATH]` accepts repeatable symbol/line/file seeds,
+`--snapshot`, hash expectations and optional `--source`. Its default 12,000-token
+`--context-budget` limits selected source, separately from rendered output. `consumers [PATH]`
+uses worktree symbol/line seeds, optional hash expectations and direction/depth/result/path bounds;
+read returned source targets explicitly through `read`.
+
+All three share bounded table/JSON/Markdown/NDJSON output. See [task queries](task-queries.md) for
+exact defaults, supported forms, field ranking, coverage and source handoffs.
+
+Scan options `--task-diagnostics PATH|-` and
+`--task-diagnostics-format auto|sarif|rustc-json|text` import caller-supplied evidence and imply
+context. They do not run a producer or accept input paths from project configuration. See
+[external diagnostics](task-diagnostics.md) for normal/safe limits and report compatibility.
 
 ## Core options
 

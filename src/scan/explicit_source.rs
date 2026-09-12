@@ -23,6 +23,8 @@ pub(crate) struct ExplicitSourceFile {
     pub content: String,
     pub language: String,
     pub definitions: DefinitionFacts,
+    /// Optional planning facts derived from this captured content with the effective token encoding.
+    pub planning: Option<crate::model::DefinitionPlanningFacts>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +50,7 @@ pub(crate) fn load_explicit_sources(
     cfg: &Config,
     exclusions: &[PathBuf],
 ) -> Result<ExplicitSourceBatch> {
-    let mut capture = CaptureSession::new(root, cfg, exclusions, None)?;
+    let mut capture = CaptureSession::new(root, cfg, exclusions, None, source_requirements())?;
     let batch = capture.batch(&SourceRevision::Worktree, paths);
     capture.cache.save(false)?;
     Ok(batch)
@@ -67,12 +69,23 @@ pub(crate) fn load_revision_sources(
             load_explicit_sources(root, paths, cfg, exclusions)?,
         )]);
     }
+    load_revision_sources_with_requirements(root, requests, cfg, exclusions, source_requirements())
+}
+
+/// Capture requested source revisions and enrich only the requested shared artifacts using the existing parser, analysis profile and cache.
+pub(crate) fn load_revision_sources_with_requirements(
+    root: &Path,
+    requests: &[(SourceRevision, Vec<PathBuf>)],
+    cfg: &Config,
+    exclusions: &[PathBuf],
+    requirements: ArtifactRequirements,
+) -> Result<Vec<(SourceRevision, ExplicitSourceBatch)>> {
     let git = requests
         .iter()
         .any(|(revision, _)| !matches!(revision, SourceRevision::Worktree))
         .then(|| GitCapture::open(root))
         .transpose()?;
-    let mut capture = CaptureSession::new(root, cfg, exclusions, git)?;
+    let mut capture = CaptureSession::new(root, cfg, exclusions, git, requirements)?;
     let mut pinned: BTreeMap<SourceRevision, SourceRevision> = BTreeMap::new();
     let mut batches = Vec::new();
     for (revision, paths) in requests {
@@ -194,14 +207,14 @@ pub(crate) fn capture_changed_sources(
         .iter()
         .filter_map(|file| file.change.path.clone())
         .collect::<Vec<_>>();
-    let mut capture_cfg = cfg.clone();
-    capture_cfg.max_files = cfg.max_files.saturating_mul(2).min(64);
-    capture_cfg.max_file_bytes = cfg
-        .max_file_bytes
-        .min(cfg.max_git_blob_bytes)
-        .min(8 * 1024 * 1024);
-    capture_cfg.max_total_bytes = cfg.max_total_bytes.min(32 * 1024 * 1024);
-    let mut capture = CaptureSession::new(&root, &capture_cfg, exclusions, Some(git))?;
+    let capture_cfg = changed_capture_config(cfg);
+    let mut capture = CaptureSession::new(
+        &root,
+        &capture_cfg,
+        exclusions,
+        Some(git),
+        source_requirements(),
+    )?;
     let old = capture.batch(&base_revision, &old_paths);
     let new = capture.batch(&current_revision, &new_paths);
     capture.cache.save(false)?;
@@ -216,7 +229,26 @@ pub(crate) fn capture_changed_sources(
     })
 }
 
+fn changed_capture_config(cfg: &Config) -> Config {
+    let mut capture = cfg.clone();
+    capture.max_files = cfg.max_files.saturating_mul(2).min(64);
+    capture.max_file_bytes = cfg
+        .max_file_bytes
+        .min(cfg.max_git_blob_bytes)
+        .min(8 * 1024 * 1024);
+    capture.max_total_bytes = cfg.max_total_bytes.min(32 * 1024 * 1024);
+    capture
+}
+
+fn source_requirements() -> ArtifactRequirements {
+    ArtifactRequirements {
+        symbol_outlines: true,
+        ..ArtifactRequirements::default()
+    }
+}
+
 struct CaptureSession<'a> {
+    requirements: ArtifactRequirements,
     root: PathBuf,
     cfg: &'a Config,
     budget: ReadBudget,
@@ -239,7 +271,12 @@ impl<'a> CaptureSession<'a> {
         cfg: &'a Config,
         exclusions: &[PathBuf],
         git: Option<GitCapture>,
+        requirements: ArtifactRequirements,
     ) -> Result<Self> {
+        anyhow::ensure!(
+            !requirements.definition_plans || cfg.enabled.tokens,
+            "definition planning facts require enabled token analysis"
+        );
         let root = root
             .canonicalize()
             .context("source root cannot be resolved")?;
@@ -251,6 +288,7 @@ impl<'a> CaptureSession<'a> {
                 .unwrap_or(started),
         );
         Ok(Self {
+            requirements,
             budget: ReadBudget {
                 max_file_bytes: cfg.max_file_bytes,
                 remaining_total_bytes: cfg.max_total_bytes,
@@ -359,15 +397,13 @@ impl<'a> CaptureSession<'a> {
             &self.health_policy,
             self.counter.as_ref(),
             &self.cache,
-            ArtifactRequirements {
-                symbol_outlines: true,
-                graph_facts: false,
-            },
+            self.requirements,
         ) {
             super::AnalysisOutcome::Analyzed(file) => Ok(Arc::new(ExplicitSourceFile {
                 content: file.content,
                 language: file.report.language,
                 definitions: file.definitions.unwrap_or_default(),
+                planning: file.definition_plans,
             })),
             _ => Err(ExplicitSourceFailure::Unsupported),
         }

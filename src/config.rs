@@ -169,6 +169,7 @@ pub struct Config {
     pub context_max_files: usize,
     /// Runtime focus paths supplied by the CLI.
     pub context_focus: Vec<PathBuf>,
+    pub task_diagnostics: Option<crate::task_diagnostics::ParsedTaskDiagnostics>,
     /// Suppress the progress bar.
     pub quiet_progress: bool,
     pub enabled: Enabled,
@@ -254,6 +255,7 @@ impl Default for Config {
             context_budget: 32_000,
             context_max_files: 25,
             context_focus: Vec::new(),
+            task_diagnostics: None,
             quiet_progress: false,
             enabled: Enabled::default(),
             by_dir: None,

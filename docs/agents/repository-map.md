@@ -16,6 +16,7 @@ apps/
 packages/
   eslint-config/      Shared flat ESLint configuration for both frontend apps.
 scripts/
+  agent-eval/        Bounded offline tasks, quality oracles and explicit usage accounting.
   reposcout-skill.sh  Synchronizes and validates the bundled skill mirror.
 skills/
   reposcout/          Canonical distributable agent skill and focused references.
@@ -45,6 +46,11 @@ src/
                      Pinned Git trees/index and bounded regular-file source-blob capture.
   explain.rs         Repository scan projected onto one requested file.
   query.rs           Capabilities and bounded symbol lookup.
+  query/find.rs      Bounded lexical ranking over shared search facts.
+  query/plan.rs      Definition-plan capture and explicit source delivery.
+  query/consumers.rs Conservative call/reference reachability and output bounds.
+  task_diagnostics.rs
+                     Bounded external-input normalization and exact inventory resolution.
   query/source.rs    Explicit snapshot targets, content identity and rendered output budgets.
   query/changes.rs   Captured old/new changed-definition selection and shared output admission.
   query/changed_mapping.rs
@@ -72,6 +78,8 @@ src/
     complexity.rs    Cyclomatic, cognitive, nesting, Halstead, and MI metrics.
     imports.rs       Root-module import/dependency extraction.
     symbols.rs       Symbol counts and compact declaration headers.
+    lexical.rs       Bounded normalized declaration search terms.
+    planning.rs      Captured declaration costs and supported signature environment.
     classify.rs      Generated/minified/bundled/vendored skip hints.
     testcov.rs       Test/source classification, filename/framework matching, and Rust
                      inline-test detection.

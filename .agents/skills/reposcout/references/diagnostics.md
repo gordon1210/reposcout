@@ -98,3 +98,32 @@ time. For Type-2 work, inspect the latest `type2_progress.phase` and completed/t
 changing inputs. Final pool events state whether seed-pair, match-buffer, or overlap-suppression
 bounds made the result partial. Debug logs contain paths, arguments, configuration, and
 backtraces—but not source bodies—so still treat them as potentially sensitive when sharing.
+
+## Use external diagnostic locations as task seeds
+
+```sh
+reposcout --task-diagnostics compiler.jsonl --task-diagnostics-format rustc-json \
+  --agent-summary .
+```
+
+The explicit scan input accepts a regular file or piped `-`, implies context and supports auto,
+SARIF2.1, Cargo/rustc JSON or conservative text. It does not execute the producer, persist logs,
+modify health findings or accept a diagnostic path from project config. SARIF/DOT/Mermaid output
+is rejected for this input; compact agent-summary is allowed.
+
+Normalize when input size, multiple locations or unresolved paths justify the additional context
+plan. A tiny already-known log or explicit positions can go directly to targeted native reads.
+If the log is already in context, those
+tokens are already spent; normalization cannot claim retroactive savings. Retain external-input
+coverage separately from repository scan coverage. Normal/safe limits are 8/1 MiB, 1000/250 records
+and 100/50 details. Agent-summary retains at most three gap-first details under its existing byte
+ceiling; it is not an exhaustive diagnostic list. Truncated omitted-record counts may be lower
+bounds, with `omitted_records_exact: false`.
+
+Only exact inventory locations inside the target become seeds; no basename guessing, symlink
+following or filename-based reverse test/source matching. Explicit focus ranks before errors;
+errors before changed paths; changed paths before warnings and lower severities, all else equal.
+Repeated diagnoses have a capped boost. Oversized diagnostic seeds remain outline-only evidence,
+possibly without declaration headers. Follow a resolved line with explicit `read` or `plan` only
+when needed, accounting for the fact that an old diagnostic log does not identify current source
+bytes. Keep trusted snapshot/hash evidence between subsequent source queries.

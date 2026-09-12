@@ -104,6 +104,9 @@ pub(super) fn assemble_report(
             definition_changes,
             review: foundation.review,
         },
+        definitions: analyzed.definitions,
+        lexical_facts: analyzed.lexical_facts,
+        definition_plans: analyzed.definition_plans,
         symbol_outlines,
         graph_facts,
         resolver_configs: graphs.resolver_configs,
@@ -410,23 +413,56 @@ fn build_context(inputs: ContextAssembly<'_>) -> Result<Option<ContextPlan>> {
             )
         },
     );
-    let mut context = crate::context::build_for_target(
-        files,
-        risks,
-        outlines,
-        inputs
-            .graphs
-            .planning
-            .as_ref()
-            .or(inputs.graphs.scoped.as_ref())
-            .map(|analysis| &analysis.signals),
-        crate::context::PlanningPaths {
-            root: &inputs.prepared.root,
-            target: &inputs.prepared.discovered.target,
-        },
-        inputs.cfg,
-        inputs.prepared.context_changes.as_ref(),
-    )?;
+    let diagnostics = inputs.cfg.task_diagnostics.as_ref().map(|parsed| {
+        let inventory = files
+            .iter()
+            .map(|file| file.path.to_string_lossy().replace('\\', "/"))
+            .collect::<Vec<_>>();
+        crate::task_diagnostics::resolve(
+            parsed.clone(),
+            &inputs.prepared.root,
+            &inputs.prepared.discovered.target,
+            &inventory,
+        )
+    });
+    let mut context = if diagnostics.is_some() {
+        crate::context::build_for_target_with_diagnostics(
+            files,
+            risks,
+            outlines,
+            inputs
+                .graphs
+                .planning
+                .as_ref()
+                .or(inputs.graphs.scoped.as_ref())
+                .map(|analysis| &analysis.signals),
+            crate::context::PlanningPaths {
+                root: &inputs.prepared.root,
+                target: &inputs.prepared.discovered.target,
+            },
+            inputs.cfg,
+            inputs.prepared.context_changes.as_ref(),
+            diagnostics.as_ref(),
+        )?
+    } else {
+        crate::context::build_for_target(
+            files,
+            risks,
+            outlines,
+            inputs
+                .graphs
+                .planning
+                .as_ref()
+                .or(inputs.graphs.scoped.as_ref())
+                .map(|analysis| &analysis.signals),
+            crate::context::PlanningPaths {
+                root: &inputs.prepared.root,
+                target: &inputs.prepared.discovered.target,
+            },
+            inputs.cfg,
+            inputs.prepared.context_changes.as_ref(),
+        )?
+    };
     if let Some(planning) = inputs.planning {
         context.planning_diagnostics = Some(planning.diagnostics.clone());
     }

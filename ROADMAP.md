@@ -154,10 +154,10 @@ would make automation less trustworthy.
 
 ### External diagnostics as context-planning evidence
 
-**Status:** Design-ready, medium-risk, post-0.1 opportunity. Implementation remains evidence-gated:
-build and test failures must prove that path-only focus and diff-seeded context repeatedly leave
-agents without the right reading set. The design is complete enough to implement without relying
-on prior conversation or a separate product decision.
+**Status:** Approved and in implementation as Feature 4 of the six-feature task-query program.
+The contract below guides the implementation; it is not a claim of delivered behavior or measured
+agent-token savings. Final CLI, coverage and report details will be maintained in the focused
+product documentation when implementation and validation are complete.
 
 #### Problem and desired outcome
 
@@ -170,7 +170,7 @@ paths, and separately ask RepoScout for related files.
 The desired outcome is an opt-in, one-shot CLI input that turns external diagnostics into
 high-confidence seeds for the existing context planner. RepoScout should normalize the bounded
 input, resolve locations against the scanned repository, select the failing files plus their
-matching tests or sources and graph neighborhood, and explain every selection. It must not run the
+evidence-supported context and graph neighborhood, and explain every selection. It must not run the
 external tool, embed unbounded logs, create a second context implementation, or treat third-party
 findings as RepoScout health findings.
 
@@ -178,8 +178,8 @@ Success is observable when:
 
 - a diagnostic with a valid repository location reliably selects that file ahead of generic
   context candidates;
-- a source diagnostic brings in matching tests, and a test diagnostic brings in the matching
-  production source when the existing filename/test heuristics can establish one;
+- related test or source hints are included only when current shared evidence establishes the
+  relationship; filenames alone do not prove a diagnostic-to-test or reverse source match;
 - supported-language dependencies and direct/transitive dependents are ranked through the same
   graph facts and provenance used by ordinary context planning;
 - unresolved, out-of-scope, malformed, and truncated input is explicit in machine and human
@@ -247,7 +247,7 @@ TaskDiagnostic
 ```
 
 The stable report contract should use normal serde defaults and omission rules so this remains an
-additive `SCHEMA_VERSION = 1.0` change. `id` values are assigned after deterministic sorting and
+additive `SCHEMA_VERSION = 2.0` change. `id` values are assigned after deterministic sorting and
 deduplication; they are stable within equivalent input but are not cross-report fingerprints.
 Messages, tool names, codes, and original paths must have independent length limits. ANSI and
 terminal control characters are removed or escaped before human rendering, and the original
@@ -353,20 +353,21 @@ Required direct-seed ranking invariants, before independent graph/risk/support e
 Implement these invariants with a context strategy-version bump and deterministic tests; exact
 numeric weights remain an internal strategy detail. The union of focus, change, and diagnostic
 paths seeds the existing dependency/dependent traversal. Reasons must name the actual seed type:
-`compiler diagnostic at 42:17`, `matching test for diagnostic source`, `matching source for
-diagnostic test`, `direct dependency of diagnostic`, or `dependent of diagnostic`.
+`compiler diagnostic at 42:17`, `direct dependency of diagnostic`, or `dependent of diagnostic`.
+Test/source hints require current shared evidence and must not restore removed filename-based
+source/test matching.
 
 Extend `ContextEvidence` additively with an optional list of report-local task-diagnostic IDs.
 Direct diagnostic files use role `diagnostic`, distance `0`, and the parser confidence. Related
-files retain the existing `matching-test`, `dependency`, and `dependent` roles and reference the
-diagnostic IDs that caused the relationship. Add `matching-source` for the reverse test-to-source
-case. The path/test matching and graph resolver provenance must come from existing shared facts;
-do not add a diagnostic-only import resolver or test matcher.
+files retain the applicable existing evidence role and reference the diagnostic IDs that caused
+the relationship. Do not invent a reverse `matching-source` role from filenames. Relationship and
+graph resolver provenance must come from existing shared facts; do not add a diagnostic-only
+import resolver or test matcher.
 
-Version one does not attempt precise line-to-enclosing-symbol resolution. Selected first-class
-files receive the same bounded declaration outlines they receive today, while the exact diagnostic
-line remains available in task evidence. A later symbol-level enhancement requires independent
-evidence and must reuse parser ranges rather than introducing a second symbol index.
+A resolved diagnostic position can feed an explicitly requested definition read or definition
+plan through the existing source-query ranges and captured-content identity. Default context
+output remains body-free. An unresolvable position retains file-level seed evidence and a visible
+gap; it must not trigger guessed symbol binding or a second symbol index.
 
 #### Report behavior and compatibility
 
@@ -438,7 +439,7 @@ from top-level scan diagnostics and show at least one SARIF, rustc JSON, and tex
   the existing impact block remains diff-seeded; diagnostics only enrich the context plan.
 - Daemon ingestion, web upload, live log following, editor integration, or format-specific plugin
   infrastructure.
-- Exact semantic blame, reference lookup, or enclosing-symbol resolution from a line number.
+- Exact semantic blame or reference lookup inferred solely from a diagnostic line number.
 
 #### Validation and acceptance scenarios
 
@@ -453,8 +454,8 @@ Automated validation must cover:
 - byte and record limits for file and stdin input, including a useful partial result and accurate
   omitted/truncation counters;
 - direct diagnostic ranking, capped repeated-diagnostic weight, generated-file override,
-  matching-test and matching-source selection, graph neighbors with resolver provenance, and
-  outline-only behavior under a tiny token budget;
+  evidence-supported related-file selection, graph neighbors with resolver provenance, explicit
+  diagnostic-to-definition handoff and outline-only behavior under a tiny token budget;
 - coexistence with explicit focus and `--working`/`--since`, including the ranking invariants and
   preservation of existing diff-seeded impact semantics;
 - serde compatibility with reports lacking the additive fields, unchanged baseline/profile
@@ -467,10 +468,10 @@ Automated validation must cover:
 Acceptance scenarios:
 
 - **Given** one high-confidence Rust error inside a source file, **when** diagnostic context is
-  requested, **then** the source is selected with its location, its matching test is ranked, and
-  supported graph neighbors cite the same diagnostic ID.
-- **Given** a failing test location, **when** the filename heuristic identifies one production
-  source, **then** both appear with distinct `diagnostic` and `matching-source` evidence.
+  requested, **then** the source is selected with its location and supported graph neighbors cite
+  the same diagnostic ID. Test hints require current shared evidence.
+- **Given** a failing test location without a proven source relationship, **when** context is
+  planned, **then** the test remains a diagnostic seed without a guessed production-source match.
 - **Given** duplicate text stack frames and hundreds of repeated errors in one file, **when** the
   record limit is not reached, **then** records deduplicate deterministically and the file's score
   receives only the capped repeated-error boost.
@@ -506,9 +507,8 @@ Principal risks and mitigations:
 | Sensitive log messages leak into debug/cache output | Never cache evidence or log messages; bound and escape only the normalized message in the explicit report |
 | Context behavior silently changes for existing users | Opt-in activation, strategy-version bump, unchanged no-input golden tests and benchmarks |
 
-This opportunity is **ready for independent review and implementation planning** once usage
-evidence justifies prioritizing it. There are no blocking product questions in the version-one
-contract above.
+Implementation is authorized. Acceptance still requires the focused contract checks and the
+program's actual agent comparisons; incomplete runs or unsupported evidence must remain visible.
 
 ### Historical decision signals
 

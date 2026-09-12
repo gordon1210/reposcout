@@ -688,3 +688,207 @@ fn evidence_confidence_distinguishes_configured_and_inferred_resolvers() {
         "partial"
     );
 }
+
+fn resolved_diagnostics(
+    entries: &[(&str, crate::model::TaskDiagnosticSeverity)],
+) -> crate::task_diagnostics::ResolvedTaskDiagnostics {
+    let records = entries
+        .iter()
+        .enumerate()
+        .map(|(index, (path, severity))| crate::model::TaskDiagnostic {
+            id: format!("diagnostic-{}", index + 1),
+            path: Some((*path).to_string()),
+            line: Some(2),
+            severity: *severity,
+            confidence: "high".to_string(),
+            status: crate::model::TaskDiagnosticStatus::Resolved,
+            ..crate::model::TaskDiagnostic::default()
+        })
+        .collect::<Vec<_>>();
+    crate::task_diagnostics::ResolvedTaskDiagnostics {
+        evidence: crate::model::TaskDiagnosticEvidence {
+            resolved_records: records.len(),
+            diagnostics: records.clone(),
+            ..crate::model::TaskDiagnosticEvidence::default()
+        },
+        records,
+    }
+}
+
+#[test]
+fn diagnostic_priority_is_focus_then_error_then_change_then_warning() {
+    use crate::model::TaskDiagnosticSeverity::{Error, Warning};
+    let files = [
+        file("focus.rs", 10),
+        file("error.rs", 10),
+        file("changed.rs", 10),
+        file("warning.rs", 10),
+    ];
+    let cfg = Config {
+        context_focus: vec![PathBuf::from("focus.rs")],
+        context_budget: 100,
+        ..Config::default()
+    };
+    let changes = ChangeSeeds {
+        scope: "working".to_string(),
+        paths: HashSet::from([PathBuf::from("changed.rs")]),
+    };
+    let diagnostics = resolved_diagnostics(&[("warning.rs", Warning), ("error.rs", Error)]);
+    let plan = build_for_target_with_diagnostics(
+        &files,
+        &[],
+        &BTreeMap::new(),
+        None,
+        PlanningPaths {
+            root: Path::new("/repo"),
+            target: Path::new("/repo"),
+        },
+        &cfg,
+        Some(&changes),
+        Some(&diagnostics),
+    )
+    .unwrap();
+    assert_eq!(plan.strategy_version, 4);
+    assert_eq!(
+        plan.files
+            .iter()
+            .map(|file| file.path.as_path())
+            .collect::<Vec<_>>(),
+        [
+            Path::new("focus.rs"),
+            Path::new("error.rs"),
+            Path::new("changed.rs"),
+            Path::new("warning.rs")
+        ]
+    );
+    assert_eq!(plan.task_evidence.unwrap().resolved_records, 2);
+    let old = build(
+        &files,
+        &[],
+        &BTreeMap::new(),
+        None,
+        Path::new("/repo"),
+        &cfg,
+        Some(&changes),
+    );
+    assert_eq!(old.strategy_version, 3);
+    assert!(old.task_evidence.is_none());
+}
+
+#[test]
+fn diagnostic_seed_survives_generated_skip_and_budget_as_empty_outline() {
+    let mut generated = file("generated.rs", 100);
+    generated.skip_hint = Some("minified".to_string());
+    let diagnostics =
+        resolved_diagnostics(&[("generated.rs", crate::model::TaskDiagnosticSeverity::Error)]);
+    let cfg = Config {
+        context_budget: 1,
+        ..Config::default()
+    };
+    let plan = build_for_target_with_diagnostics(
+        &[generated],
+        &[],
+        &BTreeMap::new(),
+        None,
+        PlanningPaths {
+            root: Path::new("/repo"),
+            target: Path::new("/repo"),
+        },
+        &cfg,
+        None,
+        Some(&diagnostics),
+    )
+    .unwrap();
+    assert!(plan.files.is_empty());
+    assert_eq!(plan.outline_only.len(), 1);
+    assert_eq!(plan.outline_only[0].path, PathBuf::from("generated.rs"));
+    assert_eq!(
+        plan.outline_only[0].evidence[0].diagnostic_ids,
+        ["diagnostic-1"]
+    );
+    assert!(plan.outline_only[0].symbols.is_empty());
+}
+
+#[test]
+fn diagnostic_graph_neighbors_keep_ids_without_filename_test_matching() {
+    let files = [
+        file("src/value.ts", 10),
+        file("src/dependency.ts", 10),
+        file("tests/value.test.ts", 10),
+    ];
+    let mut graph = GraphSignals::default();
+    graph.files.insert(
+        "src/value.ts".to_string(),
+        GraphFileSignal {
+            dependencies: vec!["src/dependency.ts".to_string()],
+            dependency_resolvers: BTreeMap::from([(
+                "src/dependency.ts".to_string(),
+                "relative".to_string(),
+            )]),
+            ..GraphFileSignal::default()
+        },
+    );
+    let diagnostics =
+        resolved_diagnostics(&[("src/value.ts", crate::model::TaskDiagnosticSeverity::Error)]);
+    let plan = build_for_target_with_diagnostics(
+        &files,
+        &[],
+        &BTreeMap::new(),
+        Some(&graph),
+        PlanningPaths {
+            root: Path::new("/repo"),
+            target: Path::new("/repo"),
+        },
+        &Config::default(),
+        None,
+        Some(&diagnostics),
+    )
+    .unwrap();
+    let dependency = plan
+        .files
+        .iter()
+        .find(|file| file.path == Path::new("src/dependency.ts"))
+        .unwrap();
+    assert!(
+        dependency
+            .evidence
+            .iter()
+            .any(|proof| proof.role == "dependency" && proof.diagnostic_ids == ["diagnostic-1"])
+    );
+    assert_eq!(plan.matching_tests, 0);
+    assert!(
+        !plan
+            .files
+            .iter()
+            .flat_map(|file| &file.evidence)
+            .any(|proof| proof.role == "matching-test")
+    );
+}
+
+#[test]
+fn repeated_diagnostics_have_capped_boost_and_evidence_ids() {
+    let files = [file("value.rs", 10)];
+    let plan_for = |count| {
+        let entries = vec![("value.rs", crate::model::TaskDiagnosticSeverity::Error); count];
+        let diagnostics = resolved_diagnostics(&entries);
+        build_for_target_with_diagnostics(
+            &files,
+            &[],
+            &BTreeMap::new(),
+            None,
+            PlanningPaths {
+                root: Path::new("/repo"),
+                target: Path::new("/repo"),
+            },
+            &Config::default(),
+            None,
+            Some(&diagnostics),
+        )
+        .unwrap()
+    };
+    let three = plan_for(3);
+    let many = plan_for(100);
+    assert!((three.files[0].score - many.files[0].score).abs() < f64::EPSILON);
+    assert_eq!(many.files[0].evidence[0].diagnostic_ids.len(), 8);
+    assert_eq!(many.seed_files, 1);
+}

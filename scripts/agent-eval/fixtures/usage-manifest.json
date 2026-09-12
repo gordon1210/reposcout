@@ -1,0 +1,16 @@
+{
+  "evidence_kind": "synthetic",
+  "fixture_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "harness": "fixture-v1",
+  "mode": "end-to-end",
+  "model": "synthetic-model",
+  "oracle_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "provider": "synthetic-provider",
+  "retention_policy": "retain-all",
+  "run_id": "synthetic-cache-retry",
+  "schema": 1,
+  "start_context_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "task_id": "F1:known-definition:end-to-end",
+  "task_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "variant": "baseline"
+}

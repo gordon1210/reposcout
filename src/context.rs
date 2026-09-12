@@ -5,6 +5,8 @@
 //! are accepted at the module seam and enrich focus neighborhoods when the
 //! graph supports the language.
 
+pub mod definitions;
+
 use crate::config::Config;
 use crate::graph::{GraphSignals, is_entrypoint};
 use crate::lang;
@@ -32,6 +34,7 @@ pub(crate) struct ChangeSeeds {
 }
 
 struct Candidate {
+    priority: u8,
     path: PathBuf,
     path_key: String,
     tokens: usize,
@@ -40,7 +43,81 @@ struct Candidate {
     evidence: Vec<ContextEvidence>,
 }
 
+struct DiagnosticSeed {
+    confidence: String,
+    severity: crate::model::TaskDiagnosticSeverity,
+    ids: Vec<String>,
+    count: usize,
+}
+
+fn diagnostic_priority(focused: bool, changed: bool, diagnostic: Option<&DiagnosticSeed>) -> u8 {
+    if focused {
+        return 5;
+    }
+    if diagnostic.is_some_and(|seed| seed.severity == crate::model::TaskDiagnosticSeverity::Error) {
+        return 4;
+    }
+    if changed {
+        return 3;
+    }
+    match diagnostic.map(|seed| seed.severity) {
+        Some(crate::model::TaskDiagnosticSeverity::Warning) => 2,
+        Some(_) => 1,
+        None => 0,
+    }
+}
+
+fn attach_diagnostic_neighbors(
+    evidence: &mut [ContextEvidence],
+    path: &str,
+    inputs: &CandidateInputs<'_>,
+) {
+    let Some(graph) = inputs.graph else {
+        return;
+    };
+    for proof in evidence {
+        if proof.role == "dependent" && proof.distance.is_some_and(|distance| distance > 1) {
+            if let Some(seed) = inputs
+                .neighborhood
+                .dependents
+                .get(path)
+                .and_then(|reach| inputs.seeds.diagnostics.get(&reach.source_seed))
+            {
+                proof.diagnostic_ids.clone_from(&seed.ids);
+            }
+            continue;
+        }
+
+        if !matches!(proof.role.as_str(), "dependency" | "dependent") || proof.distance != Some(1) {
+            continue;
+        }
+        for (seed_path, seed) in &inputs.seeds.diagnostics {
+            let Some(signal) = graph.files.get(seed_path) else {
+                continue;
+            };
+            let neighbors = if proof.role == "dependency" {
+                &signal.dependencies
+            } else {
+                &signal.dependents
+            };
+            if !neighbors.iter().any(|neighbor| neighbor == path) {
+                continue;
+            }
+            for id in &seed.ids {
+                if proof.diagnostic_ids.len() >= 8 {
+                    break;
+                }
+                if !proof.diagnostic_ids.contains(id) {
+                    proof.diagnostic_ids.push(id.clone());
+                }
+            }
+        }
+    }
+}
+
 struct PlanningSeeds {
+    diagnostics: BTreeMap<String, DiagnosticSeed>,
+    diagnostic_mode: bool,
     focus: Vec<PathBuf>,
     unmatched_focus: Vec<PathBuf>,
     explicit_files: HashSet<String>,
@@ -135,6 +212,7 @@ struct OutlineStats {
 
 #[derive(Clone)]
 struct GraphReach {
+    source_seed: String,
     distance: usize,
     resolver: Option<String>,
 }
@@ -150,6 +228,7 @@ fn planning_seeds(
     paths: PlanningPaths<'_>,
     configured_focus: &[PathBuf],
     changes: Option<&ChangeSeeds>,
+    diagnostics: Option<&crate::task_diagnostics::ResolvedTaskDiagnostics>,
 ) -> Result<PlanningSeeds> {
     let (focus, unmatched_focus) =
         resolve_focus(configured_focus, files, paths.root, paths.target)?;
@@ -170,7 +249,7 @@ fn planning_seeds(
         .filter(|file| changed_keys.contains(&path_key(&file.path)))
         .map(|file| path_key(&file.path))
         .collect::<HashSet<_>>();
-    let seed_files = explicit_files
+    let mut seed_files = explicit_files
         .union(&changed_keys)
         .cloned()
         .collect::<HashSet<_>>();
@@ -198,7 +277,37 @@ fn planning_seeds(
         )
         .collect();
 
+    let mut diagnostic_seeds: BTreeMap<String, DiagnosticSeed> = BTreeMap::new();
+    if let Some(diagnostics) = diagnostics {
+        for record in &diagnostics.records {
+            if record.status != crate::model::TaskDiagnosticStatus::Resolved {
+                continue;
+            }
+            let Some(path) = &record.path else {
+                continue;
+            };
+            let seed = diagnostic_seeds
+                .entry(path.clone())
+                .or_insert_with(|| DiagnosticSeed {
+                    severity: record.severity,
+                    confidence: record.confidence.clone(),
+                    ids: Vec::new(),
+                    count: 0,
+                });
+            seed.severity = seed.severity.min(record.severity);
+            if record.confidence != "high" {
+                seed.confidence = "partial".to_string();
+            }
+            seed.count = seed.count.saturating_add(1);
+            if seed.ids.len() < 8 {
+                seed.ids.push(record.id.clone());
+            }
+        }
+    }
+    seed_files.extend(diagnostic_seeds.keys().cloned());
     Ok(PlanningSeeds {
+        diagnostics: diagnostic_seeds,
+        diagnostic_mode: diagnostics.is_some(),
         focus,
         unmatched_focus,
         explicit_files,
@@ -297,6 +406,7 @@ fn collect_candidates(
 fn build_candidate(file: &FileReport, inputs: &CandidateInputs<'_>) -> (Option<Candidate>, bool) {
     let path = path_key(&file.path);
     let focused = inputs.seeds.explicit_files.contains(&path);
+    let diagnostic = inputs.seeds.diagnostics.get(&path);
     let changed = inputs.seeds.changed_files.contains(&path);
     let dependency = inputs.neighborhood.dependencies.get(&path);
     let dependent = inputs.neighborhood.dependents.get(&path);
@@ -314,13 +424,14 @@ fn build_candidate(file: &FileReport, inputs: &CandidateInputs<'_>) -> (Option<C
     let support = support_role(&path);
     let risk = inputs.risk_by_path.get(path.as_str()).copied();
 
-    if file.skip_hint.is_some() && !focused && !changed {
+    if file.skip_hint.is_some() && !focused && !changed && diagnostic.is_none() {
         return (None, matching_test);
     }
     if !is_code
         && support.is_none()
         && !focused
         && !changed
+        && diagnostic.is_none()
         && dependency.is_none()
         && dependent.is_none()
         && !matching_test
@@ -345,6 +456,34 @@ fn build_candidate(file: &FileReport, inputs: &CandidateInputs<'_>) -> (Option<C
     };
     score_relationships(&mut score, file, &facts, inputs.changes);
     score_file_signals(&mut score, file, &facts, inputs.graph);
+    if let Some(diagnostic) = diagnostic {
+        score.value += 10.0 * usize_to_f64(diagnostic.count.min(3));
+        score
+            .reasons
+            .push(format!("resolved {:?} diagnostic", diagnostic.severity).to_lowercase());
+        score.evidence.push(ContextEvidence {
+            role: "diagnostic".to_string(),
+            confidence: diagnostic.confidence.clone(),
+            distance: Some(0),
+            resolver: None,
+            diagnostic_ids: diagnostic.ids.clone(),
+        });
+    }
+    attach_diagnostic_neighbors(&mut score.evidence, &path, inputs);
+    if inputs.seeds.diagnostic_mode
+        && inputs.seeds.explicit_files.is_empty()
+        && inputs.changes.is_none()
+    {
+        for reason in &mut score.reasons {
+            *reason = reason.replace("of focus", "of diagnostic");
+        }
+    }
+    let priority = if inputs.seeds.diagnostic_mode {
+        diagnostic_priority(focused, changed, diagnostic)
+    } else {
+        0
+    };
+
     if score.reasons.is_empty() {
         score.reasons.push(if testcov::is_test_file(&path) {
             "test source".to_string()
@@ -355,6 +494,7 @@ fn build_candidate(file: &FileReport, inputs: &CandidateInputs<'_>) -> (Option<C
 
     (
         Some(Candidate {
+            priority,
             path: file.path.clone(),
             path_key: path,
             tokens: file.tokens,
@@ -376,6 +516,7 @@ fn score_relationships(
         score.value += 1_200.0;
         score.reasons.push("focus path".to_string());
         score.evidence.push(ContextEvidence {
+            diagnostic_ids: Vec::new(),
             role: "focus".to_string(),
             confidence: "high".to_string(),
             distance: Some(0),
@@ -394,6 +535,7 @@ fn score_relationships(
             .reasons
             .push(format!("changed in {change_scope} scope"));
         score.evidence.push(ContextEvidence {
+            diagnostic_ids: Vec::new(),
             role: "changed".to_string(),
             confidence: "high".to_string(),
             distance: Some(0),
@@ -463,6 +605,7 @@ fn score_nearby_and_tests(
             "matching test for focus".to_string()
         });
         score.evidence.push(ContextEvidence {
+            diagnostic_ids: Vec::new(),
             role: "matching-test".to_string(),
             confidence: "partial".to_string(),
             distance: None,
@@ -485,6 +628,7 @@ fn score_nearby_and_tests(
             "shares focus directory".to_string()
         });
         score.evidence.push(ContextEvidence {
+            diagnostic_ids: Vec::new(),
             role: "nearby".to_string(),
             confidence: "partial".to_string(),
             distance: None,
@@ -559,8 +703,9 @@ fn select_candidates(
 ) -> (usize, CandidateSelection) {
     candidates.sort_by(|left, right| {
         right
-            .score
-            .total_cmp(&left.score)
+            .priority
+            .cmp(&left.priority)
+            .then_with(|| right.score.total_cmp(&left.score))
             .then_with(|| left.tokens.cmp(&right.tokens))
             .then_with(|| left.path_key.cmp(&right.path_key))
     });
@@ -656,7 +801,12 @@ fn attach_selection_outlines(
         .into_iter()
         .zip(outline_only_files)
         .filter_map(|((source, reason), outlined)| {
-            (!outlined.symbols.is_empty()).then_some(ContextOutlineOnly {
+            (!outlined.symbols.is_empty()
+                || source
+                    .evidence
+                    .iter()
+                    .any(|evidence| evidence.role == "diagnostic"))
+            .then_some(ContextOutlineOnly {
                 path: source.path,
                 source_tokens: source.tokens,
                 score: source.score,
@@ -679,7 +829,24 @@ pub(crate) fn build_for_target(
     cfg: &Config,
     changes: Option<&ChangeSeeds>,
 ) -> Result<ContextPlan> {
-    let seeds = planning_seeds(files, paths, &cfg.context_focus, changes)?;
+    build_for_target_with_diagnostics(files, risks, outlines, graph, paths, cfg, changes, None)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "context consumes shared facts and optional external task seeds"
+)]
+pub(crate) fn build_for_target_with_diagnostics(
+    files: &[FileReport],
+    risks: &[RiskEntry],
+    outlines: &BTreeMap<PathBuf, Vec<SymbolOutline>>,
+    graph: Option<&GraphSignals>,
+    paths: PlanningPaths<'_>,
+    cfg: &Config,
+    changes: Option<&ChangeSeeds>,
+    diagnostics: Option<&crate::task_diagnostics::ResolvedTaskDiagnostics>,
+) -> Result<ContextPlan> {
+    let seeds = planning_seeds(files, paths, &cfg.context_focus, changes, diagnostics)?;
     let neighborhood = graph_neighborhood(graph, &seeds.seed_files);
     let CandidateCollection {
         candidates,
@@ -696,7 +863,12 @@ pub(crate) fn build_for_target(
     changed_paths.sort();
 
     Ok(ContextPlan {
-        strategy_version: STRATEGY_VERSION,
+        strategy_version: if diagnostics.is_some() {
+            4
+        } else {
+            STRATEGY_VERSION
+        },
+        task_evidence: diagnostics.map(|diagnostics| diagnostics.evidence.clone()),
         planning_ms: 0,
         budget_tokens: cfg.context_budget,
         selected_tokens: selection.selected_tokens,
@@ -764,8 +936,10 @@ fn dependent_reach(
     ordered_seeds.sort();
     let mut queue = VecDeque::new();
     let mut distances = HashMap::new();
+    let mut origins = HashMap::new();
     for seed in ordered_seeds {
         distances.insert(seed.clone(), 0usize);
+        origins.insert(seed.clone(), seed.clone());
         queue.push_back(seed);
     }
     let mut reach = HashMap::new();
@@ -783,11 +957,14 @@ fn dependent_reach(
                 continue;
             }
             distances.insert(dependent.clone(), next_distance);
+            let source_seed = origins.get(&path).cloned().unwrap_or_else(|| path.clone());
+            origins.insert(dependent.clone(), source_seed.clone());
             queue.push_back(dependent.clone());
             if !seeds.contains(dependent) {
                 reach.insert(
                     dependent.clone(),
                     GraphReach {
+                        source_seed,
                         distance: next_distance,
                         resolver: (next_distance == 1)
                             .then(|| signal.dependent_resolvers.get(dependent).cloned())
@@ -807,6 +984,7 @@ fn graph_evidence(role: &str, distance: usize, resolver: Option<String>) -> Cont
         "partial"
     };
     ContextEvidence {
+        diagnostic_ids: Vec::new(),
         role: role.to_string(),
         confidence: confidence.to_string(),
         distance: Some(distance),

@@ -67,6 +67,7 @@ pub fn run(file: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<ExplainR
         scan::ArtifactRequirements {
             symbol_outlines: false,
             graph_facts: true,
+            ..scan::ArtifactRequirements::default()
         },
     )?;
     let report = artifacts.report;

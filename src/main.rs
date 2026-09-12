@@ -1,4 +1,5 @@
 mod fail_gate;
+mod task_commands;
 
 use anyhow::{Result, anyhow};
 use clap::{Parser, error::ErrorKind};
@@ -110,6 +111,7 @@ fn validate_debug_log_paths(cli: &Cli) -> Result<()> {
         return Ok(());
     };
     let debug_identity = walk::exact_path_identity(debug_log)?;
+    task_commands::validate_debug_paths(cli, &debug_identity)?;
     if let Some(target) = command_target(cli)
         && debug_identity == walk::exact_path_identity(target)?
     {
@@ -162,6 +164,9 @@ fn command_target(cli: &Cli) -> Option<&Path> {
         Some(Command::Explain(args)) => Some(&args.file),
         Some(Command::Locate(args)) => Some(&args.path),
         Some(Command::Read(args)) => Some(&args.path),
+        Some(Command::Find(args)) => Some(&args.path),
+        Some(Command::Plan(args)) => Some(&args.path),
+        Some(Command::Consumers(args)) => Some(&args.path),
         Some(Command::Changes(args)) => Some(&args.path),
         Some(Command::Config(args)) => Some(&args.path),
         Some(Command::Daemon(args)) => Some(&args.path),
@@ -186,6 +191,9 @@ fn command_output(cli: &Cli) -> Option<&Path> {
         Some(Command::Explain(args)) => args.common.output.as_deref(),
         Some(Command::Locate(args)) => args.common.output.as_deref(),
         Some(Command::Read(args)) => args.common.output.as_deref(),
+        Some(Command::Find(args)) => args.common.output.as_deref(),
+        Some(Command::Plan(args)) => args.common.output.as_deref(),
+        Some(Command::Consumers(args)) => args.common.output.as_deref(),
         Some(Command::Changes(args)) => args.common.output.as_deref(),
         Some(
             Command::Capabilities(_)
@@ -238,6 +246,18 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
             command: Some(Command::Changes(args)),
             ..
         } => run_changes(&args, pretty),
+        Cli {
+            command: Some(Command::Find(args)),
+            ..
+        } => task_commands::run_find(&args, pretty),
+        Cli {
+            command: Some(Command::Plan(args)),
+            ..
+        } => task_commands::run_plan(&args, pretty),
+        Cli {
+            command: Some(Command::Consumers(args)),
+            ..
+        } => task_commands::run_consumers(&args, pretty),
         Cli {
             command: Some(Command::Update),
             ..
@@ -398,6 +418,7 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
     let (args, sub_enabled) = split(cli);
     validate_scan_request(&args, sub_enabled.is_some())?;
     let format = resolve_scan_format(&args, pretty)?;
+    validate_scan_output_path(&args)?;
     let cfg = resolve_scan_config(&args, sub_enabled)?;
     log_configuration("scan", &args.path, &cfg);
 
@@ -408,8 +429,10 @@ fn run_scan(cli: Cli) -> Result<ExitCode> {
         .transpose()?
         .unwrap_or_default();
 
-    validate_scan_output_path(&args)?;
-    let exclusions = command_exclusions(args.common.output.as_deref());
+    let mut exclusions = command_exclusions(args.common.output.as_deref());
+    if let Some(path) = task_commands::diagnostic_input_path(&args) {
+        exclusions.push(path.to_path_buf());
+    }
     let report = scan::run_with_exclusions(&args.path, &cfg, &exclusions)?;
     let rendered = render_scan_output(&report, &args, format, pretty)?;
     write_scan_output(&args, &rendered)?;
@@ -499,6 +522,13 @@ fn has_detailed_agent_summary_request(args: &ScanArgs) -> bool {
 
 fn resolve_scan_format(args: &ScanArgs, pretty: bool) -> Result<Format> {
     let requested = choose_format(args.common.format, args.common.output.as_deref());
+    if args.task_diagnostics.is_some()
+        && matches!(requested, Format::Sarif | Format::Dot | Format::Mermaid)
+    {
+        return Err(usage_error(
+            "--task-diagnostics supports table, JSON, Markdown, or NDJSON context output",
+        ));
+    }
     if args.agent_summary
         && requested != Format::Json
         && (args.common.format.is_some() || args.common.output.is_some())
@@ -542,7 +572,8 @@ fn resolve_scan_config(args: &ScanArgs, sub_enabled: Option<Enabled>) -> Result<
         || args.context_budget.is_some()
         || args.context_max_files.is_some()
         || !args.focus.is_empty()
-        || args.change_summary;
+        || args.change_summary
+        || args.task_diagnostics.is_some();
 
     let profile = args
         .common
@@ -576,10 +607,20 @@ fn resolve_scan_config(args: &ScanArgs, sub_enabled: Option<Enabled>) -> Result<
         }
         cfg.context = false;
     }
+    cfg.task_diagnostics = task_commands::load_diagnostics(args, profile)?;
     Ok(cfg)
 }
 
 fn validate_scan_output_path(args: &ScanArgs) -> Result<()> {
+    if let (Some(output), Some(input)) = (
+        args.common.output.as_deref(),
+        task_commands::diagnostic_input_path(args),
+    ) && walk::exact_path_identity(output)? == walk::exact_path_identity(input)?
+    {
+        return Err(usage_error(
+            "output path cannot overwrite the diagnostic input",
+        ));
+    }
     if let Some(output) = args.common.output.as_deref()
         && walk::exact_path_identity(&args.path)? == walk::exact_path_identity(output)?
     {
@@ -1157,6 +1198,9 @@ fn split(cli: Cli) -> (ScanArgs, Option<Enabled>) {
         ),
         Some(Command::Explain(_)) => unreachable!("explain is dispatched before scan splitting"),
         Some(Command::Locate(_)) => unreachable!("locate is dispatched before scan splitting"),
+        Some(Command::Find(_) | Command::Plan(_) | Command::Consumers(_)) => {
+            unreachable!("task queries are dispatched before scan splitting")
+        }
         Some(Command::Read(_)) => unreachable!("read is dispatched before scan splitting"),
         Some(Command::Changes(_)) => unreachable!("changes is dispatched before scan splitting"),
         Some(Command::Capabilities(_)) => {
@@ -1228,6 +1272,7 @@ fn apply_graph_overrides(cfg: &mut Config, args: &ScanArgs) {
 
 fn apply_context_overrides(cfg: &mut Config, args: &ScanArgs) {
     if args.context
+        || args.task_diagnostics.is_some()
         || args.change_summary
         || args.context_budget.is_some()
         || args.context_max_files.is_some()

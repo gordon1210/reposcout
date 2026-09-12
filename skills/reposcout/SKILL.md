@@ -26,9 +26,14 @@ explicitly authorizes it.
 ## Choose the smallest start
 
 On Unix, if a file and symbol or line are already known and its source is needed, use `reposcout read`
-directly; load the focused source-query guidance below. A normal short read may be sufficient.
+directly; load the focused source-query guidance below. If the exact complete small span is
+already known and no snapshot, hash or coverage evidence is needed, use a targeted native read.
 Do not repeat unchanged source already available in context. Optional `--outline` is not a required
-first step. For a known diff scope, use body-free `reposcout changes` directly when the next
+first step. When the entry point is unknown, use lexical `find` only if its declaration candidates
+answer the next question. Known definitions can share a `plan`; known error logs can seed context.
+Use the matching focused guidance below and preserve snapshot/hash identity on follow-up reads.
+
+For a known comparison, start with bounded `reposcout changes` when the next
 decision needs changed definitions; request `--source` only for bodies needed by that decision.
 The change-analysis guidance describes this route and optional broader report integration.
 

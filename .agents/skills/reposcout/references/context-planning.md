@@ -26,7 +26,7 @@ Treat the agent view's `context.direct_evidence.entries` and `expand_if_needed.e
 Open only the highest-ranked source needed to test the next hypothesis, then stop when the task has
 enough evidence. `context.budget.selected_tokens` in the agent view (`context.selected_tokens` in
 ordinary output) is the potential source cost if every selected body were read; it is not the size
-of RepoScout's output or a requirement to spend the whole budget. Context plans never embed source
+of RepoScout's output or a requirement to spend the whole budget. Ordinary file-context plans never embed source
 bodies. An explicit [source query](source-queries.md) can read a known definition separately; its
 output budget measures the complete rendered response, including metadata.
 
@@ -134,3 +134,28 @@ reposcout -f json --summary --graph-focus <file> \
 Report unresolved imports, parse errors, configuration errors, unmatched focus, and capped graph
 results. Broaden the context budget or request detailed output only when omissions or confidence
 gaps prevent the next reading decision.
+
+## Plan known definitions instead of whole files
+
+```sh
+reposcout plan . --symbol src/billing.rs invoice_total --line src/inventory.rs 12 \
+  --context-budget 12000 --budget 4096 -f json
+```
+
+Use `plan` when several definitions and supported environment must compete under one budget; it
+is not a prerequisite to reading one known definition. `plan` uses explicit symbol/line seeds or
+`--file` declaration seeds. Unseeded worktree planning is
+possible but does not invent direct task evidence; index/revision planning requires selectors.
+`--snapshot worktree|index|REF` and hash expectations preserve content identity. It is Unix-only.
+
+The context budget limits the selected source-range union, separately from the rendered response.
+Defaults are 12,000 source tokens, eight files and sixteen definitions; file/definition caps are
+32. Source remains absent unless `--source` is explicit. The entire plan plus optional source
+must fit the shared output budget; do not count overlapping definitions twice or assume every
+selected definition was delivered after output admission.
+
+The initial supported environment adds unique local signature types in Rust/TypeScript/TSX.
+Missing or ambiguous types and unexpanded body dependencies stay visible. A complete function is
+not a complete task context. Read additional types, imports, consumers or tests only when a concrete
+remaining question requires them. A positive syntax-supported environment result does not prove
+an unrestricted dependency closure.

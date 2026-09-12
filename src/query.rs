@@ -16,8 +16,14 @@ use std::path::{Path, PathBuf};
 
 pub(crate) mod changed_mapping;
 mod changes;
+mod consumers;
+mod find;
+mod plan;
 mod source;
 pub use changes::{ChangeQueryOptions, query_changes};
+pub use consumers::{ConsumersQueryOptions, ConsumersQueryOutput, consumers};
+pub use find::{FindQueryOptions, FindQueryOutput, find};
+pub use plan::{DefinitionPlanOutput, DefinitionPlanQueryOptions, plan_definitions};
 pub use source::{
     SourceQueryOptions, SourceQueryOutput, SourceQueryTarget, SourceSelector, read_source,
 };
@@ -39,6 +45,9 @@ pub fn capabilities() -> CapabilitiesReport {
             "metrics",
             "explain",
             "locate",
+            "find",
+            "plan",
+            "consumers",
             "read",
             "changes",
             "update",
@@ -107,6 +116,10 @@ pub fn capabilities() -> CapabilitiesReport {
         },
         source_query: Some(source::capability()),
         change_query: Some(change_query_capability()),
+        find_query: Some(find::capability()),
+        definition_plan: Some(plan::capability()),
+        call_query: Some(consumers::capability()),
+        task_diagnostics: Some(crate::task_diagnostics::capability()),
         type2_max_seed_pairs_per_pool: crate::dup::fuzzy::MAX_SEED_PAIRS_PER_POOL,
         type2_max_matches_per_pool: crate::dup::fuzzy::MAX_MATCHES_PER_POOL,
         type2_max_overlap_checks_per_pool: crate::dup::fuzzy::MAX_OVERLAP_CHECKS_PER_POOL,
@@ -166,6 +179,7 @@ fn agent_summary_capability() -> AgentSummaryCapability {
         max_direct_context_entries: crate::report::agent_summary::MAX_DIRECT_CONTEXT_ENTRIES,
         max_expansion_context_entries: crate::report::agent_summary::MAX_EXPANSION_CONTEXT_ENTRIES,
         max_outline_only_entries: crate::report::agent_summary::MAX_OUTLINE_ONLY_ENTRIES,
+        max_task_diagnostic_entries: crate::report::agent_summary::MAX_TASK_DIAGNOSTIC_ENTRIES,
         max_unmatched_focus_entries: crate::report::agent_summary::MAX_UNMATCHED_FOCUS_ENTRIES,
     }
 }
@@ -213,6 +227,7 @@ pub fn locate(
         scan::ArtifactRequirements {
             symbol_outlines: true,
             graph_facts: false,
+            ..scan::ArtifactRequirements::default()
         },
     )?;
     let languages = artifacts

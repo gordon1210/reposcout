@@ -33,6 +33,10 @@ struct Entry {
     graph_facts: Option<crate::graph::SourceFacts>,
     #[serde(default)]
     definitions: Option<crate::model::DefinitionFacts>,
+    #[serde(default)]
+    lexical_facts: Option<crate::model::LexicalFileFacts>,
+    #[serde(default)]
+    definition_plans: Option<crate::model::DefinitionPlanningFacts>,
 }
 
 pub(crate) struct CachedAnalysis {
@@ -41,6 +45,8 @@ pub(crate) struct CachedAnalysis {
     pub symbol_outlines: Option<Vec<SymbolOutline>>,
     pub graph_facts: Option<crate::graph::SourceFacts>,
     pub definitions: Option<crate::model::DefinitionFacts>,
+    pub lexical_facts: Option<crate::model::LexicalFileFacts>,
+    pub definition_plans: Option<crate::model::DefinitionPlanningFacts>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -108,7 +114,7 @@ pub struct CacheClearResult {
 }
 
 /// Bump when cached per-file analysis facts are added or changed.
-const ANALYZER_VERSION: &str = "19";
+const ANALYZER_VERSION: &str = "20";
 
 /// The configuration that can change a cached per-file analysis entry.
 ///
@@ -255,6 +261,8 @@ impl Cache {
             symbol_outlines: entry.symbol_outlines.clone(),
             graph_facts: entry.graph_facts.clone(),
             definitions: entry.definitions.clone(),
+            lexical_facts: entry.lexical_facts.clone(),
+            definition_plans: entry.definition_plans.clone(),
         })
     }
 
@@ -271,6 +279,8 @@ impl Cache {
         symbol_outlines: Option<&[SymbolOutline]>,
         graph_facts: Option<&crate::graph::SourceFacts>,
         definitions: Option<&crate::model::DefinitionFacts>,
+        lexical_facts: Option<&crate::model::LexicalFileFacts>,
+        definition_plans: Option<&crate::model::DefinitionPlanningFacts>,
     ) {
         if !self.enabled {
             return;
@@ -284,6 +294,8 @@ impl Cache {
                 symbol_outlines: symbol_outlines.map(<[SymbolOutline]>::to_vec),
                 graph_facts: graph_facts.cloned(),
                 definitions: definitions.cloned(),
+                lexical_facts: lexical_facts.cloned(),
+                definition_plans: definition_plans.cloned(),
             },
         );
     }
@@ -510,6 +522,8 @@ mod tests {
             symbol_outlines: None,
             graph_facts: None,
             definitions: None,
+            lexical_facts: None,
+            definition_plans: None,
         }
     }
 
@@ -716,7 +730,17 @@ mod tests {
             misses: AtomicUsize::default(),
             enrichments: AtomicUsize::default(),
         };
-        cache.put("new.rs", 2, &report("new.rs"), &[], None, None, None);
+        cache.put(
+            "new.rs",
+            2,
+            &report("new.rs"),
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         cache.save(false).unwrap();
         let merged = load(&path, "test-key").unwrap();
         assert_eq!(merged.len(), 2);
@@ -733,7 +757,17 @@ mod tests {
             misses: AtomicUsize::default(),
             enrichments: AtomicUsize::default(),
         };
-        cache.put("new.rs", 2, &report("new.rs"), &[], None, None, None);
+        cache.put(
+            "new.rs",
+            2,
+            &report("new.rs"),
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         cache.save(true).unwrap();
         let pruned = load(&cache.path, "test-key").unwrap();
         assert_eq!(
@@ -770,6 +804,8 @@ mod tests {
             &report("lib.rs"),
             &[LineRange { start: 8, end: 12 }],
             Some(&[outline]),
+            None,
+            None,
             None,
             None,
         );
@@ -821,6 +857,8 @@ mod tests {
             None,
             None,
             Some(&facts),
+            None,
+            None,
         );
         cache.save(false).unwrap();
         let loaded = Cache {
@@ -858,6 +896,8 @@ mod tests {
             &[],
             None,
             Some(&facts),
+            None,
+            None,
             None,
         );
         cache.save(true).unwrap();

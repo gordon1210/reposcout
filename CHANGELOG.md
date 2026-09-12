@@ -6,7 +6,20 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added deterministic body-free `find` candidates, bounded definition `plan` with explicit source,
+  and conservative Rust/JavaScript/TypeScript/TSX consumer queries with content-checked read targets.
+- Added bounded SARIF, Cargo/rustc JSON and text diagnostic input as existing-context seeds,
+  preserving independent input/scan coverage and compact agent-summary output.
+- Added offline six-feature evaluation fixtures, canonical usage accounting and a separate
+  externally attested native Codex window adapter, plus a [38-run observed pilot](docs/agent-evaluation.md).
+  All bounded answer checks passed; the pilot does not establish net token savings.
+
 ### Changed
+
+- Bumped analyzer version to 20 for shared lexical, definition-planning and call/reference facts;
+  schema 2.0 and ordinary body-free scouting defaults remain unchanged.
 
 - Updated the tree-sitter runtime to 0.27.0 and adapted child-count indexing to its API.
   Analyzer version 19 invalidates cached parse-derived facts for the updated parser recovery

@@ -3,11 +3,14 @@
 pub(crate) mod agent_summary;
 mod change_summary;
 pub mod config;
+pub(crate) mod consumers;
 pub mod explain;
+pub mod find;
 pub mod graph;
 pub mod json;
 pub mod markdown;
 pub mod ndjson;
+pub(crate) mod plan;
 mod projection;
 pub mod query;
 pub mod sarif;

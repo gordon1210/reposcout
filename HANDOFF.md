@@ -6,7 +6,7 @@ reference it routes to under `docs/agents/` for *how to work in the repo*. Use `
 user-facing behavior.
 
 _Last updated: 2026-09-12 · latest release 0.2.3 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 19_
+`ANALYZER_VERSION` 20_
 
 ---
 
@@ -63,6 +63,17 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 ## Current state
 
+- **Remaining task-query program: locally implemented, bounded pilot complete.** Lexical `find`,
+  explicit definition `plan`, conservative worktree `consumers`, and scan diagnostic seeds share
+  existing capture/analysis/cache facts. Analyzer 20 covers new lexical, definition-environment
+  and call/reference facts; schema remains 2.0. Product scope and limits are in
+  [task queries](docs/task-queries.md) and [task diagnostics](docs/task-diagnostics.md).
+  The offline [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
+  canonical provider-call ledgers and externally attested native session windows. The [38-run pilot](docs/agent-evaluation.md) passed all bounded
+  retrieval/behavior oracles; all
+  six routing comparisons and the composed workflow increased total tokens. No general net-saving
+  or code-repair claim is established. Broader M2 evidence remains outside this pilot.
+
 - **Snapshot reads and changed definitions.** `read --snapshot worktree|index|REF`
   selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with
   worktree/index or a supplied ref directly with the worktree and derives hunks, mappings and
@@ -76,9 +87,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
-  Cached definition facts use analyzer version 19 while the additive schema remains 2.0.
-  The tree-sitter 0.27.0 runtime changes parser recovery behavior; the cache version invalidates
-  earlier parse-derived facts. Grammar versions remain unchanged.
+  Cached definition facts use analyzer version 20 while the additive schema remains 2.0.
+  The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
+  analyzer 20 additionally covers the current task-query facts. Grammar versions remain unchanged.
   Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
   `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
   inventory behavior is unchanged.

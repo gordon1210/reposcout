@@ -15,7 +15,18 @@ use crate::model::{
     CloneGroup, CloneInstance, Duplication, LineRange, ProductionDuplication, RiskEntry,
     ScanDiagnostics, Summary,
 };
+use sha2::{Digest as _, Sha256};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+
+fn source_hash(source: &str) -> String {
+    Sha256::digest(source.as_bytes())
+        .iter()
+        .fold(String::with_capacity(64), |mut hash, byte| {
+            let _ = write!(hash, "{byte:02x}");
+            hash
+        })
+}
 
 #[test]
 fn cached_graph_facts_are_exposed_only_when_requested() {
@@ -39,6 +50,8 @@ fn cached_graph_facts_are_exposed_only_when_requested() {
         &[],
         super::ArtifactRequirements {
             symbol_outlines: false,
+            lexical_facts: false,
+            definition_plans: false,
             graph_facts: true,
         },
     )
@@ -56,6 +69,72 @@ fn cached_graph_facts_are_exposed_only_when_requested() {
     assert!(ordinary.graph_facts.is_empty());
     assert!(ordinary.resolver_configs.is_empty());
     assert_eq!(ordinary.report.execution.graph_fact_files, 0);
+
+    crate::cache::clear_for_target(dir.path()).unwrap();
+}
+
+#[test]
+fn cached_call_reference_facts_track_exact_source_bytes_after_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("app.ts");
+    let original = "export function initial() {}\nexport function run() { initial(); }\n";
+    std::fs::write(&path, original).unwrap();
+    let cfg = Config {
+        enabled: Enabled::none(),
+        quiet_progress: true,
+        ..Config::default()
+    };
+    let requirements = super::ArtifactRequirements {
+        graph_facts: true,
+        ..super::ArtifactRequirements::default()
+    };
+    crate::cache::clear_for_target(dir.path()).unwrap();
+
+    let cold = super::run_with_artifacts(dir.path(), &cfg, &[], requirements).unwrap();
+    let cold_facts = cold
+        .graph_facts
+        .get(Path::new("app.ts"))
+        .and_then(|facts| facts.call_references.as_ref())
+        .unwrap();
+    let cold_relation = cold_facts
+        .relations
+        .iter()
+        .find(|relation| relation.candidate.root == "initial")
+        .unwrap();
+    assert_eq!(cold_facts.source_hash, source_hash(original));
+    assert_eq!(
+        &original[cold_relation.site.start_byte..cold_relation.site.end_byte],
+        "initial()"
+    );
+    let expected = serde_json::to_value(cold_facts).unwrap();
+
+    let warm = super::run_with_artifacts(dir.path(), &cfg, &[], requirements).unwrap();
+    let warm_facts = warm
+        .graph_facts
+        .get(Path::new("app.ts"))
+        .and_then(|facts| facts.call_references.as_ref())
+        .unwrap();
+    assert_eq!(serde_json::to_value(warm_facts).unwrap(), expected);
+    assert_eq!(warm.report.execution.cache_enrichments, 0);
+    assert!(warm.report.execution.cache_hits > 0);
+
+    let replacement =
+        "export function replacement() {}\nexport function run() { replacement(); }\n";
+    std::fs::write(&path, replacement).unwrap();
+    let edited = super::run_with_artifacts(dir.path(), &cfg, &[], requirements).unwrap();
+    let edited_facts = edited
+        .graph_facts
+        .get(Path::new("app.ts"))
+        .and_then(|facts| facts.call_references.as_ref())
+        .unwrap();
+    assert_eq!(edited_facts.source_hash, source_hash(replacement));
+    assert_ne!(serde_json::to_value(edited_facts).unwrap(), expected);
+    assert!(
+        edited_facts
+            .relations
+            .iter()
+            .any(|relation| relation.candidate.root == "replacement")
+    );
 
     crate::cache::clear_for_target(dir.path()).unwrap();
 }
@@ -738,4 +817,82 @@ fn production_duplicate_projection_requires_actionable_non_test_span() {
         top_production_duplicate_blocks(&duplication, 10, 3, &test_regions, &health_policy);
 
     assert!(blocks.is_empty());
+}
+
+#[test]
+fn lazy_query_artifacts_survive_ordinary_cache_hits_and_refresh_after_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    std::fs::write(&path, "fn initial() { let token = 1; }\n").unwrap();
+    let mut enabled = Enabled::none();
+    enabled.tokens = true;
+    let cfg = Config {
+        enabled,
+        quiet_progress: true,
+        ..Config::default()
+    };
+    let requirements = super::ArtifactRequirements {
+        lexical_facts: true,
+        definition_plans: true,
+        ..super::ArtifactRequirements::default()
+    };
+    let cold = super::run_with_artifacts(dir.path(), &cfg, &[], requirements).unwrap();
+    let lexical = serde_json::to_value(&cold.lexical_facts).unwrap();
+    let plans = serde_json::to_value(&cold.definition_plans).unwrap();
+    assert_eq!(cold.definitions.len(), 1);
+    assert_eq!(cold.lexical_facts.len(), 1);
+    assert_eq!(cold.definition_plans.len(), 1);
+    assert!(cold.graph_facts.is_empty());
+    let ordinary = super::run_with_artifacts(
+        dir.path(),
+        &cfg,
+        &[],
+        super::ArtifactRequirements::default(),
+    )
+    .unwrap();
+    assert!(ordinary.definitions.is_empty());
+    assert!(ordinary.lexical_facts.is_empty());
+    assert!(ordinary.definition_plans.is_empty());
+    let warm = super::run_with_artifacts(dir.path(), &cfg, &[], requirements).unwrap();
+    assert_eq!(serde_json::to_value(&warm.lexical_facts).unwrap(), lexical);
+    assert_eq!(serde_json::to_value(&warm.definition_plans).unwrap(), plans);
+    assert_eq!(warm.report.execution.cache_enrichments, 0);
+    assert!(warm.report.execution.cache_hits > 0);
+    std::fs::write(&path, "fn replacement() { let changed = 2; }\n").unwrap();
+    let edited = super::run_with_artifacts(dir.path(), &cfg, &[], requirements).unwrap();
+    assert_ne!(
+        serde_json::to_value(&edited.lexical_facts).unwrap(),
+        lexical
+    );
+    assert_ne!(
+        serde_json::to_value(&edited.definition_plans).unwrap(),
+        plans
+    );
+    assert_eq!(
+        edited.definitions.values().next().unwrap().definitions[0]
+            .symbol
+            .name,
+        "replacement"
+    );
+    crate::cache::clear_for_target(dir.path()).unwrap();
+}
+
+#[test]
+fn planning_artifacts_require_token_profile_participation() {
+    let cfg = Config {
+        enabled: Enabled::none(),
+        ..Config::default()
+    };
+    let outcome = super::run_with_artifacts(
+        Path::new("missing-planning-root"),
+        &cfg,
+        &[],
+        super::ArtifactRequirements {
+            definition_plans: true,
+            ..super::ArtifactRequirements::default()
+        },
+    );
+    assert!(
+        matches!(outcome, Err(error) if error.to_string() == "definition planning facts require enabled token analysis")
+    );
 }

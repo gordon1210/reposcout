@@ -8,6 +8,8 @@ use super::{
     walk,
 };
 use crate::model::{Complexity, LineRange, SymbolCounts, SymbolOutline};
+use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use tree_sitter::Tree;
 
 #[expect(
@@ -310,6 +312,36 @@ pub(super) fn analyze_cross_file_metrics(
                 .map(|outlines| (analysis.report.path.clone(), outlines.clone()))
         })
         .collect();
+    let definitions = file_analysis
+        .analyzed
+        .iter()
+        .filter_map(|analysis| {
+            analysis
+                .definitions
+                .clone()
+                .map(|facts| (analysis.report.path.clone(), facts))
+        })
+        .collect();
+    let lexical_facts = file_analysis
+        .analyzed
+        .iter()
+        .filter_map(|analysis| {
+            analysis
+                .lexical_facts
+                .clone()
+                .map(|facts| (analysis.report.path.clone(), facts))
+        })
+        .collect();
+    let definition_plans = file_analysis
+        .analyzed
+        .iter()
+        .filter_map(|analysis| {
+            analysis
+                .definition_plans
+                .clone()
+                .map(|facts| (analysis.report.path.clone(), facts))
+        })
+        .collect();
     let graph_facts = file_analysis
         .analyzed
         .iter()
@@ -342,6 +374,9 @@ pub(super) fn analyze_cross_file_metrics(
     }
 
     AnalyzedScan {
+        definitions,
+        lexical_facts,
+        definition_plans,
         files,
         test_regions,
         symbol_outlines,
@@ -550,33 +585,8 @@ pub(super) fn analyze_loaded_file(
     if let Some(mut cached) = cache.get(&rel_str, hash) {
         let duplication_artifact =
             classify::hint_is_duplication_artifact(cached.report.skip_hint.as_deref());
-        let needs_outlines = requirements.symbol_outlines
-            && (cached.symbol_outlines.is_none() || cached.definitions.is_none());
-        let needs_graph = requirements.graph_facts && cached.graph_facts.is_none();
-        let mut enriched = false;
-        if needs_outlines || needs_graph {
-            let first_class = lang::detect(report_path).and_then(|info| info.first_class);
-            let tree = first_class.and_then(|fc| parse::parse(fc, &content));
-            if needs_outlines {
-                let (outlines, definitions) =
-                    declaration_facts(first_class, &content, tree.as_ref());
-                cached.symbol_outlines = Some(outlines);
-                cached.definitions = Some(definitions);
-                enriched = true;
-            }
-            if needs_graph && let Some(fc) = first_class {
-                cached.graph_facts = Some(match tree.as_ref() {
-                    Some(tree) => crate::graph::extract_source_facts_from_tree(
-                        fc,
-                        &rel_str,
-                        &content,
-                        tree.root_node(),
-                    ),
-                    None => crate::graph::SourceFacts::parse_error(),
-                });
-                enriched = true;
-            }
-        }
+        let enriched =
+            enrich_cached_facts(report_path, &content, counter, requirements, &mut cached);
         if enriched {
             cache.record_enrichment();
             cache.put(
@@ -587,10 +597,12 @@ pub(super) fn analyze_loaded_file(
                 cached.symbol_outlines.as_deref(),
                 cached.graph_facts.as_ref(),
                 cached.definitions.as_ref(),
+                cached.lexical_facts.as_ref(),
+                cached.definition_plans.as_ref(),
             );
         }
         let symbol_outlines = requirements
-            .symbol_outlines
+            .needs_definitions()
             .then_some(cached.symbol_outlines)
             .flatten();
         let graph_facts = requirements
@@ -598,7 +610,18 @@ pub(super) fn analyze_loaded_file(
             .then_some(cached.graph_facts)
             .flatten();
         return AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
-            definitions: cached.definitions,
+            definitions: requirements
+                .needs_definitions()
+                .then_some(cached.definitions)
+                .flatten(),
+            lexical_facts: requirements
+                .lexical_facts
+                .then_some(cached.lexical_facts)
+                .flatten(),
+            definition_plans: requirements
+                .definition_plans
+                .then_some(cached.definition_plans)
+                .flatten(),
             report: cached.report,
             content,
             duplication_artifact,
@@ -627,9 +650,13 @@ pub(super) fn analyze_loaded_file(
         analysis.symbol_outlines.as_deref(),
         analysis.graph_facts.as_ref(),
         analysis.definitions.as_ref(),
+        analysis.lexical_facts.as_ref(),
+        analysis.definition_plans.as_ref(),
     );
     AnalysisOutcome::Analyzed(Box::new(AnalyzedFile {
         definitions: analysis.definitions,
+        lexical_facts: analysis.lexical_facts,
+        definition_plans: analysis.definition_plans,
         report: analysis.report,
         content,
         duplication_artifact: analysis.duplication_artifact,
@@ -637,6 +664,65 @@ pub(super) fn analyze_loaded_file(
         symbol_outlines: analysis.symbol_outlines,
         graph_facts: analysis.graph_facts,
     }))
+}
+
+fn enrich_cached_facts(
+    report_path: &Path,
+    content: &str,
+    counter: Option<&TokenCounter>,
+    requirements: ArtifactRequirements,
+    cached: &mut cache::CachedAnalysis,
+) -> bool {
+    let rel_str = report_path.to_string_lossy();
+    let needs_outlines = requirements.needs_definitions()
+        && (cached.symbol_outlines.is_none() || cached.definitions.is_none());
+    let needs_graph = requirements.graph_facts && cached.graph_facts.is_none();
+    let needs_lexical = requirements.lexical_facts && cached.lexical_facts.is_none();
+    let needs_plans = requirements.definition_plans && cached.definition_plans.is_none();
+    let mut enriched = false;
+    if needs_outlines || needs_graph || needs_lexical || needs_plans {
+        let first_class = lang::detect(report_path).and_then(|info| info.first_class);
+        let tree = first_class.and_then(|fc| parse::parse(fc, content));
+        if needs_outlines {
+            let (outlines, definitions) = declaration_facts(first_class, content, tree.as_ref());
+            cached.symbol_outlines = Some(outlines);
+            cached.definitions = Some(definitions);
+            enriched = true;
+        }
+        let definitions = cached.definitions.clone().unwrap_or_default();
+        if needs_lexical {
+            cached.lexical_facts = Some(crate::metrics::lexical::extract(
+                report_path,
+                &cached.report.language,
+                content,
+                tree.as_ref(),
+                &definitions,
+            ));
+            enriched = true;
+        }
+        if needs_plans && let Some(counter) = counter {
+            cached.definition_plans = Some(crate::metrics::planning::extract(
+                &cached.report.language,
+                content,
+                tree.as_ref(),
+                &definitions,
+                counter,
+            ));
+            enriched = true;
+        }
+        if needs_graph && let Some(info) = lang::detect(report_path) {
+            cached.graph_facts = graph_facts(
+                info,
+                &rel_str,
+                content,
+                tree.as_ref(),
+                requirements,
+                &definitions,
+            );
+            enriched = true;
+        }
+    }
+    enriched
 }
 
 /// Analyze already-loaded UTF-8 source without filesystem or cache coupling.
@@ -690,7 +776,38 @@ pub(super) fn analyze_source_details(
     let import_list = import_facts(info, content, tree.as_ref(), cfg);
     let (sym, symbol_outlines, definitions) =
         symbol_facts(info, content, tree.as_ref(), cfg, requirements);
-    let graph_facts = graph_facts(info, &rel_str, content, tree.as_ref(), requirements);
+    let empty_definitions = crate::model::DefinitionFacts::default();
+    let definition_facts = definitions.as_ref().unwrap_or(&empty_definitions);
+    let lexical_facts = requirements.lexical_facts.then(|| {
+        crate::metrics::lexical::extract(
+            report_path,
+            info.name,
+            content,
+            tree.as_ref(),
+            definition_facts,
+        )
+    });
+    let definition_plans = if requirements.definition_plans {
+        counter.map(|counter| {
+            crate::metrics::planning::extract(
+                info.name,
+                content,
+                tree.as_ref(),
+                definition_facts,
+                counter,
+            )
+        })
+    } else {
+        None
+    };
+    let graph_facts = graph_facts(
+        info,
+        &rel_str,
+        content,
+        tree.as_ref(),
+        requirements,
+        definition_facts,
+    );
     let test_facts = rust_test_facts(info, content, tree.as_ref());
     let comment_ratio = percentage_ratio(line_stats.comment_lines, line_stats.loc);
 
@@ -719,6 +836,8 @@ pub(super) fn analyze_source_details(
         test_regions: test_facts.regions,
         symbol_outlines,
         definitions,
+        lexical_facts,
+        definition_plans,
         graph_facts,
     })
 }
@@ -805,7 +924,7 @@ fn symbol_facts(
     Option<crate::model::DefinitionFacts>,
 ) {
     let needs_counts = cfg.enabled.complexity || cfg.enabled.imports;
-    if requirements.symbol_outlines {
+    if requirements.needs_definitions() {
         if let (Some(language), Some(tree)) = (info.first_class, tree) {
             let analysis = symbols::analyze(language, content, tree);
             return (
@@ -833,17 +952,36 @@ fn graph_facts(
     content: &str,
     tree: Option<&Tree>,
     requirements: ArtifactRequirements,
+    definitions: &crate::model::DefinitionFacts,
 ) -> Option<crate::graph::SourceFacts> {
     if !requirements.graph_facts {
         return None;
     }
     match (info.first_class, tree) {
-        (Some(language), Some(tree)) => Some(crate::graph::extract_source_facts_from_tree(
-            language,
-            path,
-            content,
-            tree.root_node(),
-        )),
+        (Some(language), Some(tree)) => {
+            let mut facts = crate::graph::extract_source_facts_from_tree(
+                language,
+                path,
+                content,
+                tree.root_node(),
+            );
+            let source_hash = Sha256::digest(content.as_bytes()).iter().fold(
+                String::with_capacity(64),
+                |mut output, byte| {
+                    let _ = write!(output, "{byte:02x}");
+                    output
+                },
+            );
+            facts.call_references = Some(crate::graph::calls::extract(
+                language,
+                path,
+                &source_hash,
+                content,
+                tree.root_node(),
+                definitions,
+            ));
+            Some(facts)
+        }
         (Some(_), None) => Some(crate::graph::SourceFacts::parse_error()),
         (None, _) => None,
     }

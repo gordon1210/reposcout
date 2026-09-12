@@ -35,10 +35,19 @@ specifiers, syntax errors, invalid/ambiguous resolver configs, and unmatched foc
 diagnostics. Cycles use iterative Kosaraju SCC; orphans are files with `fan_in == 0` that are neither
 entrypoints nor tests.
 
-Symbol topology records only explicit syntax-proven `extends`, `implements`, trait, and embedding
+Type-symbol topology records explicit syntax-proven `extends`, `implements`, trait, and embedding
 relations. Qualified, same-file/scope, and globally unique short names may resolve; ambiguous names
 stay unresolved. Keep symbol edges separate from import adjacency so fan-in and type reach retain
 honest meanings.
+
+The approved call/reference extension adds a separate relation family; it must not change import
+fan-in or type-reach meanings. Its initial binding scope is Rust and JavaScript/TypeScript/TSX:
+unique local direct targets, static imported aliases and module-qualified targets with lexical and
+module evidence. Parameter/local shadowing, duplicate declarations, overloads and dynamic or
+receiver-based forms remain explicitly unresolved. No globally unique-name shortcut establishes a
+cross-file binding. Calls and non-call references retain separate kinds, exact sites, content
+identity and binding/resolver provenance. Consumer projection must preserve extraction, resolution
+and output gaps under hard direction/depth/result limits.
 
 Godot currently supplies file/resource dependency topology, not separate symbol topology.
 GDScript inheritance/global-name references therefore contribute file dependency edges. Do not
@@ -71,6 +80,20 @@ facts under hard aggregate-token and file-count limits.
 - Deleted diff paths may be virtual graph seeds without a `FileReport`.
   `planning_diagnostics` describes the separate full-tree universe while top-level diagnostics
   remain scoped to the primary scan.
+
+Diagnostic input conditionally uses context strategy 4; no-input planning preserves strategy 3.
+All else equal, priority is focus, error diagnostics, changed paths, warnings, then note/info/unknown.
+Repeated diagnostic boosts are capped at three. Diagnostic IDs identify actual direct or shortest
+related evidence, with at most eight retained IDs, not every contributor. No diagnostic-specific
+filename-based test/source matcher is permitted. Oversized diagnostic seeds remain outline-only
+facts even when their available declaration list is empty.
+
+The approved definition-planning extension adds a separate pure planning seam over captured
+declarations and bounded environment facts. It preserves the existing whole-file mode and ranks
+explicit seeds separately from supported structural expansion. Source-token, file and definition
+limits count selected ranges after overlap deduplication. Oversized or unresolved explicit seeds
+remain visible; missing environment is a coverage gap. Source delivery is a separate explicit
+query option and uses the shared capture and rendered-response budget, not I/O inside the planner.
 
 ## On-demand daemon graph
 
