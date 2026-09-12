@@ -340,3 +340,97 @@ fn unsupported_languages_and_parse_errors_remain_visible() {
             .all(|fact| { fact.reason == CallUnresolvedReason::ParseErrors })
     );
 }
+
+#[test]
+fn nonfunction_references_resolve_locally_and_through_imports() {
+    let dependency = extracted(
+        FirstClass::TypeScript,
+        "dep.ts",
+        "export class Service {}\nexport enum Mode { Ready }\n",
+    );
+    let source = "import { Service as Remote } from './dep';\nimport * as api from './dep';\nclass Local {}\nfunction run() { return [Local, Remote, api.Service, api.Mode]; }\n";
+    let consumer = extracted(FirstClass::TypeScript, "main.ts", source);
+    let facts = [dependency, consumer];
+    let topology = resolve(&facts, &resolved_modules(&facts, &[("./dep", "dep.ts")]));
+    let sites = topology
+        .edges
+        .iter()
+        .map(|edge| {
+            assert_eq!(edge.kind, CallReferenceKind::Reference);
+            (
+                &source[edge.site.start_byte..edge.site.end_byte],
+                edge.target.name.as_str(),
+                edge.target.kind.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sites,
+        vec![
+            ("Local", "Local", "class"),
+            ("Remote", "Service", "class"),
+            ("api.Service", "Service", "class"),
+            ("api.Mode", "Mode", "enum"),
+        ]
+    );
+}
+
+#[test]
+fn nonfunction_references_preserve_shadowing_scope_and_call_boundaries() {
+    let source = "class Service {}\nfunction valid() { return Service; }\nfunction shadowed(Service: unknown) { return Service; }\nfunction tdz() { const value = Service; class Service {} return value; }\nfunction not_callable() { Service(); }\n";
+    let facts = [extracted(FirstClass::TypeScript, "main.ts", source)];
+    let topology = resolve(&facts, &[]);
+    assert_eq!(topology.edges.len(), 1, "{topology:#?}");
+    assert_eq!(topology.edges[0].source.name, "valid");
+    assert_eq!(topology.edges[0].target.name, "Service");
+    assert_eq!(topology.edges[0].kind, CallReferenceKind::Reference);
+    for needle in [
+        "return Service; }\nfunction tdz",
+        "= Service;",
+        "Service();",
+    ] {
+        let start = source.find(needle).unwrap();
+        let end = start + needle.len();
+        assert!(
+            topology.unresolved.iter().any(|relation| {
+                relation.site.start_byte >= start
+                    && relation.site.end_byte <= end
+                    && relation.reason == CallUnresolvedReason::ShadowedBinding
+            }),
+            "missing unresolved {needle}: {topology:#?}"
+        );
+    }
+}
+
+#[test]
+fn rust_struct_references_use_item_hoisting_and_block_scope() {
+    let source = "fn run() { let _value = Item; }\nstruct Item;\nfn nested() { struct Inner; let _value = Inner; }\nfn outside() { let _value = Inner; }\n";
+    let facts = [extracted(FirstClass::Rust, "src/lib.rs", source)];
+    let topology = resolve(&facts, &[]);
+    assert_eq!(topology.edges.len(), 2, "{topology:#?}");
+    assert!(
+        topology
+            .edges
+            .iter()
+            .any(|edge| edge.source.name == "run" && edge.target.name == "Item")
+    );
+    assert!(
+        topology
+            .edges
+            .iter()
+            .any(|edge| edge.source.name == "nested" && edge.target.name.ends_with("Inner"))
+    );
+    assert!(
+        topology
+            .edges
+            .iter()
+            .all(|edge| edge.kind == CallReferenceKind::Reference)
+    );
+    assert!(
+        topology
+            .unresolved
+            .iter()
+            .any(|relation| relation.candidate.root == "Inner"
+                && relation.reason == CallUnresolvedReason::MissingTarget)
+    );
+}

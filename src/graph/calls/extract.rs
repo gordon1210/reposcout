@@ -585,9 +585,14 @@ fn classify(
     language: FirstClass,
 ) -> (CallReferenceSyntax, CallTargetCandidate, &'static str) {
     match &observed.form {
-        ObservedForm::Bare(name) => {
-            classify_bare(name, observed.site, imports, declarations, hoisted)
-        }
+        ObservedForm::Bare(name) => classify_bare(
+            name,
+            observed.site,
+            observed.kind,
+            imports,
+            declarations,
+            hoisted,
+        ),
         ObservedForm::Qualified {
             qualifier,
             member,
@@ -636,21 +641,40 @@ fn classify(
     }
 }
 
+pub(super) fn target_kind_matches(declaration: &CallDeclaration, kind: CallReferenceKind) -> bool {
+    declaration.symbol.kind == "function"
+        || kind == CallReferenceKind::Reference
+            && matches!(
+                declaration.symbol.kind.as_str(),
+                "class" | "enum" | "type" | "interface" | "trait" | "constant"
+            )
+}
+
 fn classify_bare(
     name: &str,
     site: SourceSpan,
+    kind: CallReferenceKind,
     imports: &[CallImportBinding],
     declarations: &[CallDeclaration],
     hoisted: &BTreeSet<(usize, usize)>,
 ) -> (CallReferenceSyntax, CallTargetCandidate, &'static str) {
-    let local = declarations
+    let mut local = declarations
         .iter()
         .filter(|declaration| {
             simple_name(&declaration.symbol.name) == name && contains(declaration.scope_span, site)
         })
         .collect::<Vec<_>>();
-    let active_callable = local.iter().any(|declaration| {
-        declaration.symbol.kind == "function"
+    if let Some(narrowest) = local
+        .iter()
+        .map(|declaration| declaration.scope_span.end_byte - declaration.scope_span.start_byte)
+        .min()
+    {
+        local.retain(|declaration| {
+            declaration.scope_span.end_byte - declaration.scope_span.start_byte == narrowest
+        });
+    }
+    let active_target = local.iter().any(|declaration| {
+        target_kind_matches(declaration, kind)
             && (hoisted.contains(&(
                 declaration.symbol.declaration_span.start_byte,
                 declaration.symbol.declaration_span.end_byte,
@@ -665,7 +689,7 @@ fn classify_bare(
         },
         CallTargetCandidate {
             root: name.to_string(),
-            shadowed: !local.is_empty() && !active_callable,
+            shadowed: !local.is_empty() && !active_target,
             ..CallTargetCandidate::default()
         },
         if uses_import {

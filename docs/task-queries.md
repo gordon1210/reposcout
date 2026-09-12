@@ -7,8 +7,8 @@ bounded set of known definitions and their supported environment, or `consumers`
 and reference relationships. Known source can go directly to [read](source-queries.md). These
 commands do not impose a scout → search → outline → read sequence.
 
-The contracts below describe the locally implemented interfaces and limits. The
-[38-run pilot](agent-evaluation.md) passed bounded answer checks but did not establish net
+The contracts below describe the interfaces and limits. The
+[historical pre-review pilot](agent-evaluation.md) passed bounded answer checks but did not establish net
 agent-token savings; see also the [evaluation procedure](../scripts/agent-eval/README.md).
 
 ## Find an unknown entry point
@@ -33,6 +33,8 @@ full path +700, exact filename/stem +600. Each matched query term contributes na
 signature 40, comment 20 and code 10 in its respective fields. Ties resolve by path, declaration
 start byte, kind and name after descending score. Health risk, test presence and graph centrality
 are not search bonuses; health exclusion does not exclude otherwise eligible navigation facts.
+Exact name/path equality supplies the normalized query terms even when lexical field caps omitted
+those terms, so bounded term storage does not veto an otherwise exact match.
 
 | Bound | Value |
 |---|---:|
@@ -45,7 +47,9 @@ are not search bonuses; health exclusion does not exclude otherwise eligible nav
 
 The body-free report separates `coverage` from `limit_omitted` and `budget_omitted`. Coverage
 reports inspected, unsupported, unavailable, parse-error and field-truncated files, declaration
-counts and truncated fields. No matches in the inspected prefix do not prove absence elsewhere.
+counts and truncated fields. Scanner-level unknown-format and unreadable files remain visible in
+these totals; recognized unsupported formats are not counted twice. No matches in the inspected
+prefix do not prove absence elsewhere.
 
 Each hit includes declaration identity, captured hash and snapshot, score, matched fields, reasons
 and a structured `read` target. When following it, preserve the expected hash:
@@ -99,7 +103,9 @@ Default output is body-free `DefinitionPlanReport`. `--source` explicitly includ
 `source` block using the shared complete-definition reader. The **combined plan and source** must
 fit the rendered token/byte budget. The separate context budget does not grant an additional
 output allowance. Source chunks preserve captured identity and deduplicate overlaps; output
-omissions do not retroactively change the source cost originally selected by the planner.
+omissions do not retroactively change the source cost originally selected by the planner. Source
+requests are derived only after budget projection of plan selections and file identities: a
+definition removed from that projected plan cannot survive as an orphan source result.
 
 Definition planning and source delivery use the existing Unix-only capture boundary. Ordinary
 whole-file `--context` planning retains its own established interface.
@@ -147,7 +153,11 @@ Cycles do not justify repeated whole-graph output.
 Parameters and local bindings shadow candidates. Default exports require an associated unique
 exported declaration; duplicate targets and TypeScript overloads remain ambiguous. A matching name
 in another file never establishes a relationship without module/import evidence. Call and
-non-call reference kinds remain separate from file-import and type-inheritance edges.
+non-call reference kinds remain separate from file-import and type-inheritance edges. Captured
+non-call value references can resolve existing non-function declarations, including Rust unit
+struct values and JavaScript/TypeScript classes or enums, through the same conservative binding
+evidence. Calls remain function-only. This does not add type-annotation traversal or constant
+declaration extraction; lexical shadowing and temporal-dead-zone constraints still apply.
 
 Each resolved relation carries a captured site, source/target identity and binding provenance such
 as `local-lexical`, JavaScript import rules or Rust qualification rules, plus existing module
@@ -167,5 +177,5 @@ fit is an error, not malformed or silently clipped output. Pretty JSON costs cou
 Capabilities expose `find_query`, `definition_plan`, `call_query` and `task_diagnostics`; inspect
 those fields when compatibility is uncertain. Existing compact scouting stays body-free and
 bounded. Normal source reads and lexical search do not require call topology. Cache facts use
-analyzer 20; the additive report schema stays 2.0. Local cache reuse and short tool output alone do
+analyzer 21; the additive report schema stays 2.0. Local cache reuse and short tool output alone do
 not establish a reduction in total model tokens.

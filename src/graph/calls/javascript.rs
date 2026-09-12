@@ -12,6 +12,9 @@ pub(super) fn visit(node: Node<'_>, state: &mut State<'_>) {
         "function_declaration"
         | "generator_function_declaration"
         | "class_declaration"
+        | "enum_declaration"
+        | "interface_declaration"
+        | "type_alias_declaration"
         | "method_definition"
         | "variable_declarator" => record_declaration_metadata(node, state),
         "function_signature" => record_overload(node, state),

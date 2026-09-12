@@ -1,8 +1,9 @@
+use super::extract::target_kind_matches;
 use crate::model::{
     CallDeclaration, CallImportBinding, CallImportKind, CallModuleRequest, CallModuleResolution,
-    CallReferenceFact, CallReferenceFacts, CallReferenceSyntax, CallReferenceTopology,
-    CallResolutionStatus, CallSymbolIdentity, CallUnresolvedReason, ResolvedCallReference,
-    SourceSpan, UnresolvedCallReference,
+    CallReferenceFact, CallReferenceFacts, CallReferenceKind, CallReferenceSyntax,
+    CallReferenceTopology, CallResolutionStatus, CallSymbolIdentity, CallUnresolvedReason,
+    ResolvedCallReference, SourceSpan, UnresolvedCallReference,
 };
 use std::collections::BTreeMap;
 
@@ -131,7 +132,7 @@ fn resolve_local(
         .iter()
         .copied()
         .filter(|declaration| {
-            declaration.symbol.kind == "function"
+            target_kind_matches(declaration, relation.kind)
                 && simple_name(&declaration.symbol.name) == relation.candidate.root
                 && contains(declaration.scope_span, relation.site)
         })
@@ -158,7 +159,13 @@ fn resolve_imported(
         .member
         .as_deref()
         .unwrap_or(import.imported_name.as_str());
-    let target = resolve_target(declarations, &target_path, target_name, &file.source_path)?;
+    let target = resolve_target(
+        declarations,
+        &target_path,
+        target_name,
+        &file.source_path,
+        relation.kind,
+    )?;
     Ok((target, import_resolver(import, file, modules)?))
 }
 
@@ -183,7 +190,13 @@ fn resolve_qualified(
             .member
             .as_deref()
             .unwrap_or(relation.candidate.root.as_str());
-        let target = resolve_target(declarations, &target_path, target_name, &file.source_path)?;
+        let target = resolve_target(
+            declarations,
+            &target_path,
+            target_name,
+            &file.source_path,
+            relation.kind,
+        )?;
         return Ok((target, import_resolver(import, file, modules)?));
     }
 
@@ -207,6 +220,7 @@ fn resolve_qualified(
             .as_deref()
             .unwrap_or(relation.candidate.root.as_str()),
         &file.source_path,
+        relation.kind,
     )?;
     let module_resolver = resolution.resolver.as_deref().unwrap_or("local-module");
     Ok((target, format!("rust-qualified+{module_resolver}")))
@@ -350,6 +364,7 @@ fn resolve_target(
     target_path: &str,
     target_name: &str,
     source_path: &str,
+    kind: CallReferenceKind,
 ) -> Result<CallSymbolIdentity, CallUnresolvedReason> {
     let Some(file_declarations) = declarations.get(target_path) else {
         return Err(CallUnresolvedReason::MissingTarget);
@@ -358,7 +373,7 @@ fn resolve_target(
         .iter()
         .copied()
         .filter(|declaration| {
-            declaration.symbol.kind == "function"
+            target_kind_matches(declaration, kind)
                 && if target_path == source_path {
                     simple_name(&declaration.symbol.name) == target_name
                 } else {

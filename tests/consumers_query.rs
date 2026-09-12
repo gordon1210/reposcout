@@ -346,3 +346,28 @@ fn cli_json_ndjson_and_invalid_targets_preserve_structured_contracts() {
     assert!(!String::from_utf8_lossy(&invalid.stdout).contains("\"hits\""));
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("escapes the selected root"));
 }
+
+#[test]
+fn consumers_returns_imported_class_references_and_excludes_shadowed_names() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("dep.ts"), "export class Service {}\n").unwrap();
+    fs::write(
+        root.path().join("caller.ts"),
+        "import { Service } from './dep';\nexport function consumer() { return Service; }\nexport function shadowed(Service: unknown) { return Service; }\n",
+    ).unwrap();
+    let cfg = Config {
+        jobs: 2,
+        ..Config::default()
+    };
+    let result = consumers(root.path(), &cfg, &[], &options("dep.ts", "Service")).unwrap();
+    assert_eq!(result.report.hits.len(), 1, "{}", result.rendered);
+    let hit = &result.report.hits[0];
+    assert_eq!(hit.symbol.name, "consumer");
+    assert_eq!(hit.symbol.path, "caller.ts");
+    assert!(
+        hit.evidence
+            .iter()
+            .all(|edge| edge.kind == reposcout::model::CallReferenceKind::Reference)
+    );
+    assert!(result.report.coverage.resolution.unresolved > 0);
+}

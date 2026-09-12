@@ -10,7 +10,10 @@ use tree_sitter::Node;
 pub(super) fn visit(node: Node<'_>, state: &mut State<'_>) {
     match node.kind() {
         "use_declaration" => extract_use(node, state),
-        "function_item" => record_declaration_metadata(node, state),
+        "function_item" | "struct_item" | "enum_item" | "union_item" | "type_item"
+        | "trait_item" => {
+            record_declaration_metadata(node, state);
+        }
         "parameters" | "closure_parameters" => record_parameters(node, state),
         "let_declaration" => record_local_binding(node, "pattern", state),
         "for_expression" | "match_arm" => record_scoped_pattern(node, state),

@@ -633,6 +633,53 @@ mod query_tests {
     }
 
     #[test]
+    fn projected_plans_request_source_only_for_retained_definitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut selected = options();
+        selected.targets.clear();
+        for index in 0..8 {
+            let path = format!("entry_{index}.rs");
+            let name = format!("entry_{index}_{}", "long_name".repeat(10));
+            fs::write(dir.path().join(&path), format!("fn {name}() {{}}\n")).unwrap();
+            selected.targets.push(SourceQueryTarget {
+                path: path.into(),
+                selector: SourceSelector::Symbol(name),
+                expected_hash: None,
+                snapshot: SourceRevision::Worktree,
+            });
+        }
+        selected.include_source = true;
+        selected.token_budget = 512;
+        selected.byte_budget = 2_048;
+        for format in [Format::Json, Format::Table, Format::Markdown] {
+            selected.format = format;
+            let output = plan_definitions(dir.path(), &config(), &[], &selected).unwrap();
+            assert!(output.report.output_omitted > 0);
+            assert_eq!(
+                output.report.selected.len() + output.report.output_omitted,
+                8
+            );
+            let source = output.report.source.as_ref().unwrap();
+            assert_eq!(source.requested_targets, output.report.selected.len());
+            for file in &source.files {
+                assert!(output.report.files.iter().any(|planned| {
+                    planned.path == file.path
+                        && Some(planned.sha256.as_str()) == file.sha256.as_deref()
+                }));
+            }
+            for result in &source.results {
+                if let Some(definition) = &result.definition {
+                    assert!(output.report.selected.iter().any(|planned| {
+                        planned.name == definition.name
+                            && planned.declaration_span == definition.declaration_span
+                    }));
+                }
+            }
+            assert!(output.rendered.len() <= selected.byte_budget);
+        }
+    }
+
+    #[test]
     fn capabilities_match_query_defaults_and_rejected_limits() {
         let capability = reposcout::query::capabilities().definition_plan.unwrap();
         let defaults = options();

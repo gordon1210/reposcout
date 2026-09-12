@@ -37,10 +37,10 @@ RepoScout combines signals that usually require several tools:
 Everything runs locally. RepoScout does not upload source, call a model, or write analysis state
 into the repository it scans.
 
-The current development tree also adds [lexical search, definition plans and conservative
+RepoScout also provides [lexical search, definition plans and conservative
 consumers](docs/task-queries.md), plus [external diagnostic seeds](docs/task-diagnostics.md).
 The [38-run native pilot](docs/agent-evaluation.md) passed its retrieval/behavior checks but did not
-establish net token savings. These development-tree additions are not a new release announcement.
+establish net token savings; it measures the pre-review development binary, not the 0.3.0 release.
 
 ## Highlights
 

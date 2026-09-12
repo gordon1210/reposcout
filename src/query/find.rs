@@ -80,7 +80,7 @@ pub fn find(
     )?;
     let kind_filter = normalize_filter(options.kind.as_deref());
     let language_filter = normalize_filter(options.language.as_deref());
-    let matches = collect_matches(
+    let mut matches = collect_matches(
         &artifacts.lexical_facts,
         query,
         &query_terms,
@@ -88,6 +88,10 @@ pub fn find(
         kind_filter.as_deref(),
         language_filter.as_deref(),
     );
+    let diagnostics = &artifacts.report.diagnostics;
+    matches.coverage.files_total += diagnostics.unsupported_files + diagnostics.unreadable_files;
+    matches.coverage.unsupported_files += diagnostics.unsupported_files;
+    matches.coverage.unavailable_files += diagnostics.unreadable_files;
     let counter = TokenCounter::new(&query_config.encoding)?;
     let root = artifacts.report.root;
     let report_root = root.to_str().map(|_| root.clone());
@@ -457,13 +461,13 @@ fn matched_evidence(
     let mut evidence = Vec::new();
     let mut score = 0u32;
     for field in &facts.fields {
+        let is_exact = exact.field(field.field);
         let terms = query_terms
             .iter()
-            .filter(|term| field.terms.binary_search(term).is_ok())
+            .filter(|term| is_exact || field.terms.binary_search(term).is_ok())
             .cloned()
             .collect::<Vec<_>>();
         matched_terms.extend(terms.iter().cloned());
-        let is_exact = exact.field(field.field);
         if terms.is_empty() && !is_exact {
             continue;
         }
@@ -541,5 +545,53 @@ pub(super) fn capability() -> FindQueryCapability {
         max_comment_bytes_per_definition: lexical::MAX_COMMENT_BYTES_PER_DEFINITION,
         max_comment_nodes_per_file: lexical::MAX_COMMENT_NODES_PER_FILE,
         max_syntax_nodes_per_file: lexical::MAX_SYNTAX_NODES_PER_FILE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{DefinitionFact, LexicalFieldTerms, SourceSpan, SymbolOutline};
+
+    #[test]
+    fn exact_simple_name_supplies_terms_omitted_from_bounded_qualified_name_facts() {
+        let definition = LexicalDefinitionFacts {
+            definition: DefinitionFact {
+                symbol: SymbolOutline {
+                    name: "module::ExactTarget".into(),
+                    kind: "function".into(),
+                    signature: String::new(),
+                    line: 1,
+                    exported: false,
+                    reasons: Vec::new(),
+                },
+                declaration_span: SourceSpan {
+                    start_byte: 0,
+                    end_byte: 1,
+                    start_line: 1,
+                    end_line: 1,
+                },
+                source_span: None,
+            },
+            fields: vec![LexicalFieldTerms {
+                field: LexicalField::Name,
+                terms: vec!["module".into()],
+                truncated: true,
+            }],
+        };
+        let terms = vec!["exact".into(), "exacttarget".into(), "target".into()];
+        let hit = match_definition(
+            Path::new("lib.rs"),
+            &LexicalFileFacts::default(),
+            &definition,
+            "ExactTarget",
+            &terms,
+            FindMatchMode::All,
+        );
+        assert!(hit.is_some_and(|hit| {
+            hit.matched_fields.len() == 1
+                && hit.matched_fields[0].exact
+                && hit.matched_fields[0].terms == terms
+        }));
     }
 }

@@ -12,6 +12,10 @@ source-exposure coverage and prompt provenance. The accompanying
 [integrity manifest](../scripts/agent-eval/results/2026-09-12-native-pilot/integrity.json) identifies
 canonical-JSON hashes. The [evaluator guide](../scripts/agent-eval/README.md) explains the contracts.
 
+This is historical evidence for the analyzer-20 development binary captured before the subsequent
+review fixes. It is **not a measurement of the 0.3.0 release binary**; release validation does not
+retroactively rerun or change these observations.
+
 ## What was measured
 
 Each condition has **one run per arm**, using a bounded synthetic Rust repository with fixed
@@ -166,9 +170,10 @@ the third.
 
 ## Local validation state
 
-The final local tree passed Rust formatting, strict all-target Clippy and 748 Rust tests. The
+The measured development tree passed Rust formatting, strict all-target Clippy and 748 Rust tests. The
 evaluator passed 28 Python tests, and the final release build preserved the measured binary hash.
 Independent export checks matched 168 unique real response IDs and their usage to all 38 closed
 run totals. The results canonical-JSON SHA-256 is
 `5447ec5e69ba3747e34a76ea65af7d9e6b897589825f7863fc9d63fedf9bd081`.
-These are local implementation/evidence checks; no commit, push or release is part of this delivery.
+These are historical implementation/evidence checks for the measured tree, not the final
+validation record of subsequent review fixes or release publication.

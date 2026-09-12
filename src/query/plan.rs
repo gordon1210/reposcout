@@ -340,6 +340,12 @@ fn include_source(
     counter: &TokenCounter,
     report: &mut DefinitionPlanReport,
 ) -> Result<()> {
+    let mut source_report =
+        source::empty_report(root, &source_options(Vec::new(), options), counter.name());
+    source_report.requested_targets = report.selected.len();
+    source_report.omitted_targets = report.selected.len();
+    report.source = Some(source_report);
+    project(report, options, counter)?;
     let targets = report
         .selected
         .iter()
@@ -358,13 +364,12 @@ fn include_source(
         })
         .collect::<Result<Vec<_>>>()?;
     let read_options = source_options(targets, options);
-    let mut source_report = source::empty_report(root, &read_options, counter.name());
-    report.source = Some(source_report.clone());
-    project(report, options, counter)?;
-    source_report = report
+    let mut source_report = report
         .source
         .clone()
         .context("source envelope disappeared during plan projection")?;
+    source_report.requested_targets = read_options.targets.len();
+    source_report.omitted_targets = read_options.targets.len();
     let mut requests = BTreeMap::<SourceRevision, Vec<PathBuf>>::new();
     for target in &read_options.targets {
         requests

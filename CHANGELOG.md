@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-13
+
 ### Added
 
 - Added deterministic body-free `find` candidates, bounded definition `plan` with explicit source,
@@ -18,12 +20,21 @@ within their section.
 
 ### Changed
 
-- Bumped analyzer version to 20 for shared lexical, definition-planning and call/reference facts;
+- Bumped analyzer version to 21 for shared lexical, definition-planning and call/reference facts,
+  including corrected non-function reference extraction;
   schema 2.0 and ordinary body-free scouting defaults remain unchanged.
 
 - Updated the tree-sitter runtime to 0.27.0 and adapted child-count indexing to its API.
   Analyzer version 19 invalidates cached parse-derived facts for the updated parser recovery
   behavior; grammar versions and JSON schema 2.0 remain unchanged.
+
+### Fixed
+
+- Kept explicit plan source requests aligned with the budget-projected selections and file identities.
+- Included unknown-format and unreadable files in lexical-search coverage without double-counting
+  recognized unsupported formats; exact name/path matches survive bounded lexical term storage.
+- Resolved captured non-call value references to supported non-function declarations in consumer
+  queries while preserving function-only calls and conservative shadowing/scope checks.
 
 ## [0.2.3] - 2026-09-12
 

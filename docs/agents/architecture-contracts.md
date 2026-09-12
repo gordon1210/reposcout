@@ -121,12 +121,12 @@ allowance. Shared source deduplication includes the snapshot side as identity. A
 `definition_changes` block captures independently after the ordinary scan; its internal evidence
 is consistent, but live edits can make it differ from earlier parent metadata.
 
-## Approved task-query expansion
+## Shared task-query facts
 
-The remaining task-query program is approved and in implementation. Lexical search facts,
+Lexical search facts,
 definition-planning environment facts and call/reference facts must reuse ordinary scanner-owned
 source capture, analyzers, parser and cache entries. Their cached semantics use analyzer version
-20; the additive serialized contract remains schema 2.0. New runtime settings that change cached
+21; the additive serialized contract remains schema 2.0. New runtime settings that change cached
 facts belong in the existing analysis-profile contract. Do not introduce a parallel index, parser,
 source reader or cache namespace.
 

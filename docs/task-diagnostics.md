@@ -7,7 +7,7 @@ reading decision. RepoScout normalizes bounded input and uses resolved locations
 existing context planner. It does not execute the producer, interpret arbitrary logs semantically,
 persist logs or turn external diagnostics into health findings.
 
-This implementation is covered by the [bounded native pilot](agent-evaluation.md). Its limits are not a
+The [historical pre-review pilot](agent-evaluation.md) exercised diagnostic workflows. These limits are not a
 claim that full agent comparisons have passed.
 
 ## Supply an explicit input

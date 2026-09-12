@@ -254,6 +254,46 @@ fn coverage_and_output_omissions_are_independent_and_hard_bounded() {
 }
 
 #[test]
+fn coverage_includes_unknown_extensions_without_counting_recognized_unsupported_twice() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("code.rs"), "fn found() {}\n").unwrap();
+    fs::write(directory.path().join("data.yaml"), "value: true\n").unwrap();
+    fs::write(directory.path().join("unknown.xyz"), "unindexed\n").unwrap();
+    fs::write(directory.path().join("unreadable.rs"), [0xff, 0xfe]).unwrap();
+
+    let report = run_find(directory.path(), "found", &[]);
+    assert_eq!(report["coverage"]["files_total"], 4);
+    assert_eq!(report["coverage"]["files_inspected"], 1);
+    assert_eq!(report["coverage"]["unsupported_files"], 2);
+    assert_eq!(report["coverage"]["unavailable_files"], 1);
+    assert_eq!(report["returned_matches"], 1);
+}
+
+#[test]
+fn exact_filename_matches_even_when_parent_paths_exhaust_lexical_terms() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut parent = directory.path().to_path_buf();
+    for index in 0..70 {
+        parent.push(format!("segment{index}"));
+    }
+    fs::create_dir_all(&parent).unwrap();
+    fs::write(parent.join("needle.rs"), "fn unrelated() {}\n").unwrap();
+
+    let report = run_find(directory.path(), "needle.rs", &[]);
+    assert_eq!(report["total_matches"], 1);
+    assert_eq!(report["returned_matches"], 1);
+    assert_eq!(report["coverage"]["field_truncated_files"], 1);
+    let evidence = report["hits"][0]["matched_fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|field| field["field"] == "path")
+        .unwrap();
+    assert_eq!(evidence["exact"], true);
+    assert_eq!(evidence["terms"], serde_json::json!(["needle", "rs"]));
+}
+
+#[test]
 fn health_exclusions_do_not_remove_navigation_candidates() {
     let directory = fixture();
     let report = run_find(
