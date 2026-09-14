@@ -6,6 +6,11 @@ within their section.
 
 ## [Unreleased]
 
+### Security
+
+- Updated `rustls` to 0.23.45 and `rustls-webpki` to 0.103.15 to remediate
+  RUSTSEC-2026-0285 in the HTTPS update client.
+
 ## [0.3.0] - 2026-09-13
 
 ### Added
