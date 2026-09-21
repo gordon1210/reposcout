@@ -647,12 +647,20 @@ fn declaration_exported(
 
 fn csharp_declaration_is_public(node: Node<'_>, src: &[u8]) -> bool {
     let mut cursor = node.walk();
-    node.children(&mut cursor).any(|child| {
-        child.kind() == "modifier"
-            && child
-                .utf8_text(src)
-                .is_ok_and(|modifier| modifier == "public")
-    })
+    for child in node
+        .children(&mut cursor)
+        .filter(|child| child.kind() == "modifier")
+    {
+        match child.utf8_text(src).ok() {
+            Some("public") => return true,
+            Some("private" | "protected" | "internal" | "file") => return false,
+            _ => {}
+        }
+    }
+    node.parent()
+        .filter(|parent| parent.kind() == "declaration_list")
+        .and_then(|parent| parent.parent())
+        .is_some_and(|parent| parent.kind() == "interface_declaration")
 }
 
 fn php_declaration_is_public(node: Node<'_>, src: &[u8]) -> bool {
@@ -1303,6 +1311,28 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn csharp_interface_members_are_public_unless_explicitly_restricted() {
+        let source = "public interface IService { void Run(); int Value { get; } private void Hidden() {} internal void Local() {} }";
+        let tree = parse::parse(FirstClass::CSharp, source).unwrap();
+        let facts = analyze(FirstClass::CSharp, source, &tree);
+        for (name, public) in [
+            ("IService.Run", true),
+            ("IService.Value", true),
+            ("IService.Hidden", false),
+            ("IService.Local", false),
+        ] {
+            let definition = facts
+                .definitions
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol.name == name)
+                .unwrap();
+            assert_eq!(definition.symbol.exported, public, "{name}");
+        }
+        assert_eq!(facts.counts.exports, 2);
     }
 
     #[test]

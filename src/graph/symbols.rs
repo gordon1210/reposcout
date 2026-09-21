@@ -1226,4 +1226,28 @@ namespace C { using Missing = External.Base; class Child : Missing {} }
         assert_eq!(target.qualified_name, "A.Base");
         assert_eq!(result.unresolved_relations, 1);
     }
+
+    #[test]
+    fn csharp_aliases_after_file_scoped_namespace_resolve() {
+        let result = topology(&[
+            (
+                FirstClass::CSharp,
+                "types.cs",
+                "namespace Types; public class Base {}",
+            ),
+            (
+                FirstClass::CSharp,
+                "app.cs",
+                "namespace App; using Parent = Types.Base; class Child : Parent {}",
+            ),
+        ]);
+        assert_eq!(result.edges.len(), 1);
+        assert_eq!(result.unresolved_relations, 0);
+        let target = result
+            .symbols
+            .iter()
+            .find(|symbol| symbol.id == result.edges[0].target)
+            .unwrap();
+        assert_eq!(target.qualified_name, "Types.Base");
+    }
 }

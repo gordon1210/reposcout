@@ -100,6 +100,8 @@ pub(super) fn scoped_aliases(node: Node<'_>, content: &str) -> HashMap<String, S
     let mut current = node.parent();
     while let Some(parent) = current {
         if parent.kind() == "compilation_unit" {
+            // The grammar keeps using directives after a file-scoped namespace
+            // as compilation-unit siblings, not children of the namespace header.
             scopes.push(parent);
         } else if parent.kind() == "namespace_declaration"
             && let Some(body) = parent.child_by_field_name("body")
