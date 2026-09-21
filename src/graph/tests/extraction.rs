@@ -191,6 +191,26 @@ var ignored = "example.com/project/not-an-import"
 }
 
 #[test]
+fn csharp_specifiers_and_namespaces_are_ast_scoped() {
+    let source = r"
+using System.Text;
+using Json = Acme.Serialization.Json;
+namespace App.Core;
+";
+    let extraction = extract_specifiers(FirstClass::CSharp, source);
+
+    assert_eq!(extraction.parse_errors, 0);
+    assert_eq!(
+        extraction.specifiers,
+        vec![
+            ImportSpecifier::CSharpNamespace("System.Text".into()),
+            ImportSpecifier::CSharpNamespace("Acme.Serialization.Json".into()),
+        ]
+    );
+    assert_eq!(extraction.csharp.namespaces, vec!["App.Core"]);
+}
+
+#[test]
 fn malformed_graph_source_records_parse_errors() {
     let extraction = extract_specifiers(FirstClass::JavaScript, "import { from './x';");
     assert!(extraction.parse_errors > 0);
@@ -207,6 +227,7 @@ fn mixed_graph_retains_every_first_class_language() {
         ("sample.tsx", "export const value = <div />;\n"),
         ("sample.go", "package sample\nconst Value = 1\n"),
         ("sample.php", "<?php\nconst VALUE = 1;\n"),
+        ("sample.cs", "namespace Sample; public class Value {}\n"),
     ] {
         std::fs::write(dir.path().join(path), source).unwrap();
     }
@@ -219,14 +240,16 @@ fn mixed_graph_retains_every_first_class_language() {
             file_report("sample.tsx"),
             file_report("sample.go"),
             file_report("sample.php"),
+            file_report("sample.cs"),
         ],
         dir.path(),
     );
 
-    assert_eq!(graph.nodes, 7);
+    assert_eq!(graph.nodes, 8);
     assert_eq!(
         graph.languages,
         [
+            "C#",
             "Go",
             "JavaScript",
             "PHP",
@@ -236,6 +259,43 @@ fn mixed_graph_retains_every_first_class_language() {
             "TypeScript",
         ]
     );
+}
+
+#[test]
+fn csharp_graph_resolves_unique_local_namespaces_and_type_relations() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src/Contracts")).unwrap();
+    std::fs::create_dir_all(dir.path().join("src/App")).unwrap();
+    std::fs::write(
+        dir.path().join("src/Contracts/Worker.cs"),
+        "namespace Acme.Contracts; public interface IWorker {}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("src/App/Service.cs"),
+        "using Acme.Contracts; namespace Acme.App; public class Service : IWorker {}\n",
+    )
+    .unwrap();
+
+    let graph = build(
+        &[
+            file_report("src/Contracts/Worker.cs"),
+            file_report("src/App/Service.cs"),
+        ],
+        dir.path(),
+    );
+
+    assert_eq!(graph.edges, 1);
+    assert_eq!(graph.symbol_edges.len(), 1);
+    assert_eq!(graph.symbol_edges[0].relation, "implements");
+    assert_eq!(graph.unresolved_symbol_relations, 0);
+    let edge = graph
+        .edge_list
+        .iter()
+        .find(|edge| edge.source.ends_with("Service.cs"))
+        .unwrap();
+    assert!(edge.target.ends_with("Worker.cs"));
+    assert_eq!(edge.resolver, "csharp-namespace");
 }
 
 #[test]

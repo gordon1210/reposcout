@@ -253,6 +253,7 @@ The precise retrieval matrix uses canonical declaration kinds:
 | TypeScript, TSX | `class`, `enum`, `function`, `interface`, `method`, `type` |
 | Go | `function`, `method`, `type` |
 | PHP | `class`, `enum`, `function`, `interface`, `method`, `trait` |
+| C# | `class`, `enum`, `function`, `interface`, `method`, `property`, `type` |
 | GDScript | `class`, `constant`, `enum`, `method`, `property`, `signal` |
 | Godot Shader | `function` |
 

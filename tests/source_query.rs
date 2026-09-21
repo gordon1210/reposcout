@@ -123,6 +123,18 @@ fn capabilities_match_the_read_cli_defaults_limits_and_language_matrix() {
                 vec!["class", "enum", "function", "interface", "method", "trait"]
             ),
             (
+                "C#",
+                vec![
+                    "class",
+                    "enum",
+                    "function",
+                    "interface",
+                    "method",
+                    "property",
+                    "type"
+                ]
+            ),
+            (
                 "GDScript",
                 vec!["class", "constant", "enum", "method", "property", "signal"]
             ),

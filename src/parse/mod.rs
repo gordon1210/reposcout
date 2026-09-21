@@ -16,6 +16,7 @@ pub fn language(fc: FirstClass) -> Language {
         FirstClass::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         FirstClass::Go => tree_sitter_go::LANGUAGE.into(),
         FirstClass::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+        FirstClass::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
         FirstClass::GdScript => tree_sitter_gdscript::LANGUAGE.into(),
         FirstClass::GdShader => tree_sitter_gdshader::LANGUAGE.into(),
         FirstClass::GodotResource => tree_sitter_godot_resource::LANGUAGE.into(),

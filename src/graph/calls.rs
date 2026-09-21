@@ -85,6 +85,7 @@ pub(crate) fn language_name(language: FirstClass) -> &'static str {
         FirstClass::Tsx => "TSX",
         FirstClass::Go => "Go",
         FirstClass::Php => "PHP",
+        FirstClass::CSharp => "C#",
         FirstClass::GdScript => "GDScript",
         FirstClass::GdShader => "Godot Shader",
         FirstClass::GodotResource => "Godot Resource",

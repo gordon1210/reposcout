@@ -110,6 +110,7 @@ impl Collector {
                 FirstClass::Python => self.extract_python(node, content, &source_context),
                 FirstClass::Rust => self.extract_rust(node, content, &source_context),
                 FirstClass::Go => self.extract_go(node, content, &source_context),
+                FirstClass::CSharp => self.extract_csharp(node, content, &source_context),
                 // Godot resource/class relationships use project-scoped file
                 // resolution, not this language-agnostic name heuristic.
                 FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {}
@@ -181,8 +182,19 @@ impl Collector {
             }
             let source_id = self.declarations[source].id.clone();
             let target_id = self.declarations[target].id.clone();
+            let relation_kind = if relation.family == "csharp" && relation.relation == "inherits" {
+                if self.declarations[source].kind == "interface" {
+                    "extends"
+                } else if self.declarations[target].kind == "interface" {
+                    "implements"
+                } else {
+                    "extends"
+                }
+            } else {
+                relation.relation.as_str()
+            };
             resolved_edges
-                .entry((source_id, target_id, relation.relation))
+                .entry((source_id, target_id, relation_kind.to_string()))
                 .and_modify(|current| {
                     if resolver_rank(resolver) < resolver_rank(current) {
                         *current = resolver.to_string();
@@ -402,6 +414,23 @@ impl Collector {
         }
     }
 
+    fn extract_csharp(&mut self, node: Node<'_>, content: &str, source_context: &SourceContext) {
+        let kind = match node.kind() {
+            "class_declaration" => "class",
+            "interface_declaration" => "interface",
+            "struct_declaration" => "struct",
+            "record_declaration" => "type",
+            _ => return,
+        };
+        let source_context = source_context.for_csharp_node(node, content);
+        let Some(id) = self.add_declaration(node, content, &source_context, kind) else {
+            return;
+        };
+        if let Some(base_list) = child_of_kind(node, "base_list") {
+            self.add_named_relations(&id, base_list, content, "inherits", &source_context);
+        }
+    }
+
     fn extract_python(&mut self, node: Node<'_>, content: &str, source_context: &SourceContext) {
         if node.kind() != "class_definition" {
             return;
@@ -518,10 +547,10 @@ impl Collector {
 impl SourceContext {
     fn new(language: FirstClass, path: &str, content: &str, root: Node<'_>) -> Self {
         let family = language_family(language);
-        let namespace = if language == FirstClass::Php {
-            php_namespace(root, content)
-        } else {
-            String::new()
+        let namespace = match language {
+            FirstClass::Php => php_namespace(root, content),
+            FirstClass::CSharp => super::csharp::file_namespace(root, content),
+            _ => String::new(),
         };
         Self {
             path: path.to_string(),
@@ -530,6 +559,18 @@ impl SourceContext {
             scope: symbol_scope(language, path, &namespace),
             namespace,
             aliases: source_aliases(language, root, content),
+        }
+    }
+
+    fn for_csharp_node(&self, node: Node<'_>, content: &str) -> Self {
+        let namespace = super::csharp::type_scope(node, content, &self.namespace);
+        Self {
+            path: self.path.clone(),
+            language: self.language.clone(),
+            family: self.family,
+            scope: symbol_scope(FirstClass::CSharp, &self.path, &namespace),
+            namespace,
+            aliases: super::csharp::scoped_aliases(node, content),
         }
     }
 }
@@ -548,18 +589,28 @@ fn resolve_reference(
     let family = relation.family.as_str();
     let normalized = normalize_name(family, &cleaned);
     let first = first_segment(&normalized);
-    let aliased = relation.aliases.get(&first).map(|target| {
-        let suffix = normalized
-            .strip_prefix(&first)
-            .unwrap_or_default()
-            .trim_start_matches(['\\', ':', '.', '/']);
-        if suffix.is_empty() {
-            target.clone()
-        } else {
-            join_qualified(family, target, suffix)
-        }
-    });
-    let namespaced = (!relation.namespace.is_empty() && !is_qualified(reference))
+    let absolute = family == "csharp" && reference.trim_start().starts_with("global::");
+    let aliased = relation
+        .aliases
+        .get(&first)
+        .filter(|_| !absolute)
+        .map(|target| {
+            let suffix = normalized
+                .strip_prefix(&first)
+                .unwrap_or_default()
+                .trim_start_matches(['\\', ':', '.', '/']);
+            if suffix.is_empty() {
+                target.clone()
+            } else {
+                join_qualified(family, target, suffix)
+            }
+        });
+    let namespace_relative = if family == "csharp" {
+        !absolute && aliased.is_none()
+    } else {
+        !is_qualified(reference)
+    };
+    let namespaced = (!relation.namespace.is_empty() && namespace_relative)
         .then(|| join_qualified(family, &relation.namespace, &normalized));
     for candidate in aliased
         .iter()
@@ -567,15 +618,37 @@ fn resolve_reference(
         .chain(std::iter::once(&normalized))
     {
         let candidate = normalize_name(family, candidate);
-        if let Some(indices) = qualified.get(&(family, candidate))
-            && indices.len() == 1
-        {
-            return Some((indices[0], "qualified"));
+        if let Some(indices) = qualified.get(&(family, candidate)) {
+            if indices.len() == 1 {
+                return Some((indices[0], "qualified"));
+            }
+            if family == "csharp" {
+                return None;
+            }
         }
+        if family == "csharp" && aliased.is_some() {
+            return None;
+        }
+    }
+
+    if family == "csharp" && (is_qualified(reference) || aliased.is_some()) {
+        return None;
     }
 
     let simple_name = normalize_name(family, simple_name(&normalized));
     let candidates = simple.get(&(family, simple_name))?;
+    if family == "csharp"
+        && candidates.iter().any(|&index| {
+            qualified
+                .get(&(
+                    family,
+                    normalize_name(family, &declarations[index].qualified_name),
+                ))
+                .is_some_and(|indices| indices.len() > 1)
+        })
+    {
+        return None;
+    }
     let same_file = candidates
         .iter()
         .copied()
@@ -680,8 +753,8 @@ fn qualify_declaration(name: &str, source_context: &SourceContext) -> String {
 }
 
 fn symbol_scope(language: FirstClass, path: &str, namespace: &str) -> String {
-    if language == FirstClass::Php && !namespace.is_empty() {
-        return normalize_name("php", namespace);
+    if matches!(language, FirstClass::Php | FirstClass::CSharp) && !namespace.is_empty() {
+        return normalize_name(language_family(language), namespace);
     }
     path.rsplit_once('/')
         .map(|(parent, _)| parent.to_string())
@@ -741,6 +814,8 @@ fn is_reference_node(node: Node<'_>) -> bool {
             | "nested_type_identifier"
             | "scoped_type_identifier"
             | "generic_type"
+            | "generic_name"
+            | "alias_qualified_name"
             | "dotted_name"
             | "attribute"
             | "member_expression"
@@ -781,6 +856,8 @@ fn normalize_name(family: &str, value: &str) -> String {
         .replace("\\\\", "\\");
     if family == "php" {
         value.to_lowercase()
+    } else if family == "csharp" {
+        value.trim_start_matches("global::").replace("::", ".")
     } else {
         value
     }
@@ -847,6 +924,7 @@ fn language_family(language: FirstClass) -> &'static str {
         FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx => "javascript",
         FirstClass::Go => "go",
         FirstClass::Php => "php",
+        FirstClass::CSharp => "csharp",
         FirstClass::GdScript => "gdscript",
         FirstClass::GdShader => "gdshader",
         FirstClass::GodotResource => "godot-resource",
@@ -862,6 +940,7 @@ fn language_name(language: FirstClass) -> &'static str {
         FirstClass::Tsx => "TSX",
         FirstClass::Go => "Go",
         FirstClass::Php => "PHP",
+        FirstClass::CSharp => "C#",
         FirstClass::GdScript => "GDScript",
         FirstClass::GdShader => "Godot Shader",
         FirstClass::GodotResource => "Godot Resource",
@@ -921,6 +1000,11 @@ mod tests {
                 "go/types.go",
                 "package graph\ntype Reader interface { Read() }\ntype Buffered interface { Reader }",
             ),
+            (
+                FirstClass::CSharp,
+                "csharp/Types.cs",
+                "namespace Graph; interface Port {} class Base {} class Child : Base, Port {}",
+            ),
         ];
 
         let result = topology(&sources);
@@ -935,14 +1019,14 @@ mod tests {
                 .iter()
                 .filter(|&&value| value == "extends")
                 .count(),
-            4
+            5
         );
         assert_eq!(
             relations
                 .iter()
                 .filter(|&&value| value == "implements")
                 .count(),
-            3
+            4
         );
         assert_eq!(
             relations.iter().filter(|&&value| value == "embeds").count(),
@@ -978,6 +1062,168 @@ mod tests {
         ]);
 
         assert!(result.edges.is_empty());
+        assert_eq!(result.unresolved_relations, 1);
+    }
+
+    #[test]
+    fn csharp_nested_namespaces_qualify_type_relationships() {
+        let result = topology(&[(
+            FirstClass::CSharp,
+            "csharp/Nested.cs",
+            "namespace Outer { namespace Inner { interface Port {} class Service : Port {} } }",
+        )]);
+
+        assert_eq!(result.edges.len(), 1);
+        assert_eq!(result.edges[0].relation, "implements");
+        assert_eq!(result.unresolved_relations, 0);
+        assert!(
+            result
+                .symbols
+                .iter()
+                .any(|symbol| symbol.qualified_name == "Outer.Inner.Service")
+        );
+    }
+
+    #[test]
+    fn csharp_file_scoped_namespaces_preserve_qualified_identity() {
+        let result = topology(&[
+            (
+                FirstClass::CSharp,
+                "a.cs",
+                "namespace A; class Base {} class Child : Base {}",
+            ),
+            (FirstClass::CSharp, "b.cs", "namespace B; class Base {}"),
+        ]);
+        assert_eq!(result.edges.len(), 1);
+        assert!(
+            result
+                .symbols
+                .iter()
+                .any(|symbol| symbol.qualified_name == "A.Child")
+        );
+        assert!(
+            result
+                .symbols
+                .iter()
+                .any(|symbol| symbol.qualified_name == "A.Base")
+        );
+    }
+
+    #[test]
+    fn csharp_global_qualified_types_do_not_bind_to_local_namesakes() {
+        let result = topology(&[
+            (
+                FirstClass::CSharp,
+                "a.cs",
+                "namespace A { public class Base {} }",
+            ),
+            (
+                FirstClass::CSharp,
+                "b.cs",
+                "namespace B { class Base {} class Child : global::A.Base {} }",
+            ),
+        ]);
+        assert_eq!(result.edges.len(), 1);
+        let target = result
+            .symbols
+            .iter()
+            .find(|symbol| symbol.id == result.edges[0].target)
+            .unwrap();
+        assert_eq!(target.qualified_name, "A.Base");
+    }
+
+    #[test]
+    fn csharp_partial_types_remain_ambiguous_even_with_a_same_file_candidate() {
+        let result = topology(&[
+            (
+                FirstClass::CSharp,
+                "a.cs",
+                "namespace A { partial class Base {} class Child : Base {} }",
+            ),
+            (
+                FirstClass::CSharp,
+                "b.cs",
+                "namespace A { partial class Base {} }",
+            ),
+        ]);
+        assert!(result.edges.is_empty());
+        assert_eq!(result.unresolved_relations, 1);
+    }
+
+    #[test]
+    fn csharp_qualified_missing_types_do_not_fall_back_to_short_names() {
+        let result = topology(&[(
+            FirstClass::CSharp,
+            "types.cs",
+            "namespace App { class Base {} class Child : Missing.Base {} }",
+        )]);
+        assert!(result.edges.is_empty());
+        assert_eq!(result.unresolved_relations, 1);
+    }
+
+    #[test]
+    fn csharp_nested_types_keep_their_containing_type_in_the_identity() {
+        let result = topology(&[(
+            FirstClass::CSharp,
+            "types.cs",
+            "namespace App; class Outer { public class Base {} } class Other { public class Base {} } class Child : Outer.Base {}",
+        )]);
+        assert_eq!(result.edges.len(), 1);
+        let target = result
+            .symbols
+            .iter()
+            .find(|symbol| symbol.id == result.edges[0].target)
+            .unwrap();
+        assert_eq!(target.qualified_name, "App.Outer.Base");
+    }
+
+    #[test]
+    fn csharp_using_aliases_are_scoped_to_their_namespace() {
+        let result = topology(&[(
+            FirstClass::CSharp,
+            "types.cs",
+            r"
+namespace Types { public interface ILeft {} public interface IRight {} }
+namespace A { using Port = Types.ILeft; class Left : Port {} }
+namespace B { using Port = Types.IRight; class Right : Port {} }
+",
+        )]);
+        assert_eq!(result.edges.len(), 2);
+        for edge in &result.edges {
+            let source = result
+                .symbols
+                .iter()
+                .find(|symbol| symbol.id == edge.source)
+                .unwrap();
+            let target = result
+                .symbols
+                .iter()
+                .find(|symbol| symbol.id == edge.target)
+                .unwrap();
+            assert_eq!(target.name, format!("I{}", source.name));
+        }
+    }
+
+    #[test]
+    fn csharp_global_qualification_ignores_aliases_and_unknown_aliases_stay_unresolved() {
+        let result = topology(&[(
+            FirstClass::CSharp,
+            "types.cs",
+            r"
+namespace A { public class Base {} }
+namespace Other { public class Base {} }
+namespace B { using A = Other; class Child : global::A.Base {} }
+class Missing {}
+namespace C { using Missing = External.Base; class Child : Missing {} }
+",
+        )]);
+        assert_eq!(result.edges.len(), 1);
+        let target = result
+            .symbols
+            .iter()
+            .find(|symbol| symbol.id == result.edges[0].target)
+            .unwrap();
+        assert_eq!(target.qualified_name, "A.Base");
         assert_eq!(result.unresolved_relations, 1);
     }
 }

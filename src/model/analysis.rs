@@ -42,7 +42,8 @@ pub struct GraphEdge {
     /// `package-exports`, `package-subpath`, `package-entrypoint`,
     /// `package-index`, `composer-psr-4`, `composer-psr-0`, `php-include`,
     /// `php-namespace-heuristic`, `rust-mod`, `rust-path`, `rust-use`,
-    /// `rust-workspace`, `go-module`, `go-relative`, or `heuristic-alias`.
+    /// `rust-workspace`, `go-module`, `go-relative`, `csharp-namespace`, or
+    /// `heuristic-alias`.
     pub resolver: String,
 }
 
@@ -93,7 +94,8 @@ pub struct GraphSymbolReach {
 /// Import and explicit type-relationship graph for every first-class language
 /// (opt-in via `--graph`).
 ///
-/// Language scope: Rust, Python, JavaScript, TypeScript, JSX, TSX, Go, and PHP.
+/// Language scope: Rust, Python, JavaScript, TypeScript, JSX, TSX, Go, PHP, C#,
+/// `GDScript`, Godot Shader, and Godot resource formats.
 /// Resolution remains deliberately heuristic and records the provenance of
 /// every internal edge.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

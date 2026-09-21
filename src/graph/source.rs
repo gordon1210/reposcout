@@ -13,6 +13,8 @@ pub struct SourceFacts {
     pub(super) symbols: symbols::SourceFacts,
     #[serde(default)]
     pub(super) godot: super::godot::Facts,
+    #[serde(default)]
+    pub(super) csharp: CSharpFacts,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) call_references: Option<crate::model::CallReferenceFacts>,
 }
@@ -31,6 +33,12 @@ pub(super) struct SpecifierExtraction {
     pub(super) specifiers: Vec<ImportSpecifier>,
     pub(super) parse_errors: usize,
     godot: super::godot::Facts,
+    pub(super) csharp: CSharpFacts,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(super) struct CSharpFacts {
+    pub(super) namespaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +48,7 @@ pub(super) enum ImportSpecifier {
     PhpInclude(StaticInclude),
     Rust(RustImport),
     GoPackage(String),
+    CSharpNamespace(String),
     Godot(super::godot::Reference),
 }
 
@@ -103,6 +112,7 @@ pub(crate) fn extract_source_facts_from_tree(
         parse_errors: extraction.parse_errors,
         symbols: symbols::Collector::source_facts(fc, path, content, root),
         godot: extraction.godot,
+        csharp: extraction.csharp,
         call_references: None,
     }
 }
@@ -135,6 +145,7 @@ pub(super) fn extract_specifiers_from_root(
             FirstClass::Php => extract_php_node(node, content, &mut extraction.specifiers),
             FirstClass::Rust => extract_rust_node(node, content, &mut extraction.specifiers),
             FirstClass::Go => extract_go_node(node, content, &mut extraction.specifiers),
+            FirstClass::CSharp => extract_csharp_node(node, content, &mut extraction),
             FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {}
         }
         for index in (0..node.named_child_count()).rev() {
@@ -167,9 +178,63 @@ pub(super) fn module_specifiers(extraction: SpecifierExtraction) -> Vec<String> 
             | ImportSpecifier::PhpInclude(_)
             | ImportSpecifier::Rust(_)
             | ImportSpecifier::GoPackage(_)
+            | ImportSpecifier::CSharpNamespace(_)
             | ImportSpecifier::Godot(_) => None,
         })
         .collect()
+}
+
+fn extract_csharp_node(node: Node<'_>, content: &str, extraction: &mut SpecifierExtraction) {
+    if matches!(
+        node.kind(),
+        "namespace_declaration" | "file_scoped_namespace_declaration"
+    ) {
+        if let Some(namespace) = csharp_qualified_namespace(node, content)
+            && !extraction.csharp.namespaces.contains(&namespace)
+        {
+            extraction.csharp.namespaces.push(namespace);
+        }
+        return;
+    }
+    if node.kind() != "using_directive" {
+        return;
+    }
+    let alias = node.child_by_field_name("name");
+    let mut cursor = node.walk();
+    if let Some(namespace) = node
+        .named_children(&mut cursor)
+        .find(|child| {
+            child.kind() != "comment" && alias.is_none_or(|alias| alias.id() != child.id())
+        })
+        .and_then(|value| value.utf8_text(content.as_bytes()).ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        extraction
+            .specifiers
+            .push(ImportSpecifier::CSharpNamespace(namespace.to_string()));
+    }
+}
+
+fn csharp_qualified_namespace(node: Node<'_>, content: &str) -> Option<String> {
+    let mut namespaces = Vec::new();
+    let mut current = Some(node);
+    while let Some(candidate) = current {
+        if matches!(
+            candidate.kind(),
+            "namespace_declaration" | "file_scoped_namespace_declaration"
+        ) && let Some(name) = candidate
+            .child_by_field_name("name")
+            .and_then(|name| name.utf8_text(content.as_bytes()).ok())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            namespaces.push(name.trim_start_matches("global::").to_string());
+        }
+        current = candidate.parent();
+    }
+    namespaces.reverse();
+    (!namespaces.is_empty()).then(|| namespaces.join("."))
 }
 
 pub(super) fn count_parse_errors(root: Node<'_>) -> usize {

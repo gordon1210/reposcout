@@ -61,10 +61,11 @@ establish net token savings; it measures the pre-review development binary, not 
 - **Live local dashboard:** an optional daemon and React interface for repository health,
   findings, files, and mixed-language architecture.
 
-First-class AST code languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP,
+First-class AST code languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, C#,
 GDScript, and Godot shaders**. Godot scenes, resources, and project files also have syntax-aware
 inventory and dependency analysis. RepoScout recognizes **36 formats** for complete inventory and
-structured duplication. See [Godot support](docs/godot.md) for scope and examples.
+structured duplication, including JSON, JSON with Comments (`.jsonc`), and JSON Lines (`.jsonl`).
+See [Godot support](docs/godot.md) for scope and examples.
 
 ## Install
 

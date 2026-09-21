@@ -126,7 +126,7 @@ is consistent, but live edits can make it differ from earlier parent metadata.
 Lexical search facts,
 definition-planning environment facts and call/reference facts must reuse ordinary scanner-owned
 source capture, analyzers, parser and cache entries. Their cached semantics use analyzer version
-21; the additive serialized contract remains schema 2.0. New runtime settings that change cached
+22; the additive serialized contract remains schema 2.0. New runtime settings that change cached
 facts belong in the existing analysis-profile contract. Do not introduce a parallel index, parser,
 source reader or cache namespace.
 
@@ -144,7 +144,7 @@ provenance and extraction/work/output gaps.
 
 ## Language and health scope
 
-First-class tree-sitter code languages are Rust, Python, JavaScript, TypeScript/TSX, Go, PHP,
+First-class tree-sitter code languages are Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, C#,
 GDScript, and Godot Shader. Godot Scene, Resource, and Project formats also have bundled parsers
 but are not code. Every recognized format contributes to complete inventory, token/context size,
 and line facts.

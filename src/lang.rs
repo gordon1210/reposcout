@@ -16,6 +16,7 @@ pub enum FirstClass {
     Tsx,
     Go,
     Php,
+    CSharp,
     GdScript,
     GdShader,
     GodotResource,
@@ -29,6 +30,7 @@ pub const FIRST_CLASS_LANGUAGE_NAMES: &[&str] = &[
     "TSX",
     "Go",
     "PHP",
+    "C#",
     "GDScript",
     "Godot Shader",
     "Godot Scene",
@@ -305,11 +307,11 @@ const GODOT_RESOURCE: LangInfo =
     lang!("Godot Resource", Some(FirstClass::GodotResource), [";"], []);
 const GODOT_PROJECT: LangInfo = lang!("Godot Project", Some(FirstClass::GodotResource), [";"], []);
 
-// Generic languages (line/token metrics only).
+// Additional language metadata.
 const C: LangInfo = lang!("C", None, ["//"], ["/*" => "*/"]);
 const CPP: LangInfo = lang!("C++", None, ["//"], ["/*" => "*/"]);
 const CHEADER: LangInfo = lang!("C/C++ Header", None, ["//"], ["/*" => "*/"]);
-const CSHARP: LangInfo = lang!("C#", None, ["//"], ["/*" => "*/"]);
+const CSHARP: LangInfo = lang!("C#", Some(FirstClass::CSharp), ["//"], ["/*" => "*/"]);
 const JAVA: LangInfo = lang!("Java", None, ["//"], ["/*" => "*/"]);
 const KOTLIN: LangInfo = lang!("Kotlin", None, ["//"], ["/*" => "*/"]);
 const SWIFT: LangInfo = lang!("Swift", None, ["//"], ["/*" => "*/"]);
@@ -362,6 +364,7 @@ const EXTENSION_LANGUAGES: &[(&str, &LangInfo)] = &[
     ("js", &JAVASCRIPT),
     ("json", &JSON),
     ("jsonc", &JSON),
+    ("jsonl", &JSON),
     ("jsx", &JAVASCRIPT),
     ("kt", &KOTLIN),
     ("kts", &KOTLIN),
@@ -516,6 +519,22 @@ mod tests {
             let info = detect(Path::new(path)).unwrap();
             assert_eq!(info.name, "PHP", "{path}");
             assert_eq!(info.first_class, Some(FirstClass::Php), "{path}");
+        }
+    }
+
+    #[test]
+    fn detects_csharp_as_first_class() {
+        let info = detect(Path::new("src/Service.cs")).unwrap();
+        assert_eq!(info.name, "C#");
+        assert_eq!(info.first_class, Some(FirstClass::CSharp));
+    }
+
+    #[test]
+    fn detects_json_lines_and_json_with_comments_as_json() {
+        for path in ["events.jsonl", "settings.jsonc"] {
+            let info = detect(Path::new(path)).unwrap();
+            assert_eq!(info.name, "JSON", "{path}");
+            assert!(!info.is_source(), "{path}");
         }
     }
 

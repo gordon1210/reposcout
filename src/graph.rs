@@ -2,10 +2,11 @@
 //!
 //! Language scope: JavaScript (.js, .jsx, .mjs, .cjs), TypeScript (.ts, .tsx),
 //! Python (.py, .pyi, .pyw), PHP (including common framework extensions), Rust,
-//! and Go. File-oriented languages resolve directly to source files. Rust module
-//! paths resolve through Cargo package/module roots; Go package imports resolve
-//! to a deterministic representative file and retain resolver provenance so the
-//! file-level approximation remains visible to callers.
+//! Go, C#, `GDScript`, Godot shaders, and Godot resource formats. File-oriented
+//! languages resolve directly to source files. Rust module paths resolve through
+//! Cargo package/module roots; Go package imports resolve to a deterministic
+//! representative file and retain resolver provenance so the file-level
+//! approximation remains visible to callers.
 //!
 //! This module is self-contained and used by opt-in graph, impact, explain, and
 //! context features. It consumes cached per-file source facts when a scan has
@@ -669,6 +670,7 @@ struct GraphUniverse {
 }
 
 struct Resolvers {
+    csharp: csharp::CSharpResolver,
     godot: godot::GodotResolver,
     javascript: JsResolver,
     python: PythonResolver,
@@ -717,27 +719,31 @@ struct TopologyExtractor<'a> {
 impl TopologyExtractor<'_> {
     fn run(&mut self, budget: &mut ReadBudget) -> (Topology, Vec<String>) {
         let mut state = TopologyState::new(self.universe.files.len());
-        // Register project-global classes/UIDs before resolving any Godot file.
-        // Retain only Godot facts here; no second source read or parse is needed.
-        let mut godot_facts = BTreeMap::new();
-        for (index, path) in self
-            .universe
-            .files
-            .iter()
-            .enumerate()
-            .filter(|(_, path)| godot::is_godot(path))
-        {
+        // Register resolver-wide Godot classes/UIDs and C# namespaces before
+        // resolving any file. Retain the facts so no second read or parse is needed.
+        let mut preloaded_facts = BTreeMap::new();
+        for (index, path) in self.universe.files.iter().enumerate().filter(|(_, path)| {
+            godot::is_godot(path)
+                || detect(Path::new(path)).and_then(|info| info.first_class)
+                    == Some(FirstClass::CSharp)
+        }) {
             let Some(language) = detect(Path::new(path)).and_then(|info| info.first_class) else {
                 continue;
             };
             let facts = self.load_source_facts(index, path, language, budget, &mut state);
             if let Some(facts) = &facts {
-                self.resolvers.godot.add_source(path, facts);
+                match language {
+                    FirstClass::CSharp => self.resolvers.csharp.add_source(path, &facts.csharp),
+                    FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {
+                        self.resolvers.godot.add_source(path, facts);
+                    }
+                    _ => {}
+                }
             }
-            godot_facts.insert(index, facts);
+            preloaded_facts.insert(index, facts);
         }
         for (index, path) in self.universe.files.iter().enumerate() {
-            let facts = if let Some(facts) = godot_facts.remove(&index) {
+            let facts = if let Some(facts) = preloaded_facts.remove(&index) {
                 facts
             } else {
                 detect(Path::new(path))
@@ -844,6 +850,9 @@ impl TopologyExtractor<'_> {
                     .resolve(importer, &import, &self.universe.node_set)
             }
             ImportSpecifier::GoPackage(package) => self.resolvers.go.resolve(importer, &package),
+            ImportSpecifier::CSharpNamespace(namespace) => {
+                self.resolvers.csharp.resolve(importer, &namespace)
+            }
         }
     }
 
@@ -916,6 +925,7 @@ impl Resolvers {
             snapshot: resolver_configs,
         };
         Self {
+            csharp: csharp::CSharpResolver::default(),
             godot: godot::GodotResolver::discover(files, &mut access),
             javascript: JsResolver::discover(files, &mut access),
             python: PythonResolver::discover(files),
@@ -1223,6 +1233,8 @@ use algorithms::{
     go_up, normalize_path, path_parent, resolve_py, strongly_connected, try_resolve_js,
     try_resolve_php,
 };
+
+mod csharp;
 
 #[cfg(test)]
 mod tests;

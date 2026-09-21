@@ -19,6 +19,8 @@ The dependency graph and impact analysis cover every first-class language heuris
   conventional PHP source roots, and static include/require expressions;
 - Rust external `mod` / `#[path]`, local `use`, and Cargo library paths;
 - Go module and relative package imports from `go.mod`;
+- C# `using` directives to one unique checked-in namespace; ambiguous namespaces stay local and
+  compiler/MSBuild/source-generator resolution remains outside the graph;
 - Godot literal loads/preloads, path inheritance, shader includes, scene/resource external entries,
   and project main-scene/autoload/plugin paths. `res://` uses the nearest `project.godot`; UIDs use
   revision-scoped scene/resource headers and script/shader `.uid` sidecars. Unique UIDs take
@@ -37,8 +39,9 @@ entrypoints nor tests.
 
 Type-symbol topology records explicit syntax-proven `extends`, `implements`, trait, and embedding
 relations. Qualified, same-file/scope, and globally unique short names may resolve; ambiguous names
-stay unresolved. Keep symbol edges separate from import adjacency so fan-in and type reach retain
-honest meanings.
+stay unresolved. C# class/struct base lists classify a resolved interface target as `implements`;
+class and interface inheritance use `extends`. Partial/duplicate declarations remain ambiguous. Keep symbol
+edges separate from import adjacency so fan-in and type reach retain honest meanings.
 
 The approved call/reference extension adds a separate relation family; it must not change import
 fan-in or type-reach meanings. Its initial binding scope is Rust and JavaScript/TypeScript/TSX:
@@ -52,8 +55,9 @@ and output gaps under hard direction/depth/result limits.
 Godot currently supplies file/resource dependency topology, not separate symbol topology.
 GDScript inheritance/global-name references therefore contribute file dependency edges. Do not
 infer filesystem edges from NodePaths, ordinary strings, comments, or locally shadowed names.
-Dynamic resource paths remain unresolved. Binary asset and generic C# targets are outside the
-graph's analyzable universe, not verified missing files; native/unknown global names are unindexed.
+Dynamic resource paths remain unresolved. Binary assets, Godot engine linkage to C# scripts, and
+compiler-generated C# targets are outside the graph's analyzable universe, not verified missing
+files; native/unknown global names are unindexed.
 
 Under diff scope, `--impact` reports changed graph files plus direct and transitive unchanged
 importers with conservative `high`, `partial`, or `none` confidence.

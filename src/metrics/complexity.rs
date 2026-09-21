@@ -123,7 +123,7 @@ fn analyze_scope(
             metrics.cognitive = metrics.cognitive.saturating_add(1);
         }
 
-        let else_if = is_else_if_node(node, cfg);
+        let else_if = is_else_if_node(node, fc, cfg);
         let else_clause = is_else_clause(node, cfg, content);
         if else_clause {
             metrics.cognitive = metrics.cognitive.saturating_add(1);
@@ -242,7 +242,7 @@ fn recursive_call_matches(node: Node<'_>, content: &str, name: &str) -> bool {
                     .child_by_field_name("name")
                     .is_some_and(|target| call_target_matches(node_text(target, content), name))
         }
-        "call" | "call_expression" | "function_call_expression" => node
+        "call" | "call_expression" | "function_call_expression" | "invocation_expression" => node
             .child_by_field_name("function")
             .or_else(|| node.named_child(0))
             .is_some_and(|target| call_target_matches(node_text(target, content), name)),
@@ -320,7 +320,11 @@ fn is_cyclomatic_operator_token(node: Node<'_>, fc: FirstClass, content: &str) -
     }
     matches!(
         fc,
-        FirstClass::JavaScript | FirstClass::TypeScript | FirstClass::Tsx | FirstClass::Php
+        FirstClass::JavaScript
+            | FirstClass::TypeScript
+            | FirstClass::Tsx
+            | FirstClass::Php
+            | FirstClass::CSharp
     ) && node.child_count() == 0
         && node_text(node, content).trim() == "??"
 }
@@ -524,12 +528,16 @@ fn is_else_clause(node: Node<'_>, cfg: &LangConfig, content: &str) -> bool {
     false
 }
 
-fn is_else_if_node(node: Node<'_>, cfg: &LangConfig) -> bool {
+fn is_else_if_node(node: Node<'_>, fc: FirstClass, cfg: &LangConfig) -> bool {
     if node.kind() != "if_statement" && node.kind() != "if_expression" {
         return false;
     }
-    node.parent()
-        .is_some_and(|parent| contains(cfg.else_clause_kinds, parent.kind()))
+    node.parent().is_some_and(|parent| {
+        contains(cfg.else_clause_kinds, parent.kind())
+            || (fc == FirstClass::CSharp
+                && parent.kind() == "if_statement"
+                && parent.child_by_field_name("alternative") == Some(node))
+    })
 }
 
 fn is_labeled_jump(node: Node<'_>, fc: FirstClass, cfg: &LangConfig, content: &str) -> bool {
@@ -560,6 +568,7 @@ fn is_labeled_jump(node: Node<'_>, fc: FirstClass, cfg: &LangConfig, content: &s
             .or_else(|| text.strip_prefix("continue"))
             .map(|level| level.trim().trim_end_matches(';').trim())
             .is_some_and(|level| !level.is_empty() && level != "1"),
+        FirstClass::CSharp => text.starts_with("goto "),
     }
 }
 
@@ -633,6 +642,8 @@ fn is_anonymous_function_kind(kind: &str) -> bool {
             | "generator_function"
             | "anonymous_function"
             | "lambda"
+            | "lambda_expression"
+            | "anonymous_method_expression"
     )
 }
 

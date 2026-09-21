@@ -6,6 +6,22 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Added first-class C# analysis with tree-sitter line and marker facts, callable complexity,
+  imports, symbol/definition outlines, structured duplication, unique local namespace graph edges,
+  and conservative local type relationships.
+
+### Changed
+
+- Bumped the cached analyzer version to 22 for C# parse-derived facts; the additive report schema
+  remains 2.0.
+
+### Fixed
+
+- Recognize `.jsonl` files as JSON inventory instead of reporting them as unsupported. Existing
+  `.jsonc` recognition remains covered by the same regression test.
+
 ### Security
 
 - Updated `rustls` to 0.23.45 and `rustls-webpki` to 0.103.15 to remediate

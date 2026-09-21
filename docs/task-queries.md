@@ -177,5 +177,5 @@ fit is an error, not malformed or silently clipped output. Pretty JSON costs cou
 Capabilities expose `find_query`, `definition_plan`, `call_query` and `task_diagnostics`; inspect
 those fields when compatibility is uncertain. Existing compact scouting stays body-free and
 bounded. Normal source reads and lexical search do not require call topology. Cache facts use
-analyzer 21; the additive report schema stays 2.0. Local cache reuse and short tool output alone do
+analyzer 22; the additive report schema stays 2.0. Local cache reuse and short tool output alone do
 not establish a reduction in total model tokens.

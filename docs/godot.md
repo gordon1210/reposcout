@@ -87,8 +87,9 @@ vendored addon should remain navigable without affecting health signals.
 This is static repository analysis, not Godot's runtime/type checker. Binary `.scn`/`.res`, imported
 assets, embedded shader/script source inside resources, GDExtension native-library loading,
 runtime-generated paths, signal dispatch, engine-native classes, and complete C# semantics are
-not reconstructed. Binary asset and generic C# references are outside the graph's analyzable
-universe; their existence is not validated. Dynamic or undecodable resource paths and ambiguous
+not reconstructed. Ordinary checked-in C# receives its own static analysis, while Godot engine
+linkage, MSBuild/generated targets, and binary assets remain outside the graph's analyzable
+universe. Dynamic or undecodable resource paths and ambiguous
 known classes/UIDs remain unresolved; native or otherwise unknown global names are not indexed.
 Run Godot's own checks and the project's tests for authoritative correctness.
 

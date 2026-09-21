@@ -145,6 +145,53 @@ $worker = function (bool $value): int {
 }
 
 #[test]
+fn csharp_ast_complexity_counts_methods_local_functions_and_lambdas() {
+    let src = r"
+class Service
+{
+    public int Run(bool a, bool b, int[] values)
+    {
+        if (a && b) return 1;
+        foreach (var value in values)
+        {
+            if (value > 0) return value;
+        }
+        int Local(int value) => value > 1 ? value : 0;
+        System.Func<int, int> choose = value => value > 0 ? value : 0;
+        return Local(choose(0));
+    }
+}
+";
+    let complexity = analyze_first_class("x.cs", FirstClass::CSharp, src);
+    let functions = complexity
+        .functions
+        .iter()
+        .map(|function| (function.name.as_str(), function.cyclomatic))
+        .collect::<Vec<_>>();
+
+    assert!(functions.contains(&("Run", 5)), "{functions:?}");
+    assert!(functions.contains(&("Local", 2)), "{functions:?}");
+    assert!(functions.contains(&("choose", 2)), "{functions:?}");
+    assert!(complexity.max_nesting >= 2);
+}
+
+#[test]
+fn csharp_else_if_chains_do_not_add_nesting() {
+    let src = "class C { int Run(int n) { if (n == 0) return 0; else if (n == 1) return 1; else if (n == 2) return 2; else return 3; } }";
+    let complexity = analyze_first_class("x.cs", FirstClass::CSharp, src);
+    assert_eq!(complexity.functions[0].cyclomatic, 4);
+    assert_eq!(complexity.functions[0].cognitive, 4);
+    assert_eq!(complexity.functions[0].max_nesting, 1);
+}
+
+#[test]
+fn csharp_direct_recursion_adds_cognitive_complexity() {
+    let src = "class C { int Run(int n) => n == 0 ? 0 : Run(n - 1); }";
+    let complexity = analyze_first_class("x.cs", FirstClass::CSharp, src);
+    assert_eq!(complexity.functions[0].cognitive, 2);
+}
+
+#[test]
 fn rust_binding_match_arms_are_catch_alls() {
     let src = r"
 fn classify(value: Option<i32>) {

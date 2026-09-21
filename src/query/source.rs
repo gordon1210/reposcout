@@ -427,6 +427,7 @@ pub(super) fn capability() -> SourceQueryCapability {
         (FirstClass::Tsx, "TSX"),
         (FirstClass::Go, "Go"),
         (FirstClass::Php, "PHP"),
+        (FirstClass::CSharp, "C#"),
         (FirstClass::GdScript, "GDScript"),
         (FirstClass::GdShader, "Godot Shader"),
     ]

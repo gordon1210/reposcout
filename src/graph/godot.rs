@@ -425,12 +425,14 @@ impl GodotResolver {
                 target: target.to_string(),
                 resolver,
             }
-        } else if detect(Path::new(target))
-            .and_then(|info| info.first_class)
-            .is_none()
-        {
-            // Binary assets and generic-language scripts are outside this graph's
-            // analyzable universe. This does not validate the asset's existence.
+        } else if matches!(
+            detect(Path::new(target)).and_then(|info| info.first_class),
+            None | Some(FirstClass::CSharp)
+        ) {
+            // Binary assets and Godot's engine linkage to C# scripts are outside
+            // this resolver's analyzable universe. Ordinary checked-in C# still
+            // participates in its own language graph. This does not validate the
+            // resource target's existence.
             ImportResolution::NonGraph
         } else {
             ImportResolution::Unresolved

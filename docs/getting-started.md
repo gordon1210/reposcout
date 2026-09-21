@@ -132,10 +132,11 @@ RepoScout separates complete inventory from source-health analysis:
 - Analysis and Git-history caches live in the operating system's cache directory, never inside
   the scanned repository.
 
-First-class AST code languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, GDScript,
-and Godot shaders**. Godot text scenes/resources/project files also have syntax-aware inventory
-and dependency support without code complexity; see [Godot support](godot.md).
-Other recognized code formats still contribute inventory and heuristic signals where appropriate.
+First-class AST code languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, C#,
+GDScript, and Godot shaders**. Godot text scenes/resources/project files also have syntax-aware
+inventory and dependency support without code complexity; see [Godot support](godot.md).
+Other recognized formats still contribute inventory and heuristic signals where appropriate;
+`.json`, `.jsonc`, and `.jsonl` are all recognized as JSON inventory.
 
 Opt a content format into health analysis:
 

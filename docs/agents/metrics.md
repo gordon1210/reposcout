@@ -6,7 +6,7 @@ behavior. The root instructions remain in force.
 
 ## Lines and markers
 
-- Line metrics are syntax-aware for Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, GDScript,
+- Line metrics are syntax-aware for Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, C#, GDScript,
   Godot Shader, and Godot Scene/Resource/Project formats, using
   tree-sitter comment ranges for comment-only lines. Other formats use a quote-aware fallback and
   expose `line_metrics_approximate: true`; the summary counts them in
@@ -30,8 +30,9 @@ Complexity is calculated per function and only for code.
   `summary.top_functions` is threshold-independent, and every callable remains in per-file
   `complexity.functions[]`.
 - First-class callable scopes include named functions and methods, JavaScript arrows/function
-  expressions, Rust closures, Python lambdas, Go function literals, PHP closures/arrows, and
-  GDScript constructors/lambdas/property accessors. GDScript wildcard/binding match patterns are
+  expressions, Rust closures, Python lambdas, Go function literals, PHP closures/arrows, C#
+  constructors/operators/local functions/lambdas/anonymous methods/accessors, and GDScript
+  constructors/lambdas/property accessors. GDScript wildcard/binding match patterns are
   catch-alls only without a guard; shader functions use their own grammar's control-flow nodes.
   Anonymous scopes inherit binding names where possible and must not inflate the enclosing
   function.

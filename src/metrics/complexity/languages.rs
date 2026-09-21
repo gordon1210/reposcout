@@ -160,6 +160,43 @@ const PHP_NESTING: &[&str] = PHP_COGNITIVE;
 const PHP_ELSE: &[&str] = &["else_if_clause", "else_clause"];
 const PHP_JUMPS: &[&str] = &["break_statement", "continue_statement"];
 
+const CSHARP_FUNCTIONS: &[&str] = &[
+    "method_declaration",
+    "constructor_declaration",
+    "destructor_declaration",
+    "operator_declaration",
+    "conversion_operator_declaration",
+    "local_function_statement",
+    "lambda_expression",
+    "anonymous_method_expression",
+    "accessor_declaration",
+];
+const CSHARP_DECISIONS: &[&str] = &[
+    "if_statement",
+    "for_statement",
+    "foreach_statement",
+    "while_statement",
+    "do_statement",
+    "catch_clause",
+    "conditional_expression",
+    "when_clause",
+];
+const CSHARP_CASES: &[&str] = &["switch_section", "switch_expression_arm"];
+const CSHARP_COGNITIVE: &[&str] = &[
+    "if_statement",
+    "for_statement",
+    "foreach_statement",
+    "while_statement",
+    "do_statement",
+    "catch_clause",
+    "conditional_expression",
+    "switch_statement",
+    "switch_expression",
+];
+const CSHARP_NESTING: &[&str] = CSHARP_COGNITIVE;
+const CSHARP_ELSE: &[&str] = &[];
+const CSHARP_JUMPS: &[&str] = &["goto_statement"];
+
 const GDSCRIPT_CONFIG: LangConfig = LangConfig {
     function_kinds: &[
         "function_definition",
@@ -283,6 +320,15 @@ pub(super) fn config(fc: FirstClass) -> LangConfig {
             else_clause_kinds: PHP_ELSE,
             jump_kinds: PHP_JUMPS,
         },
+        FirstClass::CSharp => LangConfig {
+            function_kinds: CSHARP_FUNCTIONS,
+            decision_kinds: CSHARP_DECISIONS,
+            case_kinds: CSHARP_CASES,
+            cognitive_structure_kinds: CSHARP_COGNITIVE,
+            nesting_kinds: CSHARP_NESTING,
+            else_clause_kinds: CSHARP_ELSE,
+            jump_kinds: CSHARP_JUMPS,
+        },
     }
 }
 
@@ -293,4 +339,5 @@ pub(super) fn is_function_kind(kind: &str) -> bool {
         || JS_FUNCTIONS.contains(&kind)
         || GO_FUNCTIONS.contains(&kind)
         || PHP_FUNCTIONS.contains(&kind)
+        || CSHARP_FUNCTIONS.contains(&kind)
 }

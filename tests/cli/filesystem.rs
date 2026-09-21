@@ -151,6 +151,40 @@ fn diagnostics_explain_unsupported_and_unreadable_files() {
 }
 
 #[test]
+fn csharp_json_lines_and_json_with_comments_are_recognized() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Service.cs"),
+        "namespace App; public class Service { public int Run(bool value) => value ? 1 : 0; }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("events.jsonl"), "{\"id\":1}\n{\"id\":2}\n").unwrap();
+    std::fs::write(
+        dir.path().join("settings.jsonc"),
+        "{\n  // comment\n  \"enabled\": true\n}\n",
+    )
+    .unwrap();
+
+    let report = run_json(&["-f", "json", dir.path().to_str().unwrap()]);
+
+    assert_eq!(report["diagnostics"]["discovered_files"], 3);
+    assert_eq!(report["diagnostics"]["analyzed_files"], 3);
+    assert_eq!(report["diagnostics"]["unsupported_files"], 0);
+    let files = report["files"].as_array().unwrap();
+    let service = files
+        .iter()
+        .find(|file| file["path"] == "Service.cs")
+        .unwrap();
+    assert_eq!(service["language"], "C#");
+    assert!(service.get("line_metrics_approximate").is_none());
+    assert_eq!(service["approximate"], false);
+    for path in ["events.jsonl", "settings.jsonc"] {
+        let file = files.iter().find(|file| file["path"] == path).unwrap();
+        assert_eq!(file["language"], "JSON", "{path}");
+    }
+}
+
+#[test]
 fn diagnostics_explain_files_skipped_by_resource_limits() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("small.rs"), "fn okay() {}\n").unwrap();

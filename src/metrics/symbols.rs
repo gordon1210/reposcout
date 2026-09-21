@@ -80,6 +80,7 @@ pub fn count(fc: FirstClass, content: &str, tree: &Tree) -> SymbolCounts {
         FirstClass::TypeScript | FirstClass::Tsx => count_typescript(root),
         FirstClass::Go => count_go(root, src),
         FirstClass::Php => count_php(root, src),
+        FirstClass::CSharp => count_csharp(root, src),
         FirstClass::GdScript | FirstClass::GdShader => {
             let mut counts = SymbolCounts::default();
             walk(root, |node| {
@@ -201,6 +202,15 @@ pub fn definition_kinds(fc: FirstClass) -> &'static [&'static str] {
         }
         FirstClass::Go => &["function", "method", "type"],
         FirstClass::Php => &["class", "enum", "function", "interface", "method", "trait"],
+        FirstClass::CSharp => &[
+            "class",
+            "enum",
+            "function",
+            "interface",
+            "method",
+            "property",
+            "type",
+        ],
         FirstClass::GdScript => &["class", "constant", "enum", "method", "property", "signal"],
         FirstClass::GdShader => &["function"],
         FirstClass::GodotResource => &[],
@@ -326,6 +336,7 @@ fn declaration_kind(fc: FirstClass, node: Node<'_>) -> Option<(OutlineKind, Node
         FirstClass::TypeScript | FirstClass::Tsx => typescript_declaration_kind(node),
         FirstClass::Go => go_declaration_kind(node),
         FirstClass::Php => php_declaration_kind(node),
+        FirstClass::CSharp => csharp_declaration_kind(node),
         FirstClass::GdScript => match node.kind() {
             "function_definition" | "constructor_definition" => Some(OutlineKind::Method),
             "class_definition" | "class_name_statement" => Some(OutlineKind::Class),
@@ -416,6 +427,25 @@ fn php_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
     }
 }
 
+fn csharp_declaration_kind(node: Node<'_>) -> Option<OutlineKind> {
+    match node.kind() {
+        "class_declaration" => Some(OutlineKind::Class),
+        "interface_declaration" => Some(OutlineKind::Interface),
+        "enum_declaration" => Some(OutlineKind::Enum),
+        "struct_declaration" | "record_declaration" | "delegate_declaration" => {
+            Some(OutlineKind::Type)
+        }
+        "method_declaration"
+        | "constructor_declaration"
+        | "destructor_declaration"
+        | "operator_declaration"
+        | "conversion_operator_declaration" => Some(OutlineKind::Method),
+        "local_function_statement" => Some(OutlineKind::Function),
+        "property_declaration" => Some(OutlineKind::Property),
+        _ => None,
+    }
+}
+
 fn godot_nodes(content: &str, tree: &Tree) -> Vec<SymbolOutline> {
     let mut outlines = Vec::new();
     let root = tree.root_node();
@@ -475,6 +505,8 @@ fn callable_kind(node: Node<'_>) -> OutlineKind {
                 | "trait_item"
                 | "trait_declaration"
                 | "interface_declaration"
+                | "struct_declaration"
+                | "record_declaration"
                 | "enum_declaration"
         ) {
             return OutlineKind::Method;
@@ -490,6 +522,16 @@ fn callable_kind(node: Node<'_>) -> OutlineKind {
 fn declaration_name(node: Node<'_>, src: &[u8]) -> Option<String> {
     if node.kind() == "constructor_definition" {
         return Some("_init".to_string());
+    }
+    if matches!(
+        node.kind(),
+        "operator_declaration" | "conversion_operator_declaration"
+    ) {
+        return node
+            .child_by_field_name("operator")
+            .or_else(|| node.child_by_field_name("type"))
+            .and_then(|name| name.utf8_text(src).ok())
+            .map(|name| format!("operator {name}"));
     }
     name_text(node, src).map(str::to_string).or_else(|| {
         node.child_by_field_name("declarator")
@@ -517,6 +559,14 @@ fn qualified_name(fc: FirstClass, node: Node<'_>, name: &str, src: &[u8]) -> Str
                 "class_declaration"
                     | "interface_declaration"
                     | "trait_declaration"
+                    | "enum_declaration"
+            ),
+            FirstClass::CSharp => matches!(
+                candidate.kind(),
+                "class_declaration"
+                    | "interface_declaration"
+                    | "struct_declaration"
+                    | "record_declaration"
                     | "enum_declaration"
             ),
         };
@@ -553,6 +603,14 @@ fn is_callable_scope(kind: &str) -> bool {
             | "constructor_definition"
             | "get_body"
             | "set_body"
+            | "constructor_declaration"
+            | "destructor_declaration"
+            | "operator_declaration"
+            | "conversion_operator_declaration"
+            | "local_function_statement"
+            | "lambda_expression"
+            | "anonymous_method_expression"
+            | "accessor_declaration"
     )
 }
 
@@ -578,12 +636,23 @@ fn declaration_exported(
         }
         FirstClass::Go => name.chars().next().is_some_and(char::is_uppercase),
         FirstClass::Php => php_declaration_is_public(node, src),
+        FirstClass::CSharp => csharp_declaration_is_public(node, src),
         FirstClass::GdScript => {
             !name.starts_with('_') && !ancestor(node, |parent| is_callable_scope(parent.kind()))
         }
         FirstClass::GdShader => true,
         FirstClass::GodotResource => false,
     }
+}
+
+fn csharp_declaration_is_public(node: Node<'_>, src: &[u8]) -> bool {
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(|child| {
+        child.kind() == "modifier"
+            && child
+                .utf8_text(src)
+                .is_ok_and(|modifier| modifier == "public")
+    })
 }
 
 fn php_declaration_is_public(node: Node<'_>, src: &[u8]) -> bool {
@@ -767,6 +836,15 @@ fn signature_text(fc: FirstClass, node: Node<'_>, content: &str) -> String {
         .child_by_field_name("body")
         .or_else(|| header.child_by_field_name("block"))
         .or_else(|| header.child_by_field_name("setget"))
+        .or_else(|| {
+            (fc == FirstClass::CSharp && header.kind() == "property_declaration")
+                .then(|| {
+                    header
+                        .child_by_field_name("accessors")
+                        .or_else(|| header.child_by_field_name("value"))
+                })
+                .flatten()
+        })
         .or_else(|| {
             header
                 .child_by_field_name("value")
@@ -954,6 +1032,40 @@ fn count_php(root: Node<'_>, src: &[u8]) -> SymbolCounts {
     counts
 }
 
+fn count_csharp(root: Node<'_>, src: &[u8]) -> SymbolCounts {
+    let mut counts = SymbolCounts::default();
+    walk(root, |node| {
+        let is_function = matches!(
+            node.kind(),
+            "method_declaration"
+                | "constructor_declaration"
+                | "destructor_declaration"
+                | "operator_declaration"
+                | "conversion_operator_declaration"
+                | "local_function_statement"
+        );
+        let is_type = matches!(
+            node.kind(),
+            "class_declaration"
+                | "interface_declaration"
+                | "struct_declaration"
+                | "record_declaration"
+                | "enum_declaration"
+                | "delegate_declaration"
+        );
+        if is_function {
+            counts.functions += 1;
+        }
+        if is_type {
+            counts.types += 1;
+        }
+        if (is_function || is_type) && csharp_declaration_is_public(node, src) {
+            counts.exports += 1;
+        }
+    });
+    counts
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1067,6 +1179,24 @@ mod tests {
             ],
         ),
         (
+            FirstClass::CSharp,
+            "void Local() {}\npublic class Item { public int Value { get; init; } public Item() {} public void Run() {} }\npublic interface Runner {}\npublic struct Payload {}\npublic enum Mode { Ready }\n",
+            &[
+                (
+                    "Item",
+                    "class",
+                    "public class Item { public int Value { get; init; } public Item() {} public void Run() {} }",
+                ),
+                ("Item.Value", "property", "public int Value { get; init; }"),
+                ("Item.Item", "method", "public Item() {}"),
+                ("Item.Run", "method", "public void Run() {}"),
+                ("Runner", "interface", "public interface Runner {}"),
+                ("Payload", "type", "public struct Payload {}"),
+                ("Mode", "enum", "public enum Mode { Ready }"),
+                ("Local", "function", "void Local() {}"),
+            ],
+        ),
+        (
             FirstClass::GdScript,
             "class_name Item\nsignal moved\nconst SPEED = 1\nvar position = 0\nenum Mode { READY }\nfunc run():\n    return 1\n",
             &[
@@ -1134,6 +1264,45 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn csharp_local_function_kind_is_advertised() {
+        let facts = extracted(
+            FirstClass::CSharp,
+            "class C { void Run() { void Local() {} } }",
+        );
+        let local = facts
+            .definitions
+            .iter()
+            .find(|definition| definition.symbol.name == "Local")
+            .unwrap();
+        assert_eq!(local.symbol.kind, "function");
+        assert!(definition_kinds(FirstClass::CSharp).contains(&local.symbol.kind.as_str()));
+    }
+
+    #[test]
+    fn csharp_property_outlines_omit_accessor_and_expression_bodies() {
+        let facts = extracted(
+            FirstClass::CSharp,
+            "class C { int Value { get { return Hidden(); } } int Other => Hidden(); }",
+        );
+        for definition in facts
+            .definitions
+            .iter()
+            .filter(|definition| definition.symbol.kind == "property")
+        {
+            assert!(!definition.symbol.signature.contains("Hidden"));
+            assert!(definition.symbol.signature.ends_with('…'));
+        }
+        assert_eq!(
+            facts
+                .definitions
+                .iter()
+                .filter(|definition| definition.symbol.kind == "property")
+                .count(),
+            2
+        );
     }
 
     #[test]

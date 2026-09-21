@@ -32,12 +32,42 @@ pub fn extract(fc: FirstClass, content: &str, tree: &Tree) -> Vec<String> {
         }
         FirstClass::Go => extract_go(node, content, &mut add),
         FirstClass::Php => extract_php(node, content, &mut add),
+        FirstClass::CSharp => extract_csharp(node, content, &mut add),
         // Godot's project-local resource and class references belong to the
         // dependency graph, not the external package inventory.
         FirstClass::GdScript | FirstClass::GdShader | FirstClass::GodotResource => {}
     });
 
     imports
+}
+
+fn extract_csharp<F>(node: Node<'_>, content: &str, add: &mut F)
+where
+    F: FnMut(String),
+{
+    if node.kind() != "using_directive" {
+        return;
+    }
+    let alias = node.child_by_field_name("name");
+    let mut cursor = node.walk();
+    let Some(imported) = node
+        .named_children(&mut cursor)
+        .find(|child| {
+            child.kind() != "comment" && alias.is_none_or(|alias| alias.id() != child.id())
+        })
+        .and_then(|child| child.utf8_text(content.as_bytes()).ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    let imported = imported.strip_prefix("global::").unwrap_or(imported);
+    if let Some(root) = imported
+        .split(['.', ':'])
+        .find(|segment| !segment.is_empty())
+    {
+        add(root.to_string());
+    }
 }
 
 fn extract_php<F>(node: Node<'_>, content: &str, add: &mut F)
@@ -418,6 +448,22 @@ mod tests {
         assert_eq!(
             extract(FirstClass::Php, src, &tree),
             vec!["Symfony", "Psr", "App"]
+        );
+    }
+
+    #[test]
+    fn extracts_csharp_using_roots_and_ignores_alias_names() {
+        let src = concat!(
+            "global using System.Text;\n",
+            "using Json = System.Text.Json.JsonSerializer;\n",
+            "using /* namespace */ Acme.Services;\n",
+            "using global::System.Collections.Generic;\n",
+        );
+        let tree = parse::parse(FirstClass::CSharp, src).unwrap();
+
+        assert_eq!(
+            extract(FirstClass::CSharp, src, &tree),
+            vec!["System", "Acme"]
         );
     }
 }

@@ -5,8 +5,8 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-13 · latest release 0.3.0 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 21_
+_Last updated: 2026-09-21 · latest release 0.3.0 · JSON `SCHEMA_VERSION` 2.0 ·
+`ANALYZER_VERSION` 22_
 
 ---
 
@@ -65,8 +65,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 - **Task-query program.** Lexical `find`,
   explicit definition `plan`, conservative worktree `consumers`, and scan diagnostic seeds share
-  existing capture/analysis/cache facts. Analyzer 21 covers new lexical, definition-environment
-  and call/reference facts; schema remains 2.0. Product scope and limits are in
+  existing capture/analysis/cache facts. Analyzer 22 covers the current parse-derived facts,
+  including C#; schema remains 2.0. Product scope and limits are in
   [task queries](docs/task-queries.md) and [task diagnostics](docs/task-diagnostics.md).
   The offline [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
   canonical provider-call ledgers and externally attested native session windows. The historical, pre-review [38-run pilot](docs/agent-evaluation.md) passed all bounded
@@ -87,9 +87,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
-  Cached definition facts use analyzer version 21 while the additive schema remains 2.0.
+  Cached definition facts use analyzer version 22 while the additive schema remains 2.0.
   The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
-  analyzer 21 additionally covers the current task-query facts. Grammar versions remain unchanged.
+  analyzer 21 added the task-query facts and analyzer 22 adds C# facts.
   Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
   `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
   inventory behavior is unchanged.
@@ -97,6 +97,12 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 - **Godot 4 support.** GDScript/shader AST analysis and Godot scene/resource/project
   dependency context reuse the shared pipeline; 36 formats are recognized. Scope and static-analysis
   limits are documented in [Godot support](docs/godot.md) and [0.2.2](CHANGELOG.md#022---2026-09-07).
+
+- **C# and JSON Lines support.** C# uses a bundled grammar for precise line/marker facts,
+  callable complexity, imports, declarations and duplication. Its graph resolves unique local
+  namespaces and conservative local inheritance/implementation relationships without pretending
+  to evaluate MSBuild, generated code, source generators or compiler semantics. `.jsonl` joins
+  `.json` and `.jsonc` as recognized JSON inventory.
 
 - **Feature-complete for the core purpose, plus a full scouting/CI layer.** Tokens
   (tiktoken `o200k_base` default / `cl100k_base`), complexity (per-function
@@ -130,7 +136,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   `--graph` (heuristic mixed-language import graph for every first-class language: stable
   adjacency/edges, fan-in/out, cycles, orphans, TS/JS config aliases/package metadata, Python
   relative/absolute imports, Composer namespace/static-include resolution, Rust modules/Cargo
-  crates, and Go packages/modules).
+  crates, Go packages/modules, and unique local C# namespaces).
   `--graph-focus` + direction/depth answer bounded dependency and blast-radius questions, while
   DOT/Mermaid export the same projection. The opt-in `--context` plan ranks focus paths, graph
   neighbors, matching tests, support files, risk, churn, and complexity under hard token/file
@@ -235,7 +241,7 @@ that a new maintainer still needs to interpret the current architecture and road
    `--health-exclude` to retain such paths only as inventory/navigation facts, or `excludes` /
    `--exclude` to remove them from the complete scan. `.gitignore` is respected by default;
    lockfiles are excluded by default.
-4. **First-class complexity covers Rust, Python, JS, TS/TSX, Go, PHP, GDScript, and Godot shaders.** Generic code
+4. **First-class complexity covers Rust, Python, JS, TS/TSX, Go, PHP, C#, GDScript, and Godot shaders.** Generic code
    languages get tokens/lines/markers/dup plus *heuristic* complexity flagged `approximate`
    (contributes to `mi_avg`/`mi_min` but not to per-function cyclomatic/cognitive stats).
    Non-source formats always retain inventory/line facts and receive health analysis only when
@@ -265,9 +271,10 @@ that a new maintainer still needs to interpret the current architecture and road
 8. **The dependency graph and `--impact` cover every first-class language heuristically.** `graph.rs`
    resolves relative imports, TypeScript `baseUrl`/`paths`, deterministic local package metadata,
    unambiguous Python absolute/`src` imports, Composer PSR-4/PSR-0 maps, and static PHP includes,
-   plus Rust module/Cargo-local paths, Go module-local package imports, and project-scoped Godot
-   resource/UID/global-name relationships. Godot inheritance is file-level dependency evidence,
-   not separate symbol topology. It is not a compiler,
+   plus Rust module/Cargo-local paths, Go module-local package imports, unique local C# namespaces,
+   and project-scoped Godot resource/UID/global-name relationships. C# type relationships are
+   conservative syntax evidence; Godot inheritance is file-level dependency evidence, not separate
+   symbol topology. It is not a compiler,
    package manager, or SCIP/language-server index. Custom package conditions, external packages,
    symbol-level Rust references, and exact intra-package Go file references remain outside the
    graph. Each edge names its resolver; unresolved imports, parse/config errors,
