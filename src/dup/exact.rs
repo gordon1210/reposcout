@@ -369,6 +369,7 @@ fn group_sort_key(group: &CloneGroup) -> (String, usize, usize) {
 mod tests {
     use super::*;
     use crate::dup::{DuplicationFormatScope, DuplicationMode};
+    use std::fmt::Write as _;
     use std::path::Path;
 
     fn input(path: &str, content: &str) -> DupInput {
@@ -381,17 +382,19 @@ mod tests {
     #[test]
     fn adding_common_prefix_files_preserves_the_long_exact_pair() {
         let make_input = |i: usize| {
-            let prefix = (0..20)
-                .map(|n| format!("    value += {n};\n"))
-                .collect::<String>();
+            let mut prefix = String::new();
+            for n in 0..20 {
+                writeln!(prefix, "    value += {n};").unwrap();
+            }
             let base = if matches!(i, 10 | 99) {
                 42_424_242
             } else {
                 70_000_000 + i * 1000
             };
-            let tail = (0..40)
-                .map(|n| format!("    value += {};\n", base + n))
-                .collect::<String>();
+            let mut tail = String::new();
+            for n in 0..40 {
+                writeln!(tail, "    value += {};", base + n).unwrap();
+            }
             input(
                 &format!("f{i:03}.rs"),
                 &format!("pub fn unique_{i}(mut value:i64)->i64 {{\n{prefix}{tail}    value\n}}\n"),

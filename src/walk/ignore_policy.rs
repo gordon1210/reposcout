@@ -328,7 +328,7 @@ mod tests {
             .build()
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
-            .map(|entry| entry.into_path())
+            .map(ignore::DirEntry::into_path)
             .collect::<HashSet<_>>();
         for path in paths {
             assert_eq!(

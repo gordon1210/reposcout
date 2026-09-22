@@ -527,9 +527,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let legacy = dir.path().join("root.json");
         let full = AnalysisProfile::from_config(&Config::default()).cache_key();
-        let mut tokens_cfg = Config::default();
-        tokens_cfg.enabled = Enabled::none();
-        tokens_cfg.enabled.tokens = true;
+        let tokens_cfg = Config {
+            enabled: Enabled {
+                tokens: true,
+                ..Enabled::none()
+            },
+            ..Config::default()
+        };
         let tokens = AnalysisProfile::from_config(&tokens_cfg).cache_key();
         let full_path = super::profile_cache_path(&legacy, &full);
         let tokens_path = super::profile_cache_path(&legacy, &tokens);
