@@ -20,6 +20,7 @@ struct DirectoryRules {
 
 pub(crate) struct PathMatcher {
     root: PathBuf,
+    policy_root: PathBuf,
     source: Option<SourceRoot>,
     overrides: Override,
     include_hidden: bool,
@@ -48,6 +49,13 @@ impl PathMatcher {
             target
         }
         .to_path_buf();
+        let policy_root = if cfg.respect_gitignore {
+            super::git_root(&root)
+                .and_then(|root| root.canonicalize().ok())
+                .unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
         let mut overrides = OverrideBuilder::new(target);
         if cfg.exclude_lockfiles {
             for name in LOCKFILES {
@@ -58,8 +66,9 @@ impl PathMatcher {
             overrides.add(&format!("!{pattern}"))?;
         }
         Ok(Self {
-            source: SourceRoot::open(&root).ok(),
+            source: SourceRoot::open(&policy_root).ok(),
             root,
+            policy_root,
             overrides: overrides.build()?,
             include_hidden: cfg.include_hidden,
             repository_ignores: cfg.load_repository_ignores,
@@ -132,7 +141,7 @@ impl PathMatcher {
         let mut ancestors = Vec::new();
         if self.repository_ignores {
             for directory in path.parent().into_iter().flat_map(Path::ancestors) {
-                if !self.git_ignores && !directory.starts_with(&self.root) {
+                if !directory.starts_with(&self.policy_root) {
                     break;
                 }
                 self.load_directory(directory);
@@ -245,7 +254,7 @@ impl PathMatcher {
             }
             _ => {}
         }
-        let outcome = if path.starts_with(&self.root) {
+        let outcome = if path.starts_with(&self.policy_root) {
             let mut budget =
                 ReadBudget::from_limits(self.limits.max_file_bytes, self.limits.max_file_bytes, 1);
             self.source
@@ -346,6 +355,30 @@ mod tests {
                 .collect::<HashSet<_>>(),
             expected
         );
+    }
+
+    #[test]
+    fn subdirectory_scans_inherit_repo_rules_but_not_outside_rules() {
+        let temp = tempfile::tempdir().unwrap();
+        let outside = temp.path().canonicalize().unwrap();
+        fs::write(outside.join(".ignore"), "*.rs\n").unwrap();
+        fs::write(outside.join(".reposcoutignore"), "*.rs\n").unwrap();
+        let root = outside.join("repo");
+        git2::Repository::init(&root).unwrap();
+        let target = root.join("src");
+        fs::create_dir(&target).unwrap();
+        fs::write(root.join(".gitignore"), "ignored.rs\n").unwrap();
+        fs::write(root.join(".reposcoutignore"), "custom.rs\n").unwrap();
+        for name in ["keep.rs", "ignored.rs", "custom.rs"] {
+            fs::write(target.join(name), "fn fixture() {}\n").unwrap();
+        }
+        let cfg = Config::default();
+        for scan_target in [&root, &target] {
+            let discovered = super::super::discover(scan_target, &cfg).unwrap();
+            assert_eq!(discovered.files.len(), 1);
+            assert!(discovered.files[0].absolute_path.ends_with("keep.rs"));
+            assert_eq!(discovered.ignore_files_rejected, 0);
+        }
     }
 
     #[test]

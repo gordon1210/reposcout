@@ -17,7 +17,7 @@ within their section.
   worktree queries, index and revision snapshots. Invalid or unreadable ignore rules exclude their
   affected scope and report a partial scan instead of silently widening discovery.
 - Refresh daemon targets beneath ancestors named `target`, `dist`, `node_modules`, or `.git`.
-  Reload effective configuration for each scan and watch relevant Git refs, HEAD, index and
+  Reload effective configuration for each scan and watch relevant Git refs, HEAD, index, grafts and
   excludes, including metadata outside linked worktrees. Failed configuration reloads preserve
   the last successful report.
 - Keep separate analysis cache files for each profile, preserving hits when alternating commands.

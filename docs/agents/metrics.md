@@ -109,7 +109,7 @@ Duplication is structured, format-scoped, similarity-scored, and line-filtered.
 
 Exact detection orders windows rare-first, samples at most 64 predecessors per window and
 stops at 10,000,000 seed pairs or 250,000 retained matches per format pool. Retained later
-seeds may extend left even when the leftmost seed was sampled out; proven diagonal coverage
+cross-file seeds may extend left even when the leftmost seed was sampled out; proven diagonal coverage
 avoids repeat extension. Omitted comparisons set Type-1 partiality and omitted-pair counts.
 Capabilities, scan diagnostics, work scope, agent summary and production-duplication completeness
 carry this distinction without changing the frozen public adapter.

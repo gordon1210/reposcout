@@ -31,6 +31,26 @@ fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
 }
 
 #[test]
+fn linked_worktree_history_fingerprint_tracks_shared_metadata() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = Repository::init(dir.path().join("main")).unwrap();
+    let head = commit_all(&repo, "fixture");
+    let linked_path = dir.path().join("linked");
+    repo.worktree("linked", &linked_path, None).unwrap();
+    let linked = Repository::open(&linked_path).unwrap();
+    let before = super::history_fingerprint(&linked).state;
+    assert_eq!(before, super::history_fingerprint(&repo).state);
+    for name in ["info/grafts", "shallow"] {
+        fs::write(repo.commondir().join(name), format!("{head}\n")).unwrap();
+        let changed = super::history_fingerprint(&linked);
+        assert!(changed.cacheable);
+        assert_ne!(changed.state, before);
+        assert_eq!(changed.state, super::history_fingerprint(&repo).state);
+        fs::remove_file(repo.commondir().join(name)).unwrap();
+    }
+}
+
+#[test]
 fn collect_git_churn_for_repo_files() {
     if Repository::discover(".").is_err() {
         return;

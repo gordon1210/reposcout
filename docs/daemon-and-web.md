@@ -102,8 +102,9 @@ Each scan resolves configuration again while retaining the selected profile and
 `--no-project-config` trust boundary. An invalid reload leaves the previous report and revision
 available and sets the scan error. Source event exclusions are relative to the watched target,
 so an ancestor named `target` or `dist` does not suppress refreshes. Git repositories present at
-startup also watch HEAD, index, refs, packed refs, shallow state and `info/exclude`; linked
-worktrees include their external private and common metadata. Git object stores and lock-file
+startup also watch HEAD, index, refs, packed refs, shallow state, grafts and `info/exclude`; linked
+worktrees include their external private and common metadata. Churn cache identity uses shared
+shallow/graft metadata as well, so those refreshes invalidate stale worktree history. Git object stores and lock-file
 noise do not trigger scans. Restart after changing the repository's metadata location.
 
 The dashboard checks schema-2.0 reports and nested graph data before changing UI state. Invalid

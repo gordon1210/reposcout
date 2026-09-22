@@ -28,7 +28,9 @@ impl GitWatchPaths {
                 paths.files.insert(directory.join(name));
             }
             paths.trees.insert(directory.join("refs"));
-            paths.files.insert(directory.join("info/exclude"));
+            for name in ["info/exclude", "info/grafts"] {
+                paths.files.insert(directory.join(name));
+            }
             paths.directories.insert(directory.join("info"));
         }
         paths
@@ -82,6 +84,7 @@ mod tests {
             "packed-refs",
             "refs/heads/main",
             "info/exclude",
+            "info/grafts",
         ] {
             let event = Event::new(EventKind::Any).add_path(git_dir.join(name));
             assert!(paths.requires_rescan(&event), "{name}");

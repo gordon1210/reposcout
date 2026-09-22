@@ -147,7 +147,7 @@ high-ranking match. Exclude vendored/generated trees with `reposcout.toml`,
 ### Type-1 safety bounds
 
 Exact detection processes rare windows first and considers at most 64 predecessors per repeated
-window. Retained later seeds can extend left and right, preserving longer continuations behind
+window. Retained later cross-file seeds can extend left and right, preserving longer continuations behind
 common prefixes. Proven covered ranges avoid repeating the same extension work. Each format
 pool stops at 10,000,000 candidate pairs or 250,000 retained matches. Sampling or either limit
 sets `type1_analysis_partial` and `type1_seed_pairs_skipped`; limit flags distinguish the cause.

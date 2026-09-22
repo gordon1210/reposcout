@@ -193,7 +193,9 @@ limits (`max_ignore_file_bytes`, `max_ignore_lines`, `max_ignore_line_bytes`). A
 cannot be safely read or compiled excludes the scope it governs. Scans expose
 `diagnostics.ignore_files_rejected`, walker errors and partiality; explicit queries report an
 ignore-policy failure. Opt-in debug logs include the rejected path. Safe mode skips repository
-ignore files entirely. Git-global rules are read only when a Git boundary applies.
+ignore files entirely. Repository-owned rules stop at the repository root (or the standalone
+scan root); subdirectory scans inherit rules within that boundary. Git-global rules are read
+only when a Git boundary applies.
 
 ### Lockfiles
 

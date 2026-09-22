@@ -203,7 +203,8 @@ policy, not a sandbox.
   no profile promises a total runtime bound for an arbitrarily large target.
 - `.reposcoutignore` uses gitignore syntax and hierarchical per-directory policy through the shared
   bounded `walk::PathMatcher`. Discovery, explicit queries and Git snapshots share this policy.
-  Rejected rules exclude their affected scope and expose partiality. It remains active under
+  Ancestor rules stop at the repository root (or standalone target root). Rejected rules exclude
+  their affected scope and expose partiality. It remains active under
   `--no-ignore` and is the right
   place to exclude generated or vendored trees from scouting.
 - Lockfiles are excluded by default through `exclude_lockfiles` and `LOCKFILES` in `walk.rs`.

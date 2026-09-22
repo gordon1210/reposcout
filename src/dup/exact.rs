@@ -141,7 +141,10 @@ fn detect_pool(
                     || covered
                         .get(&diagonal)
                         .is_some_and(|ranges| ranges.covers(a.start, a.start + min_tokens))
-                    || (!sampled && !is_left_maximal(prepared, a, b, min_tokens))
+                    // Keep the non-overlapping leftmost policy within one file:
+                    // later seeds in a periodic run otherwise multiply overlapping copies.
+                    || ((!sampled || a.file == b.file)
+                        && !is_left_maximal(prepared, a, b, min_tokens))
                     || !windows_equal(prepared, a, b, min_tokens)
                 {
                     continue;

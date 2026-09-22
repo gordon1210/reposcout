@@ -687,8 +687,8 @@ struct HistoryFingerprint {
 const MAX_HISTORY_META_BYTES: u64 = 1024 * 1024;
 
 fn history_fingerprint(repo: &Repository) -> HistoryFingerprint {
-    let shallow = read_git_meta_bounded(&repo.path().join("shallow"));
-    let grafts = read_git_meta_bounded(&repo.path().join("info/grafts"));
+    let shallow = read_git_meta_bounded(&repo.commondir().join("shallow"));
+    let grafts = read_git_meta_bounded(&repo.commondir().join("info/grafts"));
     let cacheable = shallow.is_some() && grafts.is_some();
     let mut state = Vec::with_capacity(
         shallow.as_ref().map_or(0, Vec::len) + grafts.as_ref().map_or(0, Vec::len) + 16,
