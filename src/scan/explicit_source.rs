@@ -253,7 +253,7 @@ struct CaptureSession<'a> {
     cfg: &'a Config,
     budget: ReadBudget,
     exclusions: BTreeSet<PathBuf>,
-    matcher: ignore::IncrementalIgnore,
+    matcher: walk::PathMatcher,
     ignore_error: bool,
     cache: Cache,
     health_policy: crate::config::HealthPolicy,
@@ -414,7 +414,7 @@ fn validate_target(
     root: &Path,
     path: &Path,
     exclusions: &BTreeSet<PathBuf>,
-    matcher: &mut ignore::IncrementalIgnore,
+    matcher: &mut walk::PathMatcher,
     worktree: bool,
 ) -> Option<ExplicitSourceFailure> {
     if path.as_os_str().is_empty()
@@ -482,11 +482,55 @@ fn git_failure(failure: GitCaptureFailure) -> ExplicitSourceFailure {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::git::DiffScope;
 
     fn config() -> Config {
         Config {
             use_cache: false,
+            jobs: 2,
             ..Config::default()
+        }
+    }
+
+    #[test]
+    fn ignore_limits_are_shared_by_discovery_worktree_and_index_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("visible.rs"), "fn value() {}\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("visible.rs")).unwrap();
+        index.write().unwrap();
+        std::fs::write(dir.path().join(".reposcoutignore"), "secret.rs\nother.rs\n").unwrap();
+
+        for limit in ["bytes", "lines", "line-bytes"] {
+            let mut cfg = config();
+            match limit {
+                "bytes" => cfg.max_ignore_file_bytes = 4,
+                "lines" => cfg.max_ignore_lines = 1,
+                _ => cfg.max_ignore_line_bytes = 4,
+            }
+            let discovered = walk::discover(dir.path(), &cfg).unwrap();
+            assert_eq!(discovered.ignore_files_rejected, 1, "{limit}");
+            assert!(discovered.scan_truncated);
+            assert!(discovered.files.is_empty());
+            for revision in [SourceRevision::Worktree, SourceRevision::Index] {
+                let requests = [(revision, vec![PathBuf::from("visible.rs")])];
+                let groups = load_revision_sources(dir.path(), &requests, &cfg, &[]).unwrap();
+                assert_eq!(
+                    groups[0].1.failures[Path::new("visible.rs")],
+                    ExplicitSourceFailure::IgnoreError
+                );
+            }
+            let snapshot = crate::snapshot::SourceSnapshot::current(
+                dir.path(),
+                &cfg,
+                &DiffScope::Staged,
+                &[],
+                None,
+            )
+            .unwrap();
+            assert!(snapshot.scan_truncated);
+            assert_eq!(snapshot.iter().count(), 0);
         }
     }
 

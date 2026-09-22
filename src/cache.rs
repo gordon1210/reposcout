@@ -221,7 +221,11 @@ impl Cache {
     #[must_use]
     pub fn open(root: &Path, enabled: bool, profile: &AnalysisProfile) -> Self {
         let key = profile.cache_key();
-        let path = cache_path(root);
+        let path = cache_path(root).map(|legacy| profile_cache_path(&legacy, &key));
+        Self::open_at(path, enabled, key)
+    }
+
+    fn open_at(path: Option<PathBuf>, enabled: bool, key: String) -> Self {
         // Without an OS cache directory there is no safe place to persist
         // analysis results; never fall back into the scanned repository.
         let enabled = enabled && path.is_some();
@@ -381,6 +385,12 @@ pub fn clear_for_target(target: &Path) -> Result<CacheClearResult> {
     let root = scan_root(target)?;
     let mut checked = Vec::new();
     if let Some(path) = cache_path(&root) {
+        // Keep the legacy single-profile file in the reset scope. Profiles now
+        // live together in one exact root directory, never in a repo glob.
+        checked.push(CacheLocation {
+            kind: CacheKind::Analysis,
+            path: path.with_extension(""),
+        });
         checked.push(CacheLocation {
             kind: CacheKind::Analysis,
             path,
@@ -490,6 +500,12 @@ fn cache_path(root: &Path) -> Option<PathBuf> {
     Some(directory.join(format!("{id:016x}.json")))
 }
 
+fn profile_cache_path(legacy: &Path, key: &str) -> PathBuf {
+    legacy
+        .with_extension("")
+        .join(format!("{:016x}.json", xxh3_64(key.as_bytes())))
+}
+
 fn cache_directory() -> Option<PathBuf> {
     ProjectDirs::from("", "", "reposcout").map(|dirs| dirs.cache_dir().to_path_buf())
 }
@@ -505,6 +521,51 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
     use std::path::PathBuf;
     use std::sync::{Mutex, atomic::AtomicUsize};
+
+    #[test]
+    fn alternating_profiles_retain_hits_and_reset_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = dir.path().join("root.json");
+        let full = AnalysisProfile::from_config(&Config::default()).cache_key();
+        let mut tokens_cfg = Config::default();
+        tokens_cfg.enabled = Enabled::none();
+        tokens_cfg.enabled.tokens = true;
+        let tokens = AnalysisProfile::from_config(&tokens_cfg).cache_key();
+        let full_path = super::profile_cache_path(&legacy, &full);
+        let tokens_path = super::profile_cache_path(&legacy, &tokens);
+        assert_ne!(full_path, tokens_path);
+        for (path, key) in [(&full_path, &full), (&tokens_path, &tokens)] {
+            let cache = Cache::open_at(Some(path.clone()), true, key.clone());
+            cache.put(
+                "sample.rs",
+                7,
+                &report("sample.rs"),
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            cache.save(true).unwrap();
+        }
+        for (path, key) in [(&full_path, &full), (&tokens_path, &tokens)] {
+            let cache = Cache::open_at(Some(path.clone()), true, key.clone());
+            assert!(cache.get("sample.rs", 7).is_some());
+        }
+        std::fs::write(&legacy, "old cache").unwrap();
+        let unrelated = dir.path().join("other.json");
+        std::fs::write(&unrelated, "keep").unwrap();
+        let locations = [legacy.with_extension(""), legacy].map(|path| CacheLocation {
+            kind: CacheKind::Analysis,
+            path,
+        });
+        assert_eq!(clear_locations(&locations).unwrap().len(), 2);
+        assert!(!full_path.exists());
+        assert!(!tokens_path.exists());
+        assert!(unrelated.exists());
+        assert!(clear_locations(&locations).unwrap().is_empty());
+    }
 
     fn report(path: &str) -> FileReport {
         FileReport {

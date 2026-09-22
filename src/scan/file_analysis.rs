@@ -7,6 +7,7 @@ use super::{
     imports, lang, lines, mark_duration_limit, markers, parse, symbols, testcov, usize_to_f64,
     walk,
 };
+use crate::fs_budget::{ReadBudget, ReadOutcome, SourceRoot};
 use crate::model::{Complexity, LineRange, SymbolCounts, SymbolOutline};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
@@ -42,6 +43,13 @@ pub(super) fn analyze_files(
 
     let counter_ref = counter.as_deref();
     let files = &discovered.files;
+    let source_directory = if discovered.target.is_dir() {
+        discovered.target.as_path()
+    } else {
+        discovered.target.parent().unwrap_or(&discovered.target)
+    };
+    // Keep the anchor open for the whole batch, including concurrent renames.
+    let source_root = SourceRoot::open(source_directory).ok();
     debug_log::event("file_batch_start", || {
         serde_json::json!({
             "batch": batch,
@@ -63,8 +71,8 @@ pub(super) fn analyze_files(
                 AnalysisOutcome::DurationLimit
             } else {
                 analyze_file(
-                    &file.absolute_path,
-                    &file.report_path,
+                    file,
+                    source_root.as_ref(),
                     cfg,
                     health_policy,
                     counter_ref,
@@ -92,6 +100,7 @@ pub(super) fn analyze_files(
     let mut diagnostics = ScanDiagnostics {
         discovered_files: discovered.observed_files,
         walker_errors: discovered.walker_errors,
+        ignore_files_rejected: discovered.ignore_files_rejected,
         oversized_files: discovered.oversized_files,
         oversized_bytes: discovered.oversized_bytes,
         files_omitted_by_limit: discovered.files_omitted_by_limit,
@@ -183,6 +192,7 @@ pub(super) fn analyze_cross_file_metrics(
         duplicate_coverage,
         duplication_token_counts,
         duplication_formats,
+        type1_diagnostics,
         type2_diagnostics,
     ) = if cfg.enabled.duplication && !deadline_reached(prepared.deadline) {
         let inputs: Vec<DupInput> = analyzed
@@ -264,6 +274,7 @@ pub(super) fn analyze_cross_file_metrics(
             detection.coverage,
             detection.token_counts,
             detection.formats,
+            detection.type1_diagnostics,
             detection.type2_diagnostics,
         )
     } else {
@@ -272,6 +283,7 @@ pub(super) fn analyze_cross_file_metrics(
             DuplicateCoverage::default(),
             BTreeMap::new(),
             BTreeMap::new(),
+            dup::exact::Type1Diagnostics::default(),
             dup::fuzzy::Type2Diagnostics::default(),
         )
     };
@@ -282,6 +294,10 @@ pub(super) fn analyze_cross_file_metrics(
         mark_duration_limit(&mut file_analysis.diagnostics, 0);
     }
     apply_type2_diagnostics(&mut file_analysis.diagnostics, type2_diagnostics);
+    file_analysis.diagnostics.type1_analysis_partial = type1_diagnostics.seed_pairs_skipped > 0;
+    file_analysis.diagnostics.type1_seed_pairs_skipped = type1_diagnostics.seed_pairs_skipped;
+    file_analysis.diagnostics.type1_pair_limit_reached = type1_diagnostics.pair_limit_reached;
+    file_analysis.diagnostics.type1_match_limit_reached = type1_diagnostics.match_limit_reached;
     if type2_diagnostics.truncated {
         debug_log::event("type2_analysis_partial", || {
             serde_json::json!({
@@ -532,24 +548,28 @@ pub(super) fn attach_churn(
 }
 
 pub(super) fn analyze_file(
-    path: &Path,
-    report_path: &Path,
+    file: &walk::DiscoveredFile,
+    root: Option<&SourceRoot>,
     cfg: &Config,
     health_policy: &HealthPolicy,
     counter: Option<&TokenCounter>,
     cache: &Cache,
     requirements: ArtifactRequirements,
 ) -> AnalysisOutcome {
-    if lang::detect(path).is_none() {
-        return AnalysisOutcome::Unsupported(report_path.to_path_buf());
+    if lang::detect(&file.absolute_path).is_none() {
+        return AnalysisOutcome::Unsupported(file.report_path.clone());
     }
-    let content = match walk::read_text_bounded(path, cfg.max_file_bytes) {
-        walk::BoundedText::Content(content) => content,
-        walk::BoundedText::Oversized(bytes) => return AnalysisOutcome::Oversized(bytes),
-        walk::BoundedText::Unreadable => return AnalysisOutcome::Unreadable,
+    let Some(root) = root else {
+        return AnalysisOutcome::Unreadable;
+    };
+    let mut budget = ReadBudget::from_limits(cfg.max_file_bytes, cfg.max_file_bytes, 1);
+    let content = match root.read_absolute(&file.absolute_path, &mut budget) {
+        ReadOutcome::Content(content) => content,
+        ReadOutcome::Oversized(bytes) => return AnalysisOutcome::Oversized(bytes),
+        _ => return AnalysisOutcome::Unreadable,
     };
     analyze_loaded_file(
-        report_path,
+        &file.report_path,
         content,
         cfg,
         health_policy,

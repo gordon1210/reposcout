@@ -130,3 +130,10 @@ file-neighborhood projection:
   fitting, and the minimap work before DOM measurement. Dense views use readable minimum zoom,
   subdued idle edges, and a high-contrast minimap.
 - The browser renders at most 100 graph nodes. Preserve that bound.
+
+Daemon CLI scans resolve configuration on every refresh while preserving the selected profile
+and no-project-config boundary. Invalid reloads retain the last successful revision. Source
+watch exclusions are target-relative; targeted Git metadata watches cover private worktree
+HEAD/index and shared refs/excludes without following the object store. Metadata locations are
+discovered at startup. Dashboard API guards validate nested report/graph structures and the
+supported schema before changing state.

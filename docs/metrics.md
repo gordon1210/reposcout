@@ -144,6 +144,16 @@ Repeated-but-not-extractable text, such as identical import preambles, can still
 high-ranking match. Exclude vendored/generated trees with `reposcout.toml`,
 `.reposcoutignore`, or `--exclude`.
 
+### Type-1 safety bounds
+
+Exact detection processes rare windows first and considers at most 64 predecessors per repeated
+window. Retained later seeds can extend left and right, preserving longer continuations behind
+common prefixes. Proven covered ranges avoid repeating the same extension work. Each format
+pool stops at 10,000,000 candidate pairs or 250,000 retained matches. Sampling or either limit
+sets `type1_analysis_partial` and `type1_seed_pairs_skipped`; limit flags distinguish the cause.
+These fields also qualify work scope, agent-summary coverage and production-duplication
+completeness. Sampling remains bounded, so complete exact recall is not guaranteed in those pools.
+
 ### Type-2 safety bounds
 
 Each format pool admits work rarest-first and stops at:
@@ -156,7 +166,7 @@ Each format pool admits work rarest-first and stops at:
 
 Ordinary repositories below those limits retain complete results. If a bound is reached:
 
-- exact analysis remains complete;
+- Type-1 completeness is reported independently;
 - Type-2 findings and combined percentages become lower bounds;
 - table/Markdown reports say the result is partial; and
 - JSON records the reason plus omitted pair/match counts.
@@ -234,10 +244,10 @@ line counts, percentage, and whether that value is complete. It excludes separat
 direct Rust `#[cfg(test)]` regions. Raw duplication metrics and findings still cover the complete
 set of analyzed files in the configured health corpus.
 
-Production duplication is marked partial when Type-2 analysis stopped at a safety bound or
+Production duplication is marked partial when Type-1 or Type-2 analysis omitted bounded work or
 recognized source evidence was lost to unreadable files, walker errors, file/byte limits, or the
 scan-duration limit. The percentage is then observed partial evidence rather than a complete clean
-result. When only Type-2 work is partial and the source corpus is complete, it is a lower bound;
+result. When only clone-detection work is partial and the source corpus is complete, it is a lower bound;
 when source files were omitted, the complete-repository percentage may move in either direction.
 A churn-only truncation does not make duplication evidence partial because it does not change the
 duplication corpus.

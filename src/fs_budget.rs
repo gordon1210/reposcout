@@ -145,12 +145,50 @@ pub fn read_text(path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
     }
 }
 
-/// Read bounded text through root-anchored, no-follow traversal; fail closed where that traversal is unavailable.
+/// A scan's directory identity, retained while files below it are read.
+pub(crate) struct SourceRoot {
+    path: std::path::PathBuf,
+    #[cfg(unix)]
+    directory: rustix::fd::OwnedFd,
+}
+
+impl SourceRoot {
+    pub(crate) fn open(path: &Path) -> std::io::Result<Self> {
+        Ok(Self {
+            path: path.to_path_buf(),
+            #[cfg(unix)]
+            directory: open_output_directory(path)?,
+        })
+    }
+
+    pub(crate) fn read_absolute(&self, path: &Path, budget: &mut ReadBudget) -> ReadOutcome {
+        let Ok(relative) = path.strip_prefix(&self.path) else {
+            return ReadOutcome::NotRegularFile;
+        };
+        self.read(relative, budget)
+    }
+
+    fn read(&self, relative: &Path, budget: &mut ReadBudget) -> ReadOutcome {
+        read_from_root(self, relative, budget)
+    }
+}
+
+/// Explicit queries fail closed on platforms without handle-relative traversal.
 pub(crate) fn read_text_under_root(
     root: &Path,
     relative: &Path,
     budget: &mut ReadBudget,
 ) -> ReadOutcome {
+    if !cfg!(unix) {
+        return ReadOutcome::NotRegularFile;
+    }
+    match SourceRoot::open(root) {
+        Ok(root) => root.read(relative, budget),
+        Err(_) => ReadOutcome::NotRegularFile,
+    }
+}
+
+fn read_from_root(root: &SourceRoot, relative: &Path, budget: &mut ReadBudget) -> ReadOutcome {
     if relative.as_os_str().is_empty()
         || relative
             .components()
@@ -215,9 +253,9 @@ pub(crate) fn read_text_under_root(
 }
 
 #[cfg(unix)]
-fn open_under_root(root: &Path, relative: &Path) -> Result<File, ReadOutcome> {
+fn open_under_root(root: &SourceRoot, relative: &Path) -> Result<File, ReadOutcome> {
     use rustix::fs::{Mode, OFlags};
-    let mut directory = open_output_directory(root).map_err(|_| ReadOutcome::NotRegularFile)?;
+    let mut directory = None;
     let mut components = relative.components().peekable();
     while let Some(component) = components.next() {
         let std::path::Component::Normal(name) = component else {
@@ -227,23 +265,40 @@ fn open_under_root(root: &Path, relative: &Path) -> Result<File, ReadOutcome> {
         if components.peek().is_some() {
             flags |= OFlags::DIRECTORY;
         }
-        let opened = rustix::fs::openat(&directory, name, flags, Mode::empty()).map_err(
-            |error| match error {
-                rustix::io::Errno::LOOP | rustix::io::Errno::NOTDIR => ReadOutcome::NotRegularFile,
-                _ => ReadOutcome::Unreadable,
-            },
-        )?;
+        let opened = rustix::fs::openat(
+            directory.as_ref().unwrap_or(&root.directory),
+            name,
+            flags,
+            Mode::empty(),
+        )
+        .map_err(|error| match error {
+            rustix::io::Errno::LOOP | rustix::io::Errno::NOTDIR => ReadOutcome::NotRegularFile,
+            _ => ReadOutcome::Unreadable,
+        })?;
         if components.peek().is_none() {
             return Ok(File::from(opened));
         }
-        directory = opened;
+        directory = Some(opened);
     }
     Err(ReadOutcome::NotRegularFile)
 }
 
 #[cfg(not(unix))]
-fn open_under_root(_root: &Path, _relative: &Path) -> Result<File, ReadOutcome> {
-    Err(ReadOutcome::NotRegularFile)
+fn open_under_root(root: &SourceRoot, relative: &Path) -> Result<File, ReadOutcome> {
+    // Preserve portable inventory support; explicit queries reject this platform
+    // before calling the reader. Only Unix promises handle-relative traversal.
+    let mut path = root.path.clone();
+    for component in relative.components() {
+        path.push(component);
+        if fs::symlink_metadata(&path)
+            .map_err(|_| ReadOutcome::Unreadable)?
+            .file_type()
+            .is_symlink()
+        {
+            return Err(ReadOutcome::NotRegularFile);
+        }
+    }
+    open_nofollow(&path)
 }
 
 /// Read a regular file with a single-file size cap (no shared total budget).
@@ -281,6 +336,13 @@ pub fn read_bytes_limited(path: &Path, max_file_bytes: u64) -> Result<Vec<u8>, R
 /// supplied byte, line-count, or line-length limits.
 pub fn read_ignore_file(path: &Path, limits: IgnoreLimits) -> Result<String, ReadOutcome> {
     let outcome = read_text_limited(path, limits.max_file_bytes);
+    validate_ignore_content(outcome, limits)
+}
+
+pub(crate) fn validate_ignore_content(
+    outcome: ReadOutcome,
+    limits: IgnoreLimits,
+) -> Result<String, ReadOutcome> {
     let ReadOutcome::Content(content) = outcome else {
         return Err(outcome);
     };
@@ -348,7 +410,7 @@ fn open_nofollow(path: &Path) -> Result<File, ReadOutcome> {
         use std::os::unix::fs::OpenOptionsExt;
         match fs::OpenOptions::new()
             .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(path)
         {
             Ok(file) => {
@@ -765,6 +827,68 @@ mod tests {
             ReadOutcome::Content(_)
         ));
         assert_eq!(read_text(&b, &mut budget), ReadOutcome::BudgetExceeded);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_root_rejects_parent_replacement_and_retains_its_anchor() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let anchor = dir.path().canonicalize().unwrap().join("repo");
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(anchor.join("src")).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(anchor.join("src/file.rs"), "inside").unwrap();
+        fs::write(outside.join("file.rs"), "outside").unwrap();
+        let reader = SourceRoot::open(&anchor).unwrap();
+
+        fs::rename(anchor.join("src"), anchor.join("retained")).unwrap();
+        symlink(&outside, anchor.join("src")).unwrap();
+        let mut budget = ReadBudget::from_limits(100, 100, 2);
+        assert_eq!(
+            reader.read_absolute(&anchor.join("src/file.rs"), &mut budget),
+            ReadOutcome::NotRegularFile
+        );
+
+        fs::rename(&anchor, dir.path().join("old-root")).unwrap();
+        symlink(&outside, &anchor).unwrap();
+        assert_eq!(
+            reader.read_absolute(&anchor.join("retained/file.rs"), &mut budget),
+            ReadOutcome::Content("inside".to_string())
+        );
+        assert_eq!(
+            reader.read(Path::new("../outside/file.rs"), &mut budget),
+            ReadOutcome::NotRegularFile
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replaced_fifo_is_rejected_before_a_blocking_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.rs");
+        fs::write(&path, "source").unwrap();
+        let size = fs::symlink_metadata(&path).unwrap().len();
+        fs::remove_file(&path).unwrap();
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+
+        assert_eq!(
+            read_regular_file_bytes(&path, size, 100),
+            Err(ReadOutcome::NotRegularFile)
+        );
+        let reader = SourceRoot::open(&dir.path().canonicalize().unwrap()).unwrap();
+        let mut budget = ReadBudget::from_limits(100, 100, 1);
+        assert_eq!(
+            reader.read(Path::new("source.rs"), &mut budget),
+            ReadOutcome::NotRegularFile
+        );
     }
 
     #[test]

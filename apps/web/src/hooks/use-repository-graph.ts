@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { daemonAuthHeaders } from "@/lib/daemon-auth"
-import { isDaemonGraphResponse } from "@/lib/api-validation"
+import { parseDaemonGraphResponse } from "@/lib/api-validation"
 import type { DaemonGraphResponse, DependencyGraph } from "@/lib/types"
 
 interface RepositoryGraphState {
@@ -31,10 +31,11 @@ async function fetchGraph(
     throw new Error(message)
   }
   const body: unknown = await response.json()
-  if (!isDaemonGraphResponse(body)) {
+  const parsed = parseDaemonGraphResponse(body)
+  if (!parsed) {
     throw new Error("Graph response had an invalid shape")
   }
-  return body
+  return parsed
 }
 
 export function useRepositoryGraph(revision: number): RepositoryGraphState {

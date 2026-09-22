@@ -67,6 +67,13 @@ pub struct CapabilitiesReport {
     /// Supported diagnostic input formats and normal/safe normalization limits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_diagnostics: Option<super::TaskDiagnosticCapability>,
+    /// Maximum previous occurrences compared for one exact token window.
+    #[serde(default)]
+    pub type1_max_previous_per_window: usize,
+    #[serde(default)]
+    pub type1_max_seed_pairs_per_pool: u64,
+    #[serde(default)]
+    pub type1_max_matches_per_pool: usize,
     /// Maximum Type-2 candidate seed pairs examined in one format pool.
     #[serde(default)]
     pub type2_max_seed_pairs_per_pool: u64,
@@ -307,6 +314,8 @@ pub struct WorkScopeConfidence {
     pub graph_parse_errors: usize,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub graph_config_errors: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub type1_analysis_partial: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub type2_analysis_partial: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

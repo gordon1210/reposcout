@@ -4,13 +4,10 @@ mod explicit;
 pub(crate) use explicit::{GitCapture, GitCaptureFailure};
 
 use crate::config::Config;
-use crate::fs_budget::{self, IgnoreLimits};
 use crate::git::DiffScope;
 use crate::{lang, walk};
 use anyhow::Result;
 use git2::{ObjectType, Repository, Tree, TreeWalkMode, TreeWalkResult};
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use ignore::overrides::{Override, OverrideBuilder};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -73,7 +70,11 @@ impl SourceSnapshot {
             if lang::detect(&file.report_path).is_none() {
                 continue;
             }
-            match walk::read_text_bounded(&file.absolute_path, cfg.max_file_bytes) {
+            match walk::read_text_bounded_under_root(
+                &discovered.root,
+                &file.absolute_path,
+                cfg.max_file_bytes,
+            ) {
                 walk::BoundedText::Content(content) => {
                     snapshot.sources.insert(file.report_path, content);
                 }
@@ -234,6 +235,7 @@ impl SourceSnapshot {
         {
             return Err(error.into());
         }
+        filter.record_errors(&mut snapshot);
         Ok(snapshot)
     }
 
@@ -311,6 +313,7 @@ impl SourceSnapshot {
                 Err(_) => snapshot.unreadable_files += 1,
             }
         }
+        filter.record_errors(&mut snapshot);
         Ok(snapshot)
     }
 }
@@ -333,152 +336,38 @@ fn git_path(bytes: &[u8]) -> Option<PathBuf> {
 
 struct SnapshotFilter {
     root: PathBuf,
-    include_hidden: bool,
-    exclude_lockfiles: bool,
     exclusions: HashSet<PathBuf>,
-    overrides: Override,
-    info_ignores: Gitignore,
-    ignores: Vec<Gitignore>,
-    global_ignores: Gitignore,
+    matcher: std::cell::RefCell<walk::PathMatcher>,
 }
 
 impl SnapshotFilter {
     fn new(root: &Path, cfg: &Config, exclusions: &[PathBuf]) -> Result<Self> {
-        let exclusions = exclusions
-            .iter()
-            .map(|path| walk::exact_path_identity(path))
-            .collect::<Result<HashSet<_>>>()?;
-
-        let mut overrides = OverrideBuilder::new(root);
-        for pattern in &cfg.extra_excludes {
-            overrides.add(&format!("!{pattern}"))?;
-        }
-        let overrides = overrides.build()?;
-
-        let load_repo_ignores = cfg.load_repository_ignores && cfg.respect_gitignore;
-        let ignore_limits = IgnoreLimits {
-            max_file_bytes: cfg.max_ignore_file_bytes,
-            max_lines: cfg.max_ignore_lines,
-            max_line_bytes: cfg.max_ignore_line_bytes,
-        };
-        let mut ignore_files = if cfg.load_repository_ignores {
-            collect_ignore_files(root, cfg.respect_gitignore)
-        } else {
-            Vec::new()
-        };
-        ignore_files.sort();
-        let mut info_builder = GitignoreBuilder::new(root);
-        if load_repo_ignores {
-            let info_exclude = root.join(".git/info/exclude");
-            if let Ok(content) = fs_budget::read_ignore_file(&info_exclude, ignore_limits) {
-                for line in content.lines() {
-                    let _ = info_builder.add_line(Some(root.join(".git/info/exclude")), line);
-                }
-            }
-        }
-        let info_ignores = info_builder.build()?;
-        let ignores = ignore_files
-            .into_iter()
-            .filter_map(|path| load_bounded_ignore(&path, ignore_limits))
-            .collect();
-        let global_ignores = if load_repo_ignores {
-            // Global user ignore files are not repository-owned, but they are
-            // still size-unbounded inside the ignore crate. Prefer empty when
-            // repository ignore policy is disabled for consistency with safe
-            // scans; when enabled, keep historical global-ignore behavior.
-            GitignoreBuilder::new(root).build_global().0
-        } else {
-            Gitignore::empty()
-        };
-
+        let root = root.canonicalize()?;
         Ok(Self {
-            root: root.to_path_buf(),
-            include_hidden: cfg.include_hidden,
-            exclude_lockfiles: cfg.exclude_lockfiles,
-            exclusions,
-            overrides,
-            info_ignores,
-            ignores,
-            global_ignores,
+            exclusions: exclusions
+                .iter()
+                .map(|path| walk::exact_path_identity(path))
+                .collect::<Result<_>>()?,
+            matcher: std::cell::RefCell::new(walk::build_path_matcher(&root, cfg)?),
+            root,
         })
     }
 
     fn allows(&self, path: &Path) -> bool {
-        if lang::detect(path).is_none()
-            || (!self.include_hidden && has_hidden_component(path))
-            || (self.exclude_lockfiles && walk::is_lockfile(path))
-        {
+        if lang::detect(path).is_none() {
             return false;
         }
         let absolute = self.root.join(path);
         let identity = absolute.canonicalize().unwrap_or_else(|_| absolute.clone());
-        if self.exclusions.contains(&identity)
-            || walk::override_ignored(&self.overrides, &absolute, &self.root)
-            || self.is_ignored(&absolute)
-        {
-            return false;
-        }
-        true
+        !self.exclusions.contains(&identity)
+            && !self.matcher.borrow_mut().matched(path, false).is_ignore()
     }
-    fn is_ignored(&self, absolute: &Path) -> bool {
-        let Ok(relative) = absolute.strip_prefix(&self.root) else {
-            return true;
-        };
-        let mut candidate = self.root.clone();
-        for component in relative.components() {
-            candidate.push(component);
-            let is_dir = candidate != absolute;
-            let mut ignored = self.global_ignores.matched(&candidate, is_dir).is_ignore();
-            for matcher in std::iter::once(&self.info_ignores).chain(self.ignores.iter()) {
-                match matcher.matched(&candidate, is_dir) {
-                    ignore::Match::Ignore(_) => ignored = true,
-                    ignore::Match::Whitelist(_) => ignored = false,
-                    ignore::Match::None => {}
-                }
-            }
-            if ignored {
-                return true;
-            }
-        }
-        false
-    }
-}
 
-fn collect_ignore_files(root: &Path, respect_gitignore: bool) -> Vec<PathBuf> {
-    let mut builder = ignore::WalkBuilder::new(root);
-    builder
-        .hidden(false)
-        .ignore(false)
-        .git_ignore(false)
-        .git_global(false)
-        .git_exclude(false)
-        .parents(false)
-        .follow_links(false)
-        .filter_entry(|entry| entry.file_name() != ".git");
-    builder
-        .build()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
-        .filter_map(|entry| {
-            let name = entry.file_name().to_str()?;
-            ((name == ".reposcoutignore")
-                || (respect_gitignore && matches!(name, ".gitignore" | ".ignore")))
-            .then(|| entry.into_path())
-        })
-        .filter(|path| fs_budget::is_regular_file(path))
-        .collect()
-}
-
-fn load_bounded_ignore(path: &Path, limits: IgnoreLimits) -> Option<Gitignore> {
-    let content = fs_budget::read_ignore_file(path, limits).ok()?;
-    let mut builder = GitignoreBuilder::new(
-        path.parent()
-            .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
-    );
-    for line in content.lines() {
-        let _ = builder.add_line(Some(path.to_path_buf()), line);
+    fn record_errors(&self, snapshot: &mut SourceSnapshot) {
+        let errors = self.matcher.borrow().rejected_files();
+        snapshot.unreadable_files = snapshot.unreadable_files.saturating_add(errors);
+        snapshot.scan_truncated |= errors > 0;
     }
-    builder.build().ok()
 }
 
 /// Prefer ODB headers so blob size limits apply before content materialization.
@@ -515,15 +404,6 @@ fn load_blob_text(
         Ok(content) => Ok(Some(content.to_string())),
         Err(_) => Err(BlobTextError::Binary),
     }
-}
-
-fn has_hidden_component(path: &Path) -> bool {
-    path.components().any(|component| {
-        component
-            .as_os_str()
-            .to_str()
-            .is_some_and(|component| component.starts_with('.') && component != ".")
-    })
 }
 
 #[cfg(test)]

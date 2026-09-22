@@ -112,6 +112,7 @@ pub(crate) fn build(inputs: &Inputs<'_>) -> WorkScope {
             graph_unresolved_imports,
             graph_parse_errors,
             graph_config_errors,
+            type1_analysis_partial: inputs.diagnostics.type1_analysis_partial,
             type2_analysis_partial: inputs.diagnostics.type2_analysis_partial,
             unavailable_signals: inputs.summary.assessment.unavailable_signals.clone(),
         },

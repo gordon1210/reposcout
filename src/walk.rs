@@ -1,6 +1,9 @@
 //! File discovery. Uses the `ignore` crate for gitignore-aware traversal and
 //! `git2` to locate the repository root.
 
+mod ignore_policy;
+pub(crate) use ignore_policy::PathMatcher;
+
 use crate::config::Config;
 use crate::debug_log;
 use crate::fs_budget::{self, ReadOutcome};
@@ -8,9 +11,10 @@ use crate::lang;
 use anyhow::{Context, Result};
 use ignore::DirEntry;
 use ignore::WalkBuilder;
-use ignore::overrides::{Override, OverrideBuilder};
+use ignore::overrides::Override;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Common dependency lockfiles skipped by default: they are generated, huge,
@@ -80,6 +84,8 @@ pub struct Discovered {
     pub observed_files: usize,
     /// Number of traversal errors skipped while discovering files.
     pub walker_errors: usize,
+    /// Ignore files rejected by the shared bounded policy loader.
+    pub ignore_files_rejected: usize,
     /// Recognized files skipped because they exceed `max_file_bytes`.
     pub oversized_files: usize,
     /// Aggregate bytes in recognized files skipped as individually oversized.
@@ -129,7 +135,23 @@ pub(crate) enum BoundedText {
 }
 
 pub(crate) fn read_text_bounded(path: &Path, max_bytes: u64) -> BoundedText {
-    match fs_budget::read_text_limited(path, max_bytes) {
+    bounded_text(fs_budget::read_text_limited(path, max_bytes))
+}
+
+pub(crate) fn read_text_bounded_under_root(
+    root: &Path,
+    path: &Path,
+    max_bytes: u64,
+) -> BoundedText {
+    let mut budget = fs_budget::ReadBudget::from_limits(max_bytes, max_bytes, 1);
+    let outcome = fs_budget::SourceRoot::open(root).map_or(ReadOutcome::Unreadable, |root| {
+        root.read_absolute(path, &mut budget)
+    });
+    bounded_text(outcome)
+}
+
+fn bounded_text(outcome: ReadOutcome) -> BoundedText {
+    match outcome {
         ReadOutcome::Content(content) => BoundedText::Content(content),
         ReadOutcome::Oversized(bytes) => BoundedText::Oversized(bytes),
         ReadOutcome::NotRegularFile
@@ -183,8 +205,37 @@ pub(crate) fn discover_with_exclusions_until(
     deadline: Option<Instant>,
 ) -> Result<Discovered> {
     let paths = resolve_discovery_paths(target, exclusions)?;
-    let builder = build_walker(&paths.target, cfg)?;
-    let (mut files, stats) = collect_files(&builder, &paths, cfg, deadline);
+    let matcher = Arc::new(Mutex::new(build_path_matcher(&paths.target, cfg)?));
+    let policy = Arc::clone(&matcher);
+    let mut builder = build_walker(&paths.target);
+    builder.filter_entry(move |entry| {
+        if entry.depth() == 0 {
+            return true;
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return false;
+        }
+        !policy
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .matched(
+                entry.path(),
+                entry.file_type().is_some_and(|kind| kind.is_dir()),
+            )
+            .is_ignore()
+    });
+    let (mut files, mut stats) = collect_files(&builder, &paths, cfg, deadline);
+    let ignore_files_rejected = matcher
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .rejected_files();
+    stats.walker_errors = stats.walker_errors.saturating_add(ignore_files_rejected);
+    stats.scan_truncated |= ignore_files_rejected > 0;
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        stats.duration_limit_reached = true;
+        stats.scan_truncated = true;
+        stats.files_omitted_count_incomplete = true;
+    }
     files.sort_by(|left, right| {
         left.report_path
             .cmp(&right.report_path)
@@ -196,6 +247,7 @@ pub(crate) fn discover_with_exclusions_until(
         files,
         observed_files: stats.observed_files,
         walker_errors: stats.walker_errors,
+        ignore_files_rejected,
         oversized_files: stats.oversized_files,
         oversized_bytes: stats.oversized_bytes,
         files_omitted_by_limit: stats.files_omitted_by_limit,
@@ -225,48 +277,21 @@ fn resolve_discovery_paths(target: &Path, exclusions: &[PathBuf]) -> Result<Disc
     })
 }
 
-fn build_walker(target: &Path, cfg: &Config) -> Result<WalkBuilder> {
-    let load_repo_ignores = cfg.load_repository_ignores && cfg.respect_gitignore;
+fn build_walker(target: &Path) -> WalkBuilder {
     let mut builder = WalkBuilder::new(target);
     builder
-        .hidden(!cfg.include_hidden)
-        .git_ignore(load_repo_ignores)
-        .git_global(load_repo_ignores)
-        .git_exclude(load_repo_ignores)
-        .ignore(load_repo_ignores)
-        .parents(load_repo_ignores)
+        .hidden(false)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .ignore(false)
+        .parents(false)
         .follow_links(false);
-    // `.reposcoutignore` is repository-owned and only loaded when ignore policy
-    // is enabled. Safe scans deliberately skip all repository ignore files.
-    if cfg.load_repository_ignores {
-        builder.add_custom_ignore_filename(".reposcoutignore");
-    }
-
-    let mut exclude_globs: Vec<String> = Vec::new();
-    if cfg.exclude_lockfiles {
-        // A leading '!' turns an override into an ignore rule; a slash-free
-        // pattern matches the file name at any depth (gitignore semantics).
-        exclude_globs.extend(LOCKFILES.iter().map(|name| format!("!{name}")));
-    }
-    exclude_globs.extend(cfg.extra_excludes.iter().map(|pat| format!("!{pat}")));
-
-    if !exclude_globs.is_empty() {
-        let mut ob = OverrideBuilder::new(target);
-        for glob in &exclude_globs {
-            ob.add(glob)
-                .with_context(|| format!("invalid exclude glob: {glob}"))?;
-        }
-        builder.overrides(ob.build().context("building exclude overrides")?);
-    }
-    Ok(builder)
+    builder
 }
 
-pub(crate) fn build_path_matcher(target: &Path, cfg: &Config) -> Result<ignore::IncrementalIgnore> {
-    build_walker(target, cfg)?
-        .build_matchers()
-        .into_iter()
-        .next()
-        .context("repository path matcher has no root")
+pub(crate) fn build_path_matcher(target: &Path, cfg: &Config) -> Result<PathMatcher> {
+    PathMatcher::new(target, cfg)
 }
 
 fn collect_files(
@@ -465,6 +490,7 @@ pub fn discover_missing_file(target: &Path) -> Result<Discovered> {
         files: Vec::new(),
         observed_files: 0,
         walker_errors: 0,
+        ignore_files_rejected: 0,
         oversized_files: 0,
         oversized_bytes: 0,
         files_omitted_by_limit: 0,

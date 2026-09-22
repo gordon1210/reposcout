@@ -105,6 +105,15 @@ Duplication is structured, format-scoped, similarity-scored, and line-filtered.
 - Full JSON carries stable pair-oriented `duplicates.findings`;
   `summary.top_duplicate_findings` is compact, and `--dup-details` expands human output.
 
+### Type-1 bounds and completeness
+
+Exact detection orders windows rare-first, samples at most 64 predecessors per window and
+stops at 10,000,000 seed pairs or 250,000 retained matches per format pool. Retained later
+seeds may extend left even when the leftmost seed was sampled out; proven diagonal coverage
+avoids repeat extension. Omitted comparisons set Type-1 partiality and omitted-pair counts.
+Capabilities, scan diagnostics, work scope, agent summary and production-duplication completeness
+carry this distinction without changing the frozen public adapter.
+
 ### Type-2 bounds and completeness
 
 - Candidate discovery uses rolling rename-invariant fingerprints, deterministic rare-first bucket
@@ -152,12 +161,12 @@ All scouting signals live in `summary` and are designed for agent decisions:
 - Assessment's `production_duplication` uses non-test code, excluding direct Rust `#[cfg(test)]`
   regions, and triggers above 15%. Its evidence records the `production-source` corpus,
   duplicated/analyzed lines,
-  percentage, and completeness. Type-2 truncation or source discovery/read limits make it partial.
-  It is a lower bound only when omitted Type-2 work is the sole gap; missing source can alter both
+  percentage, and completeness. Type-1 or Type-2 truncation or source discovery/read limits make it partial.
+  It is a lower bound only when omitted clone-detection work is the sole gap; missing source can alter both
   numerator and denominator. Churn-only truncation does not affect duplication completeness.
 - `source` totals and `top_source_token_files` drive concise human reports; language tables collapse
   non-source formats into one content rollup. Repository-wide totals and languages remain complete
   inventory.
 - Top-level `diagnostics` records discovered, analyzed, unsupported, and unreadable files; bounded
-  unsupported-path samples; walker errors; and Type-2 partial-work counts and reasons. An apparent
+  unsupported-path samples; walker errors; and Type-1/Type-2 partial-work counts and reasons. An apparent
   absence must remain distinguishable from a scan gap or a lower-bound result.

@@ -1,5 +1,7 @@
 //! Live scan service used by the web UI and other local clients.
 
+mod git_watch;
+
 use crate::config::Config;
 use crate::debug_log;
 use crate::model::{DepGraph, ScanReport};
@@ -41,6 +43,7 @@ pub struct DaemonOptions {
 
 const RESCAN_COOLDOWN: Duration = Duration::from_secs(1);
 const MAX_SSE_CLIENTS: usize = 32;
+type ConfigLoader = Arc<dyn Fn(&Path) -> Result<Config> + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -143,11 +146,25 @@ struct ApiError {
 /// Returns an error when the async runtime, listener, authentication token,
 /// initial scan, file watcher, or HTTP server cannot be initialized or run.
 pub fn run(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
+    run_with_config_loader(target, options, move |_| Ok(cfg.clone()))
+}
+
+/// Run with configuration resolved afresh for every scan. The loader preserves
+/// caller-owned overrides and trust boundaries; failures retain the last report.
+///
+/// # Errors
+/// Returns configuration, runtime, listener, watcher or server initialization errors.
+pub fn run_with_config_loader(
+    target: PathBuf,
+    options: DaemonOptions,
+    loader: impl Fn(&Path) -> Result<Config> + Send + Sync + 'static,
+) -> Result<()> {
+    let cfg = loader(&target)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("failed to start daemon runtime")?;
-    let result = runtime.block_on(serve(target, cfg, options));
+    let result = runtime.block_on(serve(target, cfg, options, Arc::new(loader)));
     runtime.shutdown_timeout(Duration::from_secs(2));
     result
 }
@@ -156,7 +173,12 @@ pub fn run(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
     clippy::too_many_lines,
     reason = "daemon startup is one linear ownership transfer across listener, token, watcher, scan task, and graceful shutdown resources"
 )]
-async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<()> {
+async fn serve(
+    target: PathBuf,
+    cfg: Config,
+    options: DaemonOptions,
+    loader: ConfigLoader,
+) -> Result<()> {
     // Non-loopback remains explicit: plain HTTP is not safe on shared networks.
     if !options.host.is_loopback() && !options.allow_insecure_remote {
         return Err(anyhow!(
@@ -202,7 +224,8 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
         .into_iter()
         .map(Path::to_path_buf)
         .collect::<Vec<_>>();
-    let mut watcher = make_watcher(&target, trigger_tx.clone(), &exclusions)?;
+    let git_paths = git_watch::GitWatchPaths::discover(&target);
+    let mut watcher = make_watcher(&target, trigger_tx.clone(), &exclusions, git_paths.clone())?;
     let watch_target = if target.is_file() {
         target
             .parent()
@@ -213,10 +236,11 @@ async fn serve(target: PathBuf, cfg: Config, options: DaemonOptions) -> Result<(
     watcher
         .watch(watch_target, RecursiveMode::Recursive)
         .with_context(|| format!("failed to watch {}", watch_target.display()))?;
+    git_paths.register(&mut watcher)?;
 
     let scan_task = tokio::spawn(scan_loop(
         target.clone(),
-        cfg,
+        loader,
         options.debounce,
         snapshot,
         event_tx,
@@ -678,7 +702,7 @@ async fn wait_for_shutdown(mut shutdown: watch::Receiver<bool>) {
 )]
 async fn scan_loop(
     target: PathBuf,
-    cfg: Config,
+    loader: ConfigLoader,
     debounce: Duration,
     snapshot: Arc<RwLock<DaemonSnapshot>>,
     events: broadcast::Sender<DaemonEvent>,
@@ -701,7 +725,7 @@ async fn scan_loop(
                     tokio::time::sleep(debounce).await;
                 }
                 while trigger.try_recv().is_ok() {}
-                scan_once(&target, &cfg, &snapshot, &events, &exclusions).await;
+                scan_once(&target, &loader, &snapshot, &events, &exclusions).await;
             }
         }
     }
@@ -709,7 +733,7 @@ async fn scan_loop(
 
 async fn scan_once(
     target: &Path,
-    cfg: &Config,
+    loader: &ConfigLoader,
     snapshot: &Arc<RwLock<DaemonSnapshot>>,
     events: &broadcast::Sender<DaemonEvent>,
     exclusions: &[PathBuf],
@@ -725,10 +749,11 @@ async fn scan_once(
     emit(events, DaemonEventKind::Started, revision, started_at, None);
 
     let scan_target = target.to_path_buf();
-    let scan_cfg = cfg.clone();
+    let loader = Arc::clone(loader);
     let scan_exclusions = exclusions.to_vec();
-    let graph_limits = crate::graph::GraphReadLimits::from_config(cfg);
     let result = tokio::task::spawn_blocking(move || {
+        let scan_cfg = loader(&scan_target)?;
+        let graph_limits = crate::graph::GraphReadLimits::from_config(&scan_cfg);
         // Always extract graph source facts so /api/graph can rebuild topology
         // from the completed revision without re-reading live source files.
         scan::run_with_artifacts(
@@ -741,12 +766,13 @@ async fn scan_once(
                 ..scan::ArtifactRequirements::default()
             },
         )
+        .map(|artifacts| (artifacts, graph_limits))
     })
     .await;
     let finished_at = chrono::Utc::now().to_rfc3339();
 
     match result {
-        Ok(Ok(artifacts)) => {
+        Ok(Ok((artifacts, graph_limits))) => {
             let revision = {
                 let mut current = snapshot.write().await;
                 current.revision += 1;
@@ -818,12 +844,14 @@ fn make_watcher(
     target: &Path,
     trigger: mpsc::Sender<()>,
     exclusions: &[PathBuf],
+    git_paths: git_watch::GitWatchPaths,
 ) -> Result<RecommendedWatcher> {
     let target = target.to_path_buf();
     let exclusions = exclusions.to_vec();
     notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         if let Ok(event) = event
-            && event_requires_rescan(&event, &target, &exclusions)
+            && (event_requires_rescan(&event, &target, &exclusions)
+                || git_paths.requires_rescan(&event))
         {
             let _ = trigger.try_send(());
         }
@@ -843,10 +871,18 @@ fn event_requires_rescan(event: &notify::Event, target: &Path, exclusions: &[Pat
     }
 
     event.paths.iter().any(|path| {
+        let boundary = if target.is_file() {
+            target.parent().unwrap_or(target)
+        } else {
+            target
+        };
+        let Ok(relative) = path.strip_prefix(boundary) else {
+            return false;
+        };
         let targets_file = !target.is_file() || path == target;
         targets_file
             && !exclusions.iter().any(|excluded| path == excluded)
-            && !path.components().any(|component| {
+            && !relative.components().any(|component| {
                 matches!(
                     component.as_os_str(),
                     name if name == OsStr::new(".git")
@@ -864,6 +900,70 @@ fn event_requires_rescan(event: &notify::Event, target: &Path, exclusions: &[Pat
 mod tests {
     use super::*;
     use notify::event::{AccessKind, DataChange, ModifyKind};
+
+    #[tokio::test]
+    async fn rescan_reloads_config_and_retains_revision_on_invalid_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(root.join("sample.rs"), "fn sample() {}\n").unwrap();
+        let config_path = root.join("reposcout.toml");
+        std::fs::write(&config_path, "max_file_bytes = 1024\n").unwrap();
+        let loader: ConfigLoader = Arc::new(|path| {
+            let mut cfg = Config::load(path)?;
+            cfg.enabled = crate::config::Enabled::none();
+            cfg.use_cache = false;
+            cfg.quiet_progress = true;
+            cfg.jobs = 2;
+            Ok(cfg)
+        });
+        let snapshot = Arc::new(RwLock::new(DaemonSnapshot {
+            target: root.clone(),
+            profile: "lite".to_string(),
+            revision: 0,
+            status: DaemonStatus::Starting,
+            scan_started_at: None,
+            scan_finished_at: None,
+            error: None,
+            report: None,
+            graph_facts: std::collections::BTreeMap::default(),
+            resolver_configs: std::collections::BTreeMap::default(),
+            graph_limits: crate::graph::GraphReadLimits::default(),
+        }));
+        let (events, _) = broadcast::channel(4);
+        scan_once(&root, &loader, &snapshot, &events, &[]).await;
+        assert!(
+            snapshot
+                .read()
+                .await
+                .report
+                .as_ref()
+                .unwrap()
+                .files
+                .iter()
+                .any(|file| file.path == Path::new("sample.rs"))
+        );
+        std::fs::write(&config_path, "max_file_bytes = 1\n").unwrap();
+        scan_once(&root, &loader, &snapshot, &events, &[]).await;
+        {
+            let current = snapshot.read().await;
+            assert_eq!(current.revision, 2);
+            assert!(current.report.as_ref().unwrap().files.is_empty());
+            assert_eq!(current.graph_limits.max_file_bytes, 1);
+        }
+        std::fs::write(&config_path, "unknown_setting = true\n").unwrap();
+        scan_once(&root, &loader, &snapshot, &events, &[]).await;
+        let current = snapshot.read().await;
+        assert_eq!(current.revision, 2);
+        assert_eq!(current.status, DaemonStatus::Error);
+        assert!(
+            current
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("failed to parse config")
+        );
+        assert!(current.report.as_ref().unwrap().files.is_empty());
+    }
 
     #[test]
     fn watcher_ignores_access_and_generated_directories() {
@@ -892,6 +992,21 @@ mod tests {
         let event = notify::Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
             .add_path(PathBuf::from("/repo/src/lib.rs"));
         assert!(event_requires_rescan(&event, Path::new("/repo"), &[]));
+    }
+
+    #[test]
+    fn watcher_filters_only_components_below_the_target() {
+        for parent in ["target", "dist", "node_modules", ".git", ".godot"] {
+            let target = PathBuf::from(format!("/workspace/{parent}/repo"));
+            let event =
+                notify::Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
+                    .add_path(target.join("src/lib.rs"));
+            assert!(event_requires_rescan(&event, &target, &[]), "{parent}");
+            let outside =
+                notify::Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
+                    .add_path(PathBuf::from("/outside/lib.rs"));
+            assert!(!event_requires_rescan(&outside, &target, &[]));
+        }
     }
 
     #[test]
@@ -1118,7 +1233,8 @@ mod tests {
             graph_limits: crate::graph::GraphReadLimits::default(),
         }));
 
-        scan_once(dir.path(), &config, &snapshot, &events, &[]).await;
+        let loader: ConfigLoader = Arc::new(move |_| Ok(config.clone()));
+        scan_once(dir.path(), &loader, &snapshot, &events, &[]).await;
         let (revision_facts, revision_configs, revision_limits) = {
             let completed = snapshot.read().await;
             assert_eq!(completed.revision, 1);

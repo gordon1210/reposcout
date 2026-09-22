@@ -165,6 +165,9 @@ pub struct DepGraph {
     reason = "the stable JSON contract records independent scan truncation conditions without collapsing their semantics"
 )]
 pub struct ScanDiagnostics {
+    /// Repository/global ignore files rejected by size, line or syntax limits.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub ignore_files_rejected: usize,
     /// Files discovered after walker filters such as ignore rules.
     pub discovered_files: usize,
     /// Files for which reposcout produced a report.
@@ -199,6 +202,15 @@ pub struct ScanDiagnostics {
     /// The cooperative wall-clock scan budget elapsed.
     #[serde(default, skip_serializing_if = "is_false")]
     pub duration_limit_reached: bool,
+    /// Exact clone candidates omitted by bounded sampling or work limits.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub type1_analysis_partial: bool,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub type1_seed_pairs_skipped: u64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub type1_pair_limit_reached: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub type1_match_limit_reached: bool,
     /// The Type-2 detector stopped at a safety limit, so near-duplicate
     /// findings are useful but incomplete.
     #[serde(default, skip_serializing_if = "is_false")]

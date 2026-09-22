@@ -445,6 +445,7 @@ pub(super) fn production_duplication_is_complete(
     diagnostics: &ScanDiagnostics,
 ) -> bool {
     duplication_enabled
+        && !diagnostics.type1_analysis_partial
         && !diagnostics.type2_analysis_partial
         && diagnostics.unreadable_files == 0
         && diagnostics.walker_errors == 0

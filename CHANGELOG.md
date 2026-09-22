@@ -6,6 +6,25 @@ within their section.
 
 ## [Unreleased]
 
+### Fixed
+
+- Anchor ordinary Unix source reads to an open root directory and open files nonblocking, so
+  concurrent parent symlink swaps cannot redirect analysis and FIFO replacements cannot stall it.
+- Preserve longer exact duplicates behind heavily repeated prefixes. Type-1 candidate sampling
+  and work limits now expose partiality in diagnostics, capabilities, work scope, agent summaries,
+  and production-duplication completeness.
+- Enforce ignore-file byte, line-count and line-length limits through one shared policy for scans,
+  worktree queries, index and revision snapshots. Invalid or unreadable ignore rules exclude their
+  affected scope and report a partial scan instead of silently widening discovery.
+- Refresh daemon targets beneath ancestors named `target`, `dist`, `node_modules`, or `.git`.
+  Reload effective configuration for each scan and watch relevant Git refs, HEAD, index and
+  excludes, including metadata outside linked worktrees. Failed configuration reloads preserve
+  the last successful report.
+- Keep separate analysis cache files for each profile, preserving hits when alternating commands.
+  Repository cache resets remove all profiles and the legacy cache file; writes stay best-effort.
+- Validate nested dashboard report and graph payloads, schema compatibility and revision numbers
+  before accepting API responses. Malformed refreshes retain the last valid report with an error.
+
 ## [0.3.1] - 2026-09-22
 
 ### Added

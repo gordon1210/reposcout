@@ -33,7 +33,7 @@ pub fn collect(root: &Path, files: &[PathBuf], max_commits: usize) -> HashMap<Pa
 
 The two `dup::{exact,fuzzy}::detect` signatures are the **frozen detector contract**. Wrappers in
 `dup/mod.rs` are not frozen. `dup::analyze_with_progress` is the public coarse-stage wrapper;
-`dup::analyze_with_diagnostics` also carries bounded Type-2 progress/completeness into the scanner.
+`dup::analyze_with_diagnostics` also carries bounded Type-1 and Type-2 progress/completeness into the scanner.
 The orchestration prepares one structured token corpus, runs both prepared detectors, applies
 detector-specific cleanup, creates pair findings, and retains the token denominator for union
 coverage. Cross-cutting duplication behavior belongs there, not in the detector adapters.
@@ -166,12 +166,19 @@ existing bounded no-follow resolver-config snapshots, not a second filesystem/in
 
 ## Discovery, configuration, outputs, and cache placement
 
+Ordinary Unix source batches retain a `SourceRoot` directory descriptor and resolve each
+component without following symlinks. Nonblocking opens and opened-handle type checks reject FIFO
+replacements. This shares the source-query reader; the safe profile remains a cooperative resource
+policy, not a sandbox.
+
 - Output files must not feed back into a scan. The CLI passes `-o/--output` as an exact canonical
   filesystem exclusion to both scoped discovery and impact topology. Do not replace it with a glob
   that could hide lookalike paths.
 - Caching never writes `.reposcout/` or other state into the scanned repository. `cache.rs` uses the
   OS cache directory through `directories::ProjectDirs`, keyed by a hash of the canonical scan
   root.
+- Each analysis profile has its own file under the canonical-root cache directory; root resets
+  include every profile and the legacy single-profile file.
 - Analysis cache persistence is best-effort for every scan and source-query path. A cache write
   failure must not discard results or print a warning; record its path and cause only in the
   opt-in debug log. Never retry in another directory or write cache state into the repository.
@@ -194,8 +201,10 @@ existing bounded no-follow resolver-config snapshots, not a second filesystem/in
   worker, history, context, duplication, discovery, and project-config guardrails and forces source
   health scope with no content includes. Explicit analyzer selection may opt an analyzer back in;
   no profile promises a total runtime bound for an arbitrarily large target.
-- `.reposcoutignore` uses gitignore syntax, is hierarchical per directory, and is added through
-  `add_custom_ignore_filename` in `walk.rs`. It remains active under `--no-ignore` and is the right
+- `.reposcoutignore` uses gitignore syntax and hierarchical per-directory policy through the shared
+  bounded `walk::PathMatcher`. Discovery, explicit queries and Git snapshots share this policy.
+  Rejected rules exclude their affected scope and expose partiality. It remains active under
+  `--no-ignore` and is the right
   place to exclude generated or vendored trees from scouting.
 - Lockfiles are excluded by default through `exclude_lockfiles` and `LOCKFILES` in `walk.rs`.
   `--include-lockfiles` or `exclude_lockfiles = false` re-includes recognized lockfiles. `.lock`

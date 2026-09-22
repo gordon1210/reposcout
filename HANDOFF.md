@@ -63,6 +63,14 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 ## Current state
 
+- **Reliability review corrections (unreleased).** Ordinary Unix source reads now retain a root
+  descriptor and reject symlink/FIFO races. Discovery and snapshot queries share bounded ignore
+  policy. Type-1 sampling and work limits expose partiality, including production-duplication
+  completeness, while rare-first seed processing preserves longer continuations. Cache files are
+  partitioned by analysis profile. Daemon scans reload configuration and observe targeted Git
+  metadata (including worktrees); dashboard responses validate nested schema-2.0 data. These are
+  scan-wide, I/O and projection changes: schema 2.0 and cached analyzer 22 remain unchanged.
+
 - **Task-query program.** Lexical `find`,
   explicit definition `plan`, conservative worktree `consumers`, and scan diagnostic seeds share
   existing capture/analysis/cache facts. Analyzer 22 covers the current parse-derived facts,

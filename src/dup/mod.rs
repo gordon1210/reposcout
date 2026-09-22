@@ -6,6 +6,7 @@
 
 pub mod exact;
 pub mod fuzzy;
+mod intervals;
 mod tokenize;
 
 use crate::lang;
@@ -273,6 +274,7 @@ pub struct Detection {
     pub coverage: DuplicateCoverage,
     pub token_counts: BTreeMap<PathBuf, usize>,
     pub formats: BTreeMap<PathBuf, String>,
+    pub(crate) type1_diagnostics: exact::Type1Diagnostics,
     pub(crate) type2_diagnostics: fuzzy::Type2Diagnostics,
 }
 
@@ -368,10 +370,8 @@ fn analyze_prepared_with_diagnostics(
     type2_progress: Option<&mut dyn FnMut(fuzzy::Type2Progress)>,
 ) -> Detection {
     progress(DetectionStage::ExactClones);
-    let mut exact = finalize(
-        exact::detect_prepared(inputs, prepared, thresholds.tokens),
-        thresholds.lines,
-    );
+    let type1 = exact::detect_prepared_bounded(inputs, prepared, thresholds.tokens);
+    let mut exact = finalize(type1.groups, thresholds.lines);
     progress(DetectionStage::Type2Clones);
     // The Type-2 detector suppresses overlapping/contained pairs while they
     // are still compact token ranges, before constructing report objects.
@@ -412,6 +412,7 @@ fn analyze_prepared_with_diagnostics(
         coverage,
         token_counts,
         formats,
+        type1_diagnostics: type1.diagnostics,
         type2_diagnostics: type2_detection.diagnostics,
     }
 }

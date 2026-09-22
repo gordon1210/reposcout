@@ -21,10 +21,11 @@ repository-wide blind spots. For graph/context output, retain resolver provenanc
 heuristic or unresolved edge into certainty. Manual source search, the complete diff, and project
 tests remain necessary when gaps intersect the task.
 
-## Diagnose partial Type-2 analysis
+## Diagnose partial clone analysis
 
-When `coverage.type2_analysis_partial` in agent-summary is true and duplication matters to the
-task, request the detailed counters once instead of looking for them in the bounded view:
+When `coverage.type1_analysis_partial` or `coverage.type2_analysis_partial` in agent-summary is
+true and duplication matters to the task, request the detailed counters once instead of looking
+for them in the bounded view:
 
 ```sh
 set -o pipefail
@@ -32,6 +33,8 @@ set -o pipefail
 reposcout -f json --summary --profile full <path> \
   | jq -c '{
       diagnostics: (.diagnostics | {
+        type1_analysis_partial, type1_seed_pairs_skipped,
+        type1_pair_limit_reached, type1_match_limit_reached,
         type2_analysis_partial, type2_pools_truncated,
         type2_candidate_buckets_skipped,
         type2_candidate_buckets_partially_selected,
@@ -43,11 +46,20 @@ reposcout -f json --summary --profile full <path> \
     }'
 ```
 
-Retained near-duplicate groups remain useful, but absence is not evidence of completeness. The
+Retained exact and near-duplicate groups remain useful, but absence is not evidence of
+completeness. Exact candidate sampling can be partial even below its pair and match limits. The
 current CLI has no undocumented exhaustive override; do not invent one or silently rerun with
 unbounded settings. Treat `coverage.churn_analysis_partial` and
 `coverage.churn_deltas_omitted` the same way: escalate only when churn evidence is material to the
 decision.
+
+## Rejected ignore policy
+
+`diagnostics.ignore_files_rejected` means a relevant ignore file exceeded its byte/line limits or
+could not be safely read or compiled. Discovery excludes the affected scope and marks the scan
+partial; explicit source queries expose an ignore-policy failure. Inspect `ignore_file_error`
+events in an opt-in debug log for paths and causes. Do not treat an empty result as absence or
+silently disable ignore policy to widen access.
 
 ## Inspect configuration without changing it
 

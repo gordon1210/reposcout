@@ -11,7 +11,21 @@ use crate::model::{CloneGroup, CloneInstance};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
-const MAX_PREVIOUS_PER_WINDOW: usize = 64;
+pub(crate) const MAX_PREVIOUS_PER_WINDOW: usize = 64;
+pub(crate) const MAX_SEED_PAIRS_PER_POOL: u64 = 10_000_000;
+pub(crate) const MAX_MATCHES_PER_POOL: usize = 250_000;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct Type1Diagnostics {
+    pub seed_pairs_skipped: u64,
+    pub pair_limit_reached: bool,
+    pub match_limit_reached: bool,
+}
+
+pub(crate) struct Type1Detection {
+    pub groups: Vec<CloneGroup>,
+    pub diagnostics: Type1Diagnostics,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Occurrence {
@@ -42,8 +56,20 @@ pub(crate) fn detect_prepared(
     prepared: &[PreparedFile],
     min_tokens: usize,
 ) -> Vec<CloneGroup> {
+    detect_prepared_bounded(inputs, prepared, min_tokens).groups
+}
+
+pub(crate) fn detect_prepared_bounded(
+    inputs: &[DupInput],
+    prepared: &[PreparedFile],
+    min_tokens: usize,
+) -> Type1Detection {
+    let mut diagnostics = Type1Diagnostics::default();
     if min_tokens == 0 || prepared.is_empty() {
-        return Vec::new();
+        return Type1Detection {
+            groups: Vec::new(),
+            diagnostics,
+        };
     }
 
     let mut pools: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
@@ -52,19 +78,18 @@ pub(crate) fn detect_prepared(
     }
 
     let mut groups: HashMap<Vec<ExactKey>, GroupAcc> = HashMap::new();
-    let mut seen_regions = HashSet::new();
     for (pool, files) in pools {
-        detect_pool(
-            inputs,
-            prepared,
-            pool,
-            &files,
-            min_tokens,
-            &mut groups,
-            &mut seen_regions,
-        );
+        let pool_diagnostics = detect_pool(inputs, prepared, pool, &files, min_tokens, &mut groups);
+        diagnostics.seed_pairs_skipped = diagnostics
+            .seed_pairs_skipped
+            .saturating_add(pool_diagnostics.seed_pairs_skipped);
+        diagnostics.pair_limit_reached |= pool_diagnostics.pair_limit_reached;
+        diagnostics.match_limit_reached |= pool_diagnostics.match_limit_reached;
     }
-    crate::dup::suppress_contained(into_sorted_groups(groups))
+    Type1Detection {
+        groups: crate::dup::suppress_contained(into_sorted_groups(groups)),
+        diagnostics,
+    }
 }
 
 fn detect_pool(
@@ -74,14 +99,94 @@ fn detect_pool(
     files: &[usize],
     min_tokens: usize,
     groups: &mut HashMap<Vec<ExactKey>, GroupAcc>,
-    seen_regions: &mut HashSet<(usize, usize, usize, usize, usize)>,
-) {
+) -> Type1Diagnostics {
+    let mut diagnostics = Type1Diagnostics::default();
     if !files
         .iter()
         .any(|file| prepared[*file].tokens.len() >= min_tokens)
     {
-        return;
+        return diagnostics;
     }
+    let index = window_index(prepared, files, min_tokens);
+    let mut buckets = index
+        .iter()
+        .filter(|(_, bucket)| bucket.len() >= 2)
+        .collect::<Vec<_>>();
+    buckets.sort_unstable_by_key(|(hash, bucket)| (bucket.len(), **hash));
+    let sampled = buckets
+        .iter()
+        .any(|(_, bucket)| bucket.len() > MAX_PREVIOUS_PER_WINDOW + 1);
+    let total_pairs = buckets.iter().fold(0u64, |sum, (_, bucket)| {
+        let n = u64::try_from(bucket.len()).unwrap_or(u64::MAX);
+        sum.saturating_add(n.saturating_mul(n.saturating_sub(1)) / 2)
+    });
+    let mut examined = 0u64;
+    let mut seen_regions = HashSet::new();
+    let mut covered: HashMap<(usize, usize, i128), super::intervals::MergedIntervals> =
+        HashMap::new();
+    'buckets: for (_, occurrences) in buckets {
+        for right in 1..occurrences.len() {
+            let b = occurrences[right];
+            for left in predecessor_indices(right, MAX_PREVIOUS_PER_WINDOW) {
+                if examined >= MAX_SEED_PAIRS_PER_POOL || seen_regions.len() >= MAX_MATCHES_PER_POOL
+                {
+                    diagnostics.pair_limit_reached |= examined >= MAX_SEED_PAIRS_PER_POOL;
+                    diagnostics.match_limit_reached |= seen_regions.len() >= MAX_MATCHES_PER_POOL;
+                    break 'buckets;
+                }
+                examined += 1;
+                let a = occurrences[left];
+                let diagonal = (a.file, b.file, a.start as i128 - b.start as i128);
+                if same_file_seed_overlaps(a, b, min_tokens)
+                    || covered
+                        .get(&diagonal)
+                        .is_some_and(|ranges| ranges.covers(a.start, a.start + min_tokens))
+                    || (!sampled && !is_left_maximal(prepared, a, b, min_tokens))
+                    || !windows_equal(prepared, a, b, min_tokens)
+                {
+                    continue;
+                }
+
+                let Some((a_start, b_start, len)) = maximal_match(prepared, a, b, min_tokens)
+                else {
+                    continue;
+                };
+                // In sampled pools the leftmost seed may not have compared this
+                // pair. Expand a retained later seed, skipping only proven coverage.
+                covered
+                    .entry(diagonal)
+                    .or_default()
+                    .insert(a_start, a_start + len);
+                let region = canonical_region_key(a.file, a_start, b.file, b_start, len);
+                if !seen_regions.insert(region) {
+                    continue;
+                }
+
+                let content_key = prepared[a.file].tokens[a_start..a_start + len]
+                    .iter()
+                    .map(|token| ExactKey {
+                        kind: token.kind,
+                        text: token.text.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                let entry = groups.entry(content_key).or_default();
+                if entry.format.is_empty() {
+                    entry.format = pool.to_string();
+                }
+                add_instance(entry, inputs, prepared, a.file, a_start, len);
+                add_instance(entry, inputs, prepared, b.file, b_start, len);
+            }
+        }
+    }
+    diagnostics.seed_pairs_skipped = total_pairs.saturating_sub(examined);
+    diagnostics
+}
+
+fn window_index(
+    prepared: &[PreparedFile],
+    files: &[usize],
+    min_tokens: usize,
+) -> HashMap<u64, Vec<Occurrence>> {
     let power = rolling_power(min_tokens);
     let mut index: HashMap<u64, Vec<Occurrence>> = HashMap::new();
 
@@ -108,43 +213,7 @@ fn detect_pool(
         }
     }
 
-    for occurrences in index.values().filter(|bucket| bucket.len() >= 2) {
-        for right in 1..occurrences.len() {
-            let b = occurrences[right];
-            for left in predecessor_indices(right, MAX_PREVIOUS_PER_WINDOW) {
-                let a = occurrences[left];
-                if same_file_seed_overlaps(a, b, min_tokens)
-                    || !windows_equal(prepared, a, b, min_tokens)
-                    || !is_left_maximal(prepared, a, b, min_tokens)
-                {
-                    continue;
-                }
-
-                let Some((a_start, b_start, len)) = maximal_match(prepared, a, b, min_tokens)
-                else {
-                    continue;
-                };
-                let region = canonical_region_key(a.file, a_start, b.file, b_start, len);
-                if !seen_regions.insert(region) {
-                    continue;
-                }
-
-                let content_key = prepared[a.file].tokens[a_start..a_start + len]
-                    .iter()
-                    .map(|token| ExactKey {
-                        kind: token.kind,
-                        text: token.text.clone(),
-                    })
-                    .collect::<Vec<_>>();
-                let entry = groups.entry(content_key).or_default();
-                if entry.format.is_empty() {
-                    entry.format = pool.to_string();
-                }
-                add_instance(entry, inputs, prepared, a.file, a_start, len);
-                add_instance(entry, inputs, prepared, b.file, b_start, len);
-            }
-        }
-    }
+    index
 }
 
 fn windows_equal(prepared: &[PreparedFile], a: Occurrence, b: Occurrence, len: usize) -> bool {
@@ -300,12 +369,61 @@ fn group_sort_key(group: &CloneGroup) -> (String, usize, usize) {
 mod tests {
     use super::*;
     use crate::dup::{DuplicationFormatScope, DuplicationMode};
+    use std::path::Path;
 
     fn input(path: &str, content: &str) -> DupInput {
         DupInput {
             path: PathBuf::from(path),
             content: content.to_string(),
         }
+    }
+
+    #[test]
+    fn adding_common_prefix_files_preserves_the_long_exact_pair() {
+        let make_input = |i: usize| {
+            let prefix = (0..20)
+                .map(|n| format!("    value += {n};\n"))
+                .collect::<String>();
+            let base = if matches!(i, 10 | 99) {
+                42_424_242
+            } else {
+                70_000_000 + i * 1000
+            };
+            let tail = (0..40)
+                .map(|n| format!("    value += {};\n", base + n))
+                .collect::<String>();
+            input(
+                &format!("f{i:03}.rs"),
+                &format!("pub fn unique_{i}(mut value:i64)->i64 {{\n{prefix}{tail}    value\n}}\n"),
+            )
+        };
+        let baseline = [10, 99].map(make_input);
+        let expanded = (0..100).map(make_input).collect::<Vec<_>>();
+        let mut pair_tokens = Vec::new();
+        for inputs in [baseline.as_slice(), expanded.as_slice()] {
+            let prepared = prepare(inputs, DetectionOptions::default());
+            let detection = detect_prepared_bounded(inputs, &prepared, 50);
+            let longest = detection
+                .groups
+                .iter()
+                .filter(|group| {
+                    ["f010.rs", "f099.rs"].iter().all(|path| {
+                        group
+                            .instances
+                            .iter()
+                            .any(|instance| instance.path == Path::new(path))
+                    })
+                })
+                .map(|group| group.tokens)
+                .max()
+                .unwrap();
+            pair_tokens.push(longest);
+            assert_eq!(
+                detection.diagnostics.seed_pairs_skipped > 0,
+                inputs.len() == 100
+            );
+        }
+        assert_eq!(pair_tokens, [251, 251]);
     }
 
     #[test]

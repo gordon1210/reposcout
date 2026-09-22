@@ -29,6 +29,9 @@ fn scan_diagnostics_default_and_expose_partial_type2_analysis() {
     }))
     .expect("legacy scan diagnostics");
     assert!(!legacy.type2_analysis_partial);
+    assert!(!legacy.type1_analysis_partial);
+    assert_eq!(legacy.type1_seed_pairs_skipped, 0);
+    assert_eq!(legacy.ignore_files_rejected, 0);
 
     let diagnostics = ScanDiagnostics {
         oversized_files: 2,
@@ -38,6 +41,8 @@ fn scan_diagnostics_default_and_expose_partial_type2_analysis() {
         bytes_omitted_by_limit: 12_582_912,
         scan_truncated: true,
         duration_limit_reached: true,
+        type1_analysis_partial: true,
+        type1_seed_pairs_skipped: 17,
         type2_analysis_partial: true,
         type2_pools_truncated: 1,
         type2_candidate_buckets_skipped: 12,
@@ -50,6 +55,8 @@ fn scan_diagnostics_default_and_expose_partial_type2_analysis() {
     };
     let json = serde_json::to_value(diagnostics).expect("scan diagnostics JSON");
 
+    assert_eq!(json["type1_analysis_partial"], true);
+    assert_eq!(json["type1_seed_pairs_skipped"], 17);
     assert_eq!(json["type2_analysis_partial"], true);
     assert_eq!(json["oversized_files"], 2);
     assert_eq!(json["oversized_bytes"], 8_388_608u64);

@@ -112,6 +112,8 @@ struct Coverage {
     #[serde(skip_serializing_if = "Option::is_none")]
     graph: Option<GraphCoverage>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    type1_analysis_partial: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     type2_analysis_partial: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     churn_analysis_partial: Option<bool>,
@@ -517,6 +519,9 @@ fn build_coverage(
                 parse_errors: scope.confidence.graph_parse_errors,
                 config_errors: scope.confidence.graph_config_errors,
             }),
+            type1_analysis_partial: analyzers
+                .is_some_and(|analyzers| analyzers.duplication)
+                .then_some(scope.confidence.type1_analysis_partial),
             type2_analysis_partial: analyzers
                 .is_some_and(|analyzers| analyzers.duplication)
                 .then_some(scope.confidence.type2_analysis_partial),
@@ -699,6 +704,7 @@ fn coverage_from_diagnostics(diagnostics: &ScanDiagnostics) -> Coverage {
         },
         planning_universe: None,
         graph: None,
+        type1_analysis_partial: None,
         type2_analysis_partial: None,
         churn_analysis_partial: None,
         churn_deltas_omitted: None,

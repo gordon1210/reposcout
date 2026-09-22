@@ -203,7 +203,7 @@ fn discovery_explanation(
             None,
         ));
     }
-    match walk::read_text_bounded(absolute, cfg.max_file_bytes) {
+    match walk::read_text_bounded_under_root(root, absolute, cfg.max_file_bytes) {
         walk::BoundedText::Content(_) => {}
         walk::BoundedText::Oversized(_) => {
             return Ok(discovery(

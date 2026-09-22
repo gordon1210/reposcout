@@ -660,6 +660,7 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
         && diagnostics.unreadable_files == 0
         && diagnostics.walker_errors == 0
         && !diagnostics.scan_truncated
+        && !diagnostics.type1_analysis_partial
         && !diagnostics.type2_analysis_partial
     {
         return;
@@ -702,6 +703,34 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
             Tone::Negative,
         );
     }
+    render_discovery_limits(out, diagnostics, color);
+    if diagnostics.duration_limit_reached {
+        toned_kv(out, "Scan duration", "limit reached", color, Tone::Caution);
+    }
+    if diagnostics.scan_truncated {
+        toned_kv(
+            out,
+            "Scan completeness",
+            "partial (resource limit reached)",
+            color,
+            Tone::Caution,
+        );
+    }
+    if diagnostics.ignore_files_rejected > 0 {
+        toned_kv(
+            out,
+            "Ignore files rejected",
+            &thousands(diagnostics.ignore_files_rejected),
+            color,
+            Tone::Caution,
+        );
+    }
+    render_type1_diagnostics(out, diagnostics, color);
+    render_type2_diagnostics(out, diagnostics, color);
+    let _ = writeln!(out);
+}
+
+fn render_discovery_limits(out: &mut String, diagnostics: &ScanDiagnostics, color: bool) {
     if diagnostics.oversized_files > 0 {
         toned_kv(
             out,
@@ -733,20 +762,23 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, colo
             Tone::Caution,
         );
     }
-    if diagnostics.duration_limit_reached {
-        toned_kv(out, "Scan duration", "limit reached", color, Tone::Caution);
-    }
-    if diagnostics.scan_truncated {
+}
+
+fn render_type1_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, color: bool) {
+    if diagnostics.type1_analysis_partial {
         toned_kv(
             out,
-            "Scan completeness",
-            "partial (resource limit reached)",
+            "Type-1 analysis",
+            "partial (bounded candidate selection)",
             color,
             Tone::Caution,
         );
+        kv(
+            out,
+            "Type-1 seed pairs omitted",
+            &thousands_u64(diagnostics.type1_seed_pairs_skipped),
+        );
     }
-    render_type2_diagnostics(out, diagnostics, color);
-    let _ = writeln!(out);
 }
 
 fn render_type2_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics, color: bool) {

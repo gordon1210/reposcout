@@ -576,6 +576,7 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
         && diagnostics.unreadable_files == 0
         && diagnostics.walker_errors == 0
         && !diagnostics.scan_truncated
+        && !diagnostics.type1_analysis_partial
         && !diagnostics.type2_analysis_partial
     {
         return;
@@ -652,6 +653,20 @@ fn render_scan_diagnostics(out: &mut String, diagnostics: &ScanDiagnostics) {
         let _ = writeln!(
             out,
             "- Scan results are **partial** because an input or runtime limit was reached."
+        );
+    }
+    if diagnostics.ignore_files_rejected > 0 {
+        let _ = writeln!(
+            out,
+            "- Ignore files rejected by input policy: **{}**.",
+            thousands(diagnostics.ignore_files_rejected)
+        );
+    }
+    if diagnostics.type1_analysis_partial {
+        let _ = writeln!(
+            out,
+            "- Type-1 analysis is **partial**: **{} candidate seed pairs** omitted by bounded selection.",
+            thousands_u64(diagnostics.type1_seed_pairs_skipped)
         );
     }
     if diagnostics.type2_analysis_partial {

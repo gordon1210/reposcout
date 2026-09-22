@@ -188,6 +188,13 @@ RepoScout also reads hierarchical `.reposcoutignore` files using Git-ignore synt
 remain active even with `--no-ignore`, making them suitable for generated or vendored trees that
 should never enter scouting.
 
+Discovery and worktree/index/revision queries share the same byte, line-count and pattern-length
+limits (`max_ignore_file_bytes`, `max_ignore_lines`, `max_ignore_line_bytes`). A rule file that
+cannot be safely read or compiled excludes the scope it governs. Scans expose
+`diagnostics.ignore_files_rejected`, walker errors and partiality; explicit queries report an
+ignore-policy failure. Opt-in debug logs include the rejected path. Safe mode skips repository
+ignore files entirely. Git-global rules are read only when a Git boundary applies.
+
 ### Lockfiles
 
 Recognized dependency lockfiles are skipped by default to keep scans focused. Use
@@ -204,6 +211,12 @@ events live under the operating system cache directory, for example:
 Per-file entries are keyed by canonical scan root, content hash, analyzer version, token encoding,
 and every runtime setting that changes file facts. Subpath and diff scans merge refreshed entries;
 only a complete root scan prunes files that disappeared.
+
+Each analysis profile has its own JSON file under a directory named for the canonical-root hash.
+Alternating commands with different analyzer settings therefore preserves both sets of entries.
+The first run after this layout change starts a cold profile cache; `cache clear [PATH]` removes
+all profile files plus the legacy single-profile file for that root. Persistence remains
+best-effort: an unwritable cache never prevents an otherwise valid analysis.
 
 Definition facts for explicit reads enrich the same per-file cache entry under the ordinary
 analysis profile; source bytes remain invocation-local. Targeted queries merge entries without

@@ -98,6 +98,18 @@ Scans are single-flight and execute away from the asynchronous HTTP runtime. Fil
 collapse into one pending refresh, and clients continue reading the last successful report while a
 new scan runs.
 
+Each scan resolves configuration again while retaining the selected profile and
+`--no-project-config` trust boundary. An invalid reload leaves the previous report and revision
+available and sets the scan error. Source event exclusions are relative to the watched target,
+so an ancestor named `target` or `dist` does not suppress refreshes. Git repositories present at
+startup also watch HEAD, index, refs, packed refs, shallow state and `info/exclude`; linked
+worktrees include their external private and common metadata. Git object stores and lock-file
+noise do not trigger scans. Restart after changing the repository's metadata location.
+
+The dashboard checks schema-2.0 reports and nested graph data before changing UI state. Invalid
+responses show a fetch error and preserve the last successful snapshot; additive fields remain
+compatible.
+
 Incremental caches remove repeated per-file work and reuse immutable Git commit events. A cold
 whole-corpus duplication or large Git-history pass may still take time; daemon scans apply the
 configured cooperative deadline and expose any truncation in the report diagnostics.

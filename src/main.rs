@@ -371,21 +371,21 @@ fn run_config(args: &ConfigArgs, pretty: bool) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
-    let safe = args.profile == DaemonProfile::Safe;
-    let mut cfg = if args.no_project_config || safe {
-        Config::load_without_project(&args.path)?
+fn daemon_config(path: &Path, profile: DaemonProfile, no_project_config: bool) -> Result<Config> {
+    let safe = profile == DaemonProfile::Safe;
+    let mut cfg = if no_project_config || safe {
+        Config::load_without_project(path)?
     } else {
-        Config::load(&args.path)?
+        Config::load(path)?
     };
     cfg.quiet_progress = true;
-    cfg.execution_profile = match args.profile {
+    cfg.execution_profile = match profile {
         DaemonProfile::Lite => "lite",
         DaemonProfile::Full => "full",
         DaemonProfile::Safe => "safe",
     }
     .to_string();
-    if matches!(args.profile, DaemonProfile::Lite | DaemonProfile::Safe) {
+    if matches!(profile, DaemonProfile::Lite | DaemonProfile::Safe) {
         cfg.enabled.duplication = false;
         cfg.enabled.churn = false;
     }
@@ -393,10 +393,14 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
     if safe {
         enforce_safe_limits(&mut cfg);
     }
-    log_configuration("daemon", &args.path, &cfg);
-    reposcout::daemon::run(
+    Ok(cfg)
+}
+
+fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
+    let profile = args.profile;
+    let no_project_config = args.no_project_config;
+    reposcout::daemon::run_with_config_loader(
         args.path,
-        cfg,
         reposcout::daemon::DaemonOptions {
             host: args.host,
             port: args.port,
@@ -408,6 +412,11 @@ fn run_daemon(args: DaemonArgs) -> Result<ExitCode> {
             },
             unsafe_no_auth: args.unsafe_no_auth,
             allow_insecure_remote: args.allow_insecure_remote,
+        },
+        move |path| {
+            let cfg = daemon_config(path, profile, no_project_config)?;
+            log_configuration("daemon", path, &cfg);
+            Ok(cfg)
         },
     )?;
     Ok(ExitCode::SUCCESS)

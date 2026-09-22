@@ -212,6 +212,10 @@ fn production_duplication_completeness_ignores_churn_only_truncation() {
 
     for incomplete in [
         ScanDiagnostics {
+            type1_analysis_partial: true,
+            ..ScanDiagnostics::default()
+        },
+        ScanDiagnostics {
             type2_analysis_partial: true,
             ..ScanDiagnostics::default()
         },

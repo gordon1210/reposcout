@@ -7,6 +7,7 @@ on:
     paths:
       - .github/scripts/normalize-cargo-dist-checksums.py
       - .github/workflows/release.yml
+      - .github/workflows/rust.yml
       - .cargo/**
       - Cargo.lock
       - Cargo.toml
@@ -31,6 +32,7 @@ on:
     paths:
       - .github/scripts/normalize-cargo-dist-checksums.py
       - .github/workflows/release.yml
+      - .github/workflows/rust.yml
       - .cargo/**
       - Cargo.lock
       - Cargo.toml
@@ -98,3 +100,43 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+  macos:
+    name: Native macOS
+    needs: rust
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-on-failure: true
+
+      - name: Test native filesystem and CLI behavior
+        run: cargo test --locked
+
+      - name: Build development binary
+        run: |
+          cargo build --locked --release
+          shasum -a 256 target/release/reposcout > target/release/reposcout.sha256
+          git rev-parse HEAD > target/release/source-commit.txt
+          uname -m > target/release/platform.txt
+
+      - name: Retain development build with source identity
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: reposcout-dev-macos
+          retention-days: 7
+          path: |
+            target/release/reposcout
+            target/release/reposcout.sha256
+            target/release/source-commit.txt
+            target/release/platform.txt

@@ -199,7 +199,7 @@ export interface Summary {
   top_source_token_files?: FileRef[]
   top_hotspots: Hotspot[]
   top_functions: FunctionHotspot[]
-  complexity_violations: FunctionHotspot[]
+  complexity_violations?: FunctionHotspot[]
   top_duplicates: DuplicateBlock[]
   top_production_duplicates?: DuplicateBlock[]
   symbols: SymbolCounts
@@ -396,4 +396,9 @@ export interface ScanDiagnostics {
   unsupported_files: number
   unreadable_files: number
   walker_errors: number
+  ignore_files_rejected?: number
+  type1_analysis_partial?: boolean
+  type1_seed_pairs_skipped?: number
+  type1_pair_limit_reached?: boolean
+  type1_match_limit_reached?: boolean
 }

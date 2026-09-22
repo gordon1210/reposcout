@@ -208,6 +208,9 @@ fn table_confidence(out: &mut String, scope: &WorkScope) {
             ),
         );
     }
+    if scope.confidence.type1_analysis_partial {
+        kv(out, "Type-1 duplication", "partial");
+    }
     if scope.confidence.type2_analysis_partial {
         kv(out, "Type-2 duplication", "partial");
     }
@@ -403,6 +406,9 @@ fn markdown_confidence(out: &mut String, scope: &WorkScope) {
             thousands(scope.confidence.graph_parse_errors),
             thousands(scope.confidence.graph_config_errors)
         );
+    }
+    if scope.confidence.type1_analysis_partial {
+        let _ = writeln!(out, "- Type-1 duplication: **partial**");
     }
     if scope.confidence.type2_analysis_partial {
         let _ = writeln!(out, "- Type-2 duplication: **partial**");

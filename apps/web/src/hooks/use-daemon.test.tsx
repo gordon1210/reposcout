@@ -43,6 +43,25 @@ afterEach(() => {
 })
 
 describe("useDaemon", () => {
+  it("retains the last report when a refresh contains malformed nested data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(snapshotResponse(1))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ ...makeSnapshot({ revision: 2 }), report: {} }),
+        })
+    )
+    vi.stubGlobal("EventSource", MockEventSource)
+    const { result } = renderHook(() => useDaemon())
+    await waitFor(() => expect(result.current.snapshot?.revision).toBe(1))
+    act(() => MockEventSource.instances[0].listeners.get("scan_completed")?.())
+    await waitFor(() => expect(result.current.error).toContain("invalid shape"))
+    expect(result.current.snapshot?.revision).toBe(1)
+  })
+
   it("reconciles on every SSE open and ignores older snapshot responses", async () => {
     const initial = deferred<ReturnType<typeof snapshotResponse>>()
     const opened = deferred<ReturnType<typeof snapshotResponse>>()
