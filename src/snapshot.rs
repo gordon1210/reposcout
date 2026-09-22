@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn ignored_parent_cannot_be_reincluded_by_a_child_rule() {
         let dir = tempfile::tempdir().unwrap();
-        Repository::init(dir.path()).unwrap();
+        git2::Repository::init(dir.path()).unwrap();
         fs::create_dir_all(dir.path().join("ignored")).unwrap();
         fs::write(
             dir.path().join(".gitignore"),
