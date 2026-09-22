@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-22
+
 ### Fixed
 
 - Anchor ordinary Unix source reads to an open root directory and open files nonblocking, so

@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-22 · latest release 0.3.1 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-22 · latest release 0.3.2 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 22_
 
 ---
@@ -63,7 +63,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 ## Current state
 
-- **Reliability review corrections (unreleased).** Ordinary Unix source reads now retain a root
+- **Source and refresh reliability.** Ordinary Unix source reads retain a root
   descriptor and reject symlink/FIFO races. Discovery and snapshot queries share bounded ignore
   policy. Type-1 sampling and work limits expose partiality, including production-duplication
   completeness, while rare-first seed processing preserves longer continuations. Cache files are
@@ -236,10 +236,10 @@ that a new maintainer still needs to interpret the current architecture and road
    import preambles). We deliberately do **not** try to classify "extractable vs not" —
    `similarity` + `copies` + `locations` let the reader judge in a second. Don't add a
    fragile heuristic here without strong evidence it beats the current honesty.
-2. **Default CLI Type-2 analysis is bounded on pathological pools.** Reported matches retain the
-   same verifier/precision, but recall is partial when `diagnostics.type2_analysis_partial` is
-   true. Exact duplication remains complete. Combined percentages are lower bounds when skipped
-   Type-2 work is the only gap; omitted source can also change the denominator. Do not remove
+2. **Default CLI Type-1 and Type-2 analysis is bounded on pathological pools.** Reported matches retain the
+   same verifier/precision, but recall is partial when `diagnostics.type1_analysis_partial` or
+   `diagnostics.type2_analysis_partial` is true. Combined percentages are lower bounds when skipped
+   clone-detection work is the only gap; omitted source can also change the denominator. Do not remove
    limits or silently auto-escalate; a higher-effort mode should be reconsidered only if real usage
    shows that partial results materially reduce the tool's value.
 3. **Vendored / generated source can still affect inventory and non-duplication health signals.**
@@ -306,11 +306,11 @@ that a new maintainer still needs to interpret the current architecture and road
    empty and presents general candidates only as bounded expansion. Oversized explicit seeds remain
    visible in the outline-only tier. Change-summary strategy `2` preserves focus evidence in the
    merged reading order.
-11. **Configured ignore-file limits do not guard the ordinary full-profile discovery walk.** The
-   main walker still lets the `ignore` crate load repository and Git ignore files directly; the
-   bounded reader protects snapshot/explain paths, while the `safe` profile avoids the exposure by
-   disabling repository-owned ignores. Do not claim `max_ignore_*` bounds apply to ordinary
-   discovery until that path is changed.
+11. **Ignore-policy failures make discovery partial.** Ordinary discovery and worktree/index/revision
+   queries share the configured ignore-file byte, line-count and line-length limits. Invalid,
+   unreadable or over-limit rules exclude their governed scope and expose rejection/partiality
+   diagnostics instead of silently widening discovery. Repository-owned ancestor rules stop at
+   the Git root, or at the scan target outside Git; `safe` disables repository-owned ignores.
 
 ## Candidate next steps (ideas, not commitments)
 
