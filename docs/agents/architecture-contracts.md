@@ -172,6 +172,10 @@ existing bounded no-follow resolver-config snapshots, not a second filesystem/in
 - Caching never writes `.reposcout/` or other state into the scanned repository. `cache.rs` uses the
   OS cache directory through `directories::ProjectDirs`, keyed by a hash of the canonical scan
   root.
+- Analysis cache persistence is best-effort for every scan and source-query path. A cache write
+  failure must not discard results or print a warning; record its path and cause only in the
+  opt-in debug log. Never retry in another directory or write cache state into the repository.
+  Explicit cache-management and requested report-output failures remain actionable errors.
 - Declaration outlines are cached independently of context output. Graph source facts enrich the
   same entry lazily for CLI graph/context/impact/explain work and do not change `AnalysisProfile`.
   Daemon refreshes deliberately capture those facts plus bounded resolver-config contents so a

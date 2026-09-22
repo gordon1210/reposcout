@@ -98,6 +98,8 @@ ask the user.
   `duplication_include_artifacts = true` opts it back in.
 - Output paths are exact canonical scan exclusions, never globs. Writes must remain atomic and
   symlink-safe. Cache data belongs in the OS cache directory and must never modify a scanned repo.
+  Cache persistence is optional for analysis: failures preserve results, with diagnostics only in
+  the opt-in debug log. Explicit cache-management and requested output errors still propagate.
 - Configuration precedence is CLI, nearest project config, global config, then defaults. Preserve
   independent nested merges, array replacement semantics, explicit CLI list extension, and the
   `--no-project-config` trust boundary.

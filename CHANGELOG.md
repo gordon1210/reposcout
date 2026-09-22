@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-22
+
 ### Added
 
 - Added first-class C# analysis with tree-sitter line and marker facts, callable complexity,
@@ -19,6 +21,9 @@ within their section.
 
 ### Fixed
 
+- Keep scans, source and snapshot reads, changed-definition queries, and definition plans working
+  when the OS analysis cache cannot be written, including in read-only sandboxes. Cache failures
+  stay silent in ordinary output; opt-in debug logs include the failed cache path and cause.
 - Recognize `.jsonl` files as JSON inventory instead of reporting them as unsupported. Existing
   `.jsonc` recognition remains covered by the same regression test.
 

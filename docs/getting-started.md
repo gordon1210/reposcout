@@ -130,7 +130,9 @@ RepoScout separates complete inventory from source-health analysis:
 - Dependency lockfiles are skipped from repository scanning by default.
 - `.gitignore` and hierarchical `.reposcoutignore` files are respected.
 - Analysis and Git-history caches live in the operating system's cache directory, never inside
-  the scanned repository.
+  the scanned repository. Cache writes are optional: read-only filesystems, sandbox restrictions,
+  or unavailable cache storage do not interrupt analysis or source queries and produce no warning.
+  Use `--debug-log <NEW_FILE>` for cache-write diagnostics, or `--no-cache` to skip caching entirely.
 
 First-class AST code languages are **Rust, Python, JavaScript, TypeScript/TSX, Go, PHP, C#,
 GDScript, and Godot shaders**. Godot text scenes/resources/project files also have syntax-aware

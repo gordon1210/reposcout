@@ -328,8 +328,23 @@ impl Cache {
             // or unbounded artifact that later scans would load in full.
             return Ok(());
         }
-        fs_budget::write_atomic_bytes(&self.path, &bytes)?;
+        fs_budget::write_atomic_bytes(&self.path, &bytes)
+            .with_context(|| format!("failed to write analysis cache {}", self.path.display()))?;
         Ok(())
+    }
+
+    /// Cache persistence is optional for analysis. Keep failures in opt-in diagnostics,
+    /// without interrupting a query or adding noise to its output.
+    pub(crate) fn save_best_effort(&self, prune_unseen: bool, batch: &str) {
+        if let Err(error) = self.save(prune_unseen) {
+            crate::debug_log::event("cache_save_error", || {
+                serde_json::json!({
+                    "batch": batch,
+                    "path": self.path.display().to_string(),
+                    "message": format!("{error:#}"),
+                })
+            });
+        }
     }
 
     pub(crate) fn stats(&self) -> CacheStats {

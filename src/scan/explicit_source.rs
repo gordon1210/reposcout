@@ -52,7 +52,7 @@ pub(crate) fn load_explicit_sources(
 ) -> Result<ExplicitSourceBatch> {
     let mut capture = CaptureSession::new(root, cfg, exclusions, None, source_requirements())?;
     let batch = capture.batch(&SourceRevision::Worktree, paths);
-    capture.cache.save(false)?;
+    capture.cache.save_best_effort(false, "explicit_sources");
     Ok(batch)
 }
 
@@ -102,7 +102,7 @@ pub(crate) fn load_revision_sources_with_requirements(
         let batch = capture.batch(&selected, paths);
         batches.push((selected, batch));
     }
-    capture.cache.save(false)?;
+    capture.cache.save_best_effort(false, "revision_sources");
     Ok(batches)
 }
 
@@ -217,7 +217,7 @@ pub(crate) fn capture_changed_sources(
     )?;
     let old = capture.batch(&base_revision, &old_paths);
     let new = capture.batch(&current_revision, &new_paths);
-    capture.cache.save(false)?;
+    capture.cache.save_best_effort(false, "changed_sources");
     Ok(CapturedSourceChanges {
         base_revision,
         current_revision,

@@ -159,12 +159,9 @@ pub(super) fn analyze_cross_file_metrics(
     progress.stage("saving incremental cache");
     let complete_root_scan =
         cfg.diff_scope.is_none() && prepared.discovered.target == prepared.root;
-    if let Err(error) = file_analysis.cache.save(complete_root_scan) {
-        debug_log::event(
-            "cache_save_error",
-            || serde_json::json!({ "batch": "primary", "message": error.to_string() }),
-        );
-    }
+    file_analysis
+        .cache
+        .save_best_effort(complete_root_scan, "primary");
     let cache_stats = file_analysis.cache.stats();
 
     if deadline_reached(prepared.deadline) {
@@ -440,14 +437,7 @@ pub(super) fn analyze_planning_universe(
         );
     }
     progress.stage("saving planning-universe cache");
-    if let Err(error) = analysis.cache.save(true) {
-        debug_log::event("cache_save_error", || {
-            serde_json::json!({
-                "batch": "planning_universe",
-                "message": error.to_string(),
-            })
-        });
-    }
+    analysis.cache.save_best_effort(true, "planning_universe");
     let cache_stats = analysis.cache.stats();
 
     let symbol_outlines = analysis

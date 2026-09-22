@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-21 · latest release 0.3.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-09-22 · latest release 0.3.1 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 22_
 
 ---
@@ -256,7 +256,10 @@ that a new maintainer still needs to interpret the current architecture and road
    consumers and are captured by daemon refreshes to preserve immutable revision inputs.
    Churn has a separate OS-cache index of immutable commit events and exact result views.
    `Duplication`, graph topology, and `Summary` remain scan-wide computations. `--no-cache`
-   disables both per-file and churn caches.
+   disables both per-file and churn caches. Analysis cache writes are best-effort across scans,
+   explicit/snapshot reads, changes, and definition plans; failures preserve results and remain
+   quiet unless `--debug-log` is enabled, which records the cache path and underlying cause.
+   Cache failures never trigger repository-local storage or retries with broader permissions.
 7. **`SCHEMA_VERSION` is `2.0`.** Test-presence output is optional and carries framework evidence,
    so consumers must treat an absent field as “no supported configured runner found.” Detection
    uses the bounded discovery universe for the requested scope plus fixed-name runner evidence in
