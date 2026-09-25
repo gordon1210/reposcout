@@ -6,6 +6,21 @@ within their section.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-25
+
+### Changed
+
+- Bumped the cached analyzer version to 23 for corrected per-function cognitive complexity and
+  nesting facts; the JSON report schema remains 2.0.
+
+### Fixed
+
+- Keep Rust and Go `else if` chains at one nesting level while preserving the higher cost of
+  explicitly nested `if` blocks.
+- Count Boolean operator sequences once through transparent parentheses, including Rust `let`
+  chains and GDScript `and`/`or` expressions. Operator changes and negated groups remain distinct;
+  Boolean expressions inside calls or nested functions retain their own scope.
+
 ## [0.3.2] - 2026-09-22
 
 ### Fixed

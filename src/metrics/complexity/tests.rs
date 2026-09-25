@@ -16,6 +16,7 @@ fn lines(src: &str) -> LineStats {
 fn analyze_first_class(path: &str, fc: FirstClass, src: &str) -> Complexity {
     let lang = detect(Path::new(path)).expect("language should be detected");
     let tree = parse(fc, src).expect("snippet should parse");
+    assert!(!tree.root_node().has_error(), "invalid syntax in {path}");
     let (complexity, approximate) = analyze(lang, src, Some(&tree), &lines(src));
     assert!(!approximate);
     complexity
@@ -189,6 +190,156 @@ fn csharp_direct_recursion_adds_cognitive_complexity() {
     let src = "class C { int Run(int n) => n == 0 ? 0 : Run(n - 1); }";
     let complexity = analyze_first_class("x.cs", FirstClass::CSharp, src);
     assert_eq!(complexity.functions[0].cognitive, 2);
+}
+
+fn assert_function_metrics(
+    complexity: &Complexity,
+    name: &str,
+    cyclomatic: u32,
+    cognitive: u32,
+    max_nesting: u32,
+) {
+    let function = complexity
+        .functions
+        .iter()
+        .find(|function| function.name == name)
+        .unwrap_or_else(|| panic!("missing function {name}"));
+    assert_eq!(
+        (
+            function.cyclomatic,
+            function.cognitive,
+            function.max_nesting
+        ),
+        (cyclomatic, cognitive, max_nesting),
+        "{name}"
+    );
+}
+
+#[test]
+fn rust_and_go_else_if_chains_keep_only_explicit_nesting() {
+    let cases = [
+        (
+            "x.rs",
+            FirstClass::Rust,
+            "fn chain(n: i32) -> i32 { if n == 0 { 0 } else if n == 1 { 1 } else if n == 2 { 2 } else { 3 } }\nfn nested(n: i32) -> i32 { if n == 0 { 0 } else { if n == 1 { 1 } else { if n == 2 { 2 } else { 3 } } } }\n",
+        ),
+        (
+            "x.go",
+            FirstClass::Go,
+            "package sample\nfunc chain(n int) int { if n == 0 { return 0 } else if n == 1 { return 1 } else if n == 2 { return 2 } else { return 3 } }\nfunc nested(n int) int { if n == 0 { return 0 } else { if n == 1 { return 1 } else { if n == 2 { return 2 } else { return 3 } } } }\n",
+        ),
+    ];
+
+    for (path, language, source) in cases {
+        let complexity = analyze_first_class(path, language, source);
+        assert_function_metrics(&complexity, "chain", 4, 4, 1);
+        assert_function_metrics(&complexity, "nested", 4, 9, 3);
+    }
+}
+
+#[test]
+fn rust_let_chains_count_one_boolean_sequence() {
+    let source = "fn plain_and(a: Option<u8>, b: bool) -> u8 { if a.is_some() && b { 1 } else { 0 } }\nfn let_and(a: Option<u8>, b: bool) -> u8 { if let Some(x) = a && b { x } else { 0 } }\nfn let_and_and(a: Option<u8>, b: bool, c: bool) -> u8 { if let Some(x) = a && b && c { x } else { 0 } }\nfn while_let_and(mut a: Option<u8>, b: bool) { while let Some(_) = a && b { a = None; } }\nfn multi_let(a: Option<u8>, b: Option<u8>) -> u8 { if let Some(x) = a && let Some(y) = b { x + y } else { 0 } }\nfn let_group(a: Option<u8>, b: bool, c: bool) -> u8 { if let Some(x) = a && (b && c) { x } else { 0 } }\nfn let_mixed(a: Option<u8>, b: bool, c: bool) -> u8 { if let Some(x) = a && (b || c) { x } else { 0 } }\n";
+    let complexity = analyze_first_class("x.rs", FirstClass::Rust, source);
+
+    assert_function_metrics(&complexity, "plain_and", 3, 3, 1);
+    assert_function_metrics(&complexity, "let_and", 3, 3, 1);
+    assert_function_metrics(&complexity, "let_and_and", 4, 3, 1);
+    assert_function_metrics(&complexity, "while_let_and", 3, 2, 1);
+    assert_function_metrics(&complexity, "multi_let", 3, 3, 1);
+    assert_function_metrics(&complexity, "let_group", 4, 3, 1);
+    assert_function_metrics(&complexity, "let_mixed", 4, 4, 1);
+}
+
+#[test]
+fn boolean_groups_count_each_sequence_once_across_languages() {
+    let cases = [
+        (
+            "x.cs",
+            FirstClass::CSharp,
+            "class C { int mixedFlat(bool a, bool b, bool c) { if (a && b || c) return 1; return 0; } int mixedParen(bool a, bool b, bool c) { if (a && (b || c)) return 1; return 0; } int reversed(bool a, bool b, bool c) { if ((a || b) && c) return 1; return 0; } int doubled(bool a, bool b, bool c) { if (a && ((b || c))) return 1; return 0; } int sameParen(bool a, bool b, bool c) { if (a && (b && c)) return 1; return 0; } int negated(bool a, bool b, bool c) { if (a && !(b && c)) return 1; return 0; } }",
+            0,
+        ),
+        (
+            "x.go",
+            FirstClass::Go,
+            "package sample\nfunc mixedFlat(a, b, c bool) int { if a && b || c { return 1 }; return 0 }\nfunc mixedParen(a, b, c bool) int { if a && (b || c) { return 1 }; return 0 }\nfunc reversed(a, b, c bool) int { if (a || b) && c { return 1 }; return 0 }\nfunc doubled(a, b, c bool) int { if a && ((b || c)) { return 1 }; return 0 }\nfunc sameParen(a, b, c bool) int { if a && (b && c) { return 1 }; return 0 }\nfunc negated(a, b, c bool) int { if a && !(b && c) { return 1 }; return 0 }\n",
+            0,
+        ),
+        (
+            "x.js",
+            FirstClass::JavaScript,
+            "function mixedFlat(a,b,c){if(a&&b||c)return 1;return 0} function mixedParen(a,b,c){if(a&&(b||c))return 1;return 0} function reversed(a,b,c){if((a||b)&&c)return 1;return 0} function doubled(a,b,c){if(a&&((b||c)))return 1;return 0} function sameParen(a,b,c){if(a&&(b&&c))return 1;return 0} function negated(a,b,c){if(a&&!(b&&c))return 1;return 0}",
+            0,
+        ),
+        (
+            "x.ts",
+            FirstClass::TypeScript,
+            "function mixedFlat(a:boolean,b:boolean,c:boolean){if(a&&b||c)return 1;return 0} function mixedParen(a:boolean,b:boolean,c:boolean){if(a&&(b||c))return 1;return 0} function reversed(a:boolean,b:boolean,c:boolean){if((a||b)&&c)return 1;return 0} function doubled(a:boolean,b:boolean,c:boolean){if(a&&((b||c)))return 1;return 0} function sameParen(a:boolean,b:boolean,c:boolean){if(a&&(b&&c))return 1;return 0} function negated(a:boolean,b:boolean,c:boolean){if(a&&!(b&&c))return 1;return 0}",
+            0,
+        ),
+        (
+            "x.tsx",
+            FirstClass::Tsx,
+            "function mixedFlat(a:boolean,b:boolean,c:boolean){if(a&&b||c)return 1;return 0} function mixedParen(a:boolean,b:boolean,c:boolean){if(a&&(b||c))return 1;return 0} function reversed(a:boolean,b:boolean,c:boolean){if((a||b)&&c)return 1;return 0} function doubled(a:boolean,b:boolean,c:boolean){if(a&&((b||c)))return 1;return 0} function sameParen(a:boolean,b:boolean,c:boolean){if(a&&(b&&c))return 1;return 0} function negated(a:boolean,b:boolean,c:boolean){if(a&&!(b&&c))return 1;return 0}",
+            0,
+        ),
+        (
+            "x.php",
+            FirstClass::Php,
+            "<?php function mixedFlat($a,$b,$c){if($a&&$b||$c)return 1;return 0;} function mixedParen($a,$b,$c){if($a&&($b||$c))return 1;return 0;} function reversed($a,$b,$c){if(($a||$b)&&$c)return 1;return 0;} function doubled($a,$b,$c){if($a&&(($b||$c)))return 1;return 0;} function sameParen($a,$b,$c){if($a&&($b&&$c))return 1;return 0;} function negated($a,$b,$c){if($a&&!($b&&$c))return 1;return 0;}",
+            0,
+        ),
+        (
+            "x.py",
+            FirstClass::Python,
+            "def mixedFlat(a,b,c):\n    if a and b or c: return 1\n    return 0\ndef mixedParen(a,b,c):\n    if a and (b or c): return 1\n    return 0\ndef reversed(a,b,c):\n    if (a or b) and c: return 1\n    return 0\ndef doubled(a,b,c):\n    if a and ((b or c)): return 1\n    return 0\ndef sameParen(a,b,c):\n    if a and (b and c): return 1\n    return 0\ndef negated(a,b,c):\n    if a and not (b and c): return 1\n    return 0\n",
+            0,
+        ),
+        (
+            "x.rs",
+            FirstClass::Rust,
+            "fn mixedFlat(a:bool,b:bool,c:bool)->u8{if a&&b||c{1}else{0}} fn mixedParen(a:bool,b:bool,c:bool)->u8{if a&&(b||c){1}else{0}} fn reversed(a:bool,b:bool,c:bool)->u8{if (a||b)&&c{1}else{0}} fn doubled(a:bool,b:bool,c:bool)->u8{if a&&((b||c)){1}else{0}} fn sameParen(a:bool,b:bool,c:bool)->u8{if a&&(b&&c){1}else{0}} fn negated(a:bool,b:bool,c:bool)->u8{if a&&!(b&&c){1}else{0}}",
+            1,
+        ),
+        (
+            "x.gd",
+            FirstClass::GdScript,
+            "func mixedFlat(a: bool, b: bool, c: bool) -> int:\n    if a and b or c: return 1\n    return 0\nfunc mixedParen(a: bool, b: bool, c: bool) -> int:\n    if a and (b or c): return 1\n    return 0\nfunc reversed(a: bool, b: bool, c: bool) -> int:\n    if (a or b) and c: return 1\n    return 0\nfunc doubled(a: bool, b: bool, c: bool) -> int:\n    if a and ((b or c)): return 1\n    return 0\nfunc sameParen(a: bool, b: bool, c: bool) -> int:\n    if a and (b and c): return 1\n    return 0\nfunc negated(a: bool, b: bool, c: bool) -> int:\n    if a and not (b and c): return 1\n    return 0\n",
+            0,
+        ),
+        (
+            "x.gdshader",
+            FirstClass::GdShader,
+            "shader_type canvas_item;\nint mixedFlat(bool a, bool b, bool c) { if (a && b || c) return 1; return 0; }\nint mixedParen(bool a, bool b, bool c) { if (a && (b || c)) return 1; return 0; }\nint reversed(bool a, bool b, bool c) { if ((a || b) && c) return 1; return 0; }\nint doubled(bool a, bool b, bool c) { if (a && ((b || c))) return 1; return 0; }\nint sameParen(bool a, bool b, bool c) { if (a && (b && c)) return 1; return 0; }\nint negated(bool a, bool b, bool c) { if (a && !(b && c)) return 1; return 0; }\n",
+            0,
+        ),
+    ];
+
+    for (path, language, source, rust_else) in cases {
+        let complexity = analyze_first_class(path, language, source);
+        for name in ["mixedFlat", "mixedParen", "reversed", "doubled", "negated"] {
+            assert_function_metrics(&complexity, name, 4, 3 + rust_else, 1);
+        }
+        assert_function_metrics(&complexity, "sameParen", 4, 2 + rust_else, 1);
+    }
+}
+
+#[test]
+fn boolean_operators_inside_calls_and_lambdas_have_separate_owners() {
+    let source = "function check(a,b){return a||b} function called(a,b,c){if(a&&check(b||c))return 1;return 0} function enclosing(a,b,c){return a&&[b].some(x=>x||c)}";
+    let complexity = analyze_first_class("x.js", FirstClass::JavaScript, source);
+
+    assert_function_metrics(&complexity, "called", 4, 3, 1);
+    assert_function_metrics(&complexity, "enclosing", 2, 1, 0);
+    assert_eq!(
+        complexity
+            .functions
+            .iter()
+            .filter(|function| function.cognitive == 1 && function.cyclomatic == 2)
+            .count(),
+        3
+    );
 }
 
 #[test]

@@ -46,6 +46,11 @@ Complexity is calculated per function and only for code.
 - Python comprehension clauses and JS/TS default values, logical assignments, optional chains,
   and nullish coalescing add control-flow paths. File-level cyclomatic values sum independent
   function scopes and top-level decisions. Cognitive complexity includes direct self-recursion.
+- Rust and Go `else if` chains do not add nesting; explicit nested `if` blocks do. Cognitive
+  Boolean sequences flatten transparent parentheses once, split when the operator changes, and
+  keep negated, call-argument, and nested callable expressions separate. Rust `let_chain` `&&`
+  operators and GDScript `binary_operator` `and`/`or` participate in the same rule. Cyclomatic
+  operator counts remain per token.
 - Maintainability Index uses Microsoft's normalized 0–100 formula with SLOC as the cross-language
   source-operation proxy: 0–9 low, 10–19 moderate, 20–100 good.
 - Halstead arithmetic follows the published equations, but grammar-specific leaf-token

@@ -126,7 +126,7 @@ is consistent, but live edits can make it differ from earlier parent metadata.
 Lexical search facts,
 definition-planning environment facts and call/reference facts must reuse ordinary scanner-owned
 source capture, analyzers, parser and cache entries. Their cached semantics use analyzer version
-22; the additive serialized contract remains schema 2.0. New runtime settings that change cached
+23; the additive serialized contract remains schema 2.0. New runtime settings that change cached
 facts belong in the existing analysis-profile contract. Do not introduce a parallel index, parser,
 source reader or cache namespace.
 

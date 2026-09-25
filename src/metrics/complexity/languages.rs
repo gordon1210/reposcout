@@ -46,7 +46,7 @@ const RUST_COGNITIVE: &[&str] = &[
     "match_expression",
 ];
 const RUST_NESTING: &[&str] = RUST_COGNITIVE;
-const RUST_ELSE: &[&str] = &[];
+const RUST_ELSE: &[&str] = &["else_clause"];
 const RUST_JUMPS: &[&str] = &["break_expression", "continue_expression"];
 
 const PY_FUNCTIONS: &[&str] = &["function_definition", "lambda"];

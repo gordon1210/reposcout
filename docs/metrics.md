@@ -72,7 +72,13 @@ optional chains, and nullish coalescing contribute control-flow paths.
 ### Cognitive complexity and nesting
 
 Cognitive complexity emphasizes nested control flow and includes direct self-recursion. It does
-not attempt to model mutual-recursion cycles or every language-specific Sonar nuance.
+not attempt to model mutual-recursion cycles or every language-specific Sonar nuance. An `else if`
+chain contributes one point per branch without increasing nesting; an `if` inside an explicit
+`else` block retains its actual nesting. Consecutive operators of the same kind form one Boolean
+sequence, including through parentheses. A change between `&&` and `||` (or `and` and `or`) starts
+another sequence. Negation, calls, and nested callable bodies keep their own sequences. Rust
+`if let` and `while let` chains contribute their `&&` sequence; GDScript `and`/`or` expressions
+use the same rule.
 
 ### Maintainability Index
 

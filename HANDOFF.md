@@ -5,8 +5,8 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-22 · latest release 0.3.2 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 22_
+_Last updated: 2026-09-25 · latest release 0.3.3 · JSON `SCHEMA_VERSION` 2.0 ·
+`ANALYZER_VERSION` 23_
 
 ---
 
@@ -63,18 +63,25 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 
 ## Current state
 
+- **Cognitive complexity precision.** Rust and Go `else if` chains stay at one nesting level;
+  explicit nested blocks still accumulate nesting. Boolean runs flatten through parentheses
+  without duplicate ownership, Rust `let` chains count their `&&`, and GDScript binary `and`/`or`
+  expressions contribute cognitive points. Negated groups, calls and nested functions keep their
+  own Boolean sequence boundaries. Analyzer 23 invalidates affected per-file cache facts without
+  changing JSON schema 2.0. See [metrics](docs/metrics.md) and [0.3.3](CHANGELOG.md#033---2026-09-25).
+
 - **Source and refresh reliability.** Ordinary Unix source reads retain a root
   descriptor and reject symlink/FIFO races. Discovery and snapshot queries share bounded ignore
   policy. Type-1 sampling and work limits expose partiality, including production-duplication
   completeness, while rare-first seed processing preserves longer continuations. Cache files are
   partitioned by analysis profile. Daemon scans reload configuration and observe targeted Git
   metadata (including worktrees); dashboard responses validate nested schema-2.0 data. These are
-  scan-wide, I/O and projection changes: schema 2.0 and cached analyzer 22 remain unchanged.
+  scan-wide, I/O and projection changes and did not alter cached per-file facts in 0.3.2.
 
 - **Task-query program.** Lexical `find`,
   explicit definition `plan`, conservative worktree `consumers`, and scan diagnostic seeds share
-  existing capture/analysis/cache facts. Analyzer 22 covers the current parse-derived facts,
-  including C#; schema remains 2.0. Product scope and limits are in
+  existing capture/analysis/cache facts. Analyzer 23 covers current parse-derived facts, including
+  C# and corrected complexity; schema remains 2.0. Product scope and limits are in
   [task queries](docs/task-queries.md) and [task diagnostics](docs/task-diagnostics.md).
   The offline [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
   canonical provider-call ledgers and externally attested native session windows. The historical, pre-review [38-run pilot](docs/agent-evaluation.md) passed all bounded
@@ -95,9 +102,10 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
-  Cached definition facts use analyzer version 22 while the additive schema remains 2.0.
+  Cached definition facts use analyzer version 23 while the additive schema remains 2.0.
   The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
-  analyzer 21 added the task-query facts and analyzer 22 adds C# facts.
+  analyzer 21 added the task-query facts, analyzer 22 added C# facts, and analyzer 23 corrects
+  cognitive complexity.
   Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
   `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
   inventory behavior is unchanged.

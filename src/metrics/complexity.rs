@@ -113,7 +113,7 @@ fn analyze_scope(
             .decision_points
             .saturating_add(decision_increment(node, fc, cfg, content));
 
-        if is_top_level_boolean_expression(node, fc, content) {
+        if is_boolean_sequence_root(node, fc, content) {
             metrics.cognitive = metrics
                 .cognitive
                 .saturating_add(count_boolean_sequences(node, fc, content));
@@ -425,39 +425,38 @@ fn is_identifier(value: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
 }
 
-fn is_top_level_boolean_expression(node: Node<'_>, fc: FirstClass, content: &str) -> bool {
-    if !is_boolean_expression_kind(node.kind()) || !subtree_has_boolean_operator(node, fc, content)
-    {
+fn is_boolean_sequence_root(node: Node<'_>, fc: FirstClass, content: &str) -> bool {
+    if direct_boolean_operator(node, fc, content).is_none() {
         return false;
     }
-    !node.parent().is_some_and(|parent| {
-        is_boolean_expression_kind(parent.kind())
-            && subtree_has_boolean_operator(parent, fc, content)
-    })
+    let mut parent = node.parent();
+    while let Some(ancestor) = parent {
+        if !is_transparent_boolean_group(ancestor.kind()) {
+            return direct_boolean_operator(ancestor, fc, content).is_none();
+        }
+        parent = ancestor.parent();
+    }
+    true
 }
 
 fn is_boolean_expression_kind(kind: &str) -> bool {
-    matches!(kind, "binary_expression" | "boolean_operator")
+    matches!(
+        kind,
+        "binary_expression" | "binary_operator" | "boolean_operator" | "let_chain"
+    )
 }
 
-fn subtree_has_boolean_operator(node: Node<'_>, fc: FirstClass, content: &str) -> bool {
-    count_boolean_operators(node, fc, content) > 0
+fn is_transparent_boolean_group(kind: &str) -> bool {
+    matches!(kind, "parenthesized_expression" | "parenthical_expression")
 }
 
-fn count_boolean_operators(node: Node<'_>, fc: FirstClass, content: &str) -> u32 {
-    let mut count = 0u32;
-    let mut stack = vec![node];
-    while let Some(current) = stack.pop() {
-        if is_boolean_operator_token(current, fc, content) {
-            count = count.saturating_add(1);
-        }
-        for i in (0..current.child_count()).rev() {
-            if let Some(child) = current.child(i) {
-                stack.push(child);
-            }
-        }
+fn direct_boolean_operator(node: Node<'_>, fc: FirstClass, content: &str) -> Option<&'static str> {
+    if !is_boolean_expression_kind(node.kind()) {
+        return None;
     }
-    count
+    (0..node.child_count())
+        .filter_map(|index| node.child(index))
+        .find_map(|child| boolean_operator_kind(child, fc, content))
 }
 
 fn count_boolean_sequences(node: Node<'_>, fc: FirstClass, content: &str) -> u32 {
@@ -484,10 +483,13 @@ fn collect_boolean_ops_in_order(
     while let Some(current) = stack.pop() {
         if let Some(op) = boolean_operator_kind(current, fc, content) {
             ops.push(op);
-        }
-        for i in (0..current.child_count()).rev() {
-            if let Some(child) = current.child(i) {
-                stack.push(child);
+        } else if is_transparent_boolean_group(current.kind())
+            || direct_boolean_operator(current, fc, content).is_some()
+        {
+            for index in (0..current.child_count()).rev() {
+                if let Some(child) = current.child(index) {
+                    stack.push(child);
+                }
             }
         }
     }
@@ -534,7 +536,7 @@ fn is_else_if_node(node: Node<'_>, fc: FirstClass, cfg: &LangConfig) -> bool {
     }
     node.parent().is_some_and(|parent| {
         contains(cfg.else_clause_kinds, parent.kind())
-            || (fc == FirstClass::CSharp
+            || (matches!(fc, FirstClass::CSharp | FirstClass::Go)
                 && parent.kind() == "if_statement"
                 && parent.child_by_field_name("alternative") == Some(node))
     })

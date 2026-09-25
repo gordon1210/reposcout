@@ -114,7 +114,7 @@ pub struct CacheClearResult {
 }
 
 /// Bump when cached per-file analysis facts are added or changed.
-const ANALYZER_VERSION: &str = "22";
+const ANALYZER_VERSION: &str = "23";
 
 /// The configuration that can change a cached per-file analysis entry.
 ///
