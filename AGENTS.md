@@ -1,26 +1,23 @@
 # AGENTS.md
 
-Guidance for coding agents and humans working in **reposcout**, a Rust CLI that gives agents and
-humans a fast, consolidated view of repository size, health, duplication, structure, and change
-impact. `README.md` is the user-facing contract; this file governs work in the repository.
+Guidance for agents and humans in **reposcout**, a Rust CLI for repository size, health,
+duplication, structure, and change impact. `README.md` is the user contract; this file governs
+repository work.
 
 ## Mandatory reference routing
 
-This file is intentionally compact. The focused documents under `docs/agents/` are **normative
-extensions**, not optional background. Before editing or validating, read every reference matching
-the affected area completely. A task spanning areas requires multiple references; uncertainty is a
-reason to read the reference, not to guess. These are ordinary Markdown files, so do not assume
-they were loaded automatically: this table is the required routing step. This root file always
-applies.
+The `docs/agents/` files are **normative extensions**. Before editing, reviewing, or validating,
+read every matching reference completely; multi-area work needs each one. If unsure, read it.
+Markdown files are not loaded automatically. Use this router; this root file always applies.
 
 | Required reference | Read it before… |
 |---|---|
 | [`repository-map.md`](docs/agents/repository-map.md) | selecting implementation files, moving responsibilities, or changing frontend structure |
 | [`architecture-contracts.md`](docs/agents/architecture-contracts.md) | changing models, scanner flow, cacheable facts, discovery/config policy, outputs, or duplication interfaces |
-| [`metrics.md`](docs/agents/metrics.md) | changing line, marker, complexity, duplication, risk, test-presence, assessment, or diagnostic semantics |
+| [`metrics.md`](docs/agents/metrics.md) | changing/reviewing metric or diagnostic semantics, code-language support, or parsers/grammars |
 | [`reports-and-modes.md`](docs/agents/reports-and-modes.md) | changing report shapes/renderers, summary, change-summary, review, baseline, work-scope, or query behavior |
 | [`graph-context-daemon.md`](docs/agents/graph-context-daemon.md) | changing graph resolution, impact, context planning, daemon graph generation, or graph UX |
-| [`validation.md`](docs/agents/validation.md) | changing code or dependencies; running builds/tests; or interacting with processes, toolchains, fixtures, and releases |
+| [`validation.md`](docs/agents/validation.md) | changing code/dependencies; writing/reviewing tests; running builds/tests; or handling processes, toolchains, fixtures, releases |
 
 When agent rules change, update the root router and every affected reference together. Do not let a
 rule exist only in `HANDOFF.md`, a skill, or chat history.

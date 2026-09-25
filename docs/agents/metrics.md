@@ -1,8 +1,9 @@
 # Agent metric semantics
 
 This is a normative extension of the root [`AGENTS.md`](../../AGENTS.md). Read it completely before
-changing line, marker, complexity, duplication, test-presence, risk, assessment, or diagnostic
-behavior. The root instructions remain in force.
+changing or reviewing line, marker, complexity, duplication, test-presence, risk, assessment, or
+diagnostic behavior; adding or reviewing code-language support; or changing or reviewing
+parsers/grammars. The root instructions remain in force.
 
 ## Lines and markers
 
@@ -56,6 +57,25 @@ Complexity is calculated per function and only for code.
 - Halstead arithmetic follows the published equations, but grammar-specific leaf-token
   classification makes it a RepoScout-internal signal, not a cross-tool or cross-language
   equivalent.
+
+## Metric regression expectations
+
+- For deterministic, bounded examples, derive expected values from the documented metric rule
+  independently of current analyzer output. Assert exact counts and other discrete facts; use
+  a justified tolerance for floating-point formulas. A lower bound such as `cognitive >= 5` does
+  not verify an exact count. Range assertions fit only contracts that explicitly specify bounds.
+  Do not copy current analyzer output into golden expectations without independent derivation.
+- When an analyzer rule is shared, cover every affected supported code grammar with small,
+  comparable cases through the existing analyzer. For new code-language support or a parser/grammar
+  change, inspect actual AST node, field, and operator shapes, then run or extend the relevant
+  shared regression matrix. Explain unsupported constructs and language-specific differences;
+  semantically equivalent programs need not have identical cognitive complexity. Reject
+  Tree-sitter error nodes in fixtures unless parser recovery is the explicit test subject.
+- For complexity changes, include relevant properties and counterexamples for transparent
+  parentheses without double counting, operator runs counted once in source order and assigned to
+  the correct expression, `else if` versus an `if` nested in an explicit `else` block, and Boolean
+  expressions in calls or inner callables. Cover Rust `let_chain` and GDScript `binary_operator`
+  where relevant.
 
 ## Duplication
 

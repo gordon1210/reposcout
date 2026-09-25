@@ -351,6 +351,9 @@ less honest?
   invariants inline. Detailed normative guidance belongs in focused `docs/agents/` references;
   update routing and affected references together, and keep the root at or below roughly 9.6 KiB
   so the project-instruction ceiling retains headroom.
+- Apply the [metric regression expectations](docs/agents/metrics.md#metric-regression-expectations)
+  and [bug-fix evidence rules](docs/agents/validation.md#bug-fix-evidence-and-review) when
+  changing or reviewing analyzer semantics.
 - Validation before commit covers Rust formatting, clippy, and tests; dashboard build/tests;
   the landing build; `cargo build --release`; and a repo-local sanity scan. The full proportional
   checklist is in `docs/agents/validation.md`.

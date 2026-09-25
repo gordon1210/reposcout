@@ -1,8 +1,9 @@
 # Agent validation and repository safety
 
 This is a normative extension of the root [`AGENTS.md`](../../AGENTS.md). Read it completely before
-changing dependencies, running builds or tests, touching frontend code, or interacting with any
-long-running process. The root instructions remain in force.
+changing or reviewing code or dependencies; writing or reviewing tests; running builds or tests;
+touching frontend code; or interacting with any long-running process. The root instructions remain
+in force.
 
 ## Development binary
 
@@ -128,6 +129,23 @@ pnpm build:landing
   refactor unrelated code.
 - Because Clap uses `args_conflicts_with_subcommands`, global flags follow subcommands, for example
   `reposcout tokens --encoding cl100k_base src/`.
+
+## Bug-fix evidence and review
+
+- Reproduce a reported bug on a bounded example first and derive the expected domain result from
+  the documented rule. A regression test must fail on the faulty implementation because its
+  actual domain output violates the assertion, then pass with the final fix. Compilation,
+  toolchain, resource, or environment failure is not evidence of that RED result.
+- Preserve user-owned checkouts and work. Use an isolated checkout for an old-revision test or a
+  verified old binary for a bounded before/after reproducer; distinguish an old-binary output from
+  actually running the new regression test on the old revision. Never reset user-owned changes to
+  manufacture RED evidence.
+- If resource or toolchain limits block either run, honor the existing hard limits, record exactly
+  what ran and what did not, and check a bounded substitute. Never claim unobserved RED or GREEN.
+- Before push, review the independent expected-value derivation, nearby counterexamples and
+  affected language adapters, fixture syntax, and whether changed cached file facts require an
+  `ANALYZER_VERSION` bump. Test counts, CI status, review score, signature, and provenance do not
+  establish metric correctness on their own.
 
 ## Validation before a commit
 
