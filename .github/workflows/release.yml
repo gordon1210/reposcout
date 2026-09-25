@@ -51,8 +51,11 @@ on:
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
-    runs-on: "ubuntu-22.04"
+    runs-on: "ubuntu-24.04"
     timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
       tag: ${{ !github.event.pull_request && github.ref_name || '' }}
@@ -62,25 +65,6 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-      - name: Install verified dist
-        run: |
-          installer="$RUNNER_TEMP/cargo-dist-installer.sh"
-          curl --proto '=https' --tlsv1.2 -LsSf \
-            https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-installer.sh \
-            -o "$installer"
-          printf '%s  %s\n' \
-            b657cf8c04a8b7bc28f39d220f7e6dd11bbd2bdb072c552262bd9ccf597261b5 \
-            "$installer" | shasum -a 256 --check -
-          CARGO_DIST_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
-            sh "$installer" --quiet
-          dist --version
-      - name: Cache dist
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: cargo-dist-cache
-          path: ~/.cargo/bin/dist
       - name: Validate release tag and source
         if: ${{ github.event_name == 'push' }}
         shell: bash
@@ -105,6 +89,36 @@ jobs:
             echo "release commit is not reachable from origin/main: $RELEASE_COMMIT" >&2
             exit 1
           fi
+      - name: Require successful CI for release commit
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: python3 .github/scripts/check-release-ci.py
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+      - name: Install verified dist
+        run: |
+          installer="$RUNNER_TEMP/cargo-dist-installer.sh"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-installer.sh \
+            -o "$installer"
+          printf '%s  %s\n' \
+            c5b53ac2559eb26e3b3dc28755eb5d011ed6ec9ac97fa4fc2a2459872e766b5e \
+            "$installer" | shasum -a 256 --check -
+          CARGO_DIST_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
+            sh "$installer" --quiet
+          dist --version
+      - name: Cache dist
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/dist
+          retention-days: 7
+          if-no-files-found: error
       # sure would be cool if github gave us proper conditionals...
       # so here's a doubly-nested ternary-via-truthiness to try to provide the best possible
       # functionality based on whether this is a pull_request, and whether it's from a fork.
@@ -132,6 +146,8 @@ jobs:
         with:
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
+          retention-days: 7
+          if-no-files-found: error
 
   # Build and packages all the platform-specific things
   build-local-artifacts:
@@ -169,25 +185,27 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
       - name: Install verified release build tools
         run: |
           dist_installer="$RUNNER_TEMP/cargo-dist-installer.sh"
           curl --proto '=https' --tlsv1.2 -LsSf \
-            https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-installer.sh \
+            https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-installer.sh \
             -o "$dist_installer"
           printf '%s  %s\n' \
-            b657cf8c04a8b7bc28f39d220f7e6dd11bbd2bdb072c552262bd9ccf597261b5 \
+            c5b53ac2559eb26e3b3dc28755eb5d011ed6ec9ac97fa4fc2a2459872e766b5e \
             "$dist_installer" | shasum -a 256 --check -
           CARGO_DIST_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
             sh "$dist_installer" --quiet
 
           auditable_installer="$RUNNER_TEMP/cargo-auditable-installer.sh"
           curl --proto '=https' --tlsv1.2 -LsSf \
-            https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.5/cargo-auditable-installer.sh \
+            https://github.com/rust-secure-code/cargo-auditable/releases/download/v0.7.6/cargo-auditable-installer.sh \
             -o "$auditable_installer"
           printf '%s  %s\n' \
-            ffaafe99087affa66e3202ebb78fb0aeea6c6ff4019f941c82040502442f770a \
+            76c67f042185931cf4753a1c18ced20f9837233e1af13c51108fb8734a841896 \
             "$auditable_installer" | shasum -a 256 --check -
           CARGO_AUDITABLE_UNMANAGED_INSTALL="${CARGO_HOME:-$HOME/.cargo}" \
             sh "$auditable_installer" --quiet
@@ -229,33 +247,19 @@ jobs:
             --artifacts-dir target/distrib \
             --max-decoder-memory-mib 64
       - name: Verify binary portability
-        shell: bash
         env:
           BINARY_TARGET: ${{ join(matrix.targets, '') }}
           RUNNER_OS: ${{ runner.os }}
         run: |
-          binary="target/$BINARY_TARGET/dist/reposcout"
-          test -x "$binary"
-
-          case "$RUNNER_OS" in
-            macOS)
-              while read -r dependency _; do
-                case "$dependency" in
-                  /usr/lib/*|/System/Library/*) ;;
-                  *)
-                    echo "unexpected non-system dependency: $dependency" >&2
-                    exit 1
-                    ;;
-                esac
-              done < <(otool -L "$binary" | tail -n +2)
-              ;;
-            Linux)
-              if objdump -p "$binary" | grep -Eq 'NEEDED[[:space:]]+liblzma'; then
-                echo "unexpected dynamic liblzma dependency" >&2
-                exit 1
-              fi
-              ;;
-          esac
+          python3 .github/scripts/verify-release-binary.py \
+            --os "$RUNNER_OS" "target/$BINARY_TARGET/dist/reposcout"
+      - name: Smoke-test packed release archive
+        env:
+          BINARY_TARGET: ${{ join(matrix.targets, '') }}
+        run: |
+          python3 .github/scripts/smoke-release-archive.py \
+            --archive "target/distrib/reposcout-$BINARY_TARGET.tar.xz" \
+            --global-config tests/fixtures/test-global.toml
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up
@@ -276,13 +280,16 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
 
   # Build and package all the platform-agnostic(ish) things
   build-global-artifacts:
     needs:
       - plan
       - build-local-artifacts
-    runs-on: "ubuntu-22.04"
+    runs-on: "ubuntu-24.04"
     timeout-minutes: 10
     env:
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
@@ -358,14 +365,15 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+          retention-days: 7
+          if-no-files-found: error
   # Determines if we should publish/announce
   host:
     needs:
       - plan
       - build-local-artifacts
       - build-global-artifacts
-    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.build-global-artifacts.result == 'success' && needs.build-local-artifacts.result == 'success' }}
     environment: release
     permissions:
       attestations: write
@@ -374,7 +382,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ needs.plan.outputs.tag }}
-    runs-on: "ubuntu-22.04"
+    runs-on: "ubuntu-24.04"
     timeout-minutes: 10
     outputs:
       val: ${{ steps.host.outputs.manifest }}
@@ -396,6 +404,8 @@ jobs:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
+      - name: Verify complete release artifacts
+        run: python3 .github/scripts/verify-release-artifacts.py target/distrib
       - id: host
         shell: bash
         run: |
@@ -414,6 +424,8 @@ jobs:
           # Overwrite the previous copy
           name: artifacts-dist-manifest
           path: dist-manifest.json
+          retention-days: 7
+          if-no-files-found: error
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -425,6 +437,8 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      - name: Verify files selected for attestation and publication
+        run: python3 .github/scripts/verify-release-artifacts.py --include-host-manifest artifacts
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
@@ -451,19 +465,3 @@ jobs:
             --title "$ANNOUNCEMENT_TITLE" \
             --notes-file "$RUNNER_TEMP/notes.txt" \
             artifacts/*
-
-  announce:
-    needs:
-      - plan
-      - host
-    # use "always() && ..." to allow us to wait for all publish jobs while
-    # still allowing individual publish jobs to skip themselves (for prereleases).
-    # "host" however must run to completion, no skipping allowed!
-    if: ${{ always() && needs.host.result == 'success' }}
-    runs-on: "ubuntu-22.04"
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          submodules: recursive

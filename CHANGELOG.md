@@ -6,6 +6,26 @@ within their section.
 
 ## [Unreleased]
 
+### Changed
+
+- Require successful Rust and release-helper CI for the exact tagged commit before release builds;
+  a missing or incomplete latest run now stops publication immediately. Release helper fixtures
+  run on every `main` push and on relevant pull requests.
+- Use macOS 15 for Apple Silicon release builds and Ubuntu 24.04 for global release jobs while
+  retaining Ubuntu 22.04 for the Linux binary compatibility baseline. Refresh cargo-dist to 0.33.0,
+  cargo-auditable to 0.7.6, the Rust toolchain action snapshot, and pnpm within version 11.
+- Build downloadable macOS development binaries only on `main` pushes and manual Rust CI runs.
+  Keep internal release transport artifacts for seven days and omit the dist binary upload on PR
+  plan-only runs.
+
+### Fixed
+
+- Fail release portability checks when `otool` or `objdump` fails, and run a tiny scan from each
+  packed binary before publication. Require both target archives, checksums, installer, SBOM,
+  source archive, and manifest before attestation and release.
+- Trigger Frontend CI when its own workflow changes, and prevent ordinary CI checkouts from
+  retaining Git credentials.
+
 ## [0.3.3] - 2026-09-25
 
 ### Changed
