@@ -136,6 +136,24 @@ release actions are pinned to immutable commits, and every published artifact re
 build-provenance attestation. Release binaries embed auditable dependency metadata, and each
 release includes a CycloneDX software bill of materials.
 
+Tag releases require successful `Rust CI` jobs (`Rust` and `Native macOS`) and `Release helper CI`
+(`Release helpers`) for the exact tagged commit. The gate accepts only the newest trusted `main`
+push or manual run of each workflow, checks every required job in the latest attempt, and fails
+immediately when a result is missing, pending, skipped, or failed. The helper workflow runs its
+packaging fixtures on every `main` push and on PRs changing release scripts, fixtures, the release
+workflow, its own workflow, or dist configuration. Rust CI keeps
+its source path filter: for a docs-only `main` commit, manually run Rust CI on `main` and wait for
+both jobs to pass before tagging. If a tag was pushed before CI finished, re-run the Release workflow
+after CI passes. When recovering a partially re-run Rust CI, choose **Re-run all jobs** so the
+latest attempt contains both required jobs.
+
+The Apple Silicon build uses `macos-15`; the GNU/Linux binary remains on `ubuntu-22.04` to retain
+its current glibc baseline. Platform-independent planning, installer, and publishing jobs use
+`ubuntu-24.04`. Release builds check binary linkage and run a tiny scan using the executable inside
+each packed archive. Publication also checks that both target archives, checksums, installer, SBOM,
+source archive, and final manifest are present. Internal Actions artifacts expire after seven days;
+published GitHub Release assets are separate.
+
 The release workflow is intentionally hand-hardened and `allow-dirty = ["ci"]` prevents
 cargo-dist from overwriting its least-privilege permissions, immutable action pins, installer
 verification patch, and attestation step. Review and refresh those customizations deliberately

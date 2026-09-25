@@ -176,8 +176,12 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
 - **Security boundaries.** Scan/explain/locate/read/changes output files use symlink-safe atomic replacement,
   including anchored Unix parent traversal. A file-target `changes` query protects its parent
   directory against output writes, including sibling source paths. Release tags are validated, shell context crosses
-  through environment variables, release commits must be reachable from `main`, and published
-  assets receive attestations. The daemon is loopback-first and bearer-token authenticated;
+  through environment variables, release commits must be reachable from `main`, and the latest
+  trusted Rust and release-helper CI runs for the exact commit must pass all required jobs before
+  packaging begins. Release archives are smoke-tested, expected publish files and checksums are
+  checked, and published assets receive attestations. The GNU/Linux release build stays on
+  Ubuntu 22.04 for its glibc baseline while Apple Silicon uses macOS 15 and global jobs use
+  Ubuntu 24.04. The daemon is loopback-first and bearer-token authenticated;
   unauthenticated mode is loopback-only, while remote plain HTTP is explicit and intended only
   behind TLS.
 - **Output:** `table` (human), `json` (agent), `markdown` (PRs/issues), `sarif` (SARIF
