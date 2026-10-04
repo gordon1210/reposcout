@@ -18,6 +18,9 @@ mod post_review;
 #[path = "review_context/projection_regressions.rs"]
 mod projection_regressions;
 
+#[path = "review_context/snapshot_handoff.rs"]
+mod snapshot_handoff;
+
 use git2::{IndexAddOption, Oid, Repository, Signature};
 use reposcout::metrics::tokens::TokenCounter;
 use serde_json::Value;

@@ -373,7 +373,9 @@ impl<'a> CaptureSession<'a> {
             &self.exclusions,
             &mut self.matcher,
             matches!(revision, SourceRevision::Worktree),
-            self.mode == CaptureMode::ExplicitSource,
+            // Historical source identity comes from GitCapture's tree/index mode and blob.
+            self.mode == CaptureMode::ExplicitSource
+                && matches!(revision, SourceRevision::Worktree),
         );
         self.ignore_error |= failure == Some(ExplicitSourceFailure::IgnoreError);
         if let Some(failure) = failure {
