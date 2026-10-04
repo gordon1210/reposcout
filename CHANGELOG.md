@@ -31,6 +31,9 @@ within their section.
 
 ### Fixed
 
+- Remove vulnerable `braces` from frontend lint tooling by replacing the import-alias plugin
+  with a tested local rule, retaining alias enforcement and fixes. Update `brace-expansion`
+  through its existing constraints; no audit ignores or dependency overrides are added.
 - Preserve unknown PR change mappings when either revision cannot be captured and retain resolved
   references under incomplete mapping with an explicit file-based change basis, prioritizing
   external callers over internal references; keep unrelated resolver configurations out of the

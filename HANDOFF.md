@@ -224,7 +224,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   standalone, responsive public product page on the same React/TypeScript/Vite/Tailwind stack,
   with bespoke styling and the RepoScout fox artwork.
 - **Quality gates:** Rust formatting, clippy, and test suites; dashboard Vitest; and production
-  builds for both frontend packages.
+  builds for both frontend packages. Frontend linting also tests the local import-alias rule;
+  it reads inherited/JSONC tsconfig paths with `tsconfig-paths` and supports exact mappings or
+  trailing `/*` prefix mappings. Unsupported mappings fail explicitly instead of skipping lint.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and

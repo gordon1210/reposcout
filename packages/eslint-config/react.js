@@ -1,5 +1,4 @@
 import js from "@eslint/js"
-import importAlias from "@limegrass/eslint-plugin-import-alias"
 import prettierRecommended from "eslint-plugin-prettier/recommended"
 import reactHooks from "eslint-plugin-react-hooks"
 import reactRefresh from "eslint-plugin-react-refresh"
@@ -7,6 +6,7 @@ import globals from "globals"
 import tseslint from "typescript-eslint"
 import { defineConfig, globalIgnores } from "eslint/config"
 
+import importAlias from "./import-alias.js"
 import { formattingRules, qualityRules } from "./rules.js"
 
 export function reactConfig({ aliasConfigPath, ignoreShadcn = false } = {}) {
@@ -52,10 +52,10 @@ export function reactConfig({ aliasConfigPath, ignoreShadcn = false } = {}) {
           {
             files: ["**/*.{ts,tsx}"],
             plugins: {
-              "@limegrass/import-alias": importAlias,
+              reposcout: importAlias,
             },
             rules: {
-              "@limegrass/import-alias/import-alias": [
+              "reposcout/import-alias": [
                 "error",
                 {
                   aliasConfigPath,
