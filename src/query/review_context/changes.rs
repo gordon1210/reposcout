@@ -2,11 +2,12 @@ use crate::metrics::tokens::TokenCounter;
 use crate::model::{
     DefinitionStatus, LineRange, ReviewAnalysisStatus, ReviewChangedSide, ReviewContextChange,
 };
-use crate::query::changed_mapping::{changed_hunks, map_changed_definitions};
+use crate::query::changed_mapping::{changed_hunks, map_changed_definitions, map_counterparts};
 use crate::scan::{ReviewCapture, ReviewRevision};
 use crate::snapshot::comparison::ComparisonFile;
 use anyhow::Result;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 pub(super) fn sha256(content: &str) -> String {
@@ -72,6 +73,7 @@ pub(super) fn describe(
                         }
                     }
                 }
+                counterparts(&mut base, &mut head, captured, &hunks);
                 let patch = patch(old, new, change.base.as_ref(), change.head.as_ref())?;
                 result.diff_tokens = Some(counter.count(&patch));
                 if include_diff {
@@ -140,10 +142,88 @@ fn side(file: &ComparisonFile, revision: &ReviewRevision) -> ReviewChangedSide {
         definitions: Vec::new(),
         definitions_omitted: 0,
         ranges_omitted: 0,
+        counterpart_definitions: 0,
+        ambiguous_counterparts: 0,
+        unprocessed_counterparts: 0,
+        counterpart_seed_mapping_incomplete: false,
         unmapped_ranges: 0,
         unprocessed_ranges: 0,
         ambiguous_definitions: 0,
         wrapper_ranges: 0,
+    }
+}
+
+fn counterparts(
+    base: &mut Option<ReviewChangedSide>,
+    head: &mut Option<ReviewChangedSide>,
+    captured: &ReviewCapture,
+    hunks: &crate::query::changed_mapping::HunkChanges,
+) {
+    if !hunks
+        .hunks
+        .iter()
+        .any(|hunk| hunk.old_lines == 0 || hunk.new_lines == 0)
+    {
+        return;
+    }
+    let (Some(base), Some(head)) = (base, head) else {
+        return;
+    };
+    let (Some(old), Some(new)) = (
+        captured.revisions[0].files().get(&base.path),
+        captured.revisions[1].files().get(&head.path),
+    ) else {
+        return;
+    };
+    let to_head = map_counterparts(&base.definitions, &new.definitions.definitions, hunks, true);
+    let to_base = map_counterparts(
+        &head.definitions,
+        &old.definitions.definitions,
+        hunks,
+        false,
+    );
+    let base_incomplete = base.mapping_status != ReviewAnalysisStatus::Available;
+    let head_incomplete = head.mapping_status != ReviewAnalysisStatus::Available;
+    for (side, facts, mapped, incomplete_seeds) in [
+        (base, &old.definitions.definitions, to_base, head_incomplete),
+        (head, &new.definitions.definitions, to_head, base_incomplete),
+    ] {
+        side.unprocessed_counterparts = mapped.unprocessed;
+        side.ambiguous_counterparts = mapped.ambiguous;
+        side.counterpart_seed_mapping_incomplete = incomplete_seeds;
+        if (mapped.unprocessed > 0 || mapped.ambiguous > 0 || incomplete_seeds)
+            && side.mapping_status == ReviewAnalysisStatus::Available
+        {
+            side.mapping_status = ReviewAnalysisStatus::Partial;
+        }
+        let mut retained: BTreeSet<_> = side
+            .definitions
+            .iter()
+            .map(|definition| {
+                (
+                    definition.declaration_span.start_byte,
+                    definition.declaration_span.end_byte,
+                    definition.symbol.name.clone(),
+                )
+            })
+            .collect();
+        for index in mapped.definitions {
+            let definition = &facts[index];
+            if retained.insert((
+                definition.declaration_span.start_byte,
+                definition.declaration_span.end_byte,
+                definition.symbol.name.clone(),
+            )) {
+                side.definitions.push(definition.clone());
+                side.counterpart_definitions += 1;
+            }
+        }
+        side.definitions.sort_by_key(|definition| {
+            (
+                definition.declaration_span.start_byte,
+                definition.declaration_span.end_byte,
+            )
+        });
     }
 }
 

@@ -210,6 +210,20 @@ fn changes(report: &ReviewContextReport, output: &mut String) {
                         side.definitions_omitted, side.ranges_omitted
                     );
                 }
+                if side.counterpart_definitions > 0
+                    || side.unprocessed_counterparts > 0
+                    || side.ambiguous_counterparts > 0
+                    || side.counterpart_seed_mapping_incomplete
+                {
+                    let _ = writeln!(
+                        output,
+                        "    unchanged-header counterparts={} ambiguous={} unprocessed={} incomplete-seeds={}",
+                        side.counterpart_definitions,
+                        side.ambiguous_counterparts,
+                        side.unprocessed_counterparts,
+                        side.counterpart_seed_mapping_incomplete
+                    );
+                }
                 for definition in &side.definitions {
                     let _ = writeln!(
                         output,

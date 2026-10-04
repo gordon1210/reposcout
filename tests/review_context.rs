@@ -12,6 +12,9 @@ mod test_command;
 #[path = "review_context/regressions.rs"]
 mod regressions;
 
+#[path = "review_context/post_review.rs"]
+mod post_review;
+
 #[path = "review_context/projection_regressions.rs"]
 mod projection_regressions;
 

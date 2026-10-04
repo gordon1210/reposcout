@@ -2,6 +2,9 @@ use crate::model::{DefinitionFact, DefinitionFacts, DefinitionStatus, LineRange,
 use anyhow::Result;
 use std::collections::BTreeMap;
 
+mod counterparts;
+pub(crate) use counterparts::map_counterparts;
+
 const MAX_HUNKS: usize = 4_096;
 const MAX_MAPPING_WORK: usize = 1_000_000;
 

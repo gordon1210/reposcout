@@ -121,6 +121,16 @@ pub struct ReviewChangedSide {
     pub definitions_omitted: usize,
     #[serde(default, skip_serializing_if = "super::is_zero")]
     pub ranges_omitted: usize,
+    /// Declarations retained through an unchanged header on the opposite hunk side.
+    #[serde(default, skip_serializing_if = "super::is_zero")]
+    pub counterpart_definitions: usize,
+    #[serde(default, skip_serializing_if = "super::is_zero")]
+    pub ambiguous_counterparts: usize,
+    #[serde(default, skip_serializing_if = "super::is_zero")]
+    pub unprocessed_counterparts: usize,
+    /// The opposite side could not establish a complete set of changed declarations.
+    #[serde(default, skip_serializing_if = "super::is_false")]
+    pub counterpart_seed_mapping_incomplete: bool,
     pub unmapped_ranges: usize,
     pub unprocessed_ranges: usize,
     pub ambiguous_definitions: usize,
