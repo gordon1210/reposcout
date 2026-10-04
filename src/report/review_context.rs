@@ -203,6 +203,13 @@ fn changes(report: &ReviewContextReport, output: &mut String) {
                     .collect::<Vec<_>>()
                     .join(",");
                 let _ = writeln!(output, "    ranges={ranges}");
+                if side.definitions_omitted > 0 || side.ranges_omitted > 0 {
+                    let _ = writeln!(
+                        output,
+                        "    output omitted: definitions={} ranges={}",
+                        side.definitions_omitted, side.ranges_omitted
+                    );
+                }
                 for definition in &side.definitions {
                     let _ = writeln!(
                         output,

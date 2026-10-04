@@ -1,6 +1,6 @@
 use super::*;
 
-fn revisions(old: &[(&str, &str)], new: &[(&str, &str)]) -> Fixture {
+pub(super) fn revisions(old: &[(&str, &str)], new: &[(&str, &str)]) -> Fixture {
     let directory = tempfile::tempdir().unwrap();
     Repository::init(directory.path()).unwrap();
     for (path, source) in old {

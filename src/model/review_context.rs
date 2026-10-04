@@ -116,6 +116,11 @@ pub struct ReviewChangedSide {
     pub mapping_status: ReviewAnalysisStatus,
     pub ranges: Vec<LineRange>,
     pub definitions: Vec<DefinitionFact>,
+    /// Output omissions do not change the availability of the underlying mapping.
+    #[serde(default, skip_serializing_if = "super::is_zero")]
+    pub definitions_omitted: usize,
+    #[serde(default, skip_serializing_if = "super::is_zero")]
+    pub ranges_omitted: usize,
     pub unmapped_ranges: usize,
     pub unprocessed_ranges: usize,
     pub ambiguous_definitions: usize,

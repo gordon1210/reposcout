@@ -12,6 +12,9 @@ mod test_command;
 #[path = "review_context/regressions.rs"]
 mod regressions;
 
+#[path = "review_context/projection_regressions.rs"]
+mod projection_regressions;
+
 use git2::{IndexAddOption, Oid, Repository, Signature};
 use reposcout::metrics::tokens::TokenCounter;
 use serde_json::Value;

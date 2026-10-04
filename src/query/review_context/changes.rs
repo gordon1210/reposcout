@@ -138,6 +138,8 @@ fn side(file: &ComparisonFile, revision: &ReviewRevision) -> ReviewChangedSide {
         mapping_status: ReviewAnalysisStatus::Unavailable,
         ranges: Vec::new(),
         definitions: Vec::new(),
+        definitions_omitted: 0,
+        ranges_omitted: 0,
         unmapped_ranges: 0,
         unprocessed_ranges: 0,
         ambiguous_definitions: 0,

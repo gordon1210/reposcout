@@ -101,7 +101,7 @@ pub fn review_context(
     }
     totals.source_files = context.iter().filter(|file| file.source.is_some()).count();
     let mut report = ReviewContextReport {
-        kind: "review_context".into(), schema_version: SCHEMA_VERSION.into(), strategy_version: 1,
+        kind: "review_context".into(), schema_version: SCHEMA_VERSION.into(), strategy_version: 2,
         comparison: capture.comparison, encoding: counter.name().into(), token_budget: options.token_budget, byte_budget: options.byte_budget,
         context_budget: selection.then_some(config.context_budget), context_max_files: selection.then_some(config.context_max_files),
         totals, coverage: capture.revisions.into_iter().map(|revision| revision.coverage).collect(),
@@ -165,14 +165,11 @@ fn project(
     report.changes.truncate(ENTRY_LIMIT);
     report.context.truncate(ENTRY_LIMIT);
     report.relations.truncate(ENTRY_LIMIT);
+    let original_changes = report.changes.clone();
     loop {
-        check_deadline(deadline)?;
-        recount(report, options);
-        let rendered =
-            crate::report::review_context::render(report, options.format, options.pretty_json)?;
-        if rendered.len() <= options.byte_budget && counter.count(&rendered) <= options.token_budget
-        {
-            check_deadline(deadline)?;
+        if within_budget(report, options, counter, deadline)? {
+            restore_change_identities(report, &original_changes, options, counter, deadline)?;
+            restore_change_details(report, &original_changes, options, counter, deadline)?;
             return Ok(());
         }
         if let Some(file) = report
@@ -189,14 +186,167 @@ fn project(
             .find(|change| change.diff.is_some())
         {
             change.diff = None;
+        } else if trim_definitions(report) || trim_ranges(report) {
+            // Preserve changed-file identities before spending the budget on unbounded details.
         } else if !(report.relations.pop().is_some()
             || report.context.pop().is_some()
-            || report.changes.pop().is_some())
+            || remove_largest_change(report)?)
         {
             anyhow::bail!(
                 "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
             );
         }
+    }
+}
+
+fn within_budget(
+    report: &mut ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<bool> {
+    check_deadline(deadline)?;
+    recount(report, options);
+    let rendered =
+        crate::report::review_context::render(report, options.format, options.pretty_json)?;
+    let fits =
+        rendered.len() <= options.byte_budget && counter.count(&rendered) <= options.token_budget;
+    check_deadline(deadline)?;
+    Ok(fits)
+}
+
+fn restore_change_identities(
+    report: &mut ReviewContextReport,
+    originals: &[crate::model::ReviewContextChange],
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    let mut index = 0;
+    for original in originals {
+        if report.changes.get(index).is_some_and(|change| {
+            change.base.as_ref().map(|side| &side.path)
+                == original.base.as_ref().map(|side| &side.path)
+                && change.head.as_ref().map(|side| &side.path)
+                    == original.head.as_ref().map(|side| &side.path)
+        }) {
+            index += 1;
+            continue;
+        }
+        let mut compact = original.clone();
+        compact.diff = None;
+        for side in [compact.base.as_mut(), compact.head.as_mut()]
+            .into_iter()
+            .flatten()
+        {
+            side.definitions_omitted += side.definitions.len();
+            side.definitions.clear();
+            side.ranges_omitted += side.ranges.len();
+            side.ranges.clear();
+        }
+        // Byte-ranked eviction is only a heuristic: admission uses the actual format and tokenizer.
+        report.changes.insert(index, compact);
+        if within_budget(report, options, counter, deadline)? {
+            index += 1;
+        } else {
+            report.changes.remove(index);
+        }
+    }
+    recount(report, options);
+    Ok(())
+}
+
+fn restore_change_details(
+    report: &mut ReviewContextReport,
+    originals: &[crate::model::ReviewContextChange],
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    let mut candidates = Vec::new();
+    for (index, change) in report.changes.iter().enumerate() {
+        if ![change.base.as_ref(), change.head.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|side| side.definitions_omitted > 0 || side.ranges_omitted > 0)
+        {
+            continue;
+        }
+        let identity = |change: &crate::model::ReviewContextChange| {
+            (
+                change.base.as_ref().map(|side| side.path.clone()),
+                change.head.as_ref().map(|side| side.path.clone()),
+            )
+        };
+        if let Some(original) = originals
+            .iter()
+            .find(|original| identity(original) == identity(change))
+        {
+            let mut restored = original.clone();
+            restored.diff.clone_from(&change.diff);
+            candidates.push((serde_json::to_vec(&restored)?.len(), index, restored));
+        }
+    }
+    // Whole-entry removal can free space for previously trimmed small changes.
+    candidates.sort_by_key(|(cost, index, _)| (*cost, *index));
+    for (_, index, restored) in candidates {
+        let previous = std::mem::replace(&mut report.changes[index], restored);
+        if !within_budget(report, options, counter, deadline)? {
+            report.changes[index] = previous;
+        }
+    }
+    recount(report, options);
+    Ok(())
+}
+
+fn trim_definitions(report: &mut ReviewContextReport) -> bool {
+    let side = report
+        .changes
+        .iter_mut()
+        .flat_map(|change| [change.base.as_mut(), change.head.as_mut()])
+        .flatten()
+        .filter(|side| !side.definitions.is_empty())
+        .max_by_key(|side| side.definitions.len());
+    let Some(side) = side else {
+        return false;
+    };
+    // Halving bounds projection work even for large declaration inventories.
+    let keep = side.definitions.len() / 2;
+    side.definitions_omitted += side.definitions.len() - keep;
+    side.definitions.truncate(keep);
+    true
+}
+
+fn trim_ranges(report: &mut ReviewContextReport) -> bool {
+    let side = report
+        .changes
+        .iter_mut()
+        .flat_map(|change| [change.base.as_mut(), change.head.as_mut()])
+        .flatten()
+        .filter(|side| !side.ranges.is_empty())
+        .max_by_key(|side| side.ranges.len());
+    let Some(side) = side else {
+        return false;
+    };
+    let keep = side.ranges.len() / 2;
+    side.ranges_omitted += side.ranges.len() - keep;
+    side.ranges.truncate(keep);
+    true
+}
+
+fn remove_largest_change(report: &mut ReviewContextReport) -> Result<bool> {
+    let mut largest = None;
+    for (index, change) in report.changes.iter().enumerate() {
+        let cost = (serde_json::to_vec(change)?.len(), index);
+        if largest.is_none_or(|previous| cost > previous) {
+            largest = Some(cost);
+        }
+    }
+    if let Some((_, index)) = largest {
+        report.changes.remove(index);
+        Ok(true)
+    } else {
+        Ok(false)
     }
 }
 
