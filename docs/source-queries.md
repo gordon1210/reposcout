@@ -43,7 +43,7 @@ API preserves the order of its supplied target vector.
 
 File paths are relative to the directory `[PATH]`, which defaults to `.`. RepoScout resolves that
 explicitly chosen directory once to a canonical anchor. Absolute file paths may use the canonical
-anchor or the original target alias, but must remain beneath that target. Components below the
+anchor or the original target alias, but must remain beneath that target. Worktree components below the
 anchor are opened without following symlinks; legitimate aliases in the chosen root path do not
 bypass that source-file boundary. File selectors must be UTF-8, contain no `..` component and use
 at most 4,096 bytes. Symbol selectors accept at most 1,024 bytes. Symbol matching is case-sensitive:
@@ -89,6 +89,12 @@ one. Missing, unsupported or unreadable index/base content never silently falls 
 bytes. Existing `--expect-hash` checks apply to the selected snapshot. In the shared query API, ref
 aliases resolving to the same tree and path share file identity and hash expectations after
 pinning; conflicting expectations are rejected rather than allowing an alias to bypass them.
+
+Tree and index reads validate the selected Git entry's regular-file mode and blob identity.
+Missing directories or symlinks in current source-parent paths do not redirect or invalidate that
+historical content. Git symlinks and submodules remain unavailable, worktree reads retain
+no-follow traversal, and current ignore/exclusion policy, hash expectations and input limits
+apply to every snapshot.
 
 ## Select changed definitions
 

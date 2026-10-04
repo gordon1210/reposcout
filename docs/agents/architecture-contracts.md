@@ -97,7 +97,9 @@ no-follow traversal applies to source components below that anchor, not to every
 chosen root alias. File selectors reject `..`, stay within target scope and are capped at 4,096
 UTF-8 bytes; symbol selectors are capped at 1,024 bytes. Source hashes identify captured content;
 stale expectations never permit old spans to be applied to new bytes.
-The reader uses Unix handle-relative no-follow traversal. Non-Unix queries fail before source
+Worktree reads use Unix handle-relative no-follow traversal. Git-tree/index reads validate the
+pinned entry's regular-file mode and blob identity rather than current source-parent types;
+lexical paths, current ignore/exclusion policy and limits still apply. Non-Unix queries fail before source
 I/O; do not substitute path-based or best-effort fallback reads. Repository inventory behavior
 is outside this query-specific platform boundary.
 
@@ -112,6 +114,9 @@ candidates by source span in one innermost selection. An edit inside one declara
 select a sibling through their shared wrapper; equally specific shared-header ownership remains
 ambiguous. The pure mapper distinguishes direct innermost, wrapper-only, uncovered,
 ambiguous and unprocessed evidence without I/O.
+Review-context counterpart mapping matches unchanged header-start lines across captured hunks together
+with declaration names and kinds. It is bounded and I/O-free; it must not infer a
+counterpart from a zero-length anchor touching an unchanged neighboring declaration.
 
 Changed queries capture at most 32 file pairs, or stricter configured file limits, with at most
 64 side captures sharing 32 MiB total and 8 MiB per file. Respect stricter configured limits,

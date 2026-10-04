@@ -65,6 +65,9 @@ reposcout changes . --staged --source --budget 4096 -f json
 `--snapshot` applies to all explicit targets, including outlines. The case-sensitive names
 `worktree` and `index` are reserved; another Git ref resolves once to a tree OID. Use the path and
 symbol belonging to that side. Missing old/index source never silently uses worktree bytes.
+Tree/index reads use Git's regular-file mode and blob identity, independent of live source-parent
+symlinks or missing directories. Worktree reads retain no-follow traversal; current ignore and
+exclusion policy still applies to every snapshot.
 
 `changes [PATH]` takes a directory or existing file, defaults to `.` and requires one scope. Use a
 directory scope for worktree-deleted files. Working compares

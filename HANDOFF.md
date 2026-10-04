@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-04 · latest release 0.4.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-05 · latest release 0.4.1 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 24_
 
 ---
@@ -75,6 +75,13 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   configs do not become ambient context candidates; relation projection alternates revisions.
   Resolved symbol references survive partial or unavailable declaration mapping with an explicit
   `changed-file` basis, without asserting that the referenced declarations changed.
+  Pure insertions/deletions retain existing declaration counterparts through unchanged header
+  start lines, names and kinds, including nested and indentation-delimited functions. Incomplete
+  counterpart seeds keep mapping partial and preserve file-based reference evidence. Strategy 2 reduces
+  declaration/range details before dropping changed-file identities; per-side output omissions
+  remain separate from analysis availability. Omitted compact identities are reconsidered against
+  both actual output budgets before restoring details. Snapshot read handoffs use Git file modes and blob
+  identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
   See [review context](docs/review-context.md) for limits and trust boundaries.

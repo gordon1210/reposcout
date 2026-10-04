@@ -6,6 +6,20 @@ within their section.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-05
+
+### Fixed
+
+- Read historical Git-tree and index source independently of current source-parent symlinks,
+  retaining Git file-mode checks, current ignore/exclusion policy, hash checks and worktree
+  no-follow protection.
+- Preserve changed-file identities under tight `review-context` output budgets by reducing large
+  declaration/range lists first, with per-side omission counts, and removing oversized identities
+  before smaller independent changes when whole entries still cannot fit.
+- Retain both revisions' declaration and caller evidence for pure body insertions and deletions
+  in `review-context`, matching counterparts through unchanged declaration headers rather than
+  treating adjacent declarations as changed.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added

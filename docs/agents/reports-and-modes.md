@@ -13,6 +13,12 @@ evidence. Preserve per-side snapshot identity, mapping ambiguity, graph coverage
 capture, context-selection and rendered-output omissions. Source and diff bodies remain opt-in.
 Reuse shared snapshot capture, file analysis/cache, change mapping and graph resolvers; renderers
 are pure projections. See [review context](../review-context.md) for the command contract.
+Zero-length hunk sides can retain existing declaration counterparts through unchanged headers.
+Counterpart work gaps remain separate from raw line mapping; incomplete supplying-side mappings
+must keep counterpart coverage partial even when every supplied declaration was processed.
+Budget projection reconsiders omitted identities against the actual format/tokenizer and retains compact
+file identities ahead of declaration/range details; per-side output omissions must not downgrade
+analysis availability or be confused with absent declarations.
 
 RepoScout never allocates agents or automatically partitions review work. Tokenization remains the
 existing default/configuration/explicit CLI choice, without model-based selection.

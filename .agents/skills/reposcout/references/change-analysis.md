@@ -21,6 +21,10 @@ analyzed. Literal Unix backslash paths retain source evidence but contribute an 
 For symbol references, `change_basis: "changed-definition"` identifies mapped changed declarations;
 `"changed-file"` preserves resolved references to or from a captured changed file whose declaration
 mapping is partial or unavailable. The latter does not establish which declarations changed.
+Pure insertions/deletions may retain opposite-side declarations through unchanged headers even
+when that side's `ranges` is empty. Check `counterpart_definitions`, `ambiguous_counterparts`,
+`unprocessed_counterparts`, `counterpart_seed_mapping_incomplete`
+and per-side `definitions_omitted` / `ranges_omitted` before interpreting missing detail.
 
 `totals.candidate_tokens` counts whole files once per revision/path. Unknown costs are explicit;
 base/head and unified-diff costs stay separate. Default/configured tokenization always applies;

@@ -54,6 +54,17 @@ independently of source `extraction` status.
 `totals.changes_without_hunks` counts retained change pairs without computable hunks,
 including pairs for which only one side fit the shared capture budget.
 
+Pure insertions or deletions can leave one side without changed lines. For existing declarations,
+the query maps unchanged header-start lines across the captured hunks and requires matching names
+and kinds before retaining the opposite declaration. `counterpart_definitions` counts these
+additions; `unprocessed_counterparts` reports bounded mapping work that could not finish.
+`ambiguous_counterparts` counts ambiguous matches, which retain partial mapping status.
+`counterpart_seed_mapping_incomplete` marks a partial or unavailable mapping on the supplying
+side; its unknown missing declarations are not counted as finished or as counterpart-work omissions.
+The receiving side retains partial mapping and conservative file-based reference evidence.
+A newly added/deleted header-start line or absent file side
+does not acquire a guessed counterpart. `ranges` continues to describe actual changed lines.
+
 Each revision has its own graph. File-import dependents include direct and transitive reverse
 edges; changed files' direct dependencies are also candidates. Relations retain direction and
 resolver provenance. Concrete symbol-reference evidence is separate from file-import impact and
@@ -132,6 +143,17 @@ an upper bound on unknown consumers. `changes_not_analyzed` records change pairs
 selection exclusions; totals survive output projection. Increase the output allowance for more
 entries or use narrower changed-path scope. If even the status envelope does not fit, the command
 fails rather than returning a misleading empty success.
+Projection strategy 2 preserves compact change identities by reducing the largest declaration
+lists, then range lists, before removing relations, context candidates or whole changes. Lists
+retain deterministic prefixes and are reduced geometrically to bound projection work. Per-side
+`definitions_omitted` and `ranges_omitted` count removed details; these output counts do not alter
+`mapping_status` or analysis-gap counters. If whole changes still cannot fit, the largest compact
+JSON entry is removed first. Omitted compact identities are then reconsidered against the actual
+renderer and tokenizer before any details are restored; a byte-heavy but token-affordable identity
+must not disappear merely because another path costs more tokens. The complete response must fit
+both budgets in the selected format.
+Previously trimmed changes are reconsidered for complete detail restoration, smallest first,
+so removing an oversized entry can make room for a small change's ranges and declarations again.
 Relations alternate between head and base so either side cannot consume the entire output limit
 while the other has evidence; references touching changed definitions, type relations, file-based
 references and imports follow that order within each side. File-based references prioritize
