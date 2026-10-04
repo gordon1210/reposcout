@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
 ### Added
 
 - Add `review-context` for revision-pinned PR preparation: base/head change inventory and changed
