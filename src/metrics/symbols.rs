@@ -1539,7 +1539,7 @@ mod tests {
         );
         assert_eq!(facts.status, DefinitionStatus::Unsupported);
         assert!(facts.definitions.is_empty());
-        assert!(definition_kinds(FirstClass::GodotResource).is_empty());
+        assert_eq!(definition_kinds(FirstClass::GodotResource).len(), 0);
     }
 
     #[test]

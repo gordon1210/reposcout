@@ -5,6 +5,7 @@ use crate::model::{
     CallReferenceStatus, GraphEdge, ReviewContextChange, ReviewContextFile, ReviewContextRelation,
 };
 use crate::scan::{ReviewCapture, ReviewRevision};
+use anyhow::Result;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
@@ -20,10 +21,12 @@ pub(super) fn analyze(
     changes: &[ReviewContextChange],
     counter: &TokenCounter,
     limits: GraphReadLimits,
-) -> (Vec<ReviewContextFile>, Vec<ReviewContextRelation>) {
+) -> Result<(Vec<ReviewContextFile>, Vec<ReviewContextRelation>)> {
+    super::check_deadline(captured.deadline)?;
     let mut context = Vec::new();
     let mut relations = Vec::new();
     for (index, revision) in captured.revisions.iter_mut().enumerate() {
+        super::check_deadline(captured.deadline)?;
         let side = if index == 0 { "base" } else { "head" };
         let changed_sides: BTreeMap<_, _> = changes
             .iter()
@@ -40,16 +43,19 @@ pub(super) fn analyze(
         let inputs = revision.graph_inputs();
         let files: Vec<_> = revision
             .files()
-            .values()
-            .filter_map(|file| file.report.clone())
+            .iter()
+            .filter(|(path, _)| ReviewRevision::supports_graph_path(path))
+            .filter_map(|(_, file)| file.report.clone())
             .collect();
         let graph = graph::build_with_inputs(&files, &captured.root, limits, &inputs);
+        super::check_deadline(captured.deadline)?;
         let calls = graph::resolve_call_references(
             &captured.root,
             &inputs.source_facts,
             &inputs.resolver_configs,
             limits,
         );
+        super::check_deadline(captured.deadline)?;
         coverage(revision, &graph, &inputs, &seeds, &calls.coverage);
         let mut candidates = neighborhood(&seeds, &graph.edge_list);
         config_candidates(&mut candidates, &seeds, &graph);
@@ -62,6 +68,7 @@ pub(super) fn analyze(
         );
         type_candidates(&mut candidates, &mut relations, side, &seeds, &graph);
         for edge in graph.edge_list {
+            super::check_deadline(captured.deadline)?;
             if candidates.contains_key(Path::new(&edge.source))
                 && candidates.contains_key(Path::new(&edge.target))
             {
@@ -74,11 +81,10 @@ pub(super) fn analyze(
                 });
             }
         }
-        context.extend(
-            candidates
-                .into_iter()
-                .map(|(path, evidence)| describe(revision, side, &path, evidence, counter)),
-        );
+        for (path, evidence) in candidates {
+            super::check_deadline(captured.deadline)?;
+            context.push(describe(revision, side, &path, evidence, counter));
+        }
     }
     context.sort_by(|left, right| {
         (priority(left), left.distance, &left.path, &left.side).cmp(&(
@@ -88,15 +94,41 @@ pub(super) fn analyze(
             &right.side,
         ))
     });
+    let relations = order_relations(relations);
+    super::check_deadline(captured.deadline)?;
+    Ok((context, relations))
+}
+
+fn order_relations(mut relations: Vec<ReviewContextRelation>) -> Vec<ReviewContextRelation> {
+    let priority = |relation: &ReviewContextRelation| match relation.kind.as_str() {
+        "symbol-reference" => 0,
+        "type-relationship" => 1,
+        _ => 2,
+    };
     relations.sort_by(|left, right| {
-        (&left.side, &left.edge.source, &left.edge.target, &left.kind).cmp(&(
-            &right.side,
-            &right.edge.source,
-            &right.edge.target,
-            &right.kind,
-        ))
+        (
+            &left.side,
+            priority(left),
+            &left.edge.source,
+            &left.edge.target,
+        )
+            .cmp(&(
+                &right.side,
+                priority(right),
+                &right.edge.source,
+                &right.edge.target,
+            ))
     });
-    (context, relations)
+    let head = relations.partition_point(|relation| relation.side == "base");
+    let mut head = relations.split_off(head).into_iter();
+    let mut base = relations.into_iter();
+    let mut ordered = Vec::with_capacity(base.len() + head.len());
+    loop {
+        match (head.next(), base.next()) {
+            (None, None) => return ordered,
+            (head, base) => ordered.extend(head.into_iter().chain(base)),
+        }
+    }
 }
 
 fn coverage(
@@ -152,8 +184,6 @@ fn config_candidates(
                     );
                 }
             }
-        } else if !seeds.is_empty() {
-            add(candidates, &path, "resolver-configuration", 1, None);
         }
     }
 }

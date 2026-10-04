@@ -523,6 +523,13 @@ impl ConfigAccess<'_> {
 
     pub(super) fn read(&mut self, relative: &str) -> Option<String> {
         if let Some(snapshot) = self.snapshot {
+            if self
+                .budget
+                .deadline
+                .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+            {
+                return None;
+            }
             return snapshot.get(relative).cloned();
         }
         match fs_budget::read_text(&self.root.join(relative), self.budget) {

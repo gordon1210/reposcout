@@ -165,6 +165,11 @@ fn revision(
                 !sources.files.contains_key(*path) && !sources.failures.contains_key(*path)
             })
             .count(),
+        unsupported_graph_paths: sources
+            .files
+            .keys()
+            .filter(|path| !ReviewRevision::supports_graph_path(path))
+            .count(),
         ..ReviewRevisionCoverage::default()
     };
     for failure in sources.failures.values() {
@@ -181,6 +186,13 @@ fn revision(
 }
 
 impl ReviewRevision {
+    pub(crate) fn supports_graph_path(path: &Path) -> bool {
+        // The shared graph uses slash-normalized string keys. Do not let a literal
+        // Unix backslash alias another captured file or resolver configuration.
+        path.components()
+            .all(|component| !component.as_os_str().as_encoded_bytes().contains(&b'\\'))
+    }
+
     pub(crate) fn files(&self) -> &BTreeMap<PathBuf, Arc<ExplicitSourceFile>> {
         &self.sources.files
     }
@@ -190,6 +202,7 @@ impl ReviewRevision {
             source_facts: self
                 .files()
                 .iter()
+                .filter(|(path, _)| Self::supports_graph_path(path))
                 .filter_map(|(path, file)| {
                     file.graph_facts.clone().map(|facts| (path.clone(), facts))
                 })
@@ -199,6 +212,7 @@ impl ReviewRevision {
             resolver_configs: self
                 .files()
                 .iter()
+                .filter(|(path, _)| Self::supports_graph_path(path))
                 .map(|(path, file)| {
                     (
                         path.to_string_lossy().replace('\\', "/"),

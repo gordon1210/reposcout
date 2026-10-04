@@ -107,7 +107,7 @@ fn godot_project_scenes_scripts_shaders_classes_and_autoloads_share_graph() {
         &built.topology,
         &HashSet::from([PathBuf::from("math.gdshaderinc")]),
     );
-    assert!(!impact.transitive_dependents.is_empty());
+    assert_ne!(impact.transitive_dependents.len(), 0);
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn godot_dynamic_ambiguous_and_escaping_paths_stay_unresolved() {
         ],
     );
     assert_eq!(built.topology.unresolved_imports, 4);
-    assert!(built.topology.edges.is_empty());
+    assert_eq!(built.topology.edges.len(), 0);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn godot_comments_nodepaths_strings_and_shadowed_globals_are_not_edges() {
         ],
         &[],
     );
-    assert!(built.topology.edges.is_empty());
+    assert_eq!(built.topology.edges.len(), 0);
     assert_eq!(built.topology.unresolved_imports, 0);
 }
 
@@ -233,7 +233,7 @@ fn godot_binary_assets_are_not_missing_code_and_self_names_are_not_cycles() {
         &[],
     );
     assert_eq!(built.topology.unresolved_imports, 0);
-    assert!(built.report.cycles.is_empty());
+    assert_eq!(built.report.cycles.len(), 0);
 }
 
 #[test]

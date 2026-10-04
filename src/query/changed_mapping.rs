@@ -289,7 +289,7 @@ mod tests {
             (newline.hunks[0].old_lines, newline.hunks[0].new_lines),
             (1, 1)
         );
-        assert!(changed_hunks("same\n", "same\n").unwrap().hunks.is_empty());
+        assert_eq!(changed_hunks("same\n", "same\n").unwrap().hunks.len(), 0);
     }
 
     #[test]

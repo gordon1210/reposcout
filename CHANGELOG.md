@@ -28,6 +28,11 @@ within their section.
 
 ### Fixed
 
+- Preserve unknown PR change mappings when either revision cannot be captured; keep unrelated
+  resolver configurations out of the reading list and retain both revisions' relations under
+  output limits. Show identity and typed evidence in human output, enforce cooperative review
+  deadlines through analysis and rendering, and explicitly exclude ambiguous Unix backslash
+  paths from graph inputs without losing their source/change evidence.
 - Fail release portability checks when `otool` or `objdump` fails, and run a tiny scan from each
   packed binary before publication. Require both target archives, checksums, installer, SBOM,
   source archive, and manifest before attestation and release.

@@ -1,5 +1,5 @@
 use super::{Format, json_string, terminal_text};
-use crate::model::ReviewContextReport;
+use crate::model::{ReviewAnalysisStatus, ReviewContextReport};
 use anyhow::{Result, bail};
 use std::fmt::Write as _;
 
@@ -21,6 +21,11 @@ fn human(report: &ReviewContextReport) -> String {
     coverage(report, &mut output);
     changes(report, &mut output);
     context(report, &mut output);
+    relations(report, &mut output);
+    output
+}
+
+fn relations(report: &ReviewContextReport, output: &mut String) {
     for relation in &report.relations {
         let _ = writeln!(
             output,
@@ -31,8 +36,30 @@ fn human(report: &ReviewContextReport) -> String {
             terminal_text(&relation.edge.target),
             terminal_text(&relation.edge.resolver)
         );
+        if let Some(symbol) = &relation.symbol {
+            let _ = writeln!(
+                output,
+                "  {:?} {}:{} -> {}:{}; site={}-{} syntax={:?}",
+                symbol.kind,
+                terminal_text(&symbol.source.name),
+                symbol.source.declaration_span.start_line,
+                terminal_text(&symbol.target.name),
+                symbol.target.declaration_span.start_line,
+                symbol.site.start_line,
+                symbol.site.end_line,
+                symbol.syntax
+            );
+        }
+        if let Some(edge) = &relation.type_relation {
+            let _ = writeln!(
+                output,
+                "  {}: {} -> {}",
+                terminal_text(&edge.relation),
+                terminal_text(&edge.source),
+                terminal_text(&edge.target)
+            );
+        }
     }
-    output
 }
 
 fn header(report: &ReviewContextReport) -> String {
@@ -50,9 +77,10 @@ fn header(report: &ReviewContextReport) -> String {
     );
     let _ = writeln!(
         output,
-        "Changes: {} ({} not analyzed, {} output omitted); definitions: {} ({} omitted); relations: {} ({} omitted)",
+        "Changes: {} ({} not analyzed, {} without hunk analysis, {} output omitted); definitions: {} ({} omitted); relations: {} ({} omitted)",
         t.changes,
         t.changes_not_analyzed,
+        t.changes_without_hunks,
         t.changes_omitted,
         t.definitions,
         t.definitions_omitted,
@@ -108,9 +136,10 @@ fn coverage(report: &ReviewContextReport, output: &mut String) {
         );
         let _ = writeln!(
             output,
-            "  Changed graph files: {}; changed without graph: {}; unsupported inventory: {}; unsupported/incomplete call files: {}/{}; unresolved type relations: {}",
+            "  Changed graph files: {}; changed without graph: {}; unsupported graph paths: {}; unsupported inventory: {}; unsupported/incomplete call files: {}/{}; unresolved type relations: {}",
             side.changed_graph_files,
             side.changed_files_without_graph,
+            side.unsupported_graph_paths,
             side.unsupported_inventory_files,
             side.unsupported_call_files,
             side.incomplete_call_files,
@@ -126,24 +155,40 @@ fn changes(report: &ReviewContextReport, output: &mut String) {
     for change in &report.changes {
         let _ = writeln!(
             output,
-            "Change: {} ({} hunks, {} omitted)",
-            change.status, change.hunks, change.hunks_omitted
+            "Change: {} ({} hunks, {} omitted; analysis={:?})",
+            change.status,
+            if change.hunk_status == ReviewAnalysisStatus::Unavailable {
+                "unknown".into()
+            } else {
+                change.hunks.to_string()
+            },
+            change.hunks_omitted,
+            change.hunk_status
         );
         for (label, side) in [("base", &change.base), ("head", &change.head)] {
             if let Some(side) = side {
                 let _ = writeln!(
                     output,
-                    "  {label}: {} mode={:o} {} hash={} extraction={:?}; unmapped={} unprocessed={} ambiguous={} wrapper={}",
+                    "  {label}: {} mode={:o} {} blob={} hash={} extraction={:?} mapping={:?}; unmapped={} unprocessed={} ambiguous={} wrapper={}",
                     terminal_text(&side.path.to_string_lossy()),
                     side.mode,
                     side.status,
+                    side.blob,
                     side.sha256.as_deref().unwrap_or("unknown"),
                     side.extraction,
+                    side.mapping_status,
                     side.unmapped_ranges,
                     side.unprocessed_ranges,
                     side.ambiguous_definitions,
                     side.wrapper_ranges
                 );
+                let ranges = side
+                    .ranges
+                    .iter()
+                    .map(|range| format!("{}-{}", range.start, range.end))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let _ = writeln!(output, "    ranges={ranges}");
                 for definition in &side.definitions {
                     let _ = writeln!(
                         output,
@@ -166,14 +211,20 @@ fn context(report: &ReviewContextReport, output: &mut String) {
     for file in &report.context {
         let _ = writeln!(
             output,
-            "Read {} {}: {:?} tokens; {} ({}) roles={} tests={}; snapshot={} hash={}",
+            "Read {} {}: {:?} tokens / {:?} bytes; {} ({}) roles={} tests={}; distance={} via={}; snapshot={} hash={}",
             file.side,
             terminal_text(&file.path.to_string_lossy()),
             file.tokens,
+            file.bytes,
             file.selection,
             file.status,
             file.roles.join(","),
             file.test_evidence.join(","),
+            file.distance,
+            file.via.as_ref().map_or_else(
+                || "none".into(),
+                |path| terminal_text(&path.to_string_lossy())
+            ),
             file.snapshot,
             file.sha256.as_deref().unwrap_or("unknown")
         );

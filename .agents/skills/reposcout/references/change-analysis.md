@@ -14,6 +14,10 @@ their immutable trees. Omit `--merge-base` for an exact direct comparison. Read 
 omission counters before the changed declarations, revision-local impact relations and context
 costs. File-import dependents and concrete symbol references are distinct evidence; neither proves
 runtime completeness. Test hints are conventions/syntax, not executed tests.
+Check `hunk_status`, per-side `mapping_status` and `totals.changes_without_hunks` before interpreting
+empty change evidence. A captured side does not imply that its comparison with a missing side was
+analyzed. Literal Unix backslash paths retain source evidence but contribute an explicit
+`unsupported_graph_paths` gap rather than an ambiguous graph identity.
 
 `totals.candidate_tokens` counts whole files once per revision/path. Unknown costs are explicit;
 base/head and unified-diff costs stay separate. Default/configured tokenization always applies;

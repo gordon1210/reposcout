@@ -219,7 +219,7 @@ fn ignored_project_config_is_discovered_but_never_parsed_or_applied() {
     let source = resolved.sources.project.unwrap();
     assert!(source.ignored);
     assert!(!source.loaded);
-    assert!(source.keys.is_empty());
+    assert_eq!(source.keys.len(), 0);
 }
 
 #[test]
@@ -279,7 +279,7 @@ fn missing_global_config_is_reported_but_not_an_error() {
 
     assert_eq!(source.path, global);
     assert!(!source.loaded);
-    assert!(source.keys.is_empty());
+    assert_eq!(source.keys.len(), 0);
     assert_eq!(resolved.config.context_budget, 32_000);
 }
 

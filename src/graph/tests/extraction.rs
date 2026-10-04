@@ -508,7 +508,7 @@ fn impact_fallback_reuses_facts_and_honors_limits_and_deadlines() {
         let impact = impact_from_analysis(&analysis, &changed);
 
         assert_eq!(impact.graph_changed_files, ["changed.js"]);
-        assert!(impact.direct_dependents.is_empty());
+        assert_eq!(impact.direct_dependents.len(), 0);
         assert_eq!(impact.confidence, "partial");
     }
 }

@@ -1,5 +1,7 @@
 mod analysis;
 mod changes;
+#[cfg(test)]
+mod tests;
 
 use crate::config::Config;
 use crate::metrics::tokens::TokenCounter;
@@ -72,7 +74,8 @@ pub fn review_context(
     let mut graph_limits = crate::graph::GraphReadLimits::from_config(&config);
     graph_limits.deadline = Some(capture.deadline);
     let (mut context, relations) =
-        analysis::analyze(&mut capture, &changes, &counter, graph_limits);
+        analysis::analyze(&mut capture, &changes, &counter, graph_limits)?;
+    check_deadline(capture.deadline)?;
     let mut totals = totals(&changes, &context, relations.len(), capture.total_changes);
     let selection = options.context || options.include_source;
     if selection {
@@ -85,6 +88,7 @@ pub fn review_context(
     }
     if options.include_source {
         for file in &mut context {
+            check_deadline(capture.deadline)?;
             if file.selection != "selected" {
                 continue;
             }
@@ -107,12 +111,14 @@ pub fn review_context(
             "Test hints are filename conventions or syntax, not executed tests or measured coverage.",
             "Current configuration and ignore policy apply to both revisions; source and resolver contents come only from pinned Git trees.",
             "An empty dependency result is inconclusive for excluded, unavailable or unsupported graph files.",
+            "Literal Unix backslash paths retain source/change evidence but are excluded from graph inputs; unsupported_graph_paths counts them.",
         ].map(str::to_string).to_vec(),
         changes, relations, context,
     };
-    project(&mut report, options, &counter)?;
+    project(&mut report, options, &counter, capture.deadline)?;
     let rendered =
         crate::report::review_context::render(&report, options.format, options.pretty_json)?;
+    check_deadline(capture.deadline)?;
     Ok(ReviewContextOutput { report, rendered })
 }
 
@@ -125,6 +131,10 @@ fn totals(
     ReviewContextTotals {
         changes: total_changes,
         changes_not_analyzed: total_changes.saturating_sub(changes.len()),
+        changes_without_hunks: changes
+            .iter()
+            .filter(|change| change.hunk_status == crate::model::ReviewAnalysisStatus::Unavailable)
+            .count(),
         definitions: changes
             .iter()
             .flat_map(|change| [change.base.as_ref(), change.head.as_ref()])
@@ -150,16 +160,19 @@ fn project(
     report: &mut ReviewContextReport,
     options: &ReviewContextOptions,
     counter: &TokenCounter,
+    deadline: std::time::Instant,
 ) -> Result<()> {
     report.changes.truncate(ENTRY_LIMIT);
     report.context.truncate(ENTRY_LIMIT);
     report.relations.truncate(ENTRY_LIMIT);
     loop {
+        check_deadline(deadline)?;
         recount(report, options);
         let rendered =
             crate::report::review_context::render(report, options.format, options.pretty_json)?;
         if rendered.len() <= options.byte_budget && counter.count(&rendered) <= options.token_budget
         {
+            check_deadline(deadline)?;
             return Ok(());
         }
         if let Some(file) = report
@@ -185,6 +198,14 @@ fn project(
             );
         }
     }
+}
+
+fn check_deadline(deadline: std::time::Instant) -> Result<()> {
+    ensure!(
+        std::time::Instant::now() < deadline,
+        "review analysis exceeded the configured duration limit"
+    );
+    Ok(())
 }
 
 fn recount(report: &mut ReviewContextReport, options: &ReviewContextOptions) {

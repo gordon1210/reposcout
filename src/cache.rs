@@ -568,7 +568,7 @@ mod tests {
         assert!(!full_path.exists());
         assert!(!tokens_path.exists());
         assert!(unrelated.exists());
-        assert!(clear_locations(&locations).unwrap().is_empty());
+        assert_eq!(clear_locations(&locations).unwrap().len(), 0);
     }
 
     fn report(path: &str) -> FileReport {
@@ -1026,7 +1026,7 @@ mod tests {
         assert!(!history.exists());
         assert!(unrelated.exists());
 
-        assert!(clear_locations(&locations).unwrap().is_empty());
+        assert_eq!(clear_locations(&locations).unwrap().len(), 0);
     }
 
     #[test]

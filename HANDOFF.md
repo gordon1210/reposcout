@@ -71,6 +71,10 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   omissions remain explicit. Tokenizer selection stays default/config/CLI; agent allocation and
   automatic task splitting are outside RepoScout's product scope. Cached per-file facts are
   unchanged (analyzer 23); the new query and capability field are additive (schema 2.0).
+  Hunk/mapping availability is explicit even for a half-captured change pair. Unchanged resolver
+  configs do not become ambient context candidates; relation projection alternates revisions.
+  Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
+  source evidence but are explicitly outside the shared graph's representable path universe.
   See [review context](docs/review-context.md) for limits and trust boundaries.
 
 - **Cognitive complexity precision.** Rust and Go `else if` chains stay at one nesting level;

@@ -149,7 +149,7 @@ fn query_errors_are_structured_and_protected_paths_remain_unchanged() {
         assert_eq!(error["kind"], "error");
         assert_eq!(error["category"], "runtime");
         assert_eq!(error["exit_code"], 1);
-        assert!(!error["message"].as_str().unwrap().is_empty());
+        assert_ne!(error["message"].as_str().unwrap().len(), 0);
     }
     for output_flag in ["--output", "--debug-log"] {
         reposcout_command()

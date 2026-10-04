@@ -326,13 +326,13 @@ fn unsupported_languages_and_parse_errors_remain_visible() {
         "def run():\n    return work()\n",
     );
     assert_eq!(python.status, CallReferenceStatus::Unsupported);
-    assert!(python.relations.is_empty());
+    assert_eq!(python.relations.len(), 0);
 
     let broken_source = "fn run() { missing(); let broken = ; }\n";
     let broken = extracted(FirstClass::Rust, "src/lib.rs", broken_source);
     assert_eq!(broken.status, CallReferenceStatus::ParseErrors);
     let topology = resolve(&[broken], &[]);
-    assert!(!topology.unresolved.is_empty());
+    assert_ne!(topology.unresolved.len(), 0);
     assert!(
         topology
             .unresolved

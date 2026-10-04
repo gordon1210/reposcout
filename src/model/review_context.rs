@@ -24,6 +24,8 @@ pub struct ReviewRevisionCoverage {
     pub inventory_truncated: bool,
     pub captured_files: usize,
     pub unsupported_inventory_files: usize,
+    #[serde(default)]
+    pub unsupported_graph_paths: usize,
     pub unavailable_files: BTreeMap<String, usize>,
     pub graph_files: usize,
     pub changed_graph_files: usize,
@@ -42,6 +44,8 @@ pub struct ReviewRevisionCoverage {
 pub struct ReviewContextTotals {
     pub changes: usize,
     pub changes_not_analyzed: usize,
+    #[serde(default)]
+    pub changes_without_hunks: usize,
     pub changes_omitted: usize,
     pub definitions: usize,
     pub definitions_omitted: usize,
@@ -89,6 +93,8 @@ pub struct ReviewContextChange {
     pub status: String,
     pub base: Option<ReviewChangedSide>,
     pub head: Option<ReviewChangedSide>,
+    #[serde(default)]
+    pub hunk_status: ReviewAnalysisStatus,
     pub hunks: usize,
     pub hunks_omitted: usize,
     pub diff_tokens: Option<usize>,
@@ -105,12 +111,24 @@ pub struct ReviewChangedSide {
     pub status: String,
     pub sha256: Option<String>,
     pub extraction: DefinitionStatus,
+    #[serde(default)]
+    pub mapping_status: ReviewAnalysisStatus,
     pub ranges: Vec<LineRange>,
     pub definitions: Vec<DefinitionFact>,
     pub unmapped_ranges: usize,
     pub unprocessed_ranges: usize,
     pub ambiguous_definitions: usize,
     pub wrapper_ranges: usize,
+}
+
+/// Availability of comparison work, independent of source extraction.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewAnalysisStatus {
+    Available,
+    Partial,
+    #[default]
+    Unavailable,
 }
 
 /// Revision-local directed evidence; imports and concrete symbol references stay separate.

@@ -9,6 +9,9 @@
 #[path = "support/command.rs"]
 mod test_command;
 
+#[path = "review_context/regressions.rs"]
+mod regressions;
+
 use git2::{IndexAddOption, Oid, Repository, Signature};
 use reposcout::metrics::tokens::TokenCounter;
 use serde_json::Value;
@@ -39,6 +42,10 @@ impl Fixture {
     }
 
     fn command(&self, flags: &[&str]) -> assert_cmd::Command {
+        self.command_format(flags, "json")
+    }
+
+    fn command_format(&self, flags: &[&str], format: &str) -> assert_cmd::Command {
         let mut command = test_command::reposcout_command();
         command
             .arg("review-context")
@@ -55,7 +62,7 @@ impl Fixture {
                 "--max-output-bytes",
                 "1048576",
                 "-f",
-                "json",
+                format,
             ])
             .args(flags);
         command
@@ -260,6 +267,9 @@ fn deleted_file_retains_its_old_callers_and_unknown_head_edges() {
     let report = fixture.report(&[]);
     assert_eq!(report["changes"][0]["status"], "deleted");
     assert!(report["changes"][0]["head"].is_null());
+    assert_eq!(report["changes"][0]["hunk_status"], "available");
+    assert_eq!(report["changes"][0]["base"]["mapping_status"], "available");
+    assert_eq!(report["totals"]["changes_without_hunks"], 0);
     assert!(has_role(
         candidate(&report, "base", "src/service.ts"),
         "direct-dependent"
@@ -270,6 +280,12 @@ fn deleted_file_retains_its_old_callers_and_unknown_head_edges() {
             .unwrap()
             > 0
     );
+    std::mem::swap(&mut fixture.base, &mut fixture.head);
+    let added = fixture.report(&[]);
+    assert_eq!(added["changes"][0]["status"], "added");
+    assert_eq!(added["changes"][0]["hunk_status"], "available");
+    assert_eq!(added["changes"][0]["head"]["mapping_status"], "available");
+    assert_eq!(added["totals"]["changes_without_hunks"], 0);
 }
 
 #[test]
@@ -416,6 +432,7 @@ fn empty_comparison_has_no_fabricated_context() {
     assert_eq!(report["totals"]["changes"], 0);
     assert_eq!(report["totals"]["candidates"], 0);
     assert_eq!(report["totals"]["candidate_tokens"], 0);
+    assert_eq!(report["totals"]["changes_without_hunks"], 0);
 }
 
 #[test]
@@ -524,6 +541,7 @@ fn renames_and_mode_only_changes_keep_both_file_identities() {
     assert_eq!(renamed["base"]["path"], "src/app.ts");
     assert_eq!(renamed["head"]["path"], "src/renamed.ts");
     assert_eq!(renamed["hunks"], 0);
+    assert_eq!(renamed["hunk_status"], "available");
     let executable = changes
         .iter()
         .find(|file| file["head"]["path"] == "src/api.ts")
@@ -531,6 +549,10 @@ fn renames_and_mode_only_changes_keep_both_file_identities() {
     assert_eq!(executable["base"]["mode"], 0o100_644);
     assert_eq!(executable["head"]["mode"], 0o100_755);
     assert_eq!(executable["hunks"], 0);
+    assert_eq!(executable["hunk_status"], "available");
+    assert_eq!(executable["base"]["mapping_status"], "available");
+    assert_eq!(executable["head"]["mapping_status"], "available");
+    assert_eq!(report["totals"]["changes_without_hunks"], 0);
 }
 
 #[test]

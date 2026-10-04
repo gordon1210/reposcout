@@ -1,5 +1,7 @@
 use crate::metrics::tokens::TokenCounter;
-use crate::model::{DefinitionStatus, LineRange, ReviewChangedSide, ReviewContextChange};
+use crate::model::{
+    DefinitionStatus, LineRange, ReviewAnalysisStatus, ReviewChangedSide, ReviewContextChange,
+};
 use crate::query::changed_mapping::{changed_hunks, map_changed_definitions};
 use crate::scan::{ReviewCapture, ReviewRevision};
 use crate::snapshot::comparison::ComparisonFile;
@@ -21,10 +23,12 @@ pub(super) fn describe(
     counter: &TokenCounter,
     include_diff: bool,
 ) -> Result<Vec<ReviewContextChange>> {
+    super::check_deadline(captured.deadline)?;
     captured
         .changes
         .iter()
         .map(|change| {
+            super::check_deadline(captured.deadline)?;
             let mut base = change
                 .base
                 .as_ref()
@@ -39,6 +43,7 @@ pub(super) fn describe(
                 status: change.status.clone(),
                 base: None,
                 head: None,
+                hunk_status: ReviewAnalysisStatus::Unavailable,
                 hunks: 0,
                 hunks_omitted: 0,
                 diff_tokens: None,
@@ -48,6 +53,11 @@ pub(super) fn describe(
                 let hunks = changed_hunks(old, new)?;
                 result.hunks = hunks.hunks.len() + hunks.omitted_hunks;
                 result.hunks_omitted = hunks.omitted_hunks;
+                result.hunk_status = if hunks.omitted_hunks == 0 {
+                    ReviewAnalysisStatus::Available
+                } else {
+                    ReviewAnalysisStatus::Partial
+                };
                 for (side, revision, old_side) in [
                     (&mut base, &captured.revisions[0], true),
                     (&mut head, &captured.revisions[1], false),
@@ -55,6 +65,11 @@ pub(super) fn describe(
                     if let Some(side) = side {
                         side.ranges = ranges(&hunks, old_side);
                         map(side, revision);
+                        if hunks.omitted_hunks > 0
+                            && side.mapping_status == ReviewAnalysisStatus::Available
+                        {
+                            side.mapping_status = ReviewAnalysisStatus::Partial;
+                        }
                     }
                 }
                 let patch = patch(old, new, change.base.as_ref(), change.head.as_ref())?;
@@ -65,6 +80,7 @@ pub(super) fn describe(
             }
             result.base = base;
             result.head = head;
+            super::check_deadline(captured.deadline)?;
             Ok(result)
         })
         .collect()
@@ -119,6 +135,7 @@ fn side(file: &ComparisonFile, revision: &ReviewRevision) -> ReviewChangedSide {
         extraction: captured.map_or(DefinitionStatus::Unavailable, |file| {
             file.definitions.status
         }),
+        mapping_status: ReviewAnalysisStatus::Unavailable,
         ranges: Vec::new(),
         definitions: Vec::new(),
         unmapped_ranges: 0,
@@ -133,6 +150,19 @@ fn map(side: &mut ReviewChangedSide, revision: &ReviewRevision) {
         return;
     };
     let mapped = map_changed_definitions(&file.definitions, &side.ranges);
+    side.mapping_status = match file.definitions.status {
+        DefinitionStatus::Unavailable | DefinitionStatus::Unsupported => {
+            ReviewAnalysisStatus::Unavailable
+        }
+        DefinitionStatus::ParseErrors => ReviewAnalysisStatus::Partial,
+        DefinitionStatus::Available
+            if !mapped.unprocessed.is_empty()
+                || mapped.definitions.iter().any(|item| item.ambiguous) =>
+        {
+            ReviewAnalysisStatus::Partial
+        }
+        DefinitionStatus::Available => ReviewAnalysisStatus::Available,
+    };
     side.unmapped_ranges = mapped.uncovered.len();
     side.unprocessed_ranges = mapped.unprocessed.len();
     side.ambiguous_definitions = mapped

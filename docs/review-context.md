@@ -44,6 +44,13 @@ availability and captured SHA-256 where available. Symlinks and submodules are n
 Unavailable or unsupported declaration analysis retains raw change evidence when text capture
 succeeds. Mode-only changes have no invented changed declarations.
 
+`hunk_status` distinguishes available, partial and unavailable change analysis. When one
+side's content is missing, the numeric `hunks` field is only an uncomputed placeholder;
+it is not evidence of zero changes. Each side's `mapping_status` separately qualifies
+its changed ranges and declarations, independently of source `extraction` status.
+`totals.changes_without_hunks` counts retained change pairs without computable hunks,
+including pairs for which only one side fit the shared capture budget.
+
 Each revision has its own graph. File-import dependents include direct and transitive reverse
 edges; changed files' direct dependencies are also candidates. Relations retain direction and
 resolver provenance. Concrete symbol-reference evidence is separate from file-import impact and
@@ -54,6 +61,12 @@ still expose its old importers in the base graph.
 Resolver-configuration scope is a directory-based hint, not a proven call relationship. Test
 evidence distinguishes filename conventions and Rust inline-test syntax; it is neither an
 executed test result nor measured coverage. Existing graph and language limitations apply.
+Changed root resolver configurations can therefore suggest files throughout the repository.
+Unchanged resolver configurations support resolution but are not automatically added to the
+reading list: being read by a resolver is not evidence of relevance to this change.
+The shared graph's path convention cannot represent a literal Unix backslash unambiguously.
+Such paths retain change, source and cost evidence but are excluded from graph inputs and counted
+in `coverage[].unsupported_graph_paths`; they can never alias a slash-separated path.
 
 ## Token costs and optional reading list
 
@@ -91,21 +104,32 @@ Further definition reads can use `read --snapshot <reported-tree>` with the repo
 | Individual input | At most 8 MiB, additionally bounded by configured file/blob limits |
 | Output entries | At most 100 changes, 100 candidates and 100 relations, then byte/token projection |
 
-Configured input and duration limits may narrow these ceilings. Changed sides are captured first;
+Configured input limits may narrow these ceilings. Changed sides are captured first;
 remaining paths alternate between base and head. Rename detection is bounded separately and
-reports when skipped. Hunks and declaration mappings reuse the existing bounded change mapper.
+reports when skipped. Its work limit applies to the repository-wide comparison before the
+changed-path filter, preserving bounded detection of cross-boundary renames. Hunks and declaration
+mappings reuse the existing bounded change mapper. The duration limit is cooperative: checks
+between bounded analysis units and after graph construction, call resolution and rendering abort
+an expired query with an error, including when the deadline expires during capture. Duration
+exhaustion does not return a partial report. A single parser, Git or graph operation is not preempted.
 
 Read `coverage` and omission counters before interpreting an empty result. Inventory truncation,
 excluded/unavailable inputs, unsupported analysis, parse/configuration errors and unresolved
 relationships can hide impact. Reported candidate costs describe the observed neighborhood, not
-an upper bound on unknown consumers. `changes_not_analyzed` records input-limited change pairs separately from
+an upper bound on unknown consumers. `changes_not_analyzed` records change pairs omitted before capture separately from
 `changes_omitted` (output projection). Other output omissions stay separate from capture gaps and
 selection exclusions; totals survive output projection. Increase the output allowance for more
 entries or use narrower changed-path scope. If even the status envelope does not fit, the command
 fails rather than returning a misleading empty success.
+Relations alternate between head and base so either side cannot consume the entire output limit
+while the other has evidence; concrete references and type relations precede imports within each
+side. Inventory truncation also includes unrepresentable unchanged path names. Unsupported
+inventory counts refer to unrecognized formats, not just failed parsers; Markdown is recognized.
 
 Table, Markdown, JSON and single-record NDJSON use the same facts and output budgets. Source and
-diff text are absent by default. `--output` and `--debug-log` must be outside the worktree and its
+diff text are absent by default. Human output includes blob IDs, changed ranges, mapping status,
+context distances and predecessors, and concrete symbol/type evidence; JSON and NDJSON retain the
+complete structured records. `--output` and `--debug-log` must be outside the worktree and its
 Git metadata (including linked-worktree common metadata) to
 preserve the source and policy being reviewed. Analysis cache writes use the ordinary external,
 best-effort cache; `--no-cache` disables them.

@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+fn config_deadlines_limit_reads_without_hiding_existing_files() {
+    let root = tempdir().unwrap();
+    std::fs::write(root.path().join("Cargo.toml"), "[package]").unwrap();
+    let snapshot = BTreeMap::from([("Cargo.toml".into(), "[package]".into())]);
+    for snapshot in [None, Some(&snapshot)] {
+        let mut budget = ReadBudget::new(1024, 1024, 10, None);
+        let mut access = ConfigAccess {
+            root: root.path(),
+            budget: &mut budget,
+            snapshot,
+        };
+        assert!(access.exists("Cargo.toml"));
+        assert_eq!(access.read("Cargo.toml").as_deref(), Some("[package]"));
+        access.budget.deadline = Some(std::time::Instant::now());
+        assert!(access.exists("Cargo.toml"));
+        assert!(access.read("Cargo.toml").is_none());
+    }
+}
+
+#[test]
 fn py_from_current_package_import_resolves_sibling_module() {
     let dir = tempdir().unwrap();
     std::fs::create_dir(dir.path().join("pkg")).unwrap();
@@ -272,7 +292,7 @@ mod tests {
     assert_eq!(graph.nodes, 1);
     assert_eq!(graph.edges, 0);
     assert_eq!(graph.unresolved_imports, 0);
-    assert!(graph.cycles.is_empty());
+    assert_eq!(graph.cycles.len(), 0);
 }
 
 #[test]
@@ -489,7 +509,7 @@ fn go_module_imports_resolve_to_a_stable_package_representative() {
     assert_eq!(graph.unresolved_imports, 0);
     assert_eq!(graph.config_errors, 0);
     assert_eq!(graph.config_files, ["go.mod"]);
-    assert!(graph.orphans.is_empty());
+    assert_eq!(graph.orphans.len(), 0);
     assert_eq!(
         (
             graph.edge_list[0].source.as_str(),

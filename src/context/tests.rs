@@ -140,7 +140,7 @@ fn focus_resolves_relative_to_a_nested_scan_target() {
     .unwrap();
 
     assert_eq!(plan.focus, [PathBuf::from("packages/app/math.rs")]);
-    assert!(plan.unmatched_focus.is_empty());
+    assert_eq!(plan.unmatched_focus.len(), 0);
     assert_eq!(plan.files[0].path, PathBuf::from("packages/app/math.rs"));
 }
 
@@ -167,7 +167,7 @@ fn unmatched_focus_is_reported_without_inventing_a_seed() {
     )
     .unwrap();
 
-    assert!(plan.focus.is_empty());
+    assert_eq!(plan.focus.len(), 0);
     assert_eq!(plan.unmatched_focus, [PathBuf::from("missing.rs")]);
     assert!(
         plan.files[0]
