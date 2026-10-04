@@ -1,5 +1,5 @@
 import path from "node:path"
-import { loadConfig } from "tsconfig-paths"
+import ts from "typescript"
 
 function prefix(pattern) {
   const wildcard = pattern.endsWith("/*")
@@ -13,11 +13,37 @@ function prefix(pattern) {
 }
 
 function loadMappings(configPath, cwd) {
-  const config = loadConfig(path.resolve(cwd, configPath))
-  if (config.resultType !== "success") {
-    throw new Error(config.message)
+  const filename = path.resolve(cwd, configPath)
+  const input = ts.readConfigFile(filename, ts.sys.readFile)
+  if (input.error) {
+    throw new Error(
+      ts.flattenDiagnosticMessageText(input.error.messageText, "\n")
+    )
   }
-  return Object.entries(config.paths).flatMap(([alias, targets]) => {
+  const config = ts.parseJsonConfigFileContent(
+    input.config,
+    { ...ts.sys, readDirectory: () => [] },
+    path.dirname(filename),
+    undefined,
+    filename
+  )
+  // ESLint owns source discovery; an empty input inventory is intentional here.
+  const error = config.errors.find(({ code }) => code !== 18003)
+  if (error) {
+    throw new Error(ts.flattenDiagnosticMessageText(error.messageText, "\n"))
+  }
+  const paths = config.options.paths ?? {}
+  if (Object.keys(paths).length === 0) {
+    throw new Error("Selected config has no import aliases")
+  }
+  const base =
+    config.options.baseUrl ??
+    config.options.pathsBasePath ??
+    path.dirname(filename)
+  return Object.entries(paths).flatMap(([alias, targets]) => {
+    if (targets.length !== 1) {
+      throw new Error(`Alias must have exactly one target: ${alias}`)
+    }
     const name = prefix(alias)
     return targets.map((target) => {
       const location = prefix(target)
@@ -28,7 +54,7 @@ function loadMappings(configPath, cwd) {
       }
       return {
         alias: name.value,
-        target: path.resolve(config.absoluteBaseUrl, location.value),
+        target: path.resolve(base, location.value),
         wildcard: name.wildcard,
       }
     })
@@ -36,11 +62,11 @@ function loadMappings(configPath, cwd) {
 }
 
 function matches(value, base, wildcard, separator) {
-  return value === base || (wildcard && value.startsWith(base + separator))
+  return wildcard ? value.startsWith(base + separator) : value === base
 }
 
 function absoluteImport(value, filename, mappings) {
-  if (value.startsWith("./") || value.startsWith("../")) {
+  if (/^\.\.?(?:\/|$)/.test(value)) {
     return path.resolve(path.dirname(filename), value)
   }
   const mapping = [...mappings]
@@ -95,15 +121,19 @@ export const importAliasRule = {
       if (!absolute) {
         return
       }
-      const mapping = mappings.find(({ target, wildcard }) =>
-        matches(absolute, target, wildcard, path.sep)
+      const directory = /(?:\/|(?:^|\/)\.\.?)$/.test(node.value)
+      const mapping = mappings.find(
+        ({ target, wildcard }) =>
+          (!directory || wildcard) &&
+          matches(absolute, target, wildcard, path.sep)
       )
       if (!mapping) {
         return
       }
       const alias =
         mapping.alias +
-        absolute.slice(mapping.target.length).split(path.sep).join("/")
+        absolute.slice(mapping.target.length).split(path.sep).join("/") +
+        (directory ? "/" : "")
       if (alias === node.value) {
         return
       }

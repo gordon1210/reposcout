@@ -225,8 +225,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   with bespoke styling and the RepoScout fox artwork.
 - **Quality gates:** Rust formatting, clippy, and test suites; dashboard Vitest; and production
   builds for both frontend packages. Frontend linting also tests the local import-alias rule;
-  it reads inherited/JSONC tsconfig paths with `tsconfig-paths` and supports exact mappings or
-  trailing `/*` prefix mappings. Unsupported mappings fail explicitly instead of skipping lint.
+  it reads inherited/JSONC paths with TypeScript's config parser, independent of `TS_NODE_*`.
+  Exact mappings and trailing `/*` prefix mappings require one target per alias. Empty or
+  unsupported mappings fail explicitly instead of skipping lint; directory fixes preserve `/`.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and
