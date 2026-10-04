@@ -3,6 +3,29 @@
 Use this reference for working-tree, staged, or reference-based diffs; bounded change summaries;
 impact analysis; and finding-level review.
 
+## Prepare a committed PR review
+
+```sh
+reposcout review-context <directory> --base origin/main --head HEAD --merge-base -f json
+```
+
+This Unix query resolves two local refs once and captures sources and resolver configuration from
+their immutable trees. Omit `--merge-base` for an exact direct comparison. Read coverage and
+omission counters before the changed declarations, revision-local impact relations and context
+costs. File-import dependents and concrete symbol references are distinct evidence; neither proves
+runtime completeness. Test hints are conventions/syntax, not executed tests.
+
+`totals.candidate_tokens` counts whole files once per revision/path. Unknown costs are explicit;
+base/head and unified-diff costs stay separate. Default/configured tokenization always applies;
+never select an encoding automatically based on a model. RepoScout does not allocate agents or
+split tasks. The calling agent makes those decisions using the measured facts and their gaps.
+
+Use `--context` only when an initial reading list is wanted; `--context-budget` and
+`--context-max-files` override its configured limits. `--source` requests complete selected files,
+and `--diff` requests patches. All returned content shares `--budget` and `--max-output-bytes`;
+source selection and output omissions are accounted separately. Follow-up definition reads can
+use the reported tree with `read --snapshot` and the reported SHA-256. No scout is required first.
+
 ## Select exactly one diff scope
 
 - `--working` for uncommitted worktree changes.

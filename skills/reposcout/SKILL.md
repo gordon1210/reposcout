@@ -36,6 +36,9 @@ Use the matching focused guidance below and preserve snapshot/hash identity on f
 For a known comparison, start with bounded `reposcout changes` when the next
 decision needs changed definitions; request `--source` only for bodies needed by that decision.
 The change-analysis guidance describes this route and optional broader report integration.
+For two committed PR revisions and their wider impact, use `review-context --base REF --head REF`;
+load the same change-analysis guidance. Preserve configured tokenization and leave agent allocation
+and task splitting entirely to the caller.
 
 For compact agent scouting, start with:
 

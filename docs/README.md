@@ -11,6 +11,7 @@ a reference manual.
 | [Agent workflows](agent-workflows.md) | Produce hard-bounded scouting, change decisions, context, impact, review, and symbol-query results |
 | [Source and changed-definition queries](source-queries.md) | Read snapshot definitions or inspect changed definitions under bounded output contracts |
 | [Search, definition plans and consumers](task-queries.md) | Find unknown code, plan known definitions and inspect proven consumers |
+| [PR review context](review-context.md) | Compare pinned commits, inspect static impact and size the review context |
 | [External task diagnostics](task-diagnostics.md) | Turn bounded diagnostic input into context seeds |
 | [Agent evaluation](../scripts/agent-eval/README.md) | Reproduce bounded tasks and account for actual model usage |
 | [Godot support](godot.md) | Scout GDScript, shaders, scenes, resources, and project dependencies |

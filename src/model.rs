@@ -806,6 +806,8 @@ mod call_graph;
 pub use call_graph::*;
 mod consumers_query;
 pub use consumers_query::*;
+mod review_context;
+pub use review_context::*;
 
 #[cfg(test)]
 mod tests;

@@ -6,6 +6,7 @@
 //! graph supports the language.
 
 pub mod definitions;
+pub(crate) mod review;
 
 use crate::config::Config;
 use crate::graph::{GraphSignals, is_entrypoint};

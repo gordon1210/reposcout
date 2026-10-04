@@ -6,6 +6,14 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Add `review-context` for revision-pinned PR preparation: base/head change inventory and changed
+  declarations, per-revision static impact, test hints, whole-file source-token costs, and an
+  optional budgeted reading list with explicit source/diff delivery. Analysis gaps, selection
+  exclusions and output omissions remain separate. The command uses the user's tokenizer and
+  leaves all agent allocation and work splitting to the caller.
+
 ### Changed
 
 - Require successful Rust and release-helper CI for the exact tagged commit before release builds;

@@ -53,6 +53,13 @@ src/
                      Bounded external-input normalization and exact inventory resolution.
   query/source.rs    Explicit snapshot targets, content identity and rendered output budgets.
   query/changes.rs   Captured old/new changed-definition selection and shared output admission.
+  query/review_context.rs
+                     Pinned PR comparison, per-revision impact/cost evidence and bounded output.
+  scan/explicit_source/review.rs
+                     Two-tree capture through the shared file analyzer and cache.
+  snapshot/comparison.rs
+                     Immutable commit comparison and bounded Git tree inventory.
+  context/review.rs  Pure optional whole-file reading-list selection, without orchestration.
   query/changed_mapping.rs
                      Buffer-derived hunks and bounded, I/O-free declaration ownership mapping.
   scan/explicit_source.rs

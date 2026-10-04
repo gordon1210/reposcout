@@ -4,6 +4,19 @@ This is a normative extension of the root [`AGENTS.md`](../../AGENTS.md). Read i
 changing report shapes, summary/change/review/baseline behavior, CLI task queries, or renderers.
 The root instructions remain in force.
 
+## Pinned PR review preparation
+
+`review-context` is a separate Unix task query over two pinned Git commits/trees. Keep direct
+comparison and explicit unique-merge-base comparison distinguishable. Inventory must account for
+deleted, renamed, excluded and unsupported paths; unknown analysis or costs must not become zero
+evidence. Preserve per-side snapshot identity, mapping ambiguity, graph coverage and independent
+capture, context-selection and rendered-output omissions. Source and diff bodies remain opt-in.
+Reuse shared snapshot capture, file analysis/cache, change mapping and graph resolvers; renderers
+are pure projections. See [review context](../review-context.md) for the command contract.
+
+RepoScout never allocates agents or automatically partitions review work. Tokenization remains the
+existing default/configuration/explicit CLI choice, without model-based selection.
+
 ## Agent summary, summary, and baseline-ready reports
 
 `--agent-summary` is the smallest general agent-scouting contract. It is a pure JSON projection

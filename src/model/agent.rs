@@ -67,6 +67,8 @@ pub struct CapabilitiesReport {
     /// Supported diagnostic input formats and normal/safe normalization limits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_diagnostics: Option<super::TaskDiagnosticCapability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_context: Option<super::ReviewContextCapability>,
     /// Maximum previous occurrences compared for one exact token window.
     #[serde(default)]
     pub type1_max_previous_per_window: usize,

@@ -30,6 +30,7 @@ file.
 | `reposcout find QUERY [PATH]` | Rank body-free lexical declaration candidates |
 | `reposcout plan [PATH]` | Plan definitions and supported environment; source opt-in |
 | `reposcout consumers [PATH]` | Inspect conservative worktree call/reference reachability |
+| `reposcout review-context [PATH] --base REF` | Prepare pinned PR changes, impact evidence and context costs |
 | `reposcout capabilities` | Describe the installed machine contract without scanning |
 | `reposcout config [PATH]` | Inspect layered configuration and effective values |
 | `reposcout cache clear [PATH]` | Clear one repository's analysis and Git-history caches |
@@ -73,6 +74,11 @@ do not fit are explicitly omitted. There is no partial-source mode. See
 [Read explicit definitions](source-queries.md) for matching, support, input limits and error states.
 
 ## Changed definitions
+
+For two committed revisions and their wider impact, use
+`reposcout review-context . --base REF --head HEAD -f json`. `--merge-base` explicitly selects
+their unique merge base; dirty worktree/index edits are excluded. See
+[PR review context](review-context.md) for context/source/diff flags and limits.
 
 ```sh
 reposcout changes . --working -f json

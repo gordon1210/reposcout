@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-09-25 · latest release 0.3.3 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-04 · latest release 0.3.3 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 23_
 
 ---
@@ -62,6 +62,16 @@ The design bias is therefore **high signal, low noise, machine-readable, fast**.
 doubt, optimize for "an agent can trust and act on this in one glance" over completeness.
 
 ## Current state
+
+- **Pinned PR review preparation.** `review-context --base REF [--head HEAD] [--merge-base]`
+  captures changes and repository graph inputs separately for both immutable trees through the
+  shared snapshot/scanner/cache pipeline. It returns changed declarations, static import impact,
+  concrete references, test hints and whole-file token costs. Source and diff bodies are opt-in;
+  optional context selection has an independent source budget. Analysis gaps and selection/output
+  omissions remain explicit. Tokenizer selection stays default/config/CLI; agent allocation and
+  automatic task splitting are outside RepoScout's product scope. Cached per-file facts are
+  unchanged (analyzer 23); the new query and capability field are additive (schema 2.0).
+  See [review context](docs/review-context.md) for limits and trust boundaries.
 
 - **Cognitive complexity precision.** Rust and Go `else if` chains stay at one nesting level;
   explicit nested blocks still accumulate nesting. Boolean runs flatten through parentheses

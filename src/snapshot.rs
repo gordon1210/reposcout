@@ -1,5 +1,6 @@
 //! Source snapshots used by changed-line review.
 
+pub(crate) mod comparison;
 mod explicit;
 pub(crate) use explicit::{GitCapture, GitCaptureFailure};
 

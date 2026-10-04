@@ -11,6 +11,9 @@ use std::path::Component;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod review;
+pub(crate) use review::{ReviewCapture, ReviewRevision, capture_review};
+
 #[derive(Clone)]
 pub(crate) struct ExplicitSourceBatch {
     pub root: PathBuf,
@@ -25,6 +28,8 @@ pub(crate) struct ExplicitSourceFile {
     pub definitions: DefinitionFacts,
     /// Optional planning facts derived from this captured content with the effective token encoding.
     pub planning: Option<crate::model::DefinitionPlanningFacts>,
+    pub report: Option<crate::model::FileReport>,
+    pub graph_facts: Option<crate::graph::SourceFacts>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,7 +252,14 @@ fn source_requirements() -> ArtifactRequirements {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CaptureMode {
+    ExplicitSource,
+    ReviewTree,
+}
+
 struct CaptureSession<'a> {
+    mode: CaptureMode,
     requirements: ArtifactRequirements,
     root: PathBuf,
     cfg: &'a Config,
@@ -288,6 +300,7 @@ impl<'a> CaptureSession<'a> {
                 .unwrap_or(started),
         );
         Ok(Self {
+            mode: CaptureMode::ExplicitSource,
             requirements,
             budget: ReadBudget {
                 max_file_bytes: cfg.max_file_bytes,
@@ -360,12 +373,14 @@ impl<'a> CaptureSession<'a> {
             &self.exclusions,
             &mut self.matcher,
             matches!(revision, SourceRevision::Worktree),
+            self.mode == CaptureMode::ExplicitSource,
         );
         self.ignore_error |= failure == Some(ExplicitSourceFailure::IgnoreError);
         if let Some(failure) = failure {
             return Err(failure);
         }
-        if crate::lang::detect(path).is_none() {
+        let recognized = crate::lang::detect(path).is_some();
+        if !recognized && self.mode == CaptureMode::ExplicitSource {
             return Err(ExplicitSourceFailure::Unsupported);
         }
         let content = if matches!(revision, SourceRevision::Worktree) {
@@ -390,6 +405,19 @@ impl<'a> CaptureSession<'a> {
         if content.contains('\0') {
             return Err(ExplicitSourceFailure::Binary);
         }
+        if !recognized {
+            return Ok(Arc::new(ExplicitSourceFile {
+                content,
+                language: "unknown".into(),
+                definitions: DefinitionFacts {
+                    status: crate::model::DefinitionStatus::Unsupported,
+                    ..DefinitionFacts::default()
+                },
+                planning: None,
+                report: None,
+                graph_facts: None,
+            }));
+        }
         match file_analysis::analyze_loaded_file(
             path,
             content,
@@ -401,9 +429,11 @@ impl<'a> CaptureSession<'a> {
         ) {
             super::AnalysisOutcome::Analyzed(file) => Ok(Arc::new(ExplicitSourceFile {
                 content: file.content,
-                language: file.report.language,
+                language: file.report.language.clone(),
                 definitions: file.definitions.unwrap_or_default(),
                 planning: file.definition_plans,
+                report: Some(file.report),
+                graph_facts: file.graph_facts,
             })),
             _ => Err(ExplicitSourceFailure::Unsupported),
         }
@@ -416,6 +446,7 @@ fn validate_target(
     exclusions: &BTreeSet<PathBuf>,
     matcher: &mut walk::PathMatcher,
     worktree: bool,
+    check_ancestors: bool,
 ) -> Option<ExplicitSourceFailure> {
     if path.as_os_str().is_empty()
         || path
@@ -427,6 +458,9 @@ fn validate_target(
     let candidate = root.join(path);
     let mut prefix = root.to_path_buf();
     for component in path.components() {
+        if !check_ancestors {
+            break;
+        }
         prefix.push(component);
         if !worktree && prefix == candidate {
             break;
@@ -455,6 +489,23 @@ fn validate_target(
     decision
         .is_ignore()
         .then_some(ExplicitSourceFailure::Excluded)
+}
+
+pub(crate) fn failure_name(failure: ExplicitSourceFailure) -> &'static str {
+    match failure {
+        ExplicitSourceFailure::InvalidPath => "invalid-path",
+        ExplicitSourceFailure::Excluded => "excluded",
+        ExplicitSourceFailure::IgnoreError => "ignore-error",
+        ExplicitSourceFailure::Unsupported => "unsupported",
+        ExplicitSourceFailure::Unreadable => "unreadable",
+        ExplicitSourceFailure::NotRegularFile => "not-regular-file",
+        ExplicitSourceFailure::Oversized => "oversized",
+        ExplicitSourceFailure::BudgetExceeded => "input-budget-exceeded",
+        ExplicitSourceFailure::DeadlineExceeded => "deadline-exceeded",
+        ExplicitSourceFailure::Missing => "missing",
+        ExplicitSourceFailure::Binary => "binary",
+        ExplicitSourceFailure::Conflict => "conflict",
+    }
 }
 
 fn read_failure(outcome: &ReadOutcome) -> ExplicitSourceFailure {

@@ -349,6 +349,12 @@ read targets. `plan` distinguishes discovery, source-planning cost and output om
 resolution, depth/path/result limits and output coverage, with exact qualified-symbol/hash worktree read handoffs.
 See [task queries](task-queries.md) for the complete interface.
 
+`review-context` returns `kind: "review_context"` with comparison commit/tree identities,
+`coverage` for both revisions, change/declaration evidence, typed relations and context candidates.
+`totals` retains source/diff costs and separate capture, selection and output omission counts.
+Whole-file source and patch bodies are explicit opt-ins. Table, Markdown, JSON and single-record
+NDJSON share one rendered token/byte budget. See [PR review context](review-context.md).
+
 External diagnostics appear under `context.task_evidence`, separate from top-level scan
 `diagnostics` and health findings. Agent-summary keeps bounded counts and gap-first details;
 human output uses compact coverage lines. See [task diagnostics](task-diagnostics.md).

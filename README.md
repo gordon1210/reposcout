@@ -33,12 +33,15 @@ RepoScout combines signals that usually require several tools:
 | **What should be read next?** | A deterministic context plan under hard token and file budgets |
 | **Read a known or changed definition?** | Worktree, index or revision source and body-free change selection on Unix under shared output budgets |
 | **What could this change affect?** | Diff-scoped review, dependency/type graphs, and direct/transitive impact |
+| **What does a PR review need?** | Pinned base/head changes, static blast radius, test hints and source-token costs |
 
 Everything runs locally. RepoScout does not upload source, call a model, or write analysis state
 into the repository it scans.
 
 RepoScout also provides [lexical search, definition plans and conservative
 consumers](docs/task-queries.md), plus [external diagnostic seeds](docs/task-diagnostics.md).
+For PRs, [review context](docs/review-context.md) combines changes and their observed neighborhood
+from both Git revisions. Agent allocation and tokenizer choice remain the caller's decisions.
 The [38-run native pilot](docs/agent-evaluation.md) passed its retrieval/behavior checks but did not
 establish net token savings; it measures the pre-review development binary, not the 0.3.0 release.
 
@@ -127,6 +130,9 @@ reposcout --agent-summary --focus src/service.ts \
 
 # Select staged definitions without source; add --source when their bodies are needed
 reposcout changes . --staged -f json
+
+# Prepare PR review evidence from two immutable Git revisions
+reposcout review-context . --base origin/main --head HEAD --merge-base -f json
 
 # Get a bounded decision report for the current working-tree change
 reposcout --working --change-summary -f json .

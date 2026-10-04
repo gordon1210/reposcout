@@ -168,6 +168,7 @@ fn command_target(cli: &Cli) -> Option<&Path> {
         Some(Command::Plan(args)) => Some(&args.path),
         Some(Command::Consumers(args)) => Some(&args.path),
         Some(Command::Changes(args)) => Some(&args.path),
+        Some(Command::ReviewContext(args)) => Some(&args.path),
         Some(Command::Config(args)) => Some(&args.path),
         Some(Command::Daemon(args)) => Some(&args.path),
         Some(Command::Cache(args)) => {
@@ -195,6 +196,7 @@ fn command_output(cli: &Cli) -> Option<&Path> {
         Some(Command::Plan(args)) => args.common.output.as_deref(),
         Some(Command::Consumers(args)) => args.common.output.as_deref(),
         Some(Command::Changes(args)) => args.common.output.as_deref(),
+        Some(Command::ReviewContext(args)) => args.common.output.as_deref(),
         Some(
             Command::Capabilities(_)
             | Command::Cache(_)
@@ -258,6 +260,10 @@ fn real_main(cli: Cli) -> Result<ExitCode> {
             command: Some(Command::Consumers(args)),
             ..
         } => task_commands::run_consumers(&args, pretty),
+        Cli {
+            command: Some(Command::ReviewContext(args)),
+            ..
+        } => task_commands::run_review_context(&args, pretty),
         Cli {
             command: Some(Command::Update),
             ..
@@ -1207,7 +1213,9 @@ fn split(cli: Cli) -> (ScanArgs, Option<Enabled>) {
         ),
         Some(Command::Explain(_)) => unreachable!("explain is dispatched before scan splitting"),
         Some(Command::Locate(_)) => unreachable!("locate is dispatched before scan splitting"),
-        Some(Command::Find(_) | Command::Plan(_) | Command::Consumers(_)) => {
+        Some(
+            Command::Find(_) | Command::Plan(_) | Command::Consumers(_) | Command::ReviewContext(_),
+        ) => {
             unreachable!("task queries are dispatched before scan splitting")
         }
         Some(Command::Read(_)) => unreachable!("read is dispatched before scan splitting"),

@@ -13,6 +13,7 @@ pub mod ndjson;
 pub(crate) mod plan;
 mod projection;
 pub mod query;
+pub(crate) mod review_context;
 pub mod sarif;
 pub(crate) mod source;
 pub mod table;

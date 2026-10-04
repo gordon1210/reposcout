@@ -19,11 +19,13 @@ mod changes;
 mod consumers;
 mod find;
 mod plan;
+mod review_context;
 mod source;
 pub use changes::{ChangeQueryOptions, query_changes};
 pub use consumers::{ConsumersQueryOptions, ConsumersQueryOutput, consumers};
 pub use find::{FindQueryOptions, FindQueryOutput, find};
 pub use plan::{DefinitionPlanOutput, DefinitionPlanQueryOptions, plan_definitions};
+pub use review_context::{ReviewContextOptions, ReviewContextOutput, review_context};
 pub use source::{
     SourceQueryOptions, SourceQueryOutput, SourceQueryTarget, SourceSelector, read_source,
 };
@@ -50,6 +52,7 @@ pub fn capabilities() -> CapabilitiesReport {
             "consumers",
             "read",
             "changes",
+            "review-context",
             "update",
             "cache",
             "config",
@@ -120,6 +123,7 @@ pub fn capabilities() -> CapabilitiesReport {
         definition_plan: Some(plan::capability()),
         call_query: Some(consumers::capability()),
         task_diagnostics: Some(crate::task_diagnostics::capability()),
+        review_context: Some(review_context::capability()),
         type1_max_previous_per_window: crate::dup::exact::MAX_PREVIOUS_PER_WINDOW,
         type1_max_seed_pairs_per_pool: crate::dup::exact::MAX_SEED_PAIRS_PER_POOL,
         type1_max_matches_per_pool: crate::dup::exact::MAX_MATCHES_PER_POOL,

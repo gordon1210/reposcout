@@ -48,6 +48,71 @@ fn write_query(common: &CommonArgs, root: &Path, rendered: &str) -> Result<ExitC
     Ok(ExitCode::SUCCESS)
 }
 
+pub(super) fn run_review_context(
+    args: &reposcout::cli::ReviewContextArgs,
+    pretty: bool,
+) -> Result<ExitCode> {
+    let format = query_format(&args.common, pretty)?;
+    let repository = git2::Repository::discover(&args.path)?;
+    let root = repository
+        .workdir()
+        .ok_or_else(|| usage_error("review-context requires a Git worktree"))?;
+    if let Some(output) = &args.common.output {
+        validate_review_write(&repository, &walk::exact_path_identity(output)?)?;
+    }
+    let mut cfg = query_configuration("review-context", &args.path, &args.common)?;
+    if let Some(budget) = args.context_budget {
+        cfg.context_budget = budget;
+    }
+    if let Some(files) = args.context_max_files {
+        cfg.context_max_files = files;
+    }
+    if cfg.context_budget == 0 || cfg.context_max_files == 0 {
+        return Err(usage_error(
+            "context budget and file limit must be positive",
+        ));
+    }
+    enforce_absolute_limits(&mut cfg);
+    if args.common.profile == Some(ExecutionProfile::Safe) {
+        enforce_safe_limits(&mut cfg);
+    }
+    let output = reposcout::query::review_context(
+        &args.path,
+        &cfg,
+        &command_exclusions(args.common.output.as_deref()),
+        &reposcout::query::ReviewContextOptions {
+            base: args.base.clone(),
+            head: args.head.clone(),
+            merge_base: args.merge_base,
+            context: args.context
+                || args.context_budget.is_some()
+                || args.context_max_files.is_some(),
+            include_source: args.source,
+            include_diff: args.diff,
+            token_budget: args.budget,
+            byte_budget: args.max_output_bytes,
+            format,
+            pretty_json: pretty,
+        },
+    )?;
+    write_query(&args.common, root, &output.rendered)
+}
+
+fn validate_review_write(repository: &git2::Repository, identity: &Path) -> Result<()> {
+    for protected in repository
+        .workdir()
+        .into_iter()
+        .chain([repository.path(), repository.commondir()])
+    {
+        if identity.starts_with(protected.canonicalize()?) {
+            return Err(usage_error(
+                "review-context output/debug log cannot be inside the repository or its Git metadata",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn run_find(args: &FindArgs, pretty: bool) -> Result<ExitCode> {
     let format = query_format(&args.common, pretty)?;
     if let Some(output) = &args.common.output
@@ -206,6 +271,10 @@ fn scan_args(cli: &Cli) -> Option<&ScanArgs> {
 }
 
 pub(super) fn validate_debug_paths(cli: &Cli, debug_identity: &Path) -> Result<()> {
+    if let Some(Command::ReviewContext(args)) = &cli.command {
+        let repository = git2::Repository::discover(&args.path)?;
+        validate_review_write(&repository, debug_identity)?;
+    }
     if let Some(input) = scan_args(cli).and_then(diagnostic_input_path)
         && debug_identity == walk::exact_path_identity(input)?
     {

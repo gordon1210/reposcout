@@ -99,6 +99,14 @@ limits count selected ranges after overlap deduplication. Oversized or unresolve
 remain visible; missing environment is a coverage gap. Source delivery is a separate explicit
 query option and uses the shared capture and rendered-response budget, not I/O inside the planner.
 
+## Pinned review graphs
+
+PR `review-context` builds separate graphs from captured base/head inputs. Resolver configuration
+must remain revision-local and must never fall back to live files. Keep import, explicit type and
+concrete reference relations distinct. Whole-file costs are unique per revision/path; optional
+selection consumes those costs without I/O. Selection never assigns agents or splits work, and
+the tokenizer remains the user's default/configuration/CLI choice.
+
 ## On-demand daemon graph
 
 Normal watched scans keep `cfg.graph = false` and never build topology. They deliberately capture

@@ -5,6 +5,8 @@ mod task_queries;
 pub use task_queries::{FindArgs, FindMatchArg, PlanArgs, TaskDiagnosticFormatArg};
 mod consumers;
 pub use consumers::{ConsumersArgs, ConsumersDirectionArg};
+mod review_context;
+pub use review_context::ReviewContextArgs;
 
 use crate::dup::{DuplicationFormatScope, DuplicationMode};
 use crate::lang::{HealthInclude, HealthScope};
@@ -76,6 +78,8 @@ pub enum Command {
     Read(ReadArgs),
     /// Select changed definitions from a Git diff, with source included only when requested
     Changes(ChangesArgs),
+    /// Prepare immutable PR changes, static impact and context-token evidence
+    ReviewContext(ReviewContextArgs),
     /// Update an installer-managed copy from the latest stable GitHub release
     Update,
     /// Show layered global/project configuration and effective values

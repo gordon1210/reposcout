@@ -7,6 +7,9 @@ bounded set of known definitions and their supported environment, or `consumers`
 and reference relationships. Known source can go directly to [read](source-queries.md). These
 commands do not impose a scout → search → outline → read sequence.
 
+For a PR's two committed revisions, use [review-context](review-context.md) to obtain change
+evidence, per-revision impact and source-token costs together.
+
 The contracts below describe the interfaces and limits. The
 [historical pre-review pilot](agent-evaluation.md) passed bounded answer checks but did not establish net
 agent-token savings; see also the [evaluation procedure](../scripts/agent-eval/README.md).
