@@ -139,9 +139,19 @@ pub struct ReviewContextRelation {
     pub kind: String,
     pub edge: GraphEdge,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_basis: Option<ReviewChangeBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol: Option<ResolvedCallReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub type_relation: Option<super::GraphSymbolEdge>,
+}
+
+/// Why a resolved symbol reference is relevant to the changed source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewChangeBasis {
+    ChangedDefinition,
+    ChangedFile,
 }
 
 /// One unique file side, with whole-file cost and explainable selection state.

@@ -47,8 +47,160 @@ fn unavailable_side_is_unknown_change_evidence_in_both_directions() {
         assert_eq!(change["head"]["mapping_status"], "unavailable");
         assert_eq!(report["totals"]["changes_without_hunks"], 1);
         assert!(change["diff_tokens"].is_null());
+        let captured = if unavailable == "base" {
+            "head"
+        } else {
+            "base"
+        };
+        let references: Vec<_> = report["relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|relation| {
+                relation["side"] == captured && relation["kind"] == "symbol-reference"
+            })
+            .collect();
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0]["change_basis"], "changed-file");
+        assert_eq!(references[0]["symbol"]["target"]["name"], "changed");
+        assert_eq!(change[captured]["definitions"].as_array().unwrap().len(), 0);
+        let consumer = candidate(&report, captured, "consumer.ts");
+        assert!(has_role(consumer, "file-reference-source"));
+        assert!(!has_role(consumer, "concrete-reference-source"));
+        assert!(has_role(
+            candidate(&report, captured, "lib.ts"),
+            "file-reference-target"
+        ));
+        let human = fixture
+            .command_format(&["--max-file-bytes", "256"], "table")
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        assert!(
+            std::str::from_utf8(&human)
+                .unwrap()
+                .contains("change basis: changed file; declaration mapping incomplete")
+        );
+        let precise: Vec<_> = full["relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|relation| relation["kind"] == "symbol-reference")
+            .collect();
+        assert_ne!(precise.len(), 0);
+        assert!(
+            precise
+                .iter()
+                .all(|relation| relation["change_basis"] == "changed-definition")
+        );
         std::mem::swap(&mut fixture.base, &mut fixture.head);
     }
+}
+
+#[test]
+fn partial_mapping_preserves_qualified_references_without_inventing_changes() {
+    let fixture = revisions(
+        &[
+            (
+                "lib.ts",
+                "export function changed() { return 1; }\nexport function stable() { return 7; }\nconst broken = ;\n",
+            ),
+            (
+                "consumer.ts",
+                "import { changed, stable } from './lib';\nexport function useIt() { return stable(); }\nexport function useChanged() { return changed(); }\n",
+            ),
+        ],
+        &[(
+            "lib.ts",
+            "export function changed() { return 2; }\nexport function stable() { return 7; }\nconst broken = ;\n",
+        )],
+    );
+    let report = fixture.report(&[]);
+    for side in ["base", "head"] {
+        assert_eq!(report["changes"][0][side]["mapping_status"], "partial");
+        assert!(
+            report["relations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|relation| {
+                    relation["side"] == side
+                        && relation["kind"] == "symbol-reference"
+                        && relation["change_basis"] == "changed-file"
+                        && relation["symbol"]["target"]["name"] == "stable"
+                })
+        );
+        assert!(
+            report["changes"][0][side]["definitions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|definition| definition["name"] != "stable")
+        );
+        assert!(
+            report["relations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|relation| {
+                    relation["side"] == side
+                        && relation["kind"] == "symbol-reference"
+                        && relation["change_basis"] == "changed-definition"
+                        && relation["symbol"]["target"]["name"] == "changed"
+                })
+        );
+    }
+}
+
+#[test]
+fn file_based_references_keep_external_callers_ahead_of_outgoing_and_internal_calls() {
+    let source = format!(
+        "import {{ dep }} from './dep';\nfunction local() {{ return 1; }}\nexport function changed() {{\n{}return dep();\n}}\n",
+        "local();\n".repeat(110)
+    );
+    let oversized = format!("{source}// {}\n", "x".repeat(20_000));
+    let fixture = revisions(
+        &[
+            ("a.ts", &oversized),
+            (
+                "dep.ts",
+                "export function dep() { return 3; }\nexport const unrelated = 1;\n",
+            ),
+            (
+                "z-consumer.ts",
+                "import { changed } from './a';\nexport function useIt() { return changed(); }\n",
+            ),
+        ],
+        &[
+            ("a.ts", &source),
+            (
+                "dep.ts",
+                "export function dep() { return 3; }\nexport const unrelated = 2;\n",
+            ),
+        ],
+    );
+    let report = fixture.report(&["--max-file-bytes", "16384"]);
+    let references: Vec<_> = report["relations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|relation| relation["kind"] == "symbol-reference")
+        .collect();
+    assert!(report["totals"]["relations_omitted"].as_u64().unwrap() > 0);
+    assert_eq!(references[0]["edge"]["source"], "z-consumer.ts");
+    assert_eq!(references[1]["edge"]["source"], "a.ts");
+    assert_eq!(references[1]["edge"]["target"], "dep.ts");
+    assert!(
+        references
+            .iter()
+            .all(|relation| relation["change_basis"] == "changed-file")
+    );
+    assert!(has_role(
+        candidate(&report, "head", "dep.ts"),
+        "file-reference-target"
+    ));
 }
 
 #[test]

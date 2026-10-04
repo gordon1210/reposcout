@@ -553,6 +553,13 @@ fn renames_and_mode_only_changes_keep_both_file_identities() {
     assert_eq!(executable["base"]["mapping_status"], "available");
     assert_eq!(executable["head"]["mapping_status"], "available");
     assert_eq!(report["totals"]["changes_without_hunks"], 0);
+    assert!(
+        report["relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|relation| relation["change_basis"] != "changed-file")
+    );
 }
 
 #[test]

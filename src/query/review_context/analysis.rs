@@ -2,7 +2,8 @@ use super::changes::sha256;
 use crate::graph::{self, GraphReadLimits};
 use crate::metrics::{testcov, tokens::TokenCounter};
 use crate::model::{
-    CallReferenceStatus, GraphEdge, ReviewContextChange, ReviewContextFile, ReviewContextRelation,
+    CallReferenceStatus, GraphEdge, ReviewAnalysisStatus, ReviewChangeBasis, ReviewContextChange,
+    ReviewContextFile, ReviewContextRelation,
 };
 use crate::scan::{ReviewCapture, ReviewRevision};
 use anyhow::Result;
@@ -76,6 +77,7 @@ pub(super) fn analyze(
                     side: side.into(),
                     kind: "import".into(),
                     edge,
+                    change_basis: None,
                     symbol: None,
                     type_relation: None,
                 });
@@ -94,27 +96,59 @@ pub(super) fn analyze(
             &right.side,
         ))
     });
-    let relations = order_relations(relations);
+    let relations = order_relations(relations, changes);
     super::check_deadline(captured.deadline)?;
     Ok((context, relations))
 }
 
-fn order_relations(mut relations: Vec<ReviewContextRelation>) -> Vec<ReviewContextRelation> {
+fn order_relations(
+    mut relations: Vec<ReviewContextRelation>,
+    changes: &[ReviewContextChange],
+) -> Vec<ReviewContextRelation> {
+    let incomplete_paths: BTreeSet<_> = changes
+        .iter()
+        .flat_map(|change| {
+            [
+                ("base", change.base.as_ref()),
+                ("head", change.head.as_ref()),
+            ]
+            .into_iter()
+            .filter_map(|(side, file)| {
+                let file = file?;
+                mapping_is_incomplete(file).then_some((side, file.path.as_path()))
+            })
+        })
+        .collect();
     let priority = |relation: &ReviewContextRelation| match relation.kind.as_str() {
+        "symbol-reference" if relation.change_basis == Some(ReviewChangeBasis::ChangedFile) => 2,
         "symbol-reference" => 0,
         "type-relationship" => 1,
-        _ => 2,
+        _ => 3,
+    };
+    let direction = |relation: &ReviewContextRelation| {
+        if relation.change_basis != Some(ReviewChangeBasis::ChangedFile) {
+            0
+        } else if relation.edge.source == relation.edge.target {
+            2
+        } else {
+            u8::from(
+                !incomplete_paths
+                    .contains(&(relation.side.as_str(), Path::new(&relation.edge.target))),
+            )
+        }
     };
     relations.sort_by(|left, right| {
         (
             &left.side,
             priority(left),
+            direction(left),
             &left.edge.source,
             &left.edge.target,
         )
             .cmp(&(
                 &right.side,
                 priority(right),
+                direction(right),
                 &right.edge.source,
                 &right.edge.target,
             ))
@@ -207,18 +241,36 @@ fn call_candidates(
     edges: Vec<crate::model::ResolvedCallReference>,
 ) {
     for edge in edges {
-        if changed_symbol(&edge.target, changed) || changed_symbol(&edge.source, changed) {
+        let basis =
+            if changed_symbol(&edge.target, changed) || changed_symbol(&edge.source, changed) {
+                Some(ReviewChangeBasis::ChangedDefinition)
+            } else if incompletely_mapped_file(&edge.target, changed)
+                || incompletely_mapped_file(&edge.source, changed)
+            {
+                Some(ReviewChangeBasis::ChangedFile)
+            } else {
+                None
+            };
+        if let Some(basis) = basis {
+            let (source_role, target_role) = match basis {
+                ReviewChangeBasis::ChangedDefinition => {
+                    ("concrete-reference-source", "concrete-reference-target")
+                }
+                ReviewChangeBasis::ChangedFile => {
+                    ("file-reference-source", "file-reference-target")
+                }
+            };
             add(
                 candidates,
                 Path::new(&edge.source.path),
-                "concrete-reference-source",
+                source_role,
                 1,
                 Some(Path::new(&edge.target.path)),
             );
             add(
                 candidates,
                 Path::new(&edge.target.path),
-                "concrete-reference-target",
+                target_role,
                 1,
                 Some(Path::new(&edge.source.path)),
             );
@@ -230,11 +282,25 @@ fn call_candidates(
                     target: edge.target.path.clone(),
                     resolver: edge.resolver.clone(),
                 },
+                change_basis: Some(basis),
                 symbol: Some(edge),
                 type_relation: None,
             });
         }
     }
+}
+
+fn incompletely_mapped_file(
+    symbol: &crate::model::CallSymbolIdentity,
+    changed: &BTreeMap<PathBuf, &crate::model::ReviewChangedSide>,
+) -> bool {
+    changed
+        .get(Path::new(&symbol.path))
+        .is_some_and(|file| mapping_is_incomplete(file))
+}
+
+fn mapping_is_incomplete(file: &crate::model::ReviewChangedSide) -> bool {
+    file.status == "captured" && file.mapping_status != ReviewAnalysisStatus::Available
 }
 
 fn type_candidates(
@@ -285,6 +351,7 @@ fn type_candidates(
                 side: side.into(),
                 kind: "type-relationship".into(),
                 edge,
+                change_basis: None,
                 symbol: None,
                 type_relation: Some(symbol.clone()),
             });

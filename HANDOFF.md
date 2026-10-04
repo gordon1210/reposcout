@@ -73,6 +73,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   unchanged (analyzer 23); the new query and capability field are additive (schema 2.0).
   Hunk/mapping availability is explicit even for a half-captured change pair. Unchanged resolver
   configs do not become ambient context candidates; relation projection alternates revisions.
+  Resolved symbol references survive partial or unavailable declaration mapping with an explicit
+  `changed-file` basis, without asserting that the referenced declarations changed.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
   See [review context](docs/review-context.md) for limits and trust boundaries.

@@ -18,6 +18,9 @@ Check `hunk_status`, per-side `mapping_status` and `totals.changes_without_hunks
 empty change evidence. A captured side does not imply that its comparison with a missing side was
 analyzed. Literal Unix backslash paths retain source evidence but contribute an explicit
 `unsupported_graph_paths` gap rather than an ambiguous graph identity.
+For symbol references, `change_basis: "changed-definition"` identifies mapped changed declarations;
+`"changed-file"` preserves resolved references to or from a captured changed file whose declaration
+mapping is partial or unavailable. The latter does not establish which declarations changed.
 
 `totals.candidate_tokens` counts whole files once per revision/path. Unknown costs are explicit;
 base/head and unified-diff costs stay separate. Default/configured tokenization always applies;

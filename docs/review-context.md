@@ -61,6 +61,14 @@ uses the existing conservative Rust and JS/TS/TSX resolvers. These are potential
 promise that every consumer breaks or that runtime consumers have been found. A deleted file can
 still expose its old importers in the base graph.
 
+Symbol references expose `change_basis`: `changed-definition` means a mapped changed declaration
+touches the reference. When declaration mapping is partial or unavailable on a captured changed file,
+`changed-file` preserves its resolved references without claiming that their declarations changed.
+These candidates use `file-reference-source` / `file-reference-target` roles; precise mappings use
+`concrete-reference-source` / `concrete-reference-target`. A mapped changed declaration takes
+precedence when both bases apply. Mapping status and the actually mapped declarations remain
+unchanged; file-based evidence never invents a changed declaration.
+
 Resolver-configuration scope is a directory-based hint, not a proven call relationship. Test
 evidence distinguishes filename conventions and Rust inline-test syntax; it is neither an
 executed test result nor measured coverage. Existing graph and language limitations apply.
@@ -125,9 +133,12 @@ selection exclusions; totals survive output projection. Increase the output allo
 entries or use narrower changed-path scope. If even the status envelope does not fit, the command
 fails rather than returning a misleading empty success.
 Relations alternate between head and base so either side cannot consume the entire output limit
-while the other has evidence; concrete references and type relations precede imports within each
-side. Inventory truncation also includes unrepresentable unchanged path names. Unsupported
-inventory counts refer to unrecognized formats, not just failed parsers; Markdown is recognized.
+while the other has evidence; references touching changed definitions, type relations, file-based
+references and imports follow that order within each side. File-based references prioritize
+incoming cross-file references to incompletely mapped files, then outgoing references, then
+same-file references.
+Inventory truncation also includes unrepresentable unchanged path names. Unsupported inventory
+counts refer to unrecognized formats, not just failed parsers; Markdown is recognized.
 
 Table, Markdown, JSON and single-record NDJSON use the same facts and output budgets. Source and
 diff text are absent by default. Human output includes blob IDs, changed ranges, mapping status,

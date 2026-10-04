@@ -28,8 +28,10 @@ within their section.
 
 ### Fixed
 
-- Preserve unknown PR change mappings when either revision cannot be captured; keep unrelated
-  resolver configurations out of the reading list and retain both revisions' relations under
+- Preserve unknown PR change mappings when either revision cannot be captured and retain resolved
+  references under incomplete mapping with an explicit file-based change basis, prioritizing
+  external callers over internal references; keep unrelated resolver configurations out of the
+  reading list and retain both revisions' relations under
   output limits. Show identity and typed evidence in human output, enforce cooperative review
   deadlines through analysis and rendering, and explicitly exclude ambiguous Unix backslash
   paths from graph inputs without losing their source/change evidence.

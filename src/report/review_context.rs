@@ -1,5 +1,5 @@
 use super::{Format, json_string, terminal_text};
-use crate::model::{ReviewAnalysisStatus, ReviewContextReport};
+use crate::model::{ReviewAnalysisStatus, ReviewChangeBasis, ReviewContextReport};
 use anyhow::{Result, bail};
 use std::fmt::Write as _;
 
@@ -37,6 +37,18 @@ fn relations(report: &ReviewContextReport, output: &mut String) {
             terminal_text(&relation.edge.resolver)
         );
         if let Some(symbol) = &relation.symbol {
+            if let Some(basis) = relation.change_basis {
+                let _ = writeln!(
+                    output,
+                    "  change basis: {}",
+                    match basis {
+                        ReviewChangeBasis::ChangedDefinition => "changed definition",
+                        ReviewChangeBasis::ChangedFile => {
+                            "changed file; declaration mapping incomplete"
+                        }
+                    }
+                );
+            }
             let _ = writeln!(
                 output,
                 "  {:?} {}:{} -> {}:{}; site={}-{} syntax={:?}",
