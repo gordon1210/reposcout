@@ -44,14 +44,14 @@ pub(super) fn describe(
                 base: None,
                 head: None,
                 hunk_status: ReviewAnalysisStatus::Unavailable,
-                hunks: 0,
+                hunks: None,
                 hunks_omitted: 0,
                 diff_tokens: None,
                 diff: None,
             };
             if let (Some(old), Some(new)) = (old, new) {
                 let hunks = changed_hunks(old, new)?;
-                result.hunks = hunks.hunks.len() + hunks.omitted_hunks;
+                result.hunks = Some(hunks.hunks.len() + hunks.omitted_hunks);
                 result.hunks_omitted = hunks.omitted_hunks;
                 result.hunk_status = if hunks.omitted_hunks == 0 {
                     ReviewAnalysisStatus::Available

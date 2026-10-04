@@ -95,7 +95,8 @@ pub struct ReviewContextChange {
     pub head: Option<ReviewChangedSide>,
     #[serde(default)]
     pub hunk_status: ReviewAnalysisStatus,
-    pub hunks: usize,
+    #[serde(default)]
+    pub hunks: Option<usize>,
     pub hunks_omitted: usize,
     pub diff_tokens: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

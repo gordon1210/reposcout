@@ -42,6 +42,7 @@ fn unavailable_side_is_unknown_change_evidence_in_both_directions() {
         let change = &report["changes"][0];
         assert_eq!(change[unavailable]["status"], "oversized");
         assert_eq!(change["hunk_status"], "unavailable");
+        assert_eq!(change.get("hunks"), Some(&Value::Null));
         assert_eq!(change["base"]["mapping_status"], "unavailable");
         assert_eq!(change["head"]["mapping_status"], "unavailable");
         assert_eq!(report["totals"]["changes_without_hunks"], 1);
@@ -62,6 +63,7 @@ fn half_captured_pair_is_not_complete_change_analysis() {
         "input-budget-exceeded"
     );
     assert_eq!(report["changes"][0]["hunk_status"], "unavailable");
+    assert_eq!(report["changes"][0].get("hunks"), Some(&Value::Null));
     assert_eq!(report["totals"]["changes_without_hunks"], 1);
     assert_eq!(report["totals"]["changes_omitted"], 0);
 }

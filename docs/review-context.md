@@ -44,10 +44,13 @@ availability and captured SHA-256 where available. Symlinks and submodules are n
 Unavailable or unsupported declaration analysis retains raw change evidence when text capture
 succeeds. Mode-only changes have no invented changed declarations.
 
-`hunk_status` distinguishes available, partial and unavailable change analysis. When one
-side's content is missing, the numeric `hunks` field is only an uncomputed placeholder;
-it is not evidence of zero changes. Each side's `mapping_status` separately qualifies
-its changed ranges and declarations, independently of source `extraction` status.
+`hunk_status` distinguishes available, partial and unavailable change analysis. When either
+side's content was not captured (for example because of a size or input budget), `hunks` is `null`;
+a numeric zero means the comparison was performed and found no text hunks. Added/deleted files
+compare the existing side against empty text. Interpret `hunks_omitted` only when `hunks` is a number:
+it counts discarded computed hunks and remains zero when analysis could not run.
+Each side's `mapping_status` separately qualifies its changed ranges and declarations,
+independently of source `extraction` status.
 `totals.changes_without_hunks` counts retained change pairs without computable hunks,
 including pairs for which only one side fit the shared capture budget.
 

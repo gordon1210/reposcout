@@ -160,7 +160,9 @@ fn changes(report: &ReviewContextReport, output: &mut String) {
             if change.hunk_status == ReviewAnalysisStatus::Unavailable {
                 "unknown".into()
             } else {
-                change.hunks.to_string()
+                change
+                    .hunks
+                    .map_or_else(|| "unknown".into(), |count| count.to_string())
             },
             change.hunks_omitted,
             change.hunk_status
