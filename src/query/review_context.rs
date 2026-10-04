@@ -165,11 +165,12 @@ fn project(
     report.changes.truncate(ENTRY_LIMIT);
     report.context.truncate(ENTRY_LIMIT);
     report.relations.truncate(ENTRY_LIMIT);
-    let original_changes = report.changes.clone();
+    let originals = report.clone();
     loop {
         if within_budget(report, options, counter, deadline)? {
-            restore_change_identities(report, &original_changes, options, counter, deadline)?;
-            restore_change_details(report, &original_changes, options, counter, deadline)?;
+            restore_change_identities(report, &originals.changes, options, counter, deadline)?;
+            restore_change_details(report, &originals.changes, options, counter, deadline)?;
+            restore_evidence(report, &originals, options, counter, deadline)?;
             return Ok(());
         }
         if let Some(file) = report
@@ -293,6 +294,67 @@ fn restore_change_details(
         let previous = std::mem::replace(&mut report.changes[index], restored);
         if !within_budget(report, options, counter, deadline)? {
             report.changes[index] = previous;
+        }
+    }
+    recount(report, options);
+    Ok(())
+}
+
+fn restore_evidence(
+    report: &mut ReviewContextReport,
+    originals: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    for relation in originals.relations.iter().skip(report.relations.len()) {
+        report.relations.push(relation.clone());
+        if !within_budget(report, options, counter, deadline)? {
+            report.relations.pop();
+        }
+    }
+    for file in originals.context.iter().skip(report.context.len()) {
+        let mut metadata = file.clone();
+        metadata.source = None;
+        report.context.push(metadata);
+        if !within_budget(report, options, counter, deadline)? {
+            report.context.pop();
+        }
+    }
+    // Restore requested whole bodies only after identities and impact evidence have had a chance.
+    for index in 0..report.changes.len() {
+        if report.changes[index].diff.is_some() {
+            continue;
+        }
+        report.changes[index].diff = originals.changes.iter().find_map(|original| {
+            let current = &report.changes[index];
+            (original.base.as_ref().map(|side| &side.path)
+                == current.base.as_ref().map(|side| &side.path)
+                && original.head.as_ref().map(|side| &side.path)
+                    == current.head.as_ref().map(|side| &side.path))
+            .then(|| original.diff.clone())
+            .flatten()
+        });
+        if report.changes[index].diff.is_some()
+            && !within_budget(report, options, counter, deadline)?
+        {
+            report.changes[index].diff = None;
+        }
+    }
+    for index in 0..report.context.len() {
+        if report.context[index].source.is_some() {
+            continue;
+        }
+        report.context[index].source = originals.context.iter().find_map(|original| {
+            let current = &report.context[index];
+            (original.side == current.side && original.path == current.path)
+                .then(|| original.source.clone())
+                .flatten()
+        });
+        if report.context[index].source.is_some()
+            && !within_budget(report, options, counter, deadline)?
+        {
+            report.context[index].source = None;
         }
     }
     recount(report, options);

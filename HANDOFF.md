@@ -80,7 +80,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   counterpart seeds keep mapping partial and preserve file-based reference evidence. Strategy 2 reduces
   declaration/range details before dropping changed-file identities; per-side output omissions
   remain separate from analysis availability. Omitted compact identities are reconsidered against
-  both actual output budgets before restoring details. Snapshot read handoffs use Git file modes and blob
+  both actual output budgets before restoring details, impact/context evidence and requested bodies.
+  Snapshot read handoffs use Git file modes and blob
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.

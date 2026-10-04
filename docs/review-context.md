@@ -154,6 +154,9 @@ must not disappear merely because another path costs more tokens. The complete r
 both budgets in the selected format.
 Previously trimmed changes are reconsidered for complete detail restoration, smallest first,
 so removing an oversized entry can make room for a small change's ranges and declarations again.
+Omitted relations and context metadata are also reconsidered in their original evidence order;
+requested diff and whole-source bodies follow them. Every admission is checked against both
+actual output budgets, and all omission counts describe the final retained response.
 Relations alternate between head and base so either side cannot consume the entire output limit
 while the other has evidence; references touching changed definitions, type relations, file-based
 references and imports follow that order within each side. File-based references prioritize

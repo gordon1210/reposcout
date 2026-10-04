@@ -156,7 +156,7 @@ mod tests {
                 true,
                 work,
             );
-            assert!(mapped.definitions.is_empty());
+            assert_eq!(mapped.definitions, Vec::<usize>::new());
             assert_eq!(mapped.unprocessed, 1);
         }
     }

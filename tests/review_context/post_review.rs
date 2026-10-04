@@ -206,7 +206,7 @@ fn post_review_new_declarations_never_mark_unchanged_neighbors() {
             let report = fixture.report(&[]);
             let unchanged = if changed == "head" { "base" } else { "head" };
             assert_eq!(names(&report["changes"][0][changed]), ["added"]);
-            assert!(names(&report["changes"][0][unchanged]).is_empty());
+            assert_eq!(names(&report["changes"][0][unchanged]), Vec::<&str>::new());
             std::mem::swap(&mut fixture.base, &mut fixture.head);
         }
     }

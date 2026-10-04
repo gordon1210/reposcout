@@ -3,6 +3,71 @@ use super::*;
 use std::fmt::Write as _;
 
 #[test]
+fn post_review_restores_impact_and_requested_bodies_after_large_change_eviction() {
+    let large = format!("a/{}/lib.ts", vec!["q".repeat(140); 5].join("/"));
+    let fixture = revisions(
+        &[
+            (&large, "export function large() { return 1; }\n"),
+            ("m.ts", "export function small() { return 1; }\n"),
+            (
+                "consumer.ts",
+                "import { small } from './m';\nexport function run() { return small(); }\n",
+            ),
+        ],
+        &[
+            (&large, "export function large() { return 2; }\n"),
+            ("m.ts", "export function small() { return 2; }\n"),
+        ],
+    );
+    for content_flag in [None, Some("--diff"), Some("--source")] {
+        let mut command = test_command::reposcout_command();
+        command.arg("review-context").arg(fixture.path()).args([
+            "--base",
+            &fixture.base.to_string(),
+            "--head",
+            &fixture.head.to_string(),
+            "--no-cache",
+            "--no-project-config",
+            "--budget",
+            "65536",
+            "--max-output-bytes",
+            "5000",
+            "-f",
+            "json",
+        ]);
+        if let Some(flag) = content_flag {
+            command.arg(flag);
+        }
+        let output = command.assert().success().get_output().stdout.clone();
+        assert!(output.len() <= 5000);
+        let report: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(report["changes"].as_array().unwrap().len(), 1);
+        assert_eq!(report["changes"][0]["head"]["path"], "m.ts");
+        let relations = report["relations"].as_array().unwrap();
+        let context = report["context"].as_array().unwrap();
+        assert_ne!(relations.len(), 0, "{content_flag:?}: {report}");
+        assert_ne!(context.len(), 0, "{content_flag:?}: {report}");
+        assert_eq!(
+            report["changes"][0]["diff"].is_string(),
+            content_flag == Some("--diff")
+        );
+        assert_eq!(
+            context.iter().any(|file| file["source"].is_string()),
+            content_flag == Some("--source")
+        );
+        for (key, retained) in [
+            ("relations", relations.len()),
+            ("candidates", context.len()),
+        ] {
+            assert_eq!(
+                report["totals"][key].as_u64().unwrap(),
+                retained as u64 + report["totals"][format!("{key}_omitted")].as_u64().unwrap()
+            );
+        }
+    }
+}
+
+#[test]
 fn post_review_token_budget_readmits_a_larger_but_affordable_identity() {
     // Keep physical fixture paths below Darwin's limit, including the temporary root.
     let cheap = format!("cheap/{}/lib.ts", vec!["a".repeat(180); 3].join("/"));

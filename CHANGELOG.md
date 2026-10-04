@@ -15,7 +15,8 @@ within their section.
   no-follow protection.
 - Preserve changed-file identities under tight `review-context` output budgets by reducing large
   declaration/range lists first, with per-side omission counts, and removing oversized identities
-  before smaller independent changes when whole entries still cannot fit.
+  before smaller independent changes when whole entries still cannot fit. Reconsider omitted
+  impact/context evidence and requested bodies when eviction frees enough output space.
 - Retain both revisions' declaration and caller evidence for pure body insertions and deletions
   in `review-context`, matching counterparts through unchanged declaration headers rather than
   treating adjacent declarations as changed.
