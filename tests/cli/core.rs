@@ -434,7 +434,7 @@ fn debug_log_records_incremental_diagnostics_and_excludes_itself() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert!(!records.is_empty());
+    assert_ne!(records.len(), 0);
     assert_eq!(records[0]["event"], "session_start");
     assert!(records.windows(2).all(|pair| {
         pair[0]["sequence"].as_u64().unwrap() < pair[1]["sequence"].as_u64().unwrap()
@@ -573,7 +573,7 @@ fn debug_log_records_panics_before_the_normal_hook_runs() {
         .expect("panic record");
     assert_eq!(panic["data"]["message"], "deliberate debug-log panic probe");
     assert!(panic["data"]["location"]["file"].is_string());
-    assert!(!panic["data"]["backtrace"].as_str().unwrap().is_empty());
+    assert_ne!(panic["data"]["backtrace"].as_str().unwrap().len(), 0);
 }
 
 #[test]
@@ -896,11 +896,9 @@ fn in_tree_baseline_is_excluded_from_diff_and_impact_metadata() {
         baseline.to_str().unwrap(),
         dir.path().to_str().unwrap(),
     ]);
-    assert!(
-        report["impact"]["changed_files"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        report["impact"]["changed_files"].as_array().unwrap().len(),
+        0
     );
     assert_eq!(report["impact"]["confidence"], "none");
 }

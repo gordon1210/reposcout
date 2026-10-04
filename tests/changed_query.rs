@@ -173,7 +173,7 @@ fn working_changes_are_body_free_until_source_is_requested() {
     assert_eq!(body_free["kind"], "change_query");
     assert_eq!(body_free["mode"], "changes");
     assert_eq!(body_free["change"]["scope"], "working");
-    assert!(contents(&body_free).is_empty());
+    assert_eq!(contents(&body_free).len(), 0);
     assert!(!body_free.to_string().contains(WORKTREE_BODY));
     assert!(
         body_free["results"]

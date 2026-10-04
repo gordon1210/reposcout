@@ -465,8 +465,8 @@ fn change_summary_returns_a_minimal_success_for_an_empty_diff() {
         summary["coverage"]["test_mapping_confidence"],
         "not-applicable"
     );
-    assert!(summary["reading_order"].as_array().unwrap().is_empty());
-    assert!(summary["validations"].as_array().unwrap().is_empty());
+    assert_eq!(summary["reading_order"].as_array().unwrap().len(), 0);
+    assert_eq!(summary["validations"].as_array().unwrap().len(), 0);
 }
 
 #[test]

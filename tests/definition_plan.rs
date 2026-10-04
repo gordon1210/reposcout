@@ -195,7 +195,7 @@ fn unseeded_expansion_never_claims_direct_evidence_and_counts_limits() {
             ..limits(20)
         },
     );
-    assert!(report.selected.is_empty());
+    assert_eq!(report.selected.len(), 0);
     assert_eq!(report.omitted_definitions, 2);
 }
 
@@ -222,7 +222,7 @@ fn ambiguous_unresolved_unsupported_and_oversized_seeds_remain_distinct() {
         seed("a.rs", "huge"),
     ];
     let report = plan(&files, &seeds, &limits(20));
-    assert!(report.selected.is_empty());
+    assert_eq!(report.selected.len(), 0);
     assert_eq!(report.ambiguous_seeds, 1);
     assert_eq!(report.unresolved_seeds, 2);
     assert_eq!(report.unavailable_seeds, 1);
@@ -472,12 +472,12 @@ mod query_tests {
         )
         .unwrap();
         assert_eq!(read.report.results[0].status, SourceQueryStatus::Stale);
-        assert!(read.report.sources.is_empty());
+        assert_eq!(read.report.sources.len(), 0);
         let mut stale = options();
         stale.targets.push(stale.targets[0].clone());
         stale.targets[0].expected_hash = Some(hash);
         let output = plan_definitions(dir.path(), &config(), &[], &stale).unwrap();
-        assert!(output.report.selected.is_empty());
+        assert_eq!(output.report.selected.len(), 0);
         assert_eq!(output.report.unavailable_seeds, 2);
         assert!(
             output
@@ -556,7 +556,7 @@ mod query_tests {
                     assert_eq!(output.rendered.lines().count(), 1);
                 }
                 let source = output.report.source.unwrap();
-                assert!(source.sources.is_empty());
+                assert_eq!(source.sources.len(), 0);
                 assert_eq!(source.requested_targets, 1);
                 assert!(
                     source.omitted_targets == 1
@@ -577,7 +577,7 @@ mod query_tests {
         let mut selected = options();
         selected.targets.clear();
         let output = plan_definitions(dir.path(), &config(), &[], &selected).unwrap();
-        assert!(!output.report.selected.is_empty());
+        assert_ne!(output.report.selected.len(), 0);
         assert!(
             output
                 .report
@@ -597,7 +597,7 @@ mod query_tests {
         let mut known = options();
         known.targets[0].path = "../escape.rs".into();
         let output = plan_definitions(dir.path(), &config(), &[], &known).unwrap();
-        assert!(output.report.selected.is_empty());
+        assert_eq!(output.report.selected.len(), 0);
         assert_eq!(output.report.omissions[0].reason, "invalid-path");
     }
 

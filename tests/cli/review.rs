@@ -367,7 +367,7 @@ fn deep_review_applies_reposcoutignore_to_both_snapshots() {
     let report: Value =
         serde_json::from_slice(&cmd.assert().success().get_output().stdout.clone()).unwrap();
 
-    assert!(report["review"]["findings"].as_array().unwrap().is_empty());
+    assert_eq!(report["review"]["findings"].as_array().unwrap().len(), 0);
 }
 
 #[test]

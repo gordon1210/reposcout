@@ -50,7 +50,7 @@ fn duplicate_findings_and_union_coverage_are_precise() {
     let findings = v["duplicates"]["findings"]
         .as_array()
         .expect("detailed findings");
-    assert!(!findings.is_empty());
+    assert_ne!(findings.len(), 0);
     let finding = &findings[0];
     assert_eq!(finding["id"].as_str().unwrap().len(), 32);
     assert_eq!(finding["family_id"].as_str().unwrap().len(), 32);
@@ -64,17 +64,16 @@ fn duplicate_findings_and_union_coverage_are_precise() {
         );
         assert!(fragment["snippet"].is_string());
     }
-    assert!(
-        !v["duplicates"]["file_coverage"]
-            .as_array()
-            .unwrap()
-            .is_empty()
+    assert_ne!(
+        v["duplicates"]["file_coverage"].as_array().unwrap().len(),
+        0
     );
-    assert!(
-        !v["summary"]["top_duplicate_findings"]
+    assert_ne!(
+        v["summary"]["top_duplicate_findings"]
             .as_array()
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -252,11 +251,12 @@ pub fn repeated_business_rule(values: &[i32]) -> i32 {
     assert!(production["duplicated_lines"].as_u64().unwrap() > 0);
     assert!(production["analyzed_lines"].as_u64().unwrap() > 0);
     assert_eq!(production["complete"], true);
-    assert!(
-        !report["summary"]["top_production_duplicates"]
+    assert_ne!(
+        report["summary"]["top_production_duplicates"]
             .as_array()
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 
     for format in ["table", "markdown"] {

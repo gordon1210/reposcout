@@ -134,7 +134,7 @@ fn unavailable_cache_preserves_changed_sources_in_every_diff_scope() {
         }
         arguments.push("--source");
         let report = fixture.run(&arguments);
-        assert!(!report["results"].as_array().unwrap().is_empty());
+        assert_ne!(report["results"].as_array().unwrap().len(), 0);
         let sources = report["sources"].as_array().unwrap();
         for expected in [1, value] {
             assert!(sources.iter().any(|source| {
@@ -154,11 +154,12 @@ fn unavailable_cache_preserves_plans_and_embedded_changed_definitions() {
         "pub fn value() -> u32 { 3 }"
     );
     let report = fixture.run(&["--change-summary", "--working", "--changed-definitions"]);
-    assert!(
-        !report["definition_changes"]["results"]
+    assert_ne!(
+        report["definition_changes"]["results"]
             .as_array()
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -195,13 +196,14 @@ fn cache_failures_are_observable_only_in_opt_in_debug_logs() {
                 .contains("failed to write analysis cache")
         );
     }
-    assert!(
+    assert_eq!(
         fixture
             .debug_events(
                 "disabled.jsonl",
                 &["read", "--symbol", "lib.rs", "value", "--no-cache"]
             )
-            .is_empty()
+            .len(),
+        0
     );
 }
 

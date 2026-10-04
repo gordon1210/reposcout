@@ -280,7 +280,7 @@ fn safe_limits_and_supported_empty_runs_are_explicit() -> TestResult {
         ),
     ] {
         let parsed = parse(input, format)?;
-        assert!(parsed.records.is_empty());
+        assert_eq!(parsed.records.len(), 0);
         assert_eq!(parsed.evidence.parse_errors, 0);
     }
     Ok(())

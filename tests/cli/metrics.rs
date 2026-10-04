@@ -407,7 +407,7 @@ fn per_function_complexity_is_surfaced() {
 
     let mut prev = u64::MAX;
     for f in top {
-        assert!(!f["name"].as_str().unwrap().is_empty());
+        assert_ne!(f["name"].as_str().unwrap().len(), 0);
         assert!(f["path"].as_str().is_some());
         assert!(f["line"].as_u64().unwrap() >= 1);
         let cc = f["cyclomatic"].as_u64().unwrap();
@@ -454,10 +454,10 @@ fn complexity_rule_flags_functions_over_configured_maximum() {
 
     assert_eq!(c["cyclomatic_threshold"], 1);
     assert!(c["functions_over_threshold"].as_u64().unwrap() > 0);
-    assert!(!violations.is_empty());
+    assert_ne!(violations.len(), 0);
     for finding in violations {
         assert!(finding["cyclomatic"].as_u64().unwrap() > 1);
-        assert!(!finding["name"].as_str().unwrap().is_empty());
+        assert_ne!(finding["name"].as_str().unwrap().len(), 0);
         assert!(finding["line"].as_u64().unwrap() > 0);
     }
 }

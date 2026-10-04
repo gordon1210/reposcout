@@ -147,7 +147,7 @@ fn index_and_worktree_hashes_reject_later_content() {
             .iter()
             .all(|result| result.status == SourceQueryStatus::Stale)
     );
-    assert!(output.report.sources.is_empty());
+    assert_eq!(output.report.sources.len(), 0);
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn aliases_of_same_tree_share_source_and_hash_expectations() {
             .iter()
             .all(|result| result.status == SourceQueryStatus::Stale)
     );
-    assert!(stale.report.sources.is_empty());
+    assert_eq!(stale.report.sources.len(), 0);
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn changed_projection_keeps_exact_counts_beyond_admission_limit() {
     assert_eq!(output.report.requested_targets, 256);
     assert_eq!(output.report.results.len(), 128);
     assert_eq!(output.report.omitted_targets, 128);
-    assert!(output.report.sources.is_empty());
+    assert_eq!(output.report.sources.len(), 0);
 }
 
 #[test]
@@ -254,7 +254,7 @@ fn snapshot_reads_honor_exact_output_exclusions() {
     )
     .unwrap();
     assert_eq!(output.report.results[0].status, SourceQueryStatus::Excluded);
-    assert!(output.report.sources.is_empty());
+    assert_eq!(output.report.sources.len(), 0);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn file_type_changes_are_unavailable_counterparts_not_deleted_definitions() {
         },
     )
     .unwrap();
-    assert!(output.report.sources.is_empty());
+    assert_eq!(output.report.sources.len(), 0);
     assert_eq!(output.report.change.as_ref().unwrap().mapped_definitions, 0);
     assert!(
         output

@@ -151,7 +151,7 @@ fn many_same_line_siblings_have_bounded_candidates_and_exact_ambiguity_count() {
     assert_eq!(result.total_candidates, 256);
     assert_eq!(result.candidates.len(), 8);
     assert_eq!(result.omitted_candidates, 248);
-    assert!(output.report.sources.is_empty());
+    assert_eq!(output.report.sources.len(), 0);
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn captured_hash_and_source_are_stable_warm_and_change_together_after_an_edit() 
     fs::write(&path, &replacement).unwrap();
     let stale = read_source(directory.path(), &cfg, &[], &query).unwrap();
     assert_eq!(stale.report.results[0].status, SourceQueryStatus::Stale);
-    assert!(stale.report.sources.is_empty());
+    assert_eq!(stale.report.sources.len(), 0);
     assert_ne!(stale.report.files[0].sha256, cold.report.files[0].sha256);
     query.targets[0].expected_hash = None;
     let changed = read_source(directory.path(), &cfg, &[], &query).unwrap();
@@ -198,7 +198,7 @@ fn shared_query_applies_one_file_expectation_to_every_target_and_rejects_conflic
             .iter()
             .all(|result| result.status == SourceQueryStatus::Stale)
     );
-    assert!(output.report.sources.is_empty());
+    assert_eq!(output.report.sources.len(), 0);
     query.targets[1].expected_hash = Some("f".repeat(64));
     assert!(read_source(directory.path(), &config(), &[], &query).is_err());
 }
