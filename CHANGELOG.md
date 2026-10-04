@@ -16,6 +16,9 @@ within their section.
 
 ### Changed
 
+- Refresh `tiktoken-rs` and `thiserror` through their existing dependency constraints. Bump the
+  cached analyzer version to 24 so per-file facts are recomputed with the updated tokenizer and
+  regex backends; default/configured encoding selection and JSON schema 2.0 remain unchanged.
 - Require successful Rust and release-helper CI for the exact tagged commit before release builds;
   a missing or incomplete latest run now stops publication immediately. Release helper fixtures
   run on every `main` push and on relevant pull requests.

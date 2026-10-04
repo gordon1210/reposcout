@@ -6,7 +6,7 @@ reference it routes to under `docs/agents/` for *how to work in the repo*. Use `
 user-facing behavior.
 
 _Last updated: 2026-10-04 · latest release 0.3.3 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 23_
+`ANALYZER_VERSION` 24_
 
 ---
 
@@ -70,7 +70,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   optional context selection has an independent source budget. Analysis gaps and selection/output
   omissions remain explicit. Tokenizer selection stays default/config/CLI; agent allocation and
   automatic task splitting are outside RepoScout's product scope. Cached per-file facts are
-  unchanged (analyzer 23); the new query and capability field are additive (schema 2.0).
+  unchanged by this query; its report and capability field are additive (schema 2.0).
   Hunk/mapping availability is explicit even for a half-captured change pair. Unchanged resolver
   configs do not become ambient context candidates; relation projection alternates revisions.
   Resolved symbol references survive partial or unavailable declaration mapping with an explicit
@@ -78,6 +78,11 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
   See [review context](docs/review-context.md) for limits and trust boundaries.
+
+- **Tokenizer dependency refresh.** `tiktoken-rs` 0.12.1 updates its regex backends while keeping
+  the supported encoding assets and user-selected/default encoding unchanged. Analyzer 24
+  invalidates cached per-file facts so token counts are recomputed with the updated backend;
+  published golden vectors continue to cover both supported encodings. JSON schema remains 2.0.
 
 - **Cognitive complexity precision.** Rust and Go `else if` chains stay at one nesting level;
   explicit nested blocks still accumulate nesting. Boolean runs flatten through parentheses
@@ -118,7 +123,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
   newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
-  Cached definition facts use analyzer version 23 while the additive schema remains 2.0.
+  Cached definition facts use analyzer version 24 while the additive schema remains 2.0.
   The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
   analyzer 21 added the task-query facts, analyzer 22 added C# facts, and analyzer 23 corrects
   cognitive complexity.
