@@ -232,8 +232,13 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   standalone, responsive public product page on the same React/TypeScript/Vite/Tailwind stack,
   with bespoke styling and the RepoScout fox artwork.
 - **Quality gates:** Rust formatting, clippy, and test suites; dashboard Vitest; and production
-  builds for both frontend packages. Frontend linting also tests the local import-alias rule;
-  it reads inherited/JSONC paths with TypeScript's config parser, independent of `TS_NODE_*`.
+  builds for both frontend packages. Both apps use the TypeScript 7 compiler. The shared ESLint
+  package uses Microsoft's [TypeScript 6 compatibility alias](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0)
+  (`@typescript/typescript6`) for the TypeScript API:
+  TypeScript 7.0 has no programmatic API, and `typescript-eslint` requires TypeScript below 6.1.
+  Revisit this alias when `typescript-eslint` and the local rule support the new compiler API;
+  keep app compilers independent of lint tooling. Frontend linting also tests the local import-alias
+  rule; it reads inherited/JSONC paths with TypeScript's config parser, independent of `TS_NODE_*`.
   Exact mappings and trailing `/*` prefix mappings require one target per alias. Empty or
   unsupported mappings fail explicitly instead of skipping lint; directory fixes preserve `/`.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to

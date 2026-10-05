@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep frontend linting compatible with TypeScript 7 app builds by using Microsoft's TypeScript 6
+  API compatibility package for ESLint and the local import-alias rule. App compilers remain on
+  TypeScript 7 with the full existing lint checks.
+
 ## [0.4.1] - 2026-10-05
 
 ### Fixed
