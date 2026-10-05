@@ -191,3 +191,8 @@ ask the user.
   They must not start the engine or write generated import state into a user project.
 - The sample fixture intentionally contains a duplicated block and TODO/FIXME/HACK markers. Keep
   them when editing fixtures or update the tests with the fixture.
+- `tests/development_scenarios.rs` is a separate, ignored-by-default integration target. The
+  opt-in `./scripts/test-scenarios.sh [FILTER]` builds release and runs its synthetic user journeys;
+  it is not a CI gate. Follow the same serialization/resource limits. See
+  [development scenarios](../development-scenarios.md) for independent expectations, fixture
+  isolation, command timeouts, filtered runs and opt-in failure retention.

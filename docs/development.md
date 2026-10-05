@@ -72,6 +72,12 @@ end-to-end `reposcout dup` scan.
 The shared command helper applies the same global worker limit to every CLI child. New integration
 tests should use bounded synthetic repositories rather than scanning this repository.
 
+The opt-in [development scenarios](development-scenarios.md) exercise longer user journeys across
+scanning, navigation, Git revisions, caches, policies and output budgets. Run
+`./scripts/test-scenarios.sh` for the suite, or pass a domain/name to select a scenario. These tests
+are compiled but ignored by ordinary `cargo test`, including CI; their explicit runner uses the
+release binary and the same serialized test harness and two-worker CLI limit.
+
 ## Architecture
 
 The stable serialized contract lives in [`src/model.rs`](../src/model.rs). Analyzers write those

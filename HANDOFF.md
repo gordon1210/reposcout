@@ -241,6 +241,11 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   rule; it reads inherited/JSONC paths with TypeScript's config parser, independent of `TS_NODE_*`.
   Exact mappings and trailing `/*` prefix mappings require one target per alias. Empty or
   unsupported mappings fail explicitly instead of skipping lint; directory fixes preserve `/`.
+- **Development scenarios:** `./scripts/test-scenarios.sh` runs opt-in behavioral user journeys
+  over isolated synthetic repositories, using the release binary and serial two-worker CLI
+  processes. These scenarios compile but stay ignored in ordinary tests/CI. Expectations cover
+  revision identity, navigation/impact and inventory/health/cache boundaries; see
+  [development scenarios](docs/development-scenarios.md).
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and

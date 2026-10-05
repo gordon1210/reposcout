@@ -103,6 +103,10 @@ src/
   report/            JSON, table, Markdown, SARIF, NDJSON, DOT/Mermaid, config, explain, and
                      query renderers; agent_summary.rs owns the hard-bounded scouting projection.
 tests/
+  development_scenarios.rs
+                     Opt-in ignored development journeys over bounded synthetic repositories.
+  development_scenarios/
+                     Revision, inventory and navigation scenarios with private fixture/cache state.
   cli.rs             End-to-end integration tests against bounded fixtures.
   dup_languages.rs   Detector and CLI matrix for every canonical format.
   support/           Shared fixture and CLI-command helpers.
