@@ -19,6 +19,10 @@ allowed, subject to the shipping case's explicit reading budget.
 See [acceptance results](user-acceptance-results.md) for observed passes, remaining RED criteria
 and reproduction commands.
 
+The next [user efficiency cases](user-efficiency-cases.md) are a design-only extension: six further
+information needs with budgets for complete interactions, minimal source and evidence reuse.
+They have not been implemented or run and do not change the existing acceptance baseline.
+
 ## Run
 
 ```sh

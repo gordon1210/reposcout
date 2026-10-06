@@ -263,6 +263,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   targets and the release rebuild passed under a user-authorized, monitored compiler exception.
   The [results](docs/user-acceptance-results.md) retain the RED baseline, output-size comparisons,
   resource measurements and unexecuted checks; no model-token or review-quality gain is claimed.
+  Six additional [efficiency cases](docs/user-efficiency-cases.md) are designed but not implemented
+  or run: whole-interaction budgets, necessary module bindings, noisy/scoped reviews, causal
+  navigation and caller-owned evidence reuse. Existing acceptance criteria remain unchanged.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and
