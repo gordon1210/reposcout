@@ -263,9 +263,17 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   targets and the release rebuild passed under a user-authorized, monitored compiler exception.
   The [results](docs/user-acceptance-results.md) retain the RED baseline, output-size comparisons,
   resource measurements and unexecuted checks; no model-token or review-quality gain is claimed.
-  Six additional [efficiency cases](docs/user-efficiency-cases.md) are designed but not implemented
-  or run: whole-interaction budgets, necessary module bindings, noisy/scoped reviews, causal
-  navigation and caller-owned evidence reuse. Existing acceptance criteria remain unchanged.
+  The opt-in `efficiency` group implements five of the six independently frozen
+  [efficiency cases](docs/user-efficiency-cases.md): noisy checkout reviews, import/configuration
+  changes, independently wired applications, sparse invoice evidence and caller-owned context
+  reuse. The retry case was deferred because its investigation risks overlap existing tests.
+  Complete CLI responses, arguments, repeated source and phase costs are recorded against the
+  original limits; existing acceptance criteria remain unchanged. See the separate
+  [efficiency results](docs/user-efficiency-results.md) for observed gaps, validation and limits.
+  Latest outcomes: 21 of 25 new tests pass; four remain red around sparse invoice bindings and
+  repeated policy bodies after a binding change. The existing 18 acceptance cases and seven
+  journeys remain green. These are opt-in acceptance gaps, not four distinct defects; no production
+  behavior or frozen requirement was changed to make the new suite pass.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and

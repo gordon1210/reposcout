@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 /// Executes only the authored miniature application, independently of `RepoScout`.
-pub(super) fn probe(fixture: &Fixture, script: &str) -> Value {
+pub(crate) fn probe(fixture: &Fixture, script: &str) -> Value {
     let program = format!("import sys\nsys.path.insert(0, sys.argv[1])\n{script}");
     let transcript = tempfile::Builder::new()
         .prefix("truth-probe-")
@@ -41,7 +41,7 @@ pub(super) fn probe(fixture: &Fixture, script: &str) -> Value {
 }
 
 /// Counts fixture source/data only; Git objects and private transcripts are not application input.
-pub(super) fn assert_fixture_bounds(fixture: &Fixture) {
+pub(crate) fn assert_fixture_bounds(fixture: &Fixture) {
     fn count(path: &Path) -> (usize, u64) {
         let mut totals = (0, 0);
         for entry in fs::read_dir(path).unwrap() {

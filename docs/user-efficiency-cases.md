@@ -1,9 +1,11 @@
 # User efficiency cases: sufficient evidence within an interaction budget
 
-Status: **design only, 2026-10-06**. These cases have not been implemented or run. They extend the
+Requirements frozen **2026-10-06, before implementation and product runs**. They extend the
 [frozen A–E user needs](user-acceptance-cases.md); they do not change their fixtures, criteria or
 [observed results](user-acceptance-results.md). Two fresh domain designers used public contracts
 and the earlier requirements, without inspecting implementation, test code or measured outputs.
+Implementation scope and subsequent observations live in [efficiency results](user-efficiency-results.md);
+the requirements and budgets below remain unchanged.
 
 The goal is enough trustworthy context to make the user's stated decision, with little irrelevant
 or repeated material. A complete repository dump and an empty compact answer must both fail.
@@ -325,7 +327,7 @@ artifacts retain the fixture, independent truth, exact CLI arguments, complete r
 ledger. Existing manual runner conventions remain suitable for a future workflow-dispatch job;
 no workflow, dependency, server or model harness is introduced by this design.
 
-Do not report these six designs as new bugs or as passing tests. Correctness/efficiency outcomes,
+Do not report the six designs alone as new bugs or as passing tests. Correctness/efficiency outcomes,
 any fixes and measured gains belong in a separate results document after execution. Even passing
 all cases establishes only these bounded synthetic information needs, not general review quality
 or superiority to a competent `git diff`/`rg`/targeted-read workflow.

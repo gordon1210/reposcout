@@ -17,6 +17,9 @@ pub(crate) struct Step {
     label: String,
     prefix: PathBuf,
     stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    exit: Option<i32>,
+    elapsed_seconds: f64,
 }
 
 impl<'fixture> Journey<'fixture> {
@@ -45,6 +48,17 @@ impl<'fixture> Journey<'fixture> {
 
     /// Arguments are passed unchanged; format, profile, tokenization and budgets remain explicit.
     pub(crate) fn step(&mut self, label: &str, args: &[&str], expected_exit: i32) -> Step {
+        let step = self.execute(label, args, Some(expected_exit));
+        step.assert_exit(expected_exit);
+        step
+    }
+
+    /// Returns every process outcome so callers can account for errors before asserting status.
+    pub(crate) fn observe(&mut self, label: &str, args: &[&str]) -> Step {
+        self.execute(label, args, None)
+    }
+
+    fn execute(&mut self, label: &str, args: &[&str], expected_exit: Option<i32>) -> Step {
         assert!(
             self.step_limit.is_none_or(|limit| self.steps < limit),
             "CLI route exceeded its invocation safeguard before {label:?}"
@@ -70,12 +84,13 @@ impl<'fixture> Journey<'fixture> {
                 prefix.display()
             )
         });
+        let elapsed_seconds = started.elapsed().as_secs_f64();
         fs::write(prefix.with_extension("stdout"), &output.stdout).expect("record journey stdout");
         fs::write(prefix.with_extension("stderr"), &output.stderr).expect("record journey stderr");
         let result = json!({
             "exit": output.status.code(),
             "status": output.status.to_string(),
-            "elapsed_seconds": started.elapsed().as_secs_f64(),
+            "elapsed_seconds": elapsed_seconds,
             "stdout_bytes": output.stdout.len(),
             "stderr_bytes": output.stderr.len(),
         });
@@ -85,23 +100,46 @@ impl<'fixture> Journey<'fixture> {
         )
         .expect("record journey result");
 
-        assert_eq!(
-            output.status.code(),
-            Some(expected_exit),
-            "journey step {label:?}; transcript {}; stdout: {}; stderr: {}",
-            prefix.display(),
-            preview(&output.stdout),
-            preview(&output.stderr)
-        );
         Step {
             label: label.to_owned(),
             prefix,
             stdout: output.stdout,
+            stderr: output.stderr,
+            exit: output.status.code(),
+            elapsed_seconds,
         }
     }
 }
 
 impl Step {
+    pub(crate) fn assert_exit(&self, expected_exit: i32) {
+        assert_eq!(
+            self.exit,
+            Some(expected_exit),
+            "journey step {:?}; transcript {}; stdout: {}; stderr: {}",
+            self.label,
+            self.prefix.display(),
+            preview(&self.stdout),
+            preview(&self.stderr)
+        );
+    }
+
+    pub(crate) fn exit_code(&self) -> Option<i32> {
+        self.exit
+    }
+
+    pub(crate) fn stderr_bytes(&self) -> &[u8] {
+        &self.stderr
+    }
+
+    pub(crate) fn elapsed_seconds(&self) -> f64 {
+        self.elapsed_seconds
+    }
+
+    pub(crate) fn transcript_prefix(&self) -> &std::path::Path {
+        &self.prefix
+    }
+
     pub(crate) fn stdout_json(&self) -> Value {
         self.parse_json("stdout", &self.stdout)
     }

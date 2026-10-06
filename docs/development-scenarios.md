@@ -19,9 +19,11 @@ allowed, subject to the shipping case's explicit reading budget.
 See [acceptance results](user-acceptance-results.md) for observed passes, remaining RED criteria
 and reproduction commands.
 
-The next [user efficiency cases](user-efficiency-cases.md) are a design-only extension: six further
-information needs with budgets for complete interactions, minimal source and evidence reuse.
-They have not been implemented or run and do not change the existing acceptance baseline.
+The [user efficiency cases](user-efficiency-cases.md) freeze further information needs and budgets
+for complete interactions, minimal source and evidence reuse. The `efficiency` group implements
+F, G, H, I and K; J is deferred because its retry investigation substantially overlaps existing
+causal-navigation and investigation coverage. These tests do not change the A–E acceptance criteria.
+See [efficiency results](user-efficiency-results.md) for scope, outcomes and measurement limits.
 
 ## Run
 
@@ -34,6 +36,7 @@ They have not been implemented or run and do not change the existing acceptance 
 ./scripts/test-scenarios.sh boundaries
 ./scripts/test-scenarios.sh journeys
 ./scripts/test-scenarios.sh acceptance
+./scripts/test-scenarios.sh efficiency
 ./scripts/test-scenarios.sh --keep-failed SCENARIO_NAME
 ```
 
@@ -41,8 +44,10 @@ The script first refreshes the release CLI, compiles the test target, rejects a 
 no scenarios, and runs the selected tests. Compilation time is separate from test execution time.
 Rust/Cargo and a Unix host are required; the test runtime does not need network services, external
 projects, package installations, a daemon or a frontend server.
-The `acceptance` group also needs `python3` for bounded standard-library fixture probes. A missing
-interpreter is an environment failure and must not be reported as a product acceptance failure.
+The `acceptance` and `efficiency` groups also need `python3` for bounded standard-library fixture
+probes. The efficiency package-imports cases additionally need Node.js for native ESM resolution;
+they install no packages. A missing interpreter is an environment failure and must not be reported
+as a product acceptance failure.
 
 `cargo test` still compiles these tests to catch drift, but `#[ignore]` keeps every scenario out of
 the default test run and existing CI. To run the target directly:
@@ -76,6 +81,7 @@ the linked guide and do not establish outcomes for the new acceptance cases.
 | Inventory | Source/content health separation, comment-aware markers, artifact duplication policy, cache equivalence/invalidation, exact output exclusion, and baseline gates |
 | Boundaries | Hierarchical ignore policy across scans and snapshot reads, project-configuration trust, and explicit input-limit gaps without losing small files |
 | Acceptance | Refund-boundary and helper-deletion review evidence, shipping investigation, tariff centralization, and new tariff debt despite improved aggregate totals |
+| Efficiency | Noisy checkout reviews, import/configuration-only wiring changes, two active applications, sparse evidence in a large invoice module, and caller-owned context reuse |
 
 Large here means connected behavior and enough surrounding code to expose misleading shortcuts,
 not uncontrolled repository size. Repositories are generated from readable Rust fixture builders;
@@ -121,6 +127,14 @@ driver. Independent application probes check the authored truth, not expected Re
 Missing necessary evidence is an explicit RED even when the CLI reports its limits honestly; keep
 the unmet criterion and reproducer rather than using an expected-failure wrapper. The acceptance
 group remains opt-in and adds no automatic CI execution.
+
+Efficiency tests count every raw stdout/stderr response before parsing, compact command arguments,
+and all emitted source/signature/diff occurrences. Their independent source packets and response
+limits are fixed before the first product call. Private ledgers and phase checkpoints retain
+errors, retries, omissions and repeated delivery; `--nocapture` prints final measurements even
+when successful fixtures clean up. RSS fields remain unavailable in the ledger; an external guard
+can measure the enclosing serial validation run. These are CLI interaction measurements, not
+model billing or proof of savings over a competent native-tool workflow.
 
 These tests supplement focused regressions. They do not establish runtime impact completeness,
 real test coverage, security certification, or whole-project correctness.

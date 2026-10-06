@@ -16,6 +16,8 @@ mod test_command;
 mod acceptance;
 #[path = "development_scenarios/boundaries.rs"]
 mod boundaries;
+#[path = "development_scenarios/efficiency/mod.rs"]
+mod efficiency;
 #[path = "development_scenarios/inventory.rs"]
 mod inventory;
 #[path = "development_scenarios/journeys/mod.rs"]

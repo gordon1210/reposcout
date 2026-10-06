@@ -203,3 +203,8 @@ ask the user.
   business behavior. Honest missing evidence does not satisfy a positive user task: preserve such
   failures and their reproducers rather than weakening the oracle or adding expected-failure wrappers.
   No model or external agent harness is involved.
+  The `efficiency` group adds independently frozen source/response/call budgets and caller-owned
+  evidence reuse. Its Python probes and native Node.js ESM probe are one-shot fixture checks;
+  no packages or services are installed. Preserve genuine missing-evidence and budget failures
+  separately from harness/environment failures. All cases remain opt-in; see
+  [efficiency requirements](../user-efficiency-cases.md).

@@ -109,6 +109,7 @@ tests/
                      Revision, inventory and navigation scenarios with private fixture/cache state.
     journeys/        Response-driven CLI contract chains and private step transcripts.
     acceptance/      Independently specified user evidence needs and executable domain fixtures.
+    efficiency/      Frozen user evidence packets, whole-interaction costs and context reuse.
   cli.rs             End-to-end integration tests against bounded fixtures.
   dup_languages.rs   Detector and CLI matrix for every canonical format.
   support/           Shared fixture and CLI-command helpers.
