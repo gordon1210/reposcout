@@ -1,0 +1,120 @@
+use super::super::support::Fixture;
+use serde_json::{Value, json};
+use std::fs;
+use std::path::PathBuf;
+use std::time::Instant;
+
+/// The driver can execute the public CLI, but cannot inspect or mutate its fixture directly.
+pub(super) struct Journey<'fixture> {
+    fixture: &'fixture Fixture,
+    transcript: PathBuf,
+    steps: usize,
+}
+
+/// An observed process result, without a dependency on internal report models.
+pub(super) struct Step {
+    label: String,
+    prefix: PathBuf,
+    stdout: Vec<u8>,
+}
+
+impl<'fixture> Journey<'fixture> {
+    pub(super) fn new(fixture: &'fixture Fixture) -> Self {
+        // The outer fixture owns cleanup, including optional retention during assertion failure.
+        let transcript = tempfile::Builder::new()
+            .prefix("journey-")
+            .tempdir_in(fixture.state_path())
+            .expect("private journey transcript directory")
+            .keep();
+        eprintln!("[journey] transcript: {}", transcript.display());
+        Self {
+            fixture,
+            transcript,
+            steps: 0,
+        }
+    }
+
+    /// Arguments are passed unchanged; format, profile, tokenization and budgets remain explicit.
+    pub(super) fn step(&mut self, label: &str, args: &[&str], expected_exit: i32) -> Step {
+        self.steps += 1;
+        let prefix = self.transcript.join(format!("{:03}", self.steps));
+        let command = json!({
+            "label": label,
+            "arguments": args,
+            "expected_exit": expected_exit,
+        });
+        fs::write(
+            prefix.with_extension("command.json"),
+            serde_json::to_vec_pretty(&command).unwrap(),
+        )
+        .expect("record journey command before execution");
+        eprintln!("[journey step {}: {label}] reposcout {args:?}", self.steps);
+
+        let started = Instant::now();
+        let output = self.fixture.command(args).output().unwrap_or_else(|error| {
+            panic!(
+                "journey step {label:?} could not execute: {error}; transcript {}",
+                prefix.display()
+            )
+        });
+        fs::write(prefix.with_extension("stdout"), &output.stdout).expect("record journey stdout");
+        fs::write(prefix.with_extension("stderr"), &output.stderr).expect("record journey stderr");
+        let result = json!({
+            "exit": output.status.code(),
+            "status": output.status.to_string(),
+            "elapsed_seconds": started.elapsed().as_secs_f64(),
+            "stdout_bytes": output.stdout.len(),
+            "stderr_bytes": output.stderr.len(),
+        });
+        fs::write(
+            prefix.with_extension("result.json"),
+            serde_json::to_vec_pretty(&result).unwrap(),
+        )
+        .expect("record journey result");
+
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "journey step {label:?}; transcript {}; stdout: {}; stderr: {}",
+            prefix.display(),
+            preview(&output.stdout),
+            preview(&output.stderr)
+        );
+        Step {
+            label: label.to_owned(),
+            prefix,
+            stdout: output.stdout,
+        }
+    }
+}
+
+impl Step {
+    pub(super) fn stdout_json(&self) -> Value {
+        self.parse_json("stdout", &self.stdout)
+    }
+
+    pub(super) fn stdout_bytes(&self) -> &[u8] {
+        &self.stdout
+    }
+
+    fn parse_json(&self, stream: &str, bytes: &[u8]) -> Value {
+        serde_json::from_slice(bytes).unwrap_or_else(|error| {
+            panic!(
+                "journey step {:?} returned invalid {stream} JSON: {error}; transcript {}; {}",
+                self.label,
+                self.prefix.with_extension(stream).display(),
+                preview(bytes)
+            )
+        })
+    }
+}
+
+fn preview(bytes: &[u8]) -> String {
+    const LIMIT: usize = 4_096;
+    let shown = String::from_utf8_lossy(&bytes[..bytes.len().min(LIMIT)]);
+    if bytes.len() > LIMIT {
+        format!("{shown} … ({} bytes total)", bytes.len())
+    } else {
+        shown.into_owned()
+    }
+}

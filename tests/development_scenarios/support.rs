@@ -53,6 +53,10 @@ impl Fixture {
         &self.cache
     }
 
+    pub(super) fn state_path(&self) -> &Path {
+        &self.home
+    }
+
     fn child(&self, path: &str) -> PathBuf {
         assert!(
             !path.is_empty()

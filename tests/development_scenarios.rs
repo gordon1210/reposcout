@@ -16,6 +16,8 @@ mod test_command;
 mod boundaries;
 #[path = "development_scenarios/inventory.rs"]
 mod inventory;
+#[path = "development_scenarios/journeys/mod.rs"]
+mod journeys;
 #[path = "development_scenarios/navigation.rs"]
 mod navigation;
 #[path = "development_scenarios/revisions.rs"]

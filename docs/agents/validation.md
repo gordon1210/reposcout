@@ -196,3 +196,6 @@ ask the user.
   it is not a CI gate. Follow the same serialization/resource limits. See
   [development scenarios](../development-scenarios.md) for independent expectations, fixture
   isolation, command timeouts, filtered runs and opt-in failure retention.
+  Its `journeys` group chains real CLI responses through complete tasks; run it separately with
+  `./scripts/test-scenarios.sh journeys`. See [journeys](../development-journeys.md) for input/oracle
+  separation and step transcripts. No model or external agent harness is involved.

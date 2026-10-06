@@ -77,6 +77,8 @@ scanning, navigation, Git revisions, caches, policies and output budgets. Run
 `./scripts/test-scenarios.sh` for the suite, or pass a domain/name to select a scenario. These tests
 are compiled but ignored by ordinary `cargo test`, including CI; their explicit runner uses the
 release binary and the same serialized test harness and two-worker CLI limit.
+For complete output-driven workflows, use `./scripts/test-scenarios.sh journeys`; the
+[journey design](development-journeys.md) describes task inputs, independent oracles and transcripts.
 
 ## Architecture
 

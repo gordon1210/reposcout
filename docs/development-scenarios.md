@@ -20,6 +20,7 @@ dirty worktrees, and cached/uncached analysis where the contract requires equiva
 ./scripts/test-scenarios.sh navigation
 ./scripts/test-scenarios.sh inventory
 ./scripts/test-scenarios.sh boundaries
+./scripts/test-scenarios.sh journeys
 ./scripts/test-scenarios.sh --keep-failed SCENARIO_NAME
 ```
 
@@ -38,14 +39,20 @@ cargo test --release --locked --test development_scenarios -- --ignored --nocapt
 No fast subset is automatically promoted to CI. That is a separate decision after measuring its
 runtime and reliability on the supported runners.
 
-Complete Linux validation runs on 2026-10-05 passed all 20 scenarios in 83–106 seconds after
+Complete Linux validation runs on 2026-10-05 passed the original 20 scenarios in 83–106 seconds after
 compilation. These are development-machine observations, not a performance requirement or a CI forecast.
 The normal target invocation separately confirmed that all 20 remain ignored without opt-in.
-The new guard-mapping, budget-fairness and snapshot-handoff scenarios also ran against a previously
+The focused guard-mapping, budget-fairness and snapshot-handoff scenarios also ran against a previously
 verified official v0.4.0 binary: each failed on its corresponding known behavior defect, while
 the current binary passed. No old binary or network download is required by the suite itself.
 
 ## Scenario families
+
+The additional [end-to-end journeys](development-journeys.md) chain actual CLI responses through
+complete review, navigation, diagnostic and cleanup tasks. Their drivers receive task inputs only;
+independent oracles check the reached evidence without supplying hidden follow-up targets.
+The seven journeys bring this opt-in target to 27 scenarios; their separate validation results
+are recorded in the linked journey guide.
 
 | Family | Behaviors under test |
 | --- | --- |

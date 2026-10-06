@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-05 · latest release 0.4.1 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-06 · latest release 0.4.1 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 24_
 
 ---
@@ -246,6 +246,9 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   processes. These scenarios compile but stay ignored in ordinary tests/CI. Expectations cover
   revision identity, navigation/impact and inventory/health/cache boundaries; see
   [development scenarios](docs/development-scenarios.md).
+  The `journeys` group adds complete output-driven CLI workflows with independent fixture
+  oracles and private step transcripts, covering PR review, symptom/diagnostic investigation,
+  baseline regressions and production clone cleanup; see [journeys](docs/development-journeys.md).
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and

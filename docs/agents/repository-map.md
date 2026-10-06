@@ -107,6 +107,7 @@ tests/
                      Opt-in ignored development journeys over bounded synthetic repositories.
   development_scenarios/
                      Revision, inventory and navigation scenarios with private fixture/cache state.
+    journeys/        Complete output-driven CLI task journeys, independent oracles and transcripts.
   cli.rs             End-to-end integration tests against bounded fixtures.
   dup_languages.rs   Detector and CLI matrix for every canonical format.
   support/           Shared fixture and CLI-command helpers.
