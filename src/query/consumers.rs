@@ -3,9 +3,9 @@ use crate::config::Config;
 use crate::graph::{self, GraphReadLimits};
 use crate::metrics::tokens::TokenCounter;
 use crate::model::{
-    CallReferenceStatus, CallReferenceTopology, CallSymbolIdentity, ConsumerCoverage, ConsumerHit,
-    ConsumersDirection, ConsumersQueryReport, FindReadSelector, FindReadTarget, SCHEMA_VERSION,
-    SourceRevision,
+    CallDeclaration, CallReferenceStatus, CallReferenceTopology, CallSymbolIdentity,
+    ConsumerCoverage, ConsumerHit, ConsumersDirection, ConsumersQueryReport, DefinitionFacts,
+    FindReadSelector, FindReadTarget, SCHEMA_VERSION, SourceRevision,
 };
 use crate::report::Format;
 use crate::scan;
@@ -253,7 +253,7 @@ fn validate(options: &ConsumersQueryOptions) -> Result<()> {
                 "invalid consumers symbol"
             ),
             SourceSelector::Line(line) => ensure!(*line > 0, "consumers line must be positive"),
-            SourceSelector::File | SourceSelector::Outline => {
+            SourceSelector::File | SourceSelector::Range { .. } | SourceSelector::Outline => {
                 anyhow::bail!("consumers requires a symbol or line selector")
             }
         }
@@ -407,7 +407,9 @@ fn resolve_seeds(
                                 .unwrap_or(&definition.declaration_span)
                                 .end_line
                 }),
-                SourceSelector::File | SourceSelector::Outline => false,
+                SourceSelector::File | SourceSelector::Range { .. } | SourceSelector::Outline => {
+                    false
+                }
             })
             .collect::<Vec<_>>();
         match &requested.selector {
@@ -419,31 +421,12 @@ fn resolve_seeds(
                 matches.retain(|declaration| declaration.symbol.name == *name);
             }
             SourceSelector::Line(_) => {
-                let lengths = definitions
-                    .definitions
-                    .iter()
-                    .map(|definition| {
-                        let span = definition
-                            .source_span
-                            .as_ref()
-                            .unwrap_or(&definition.declaration_span);
-                        (
-                            definition.declaration_span.start_byte,
-                            span.end_byte.saturating_sub(span.start_byte),
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
-                let smallest = matches
-                    .iter()
-                    .filter_map(|declaration| {
-                        lengths.get(&declaration.symbol.declaration_span.start_byte)
-                    })
-                    .min();
-                matches.retain(|declaration| {
-                    lengths.get(&declaration.symbol.declaration_span.start_byte) == smallest
-                });
+                retain_innermost_seed_candidates(&mut matches, definitions);
             }
-            SourceSelector::Symbol(_) | SourceSelector::File | SourceSelector::Outline => {}
+            SourceSelector::Symbol(_)
+            | SourceSelector::File
+            | SourceSelector::Range { .. }
+            | SourceSelector::Outline => {}
         }
         ensure!(
             matches.len() == 1,
@@ -456,6 +439,33 @@ fn resolve_seeds(
     seeds.sort_by_key(key);
     seeds.dedup_by(|left, right| key(left) == key(right));
     Ok(seeds)
+}
+
+fn retain_innermost_seed_candidates(
+    matches: &mut Vec<&CallDeclaration>,
+    definitions: &DefinitionFacts,
+) {
+    let lengths = definitions
+        .definitions
+        .iter()
+        .map(|definition| {
+            let span = definition
+                .source_span
+                .as_ref()
+                .unwrap_or(&definition.declaration_span);
+            (
+                definition.declaration_span.start_byte,
+                span.end_byte.saturating_sub(span.start_byte),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let smallest = matches
+        .iter()
+        .filter_map(|declaration| lengths.get(&declaration.symbol.declaration_span.start_byte))
+        .min();
+    matches.retain(|declaration| {
+        lengths.get(&declaration.symbol.declaration_span.start_byte) == smallest
+    });
 }
 
 fn coverage(artifacts: &scan::ScanArtifacts, topology: &CallReferenceTopology) -> ConsumerCoverage {

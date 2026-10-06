@@ -55,6 +55,7 @@ struct RefreshTarget {
     path: String,
     previous: Capture,
     current_file: Value,
+    ranges: Vec<(u64, u64)>,
 }
 
 impl Session<'_, '_> {
@@ -105,13 +106,33 @@ impl Session<'_, '_> {
         hash: Option<&str>,
         snapshot: &str,
     ) -> Value {
+        self.read_selected(path, symbol, &[], hash, snapshot)
+    }
+
+    fn read_selected(
+        &mut self,
+        path: &str,
+        symbol: Option<&str>,
+        ranges: &[(u64, u64)],
+        hash: Option<&str>,
+        snapshot: &str,
+    ) -> Value {
         let mut args = vec![
             "read".to_owned(),
             ".".to_owned(),
             "--snapshot".to_owned(),
             snapshot.to_owned(),
         ];
-        if let Some(symbol) = symbol {
+        if !ranges.is_empty() {
+            for (start, end) in ranges {
+                args.extend([
+                    "--range".to_owned(),
+                    path.to_owned(),
+                    start.to_string(),
+                    end.to_string(),
+                ]);
+            }
+        } else if let Some(symbol) = symbol {
             args.extend(["--symbol".to_owned(), path.to_owned(), symbol.to_owned()]);
         } else {
             args.extend(["--file".to_owned(), path.to_owned()]);
@@ -221,12 +242,14 @@ pub(super) fn follow_up(
         path,
         previous: old,
         current_file: current,
+        ranges,
     } in refresh
     {
         result.retained.remove(&path);
-        let stale = session.read(
+        let stale = session.read_selected(
             &path,
             old.symbol.as_deref(),
+            &ranges,
             Some(text(&old.file, "sha256")),
             "worktree",
         );
@@ -242,9 +265,10 @@ pub(super) fn follow_up(
             "public stale-hash rejection missing: {stale}"
         );
         result.stale.push(stale);
-        let delivered = session.read(
+        let delivered = session.read_selected(
             &path,
             old.symbol.as_deref(),
+            &ranges,
             Some(text(&current, "sha256")),
             "worktree",
         );
@@ -298,6 +322,7 @@ fn retain_unchanged(result: &mut Continuation, report: &Value) -> Vec<RefreshTar
         if unchanged_fragment {
             retained.current_proof = Some(report.clone());
         } else {
+            let mut ranges = Vec::new();
             if let Some(quote) = after_binding_quote(&retained.capture) {
                 let quote_unchanged = same_base
                     && ["base", "current"].into_iter().all(|side| {
@@ -308,6 +333,13 @@ fn retain_unchanged(result: &mut Continuation, report: &Value) -> Vec<RefreshTar
                                 .all(|range| disjoint(range, &quote.source["span"]))
                     });
                 if quote_unchanged {
+                    ranges = changed_ranges(report, path, "current")
+                        .iter()
+                        .filter_map(|range| range["start"].as_u64().zip(range["end"].as_u64()))
+                        .filter(|(start, end)| *start > 0 && end >= start)
+                        .collect::<BTreeSet<_>>()
+                        .into_iter()
+                        .collect();
                     result.reused_pieces.push(Retained {
                         capture: quote,
                         current_proof: Some(report.clone()),
@@ -318,6 +350,7 @@ fn retain_unchanged(result: &mut Continuation, report: &Value) -> Vec<RefreshTar
                 path: path.clone(),
                 previous: retained.capture.clone(),
                 current_file: current.clone(),
+                ranges,
             });
         }
     }

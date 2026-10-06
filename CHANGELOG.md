@@ -8,6 +8,11 @@ within their section.
 
 ### Added
 
+- Add explicit `read --range FILE START END` for exact, inclusive physical-line excerpts. Small
+  module bindings and changed imports can be retrieved without repeating unrelated function
+  bodies; existing snapshot/hash checks, source deduplication and output limits remain shared.
+  Ranges preserve exact bytes, expose requested bounds and never silently clip at EOF or budget.
+
 - Add explicit `read --file FILE` for complete, budgeted source including module imports and
   registration tables. Batched file and definition reads share captured identities, snapshot and
   hash checks, source deduplication and output limits; compact defaults remain unchanged.

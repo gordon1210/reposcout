@@ -54,7 +54,7 @@ pub(super) fn investigate(
         journey,
         ledger,
         task,
-        "read the discovered regression and request the known module's actual bindings",
+        "read the discovered regression and a bounded preamble of the known module",
         imports,
         (1100, 3584),
         CacheState::Warm,
@@ -81,17 +81,30 @@ fn regression_and_binding_targets(task: &Task, reports: &[Value]) -> Vec<String>
             }
         }
     }
-    let hash = observed_hash(reports, task.file);
     let mut args = vec!["read".to_owned(), ".".to_owned()];
-    for (path, hash) in files
-        .into_iter()
-        .take(3)
-        .chain([(task.file.to_owned(), hash)])
-    {
+    for (path, hash) in files.into_iter().take(3) {
         args.extend(["--file".to_owned(), path.clone()]);
         if let Some(hash) = hash {
             args.extend(["--expect-hash".to_owned(), path, hash]);
         }
+    }
+    // This is a bounded module-preamble heuristic, not fixture line knowledge or
+    // a claim that every import lies before the first requested definition.
+    let preamble_end = array(&reports[0]["sources"])
+        .iter()
+        .filter_map(|source| source["span"]["start_line"].as_u64())
+        .min()
+        .and_then(|start| start.checked_sub(1).filter(|end| *end > 0))
+        .unwrap_or(16)
+        .min(16);
+    args.extend([
+        "--range".to_owned(),
+        task.file.to_owned(),
+        "1".to_owned(),
+        preamble_end.to_string(),
+    ]);
+    if let Some(hash) = observed_hash(reports, task.file) {
+        args.extend(["--expect-hash".to_owned(), task.file.to_owned(), hash]);
     }
     args
 }

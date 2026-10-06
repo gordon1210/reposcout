@@ -100,6 +100,10 @@ stale expectations never permit old spans to be applied to new bytes.
 Explicit `read --file` returns complete captured text without inventing a declaration or requiring
 successful declaration extraction. It reuses the same source admission and overlap deduplication;
 it does not expand default reads, change cached facts or bypass recognized-format policy.
+Explicit `read --range FILE START END` projects inclusive one-based physical lines from those same
+captured bytes, before the declaration-extraction gate. Preserve exact LF/CRLF bytes, reject
+past-EOF bounds without clipping, and keep requested bounds separate from shared source unions.
+It changes no cached facts; file/range selectors are not definition-plan or consumer seeds.
 Worktree reads use Unix handle-relative no-follow traversal. Git-tree/index reads validate the
 pinned entry's regular-file mode and blob identity rather than current source-parent types;
 lexical paths, current ignore/exclusion policy and limits still apply. Non-Unix queries fail before source

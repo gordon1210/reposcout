@@ -127,6 +127,9 @@ reposcout read . --symbol src/service.ts Service.start --budget 4096 -f json
 # Read an explicitly needed small file, including imports and module registrations
 reposcout read . --file src/routes.ts --budget 4096 -f json
 
+# Read only a known import or registration range, preserving snapshot/hash identity
+reposcout read . --range src/routes.ts 1 8 --budget 2048 -f json
+
 # Build a compact reading plan under hard limits
 reposcout --agent-summary --focus src/service.ts \
   --context-budget 24000 --context-max-files 15 .

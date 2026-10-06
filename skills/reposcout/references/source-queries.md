@@ -37,7 +37,7 @@ reposcout read . \
 ```
 
 There are at most 32 targets. CLI order is all `--symbol` pairs in their input order, then all
-`--line` pairs, then all `--file` paths, preserving input order within each group; budget admission
+`--line` pairs, then all `--file` paths, then `--range` triples, preserving order within each group; budget admission
 and one-based target IDs follow that order.
 Interleaving flags does not interleave results. `--outline` is a separate mode.
 
@@ -47,8 +47,8 @@ candidates, omissions and newline, must fit both limits. The token budget defaul
 `o200k_base` or `cl100k_base`. Pretty JSON costs count too.
 
 A full definition that cannot fit is explicitly omitted. Do not interpret an omission as an empty
-definition or ask for a larger budget unless the missing source affects the next decision. There
-is no partial-source mode. JSON and NDJSON preserve the source after string decoding; NDJSON
+definition or ask for a larger budget unless the missing source affects the next decision. Only `--range FILE START END` explicitly requests an excerpt; other selectors never silently
+become partial source. JSON and NDJSON preserve the source after string decoding; NDJSON
 emits one compact record. Human formats visibly escape controls other than newlines and tabs,
 so use machine output when exact decoded source is required. Ambiguous selections expose at
 most eight candidates; choose based on
@@ -72,6 +72,29 @@ no `definition`, and a shared source reference. Recognized text formats without 
 are eligible; extraction status remains separate from successful delivery. Empty files return an
 empty source chunk. Unknown extensions, binary content and policy-ineligible paths remain rejected.
 `plan --file` still selects declarations, not complete files.
+
+## Read a small known span without repeating a whole module
+
+```sh
+reposcout read . --range src/policy.py 1 3 \
+  --expect-hash src/policy.py '<SHA256_FROM_PRIOR_RESULT>' --budget 2048 -f json
+```
+
+`--range FILE START END` selects inclusive, positive, one-based physical lines. It preserves exact
+captured LF/CRLF bytes and an unterminated final line; an empty file has no line, and terminal LF
+adds no phantom line. Zero/reversed bounds are invalid; any bound past EOF returns `not-found`
+instead of clipping. A requested excerpt that cannot fit is omitted whole.
+
+Use ranges from prior source/change evidence or an explicit bounded caller exploration. A small
+preamble is not a guarantee of complete import coverage. Keep snapshot/hash identity and request
+only the new binding when retained source has a valid unchanged-content proof. Never infer a
+binding from an unconnected name match. No import traversal or context expansion is automatic.
+
+Results use `selection: "range"`, `requested_range: {"start": START, "end": END}`, no fabricated
+definition and an exact source chunk. Overlapping explicit selections share a union chunk, so
+its bounds may exceed one request. Normal omissions retain requested bounds; the minimal status
+fallback may omit them. `complete` means the requested excerpt was delivered, not complete
+function/module context. File/range selectors do not become `plan` or `consumers` seeds.
 
 ## Read the correct snapshot or select changed definitions
 
@@ -110,7 +133,7 @@ matching names; use Git-detected path evidence.
 reposcout read . --outline src/service.ts --outline src/client.ts -f json
 ```
 
-`--outline` is body-free and conflicts with `--symbol`, `--line` and `--file`. All files share a maximum of
+`--outline` is body-free and conflicts with `--symbol`, `--line`, `--file` and `--range`. All files share a maximum of
 100 returned declarations and the same output budget. Inspect omissions; this is not guaranteed
 to list every declaration. Do not request an outline before a direct read when the target is
 already known.

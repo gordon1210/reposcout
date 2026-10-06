@@ -32,9 +32,10 @@ Do not repeat unchanged source already available in context. Optional `--outline
 first step. When the entry point is unknown, use lexical `find` only if its declaration candidates
 answer the next question. Known definitions can share a `plan`; known error logs can seed context.
 Use the matching focused guidance below and preserve snapshot/hash identity on follow-up reads.
-When module imports or registrations are essential, explicitly use `read --file` for those known
-files under one budget. Prefer smaller definition reads when sufficient; do not expand every read
-to whole files or repeat source already retained in context.
+When module imports or registrations are essential, use explicit `read --range FILE START END`
+for known small spans, or `read --file` when complete file context is needed. Keep expected hashes
+and snapshot identity. A bounded preamble is caller-selected evidence, not proof of complete import
+coverage. Prefer smaller definition reads when sufficient; do not repeat retained unchanged source.
 
 For a known comparison, start with bounded `reposcout changes` when the next
 decision needs changed definitions; request `--source` only for bodies needed by that decision.

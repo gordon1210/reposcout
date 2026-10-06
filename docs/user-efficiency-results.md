@@ -1,8 +1,10 @@
 # User efficiency scenario results
 
 The requirements in [user-efficiency-cases.md](user-efficiency-cases.md) were frozen before the
-CLI drivers. This test-only extension implements F, G, H, I and K on `test/behavior-scenarios`.
-Production source, dependencies, schema/analyzer versions and CI workflows are unchanged.
+CLI drivers. The initial test-only extension implements F, G, H, I and K on
+`test/behavior-scenarios`. The baseline below records the original unmet needs; the subsequent
+correction adds explicit line-range reads. Dependencies, schema/analyzer versions and CI workflows
+remain unchanged.
 
 ## Scope and independent review
 
@@ -42,7 +44,7 @@ The external guard measures the enclosing serial test process tree. Per-command/
 is unavailable in the ledger and remains `null`; aggregate run peaks must not be presented as
 individual measurements. No latency threshold is used as a correctness gate.
 
-## Observations on 2026-10-06
+## Baseline observations on 2026-10-06
 
 The production implementation is the one at `530c854` (0.4.1 plus the local `read --file` work).
 These additions change tests and documentation only. Outcomes below use each case's latest run;
@@ -64,7 +66,7 @@ grouped test remains red because the positive binding-swap episode is incomplete
 not make that positive task pass. No case uses `should_panic` or an expected-failure wrapper to turn
 an unmet user need green.
 
-### Two remaining efficiency gaps
+### Two baseline efficiency gaps
 
 **I: sparse module evidence.** `read --symbol` supplies `net_due`, targeted `find` locates the real
 regression, and follow-up reads supply its imports/assertions and the `Invoice` fields. The known
@@ -144,6 +146,72 @@ check against the existing sample fixture returned complete source.
 These measurements do not establish lower model bills, better real-world review accuracy or
 superiority to a competent `git diff`/`rg`/targeted-read workflow.
 
+## Correction on 2026-10-06: explicit sparse source
+
+`read --range FILE START END` now returns the exact requested physical lines through the existing
+capture, snapshot/hash, policy and shared-budget path. It does not fabricate a declaration, clip
+at EOF or silently shorten an oversized excerpt. There is no automatic import traversal or
+context expansion. `requested_range` identifies the request separately from an overlapping shared
+source chunk. Schema 2.0 and analyzer 24 remain unchanged: this is additive output and selection,
+not a change to cached facts.
+
+Only the I/K public drivers changed. I selects a bounded preamble from the returned definition's
+start line, capped at 16 lines, and follows imports actually delivered there. This is a limited
+caller heuristic, not a guarantee that every module's bindings occur at the top. K uses public
+current change ranges after establishing that its retained policy body is unchanged on both
+sides; that body keeps its original identity plus the separate change proof. The exercised K
+binding update has one changed source chunk; arbitrary multi-chunk investigations are not claimed.
+Fixtures, independent truth probes, evidence obligations, negative controls and numeric budgets
+were not changed.
+
+The entire efficiency group now passes: **25 passed, zero failed**, including all four previously
+red tests and all six I episodes. It took 36.32 seconds excluding compilation, with a monitored
+239 MiB process-tree peak. No accounting gaps or budget excesses occurred in the real CLI scenario episodes. Intentional
+ledger-control excesses still verify that the cost checks reject over-budget interactions.
+
+| Corrected need | Before | After |
+| --- | --- | --- |
+| I: binding and actual helper in a large invoice module | Missing despite four CLI calls and 19 emitted source lines | All required evidence in the same four calls and 26 source lines, below the frozen 56-line ceiling |
+| K: import-only follow-up | 12 emitted source lines, including seven unchanged policy-body lines | Five necessary source lines; unchanged policy body is retained rather than repeated |
+
+Across I's six episodes, response size is 5,643–5,671 bytes and 1,698–1,740 tokens; complete
+argument-plus-response cost is 1,994–2,040 tokens. The larger response relative to the incomplete
+baseline supplies indispensable evidence. K's binding episode uses eight calls in total and
+8,385 response bytes / 2,557 response tokens. Its four-call follow-up uses 3,925 bytes / 1,203
+response tokens and 1,516 argument-plus-response tokens. The repeated body is gone; this is not a
+measurement of model-session costs or a claim of proportional billing savings.
+
+Nine focused ordinary CLI regression tests passed in 2.44 seconds (171 MiB monitored process-tree
+peak). They cover exact CRLF/Unicode bytes, EOF, source unions and gaps, existing selector order,
+budget rollback, parse-error/input-limit independence, pinned history/full-blob hashes, invalid
+arguments and selected-source output collisions. Before implementation, the archived binary from
+`5eb839b` rejected the new selector with exit 2 on the same small CRLF tracer. That demonstrates a
+missing feature; the actual user-obligation RED evidence remains the baseline above, not a
+compilation or environment failure.
+
+### Correction validation and limits
+
+- All-target release-profile Clippy with warnings denied and compilation of every Rust test
+  target passed. Formatting, the canonical skill/mirror check and final whitespace checks passed.
+- 114 existing affected CLI regressions passed in 52.7 seconds including Cargo startup, and 20
+  query unit tests passed. These cover source files/definitions, snapshots, plans, consumers,
+  output contracts and review context.
+- The existing 18 user-acceptance cases passed in 9.04 seconds and seven journeys in 16.98 seconds.
+  The ordinary development target still ignores all 70 scenarios. No automatic scenario CI was added.
+- The first compiler check was stopped at the original 1 GiB limit. The user then authorized up
+  to 3 GiB / 600 seconds for this correction's compiler/test builds, with a monitored 12 GiB host
+  RAM reserve. The release build took 154.1 seconds / 1,555 MiB peak; compilation of every test
+  target took 231.8 seconds / 1,739 MiB peak. At least 19,798 MiB system RAM remained available.
+- Actual CLI/test execution kept the original 1 GiB / 180-second limits, ran serially, and never
+  exceeded one RepoScout child. Integration tests used the existing two-worker helper outside the
+  sandbox because its timeout signal pipe is blocked inside. No servers or daemons were started.
+- The final release rebuild passed. `reposcoutdev` resolves to this worktree's release binary,
+  and the original CRLF/Unicode tracer now returns the exact requested bytes and span.
+- The unrelated broader Rust/frontend suites and original 20 focused development scenarios were
+  not rerun; affected regression suites above were executed. No dependency or cache-fact changes
+  occurred. Personal and independent reviews covered production logic, driver/oracle boundaries,
+  resource protections and reported measurements.
+
 ## Reproduce
 
 ```sh
@@ -156,6 +224,6 @@ Run one filtered family at a time under the repository's resource limits. Python
 G's ESM case additionally requires Node.js, with no package installation. `--keep-failed` preserves
 synthetic repositories, independent truth, frozen packets, full command transcripts and ledgers
 outside the scanned repository. Successful fixtures clean up; `--nocapture` still prints their
-cost summaries. The full `efficiency` filter currently exits nonzero for the four unmet cases.
+cost summaries. The full `efficiency` filter now succeeds for the corrected cases.
 All scenarios remain ignored in ordinary tests and automatic CI. The runner can
 be used by a future manually dispatched workflow; no workflow was added here.

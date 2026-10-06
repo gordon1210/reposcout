@@ -1,7 +1,7 @@
 use super::{MAX_CANDIDATES, SourceQueryTarget, SourceSelector};
 use crate::model::{
-    DefinitionFact, DefinitionStatus, SourceQueryDefinition, SourceQueryFile, SourceQueryResult,
-    SourceQueryStatus, SourceSpan,
+    DefinitionFact, DefinitionStatus, LineRange, SourceQueryDefinition, SourceQueryFile,
+    SourceQueryResult, SourceQueryStatus, SourceSpan,
 };
 use crate::scan::{ExplicitSourceBatch, ExplicitSourceFailure};
 use std::collections::BTreeMap;
@@ -27,6 +27,10 @@ pub(crate) fn resolve<'a>(
         file,
         source: None,
     };
+    resolved.result.requested_range = requested_range(&target.selector);
+    if resolved.result.requested_range.is_some() {
+        resolved.result.selection = Some("range".to_string());
+    }
     let Some(path) = path else {
         resolved.result.status = SourceQueryStatus::InvalidPath;
         return resolved;
@@ -60,6 +64,15 @@ pub(crate) fn resolve<'a>(
         ));
         return resolved;
     }
+    if let SourceSelector::Range { start, end } = target.selector {
+        if let Some(span) = line_range_span(&loaded.content, start, end) {
+            resolved.result.status = SourceQueryStatus::Complete;
+            resolved.source = Some((&loaded.content, span));
+        } else {
+            resolved.result.status = SourceQueryStatus::NotFound;
+        }
+        return resolved;
+    }
     if matches!(
         loaded.definitions.status,
         DefinitionStatus::Unsupported | DefinitionStatus::Unavailable
@@ -85,12 +98,29 @@ pub(crate) fn resolve<'a>(
         resolved.result.omitted_candidates = definitions.len() - resolved.result.candidates.len();
         return resolved;
     }
-    let (matches, reason) = select(definitions, &target.selector);
+    resolve_definition(
+        &mut resolved,
+        &loaded.content,
+        definitions,
+        loaded.definitions.status,
+        &target.selector,
+    );
+    resolved
+}
+
+fn resolve_definition<'a>(
+    resolved: &mut ResolvedTarget<'a>,
+    content: &'a str,
+    definitions: &[DefinitionFact],
+    extraction: DefinitionStatus,
+    selector: &SourceSelector,
+) {
+    let (matches, reason) = select(definitions, selector);
     resolved.result.selection = Some(reason.to_string());
     resolved.result.total_candidates = matches.len();
     match matches.as_slice() {
         [] => {
-            resolved.result.status = if loaded.definitions.status == DefinitionStatus::ParseErrors {
+            resolved.result.status = if extraction == DefinitionStatus::ParseErrors {
                 SourceQueryStatus::ParseError
             } else {
                 SourceQueryStatus::NotFound
@@ -99,9 +129,9 @@ pub(crate) fn resolve<'a>(
         [definition] => {
             resolved.result.definition = Some(describe(definition, false));
             if let Some(span) = definition.source_span {
-                if loaded.content.get(span.start_byte..span.end_byte).is_some() {
+                if content.get(span.start_byte..span.end_byte).is_some() {
                     resolved.result.status = SourceQueryStatus::Complete;
-                    resolved.source = Some((&loaded.content, span));
+                    resolved.source = Some((content, span));
                 } else {
                     resolved.result.status = SourceQueryStatus::Unavailable;
                 }
@@ -119,7 +149,6 @@ pub(crate) fn resolve<'a>(
             resolved.result.omitted_candidates = matches.len() - resolved.result.candidates.len();
         }
     }
-    resolved
 }
 
 fn file_span(content: &str, line_count: Option<usize>) -> SourceSpan {
@@ -131,6 +160,40 @@ fn file_span(content: &str, line_count: Option<usize>) -> SourceSpan {
     }
 }
 
+pub(crate) fn requested_range(selector: &SourceSelector) -> Option<LineRange> {
+    match selector {
+        SourceSelector::Range { start, end } => Some(LineRange {
+            start: *start,
+            end: *end,
+        }),
+        _ => None,
+    }
+}
+
+fn line_range_span(content: &str, start: usize, end: usize) -> Option<SourceSpan> {
+    if content.is_empty() {
+        return None;
+    }
+    let mut offset = 0;
+    let mut start_byte = None;
+    for (index, line) in content.split_inclusive('\n').enumerate() {
+        let line_number = index + 1;
+        if line_number == start {
+            start_byte = Some(offset);
+        }
+        offset += line.len();
+        if line_number == end {
+            return Some(SourceSpan {
+                start_byte: start_byte?,
+                end_byte: offset,
+                start_line: start,
+                end_line: end,
+            });
+        }
+    }
+    None
+}
+
 pub(crate) fn empty_result(target: usize, file: Option<usize>) -> SourceQueryResult {
     SourceQueryResult {
         target,
@@ -138,6 +201,7 @@ pub(crate) fn empty_result(target: usize, file: Option<usize>) -> SourceQueryRes
         status: SourceQueryStatus::Unavailable,
         change: None,
         selection: None,
+        requested_range: None,
         definition: None,
         source: None,
         candidates: Vec::new(),
@@ -186,6 +250,7 @@ fn select<'a>(
         }
         SourceSelector::Outline => (Vec::new(), "file-outline"),
         SourceSelector::File => (Vec::new(), "file"),
+        SourceSelector::Range { .. } => (Vec::new(), "range"),
     }
 }
 

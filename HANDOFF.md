@@ -39,7 +39,9 @@ any path inside it**, so they can make decisions *before* diving in:
   dump.
 - **Read a known definition without guessing its end?** → `reposcout read [PATH]` with repeatable
   `--symbol FILE SYMBOL` or `--line FILE LINE`; `--outline FILE` is a body-free alternative.
-  Explicit `--file FILE` supplies needed module context under the same budget without expanding defaults.
+  Explicit `--file FILE` supplies complete module context; `--range FILE START END` supplies an
+  exact inclusive physical-line excerpt without expanding defaults or clipping at EOF/budget.
+  Requested bounds remain distinct from shared source chunks; no declaration is fabricated.
   Unix-only worktree/index/revision source, SHA-256 expectations and rendered token/byte budgets preserve
   identity and visible omissions. See [source queries](docs/source-queries.md).
 - **Which definitions changed?** → `reposcout changes [PATH]` with one diff scope returns body-free
@@ -270,10 +272,11 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   Complete CLI responses, arguments, repeated source and phase costs are recorded against the
   original limits; existing acceptance criteria remain unchanged. See the separate
   [efficiency results](docs/user-efficiency-results.md) for observed gaps, validation and limits.
-  Latest outcomes: 21 of 25 new tests pass; four remain red around sparse invoice bindings and
-  repeated policy bodies after a binding change. The existing 18 acceptance cases and seven
-  journeys remain green. These are opt-in acceptance gaps, not four distinct defects; no production
-  behavior or frozen requirement was changed to make the new suite pass.
+  Explicit `read --range` closes the two sparse-evidence gaps: all 25 efficiency tests now pass,
+  including the four formerly red cases. I retrieves its actual binding/helper in four calls;
+  K emits five follow-up source lines instead of 12 by retaining the seven unchanged body lines.
+  Only the public I/K drivers changed; frozen requirements, fixtures and budgets remain intact.
+  The results preserve the RED baseline and do not infer model-session savings.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and

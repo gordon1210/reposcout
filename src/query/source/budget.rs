@@ -68,6 +68,7 @@ pub(crate) fn admit_with_fit(
     result.status = SourceQueryStatus::BudgetOmitted;
     result.file = None;
     result.selection = None;
+    result.requested_range = None;
     result.definition = None;
     result.source = None;
     result.change = None;

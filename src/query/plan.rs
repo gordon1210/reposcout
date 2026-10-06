@@ -164,8 +164,11 @@ fn validate(options: &DefinitionPlanQueryOptions) -> Result<()> {
     }
     for target in &options.targets {
         ensure!(
-            !matches!(target.selector, SourceSelector::File),
-            "complete-file source selections belong to read; plan file seeds select declarations"
+            !matches!(
+                target.selector,
+                SourceSelector::File | SourceSelector::Range { .. }
+            ),
+            "complete-file and range source selections belong to read; plan file seeds select declarations"
         );
         let mut selected = target.clone();
         selected.snapshot = options.snapshot.clone();
@@ -298,16 +301,7 @@ fn explicit(
                     seeds.push(DefinitionSeed {
                         path: path.clone(),
                         snapshot: revision.clone(),
-                        selector: match &target.selector {
-                            SourceSelector::Symbol(name) => {
-                                DefinitionSelector::Symbol(name.clone())
-                            }
-                            SourceSelector::Line(line) => DefinitionSelector::Line(*line),
-                            SourceSelector::Outline => DefinitionSelector::File,
-                            SourceSelector::File => {
-                                anyhow::bail!("complete-file source selections belong to read")
-                            }
-                        },
+                        selector: plan_selector(&target.selector)?,
                     });
                 }
             } else {
@@ -323,7 +317,9 @@ fn explicit(
                 name: match &target.selector {
                     SourceSelector::Symbol(name) => Some(name.clone()),
                     SourceSelector::Line(line) => Some(format!("line:{line}")),
-                    SourceSelector::File | SourceSelector::Outline => None,
+                    SourceSelector::File
+                    | SourceSelector::Range { .. }
+                    | SourceSelector::Outline => None,
                 },
                 reason,
                 explicit: true,
@@ -337,6 +333,17 @@ fn explicit(
         unavailable_files: failed_files.len(),
         incomplete: false,
     })
+}
+
+fn plan_selector(selector: &SourceSelector) -> Result<DefinitionSelector> {
+    match selector {
+        SourceSelector::Symbol(name) => Ok(DefinitionSelector::Symbol(name.clone())),
+        SourceSelector::Line(line) => Ok(DefinitionSelector::Line(*line)),
+        SourceSelector::Outline => Ok(DefinitionSelector::File),
+        SourceSelector::File | SourceSelector::Range { .. } => {
+            anyhow::bail!("complete-file and range source selections belong to read")
+        }
+    }
 }
 
 fn include_source(

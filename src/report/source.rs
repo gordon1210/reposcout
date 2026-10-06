@@ -160,6 +160,9 @@ fn render_result(output: &mut String, result: &SourceQueryResult, markdown: bool
         write!(output, " · source {source}")?;
     }
     output.push('\n');
+    if let Some(range) = &result.requested_range {
+        writeln!(output, "Requested range: {}–{}", range.start, range.end)?;
+    }
     if let Some(change) = &result.change {
         writeln!(
             output,

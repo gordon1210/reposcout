@@ -74,6 +74,7 @@ fn capabilities_match_the_read_cli_defaults_and_limits() {
         [
             "--symbol FILE SYMBOL",
             "--line FILE LINE",
+            "--range FILE START END",
             "--file FILE",
             "--outline FILE"
         ]

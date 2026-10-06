@@ -4,8 +4,8 @@
 
 Use `reposcout read` when a file and symbol or line are already known and the next decision needs
 that definition's source. It returns complete supported definitions under one shared output budget.
-Use explicit `--file FILE` when module-level imports, registrations or other file context are
-needed. It does not choose which function is relevant from a bare file path. Use `reposcout changes` when
+Use explicit `--range FILE START END` for a known small module-level span, or `--file FILE`
+when complete module imports, registrations or other file context are needed. It does not choose which function is relevant from a bare file path. Use `reposcout changes` when
 the entry point is a working-tree, staged or revision-based diff instead of a known symbol.
 
 `read`, including `--outline` and snapshot selection, and `changes` are available on Unix platforms. The project's release targets are
@@ -37,8 +37,8 @@ reposcout read . \
 ```
 
 `--symbol` and `--line` each take two values and are repeatable. A query accepts at most 32 explicit
-targets. CLI batching processes all `--symbol` pairs, then all `--line` pairs, then all `--file`
-selectors, preserving input order within each group; interleaving flags does not interleave results. `--outline`
+targets. CLI batching processes all `--symbol` pairs, then `--line` pairs, `--file` selectors and
+`--range` triples, preserving input order within each group; interleaving flags does not interleave results. `--outline`
 is a separate mode. Budget admission and one-based target IDs follow this order. The shared query
 API preserves the order of its supplied target vector.
 
@@ -85,6 +85,41 @@ File reads accept regular UTF-8 text in recognized inventory formats, including 
 precise declaration support. A parse error does not prevent delivering the captured text; the
 file's extraction status remains separate from source delivery. Unknown extensions and binary
 input remain ineligible. The same policy, snapshot, hash and input limits apply as for definitions.
+
+## Read explicit line excerpts
+
+```sh
+reposcout read . --range src/invoices.py 1 8 \
+  --expect-hash src/invoices.py '<SHA256>' --budget 2048 -f json
+
+# Follow exact current ranges reported by a working-tree change query.
+reposcout read . --range src/policy.py 1 1 --snapshot worktree \
+  --expect-hash src/policy.py '<CURRENT_SHA256>' -f json
+```
+
+`--range FILE START END` is repeatable and can share a batch with symbols, lines and complete
+files. START and END are positive, inclusive, one-based physical line numbers, with START <= END.
+Unlike `--line`, this explicitly selects an excerpt and does not expand to a containing declaration.
+The result uses `selection: "range"`, `requested_range: {"start": START, "end": END}`, no fabricated
+`definition`, and a reference to exact captured source bytes. A `complete` range result means the
+requested excerpt is complete, not that it is a complete declaration or all relevant module context.
+
+Physical lines are separated by LF. CRLF bytes and an unterminated final line are preserved.
+A terminal LF does not create an extra empty line; an empty file has no selectable line. If either
+bound lies beyond the file, the result is `not-found` with no clipped prefix. Invalid zero,
+reversed or unrepresentable numeric bounds are usage errors. Oversized output is explicitly omitted;
+RepoScout never reduces the requested bounds to make them fit.
+
+Ranges share source chunks with overlapping explicit selections. `requested_range` retains the
+individual request even if the shared chunk is larger because other targets overlap. Normal
+failure/omission results retain it; the smallest status-only budget fallback may omit it together
+with the other selection metadata. Disjoint ranges do not pull intervening lines into source.
+
+Choose ranges from known source locations, prior output or a task-specific bounded exploration.
+For example, a short module preamble can expose imports, but it does not prove that all bindings
+occur there. Follow only actual delivered evidence. Keep hashes and matching snapshots on later
+reads; when changes prove a retained body unchanged, fetch the changed binding instead of the body.
+`plan` and `consumers` still accept declaration seeds, not explicit source-range selectors.
 
 ## Choose the source snapshot
 
@@ -208,7 +243,7 @@ reposcout read . --outline src/service.ts -f json
 reposcout read . --outline src/service.ts --outline src/client.ts -f json
 ```
 
-`--outline` conflicts with `--symbol`, `--line` and `--file`; it is not a prerequisite for them. It returns
+`--outline` conflicts with `--symbol`, `--line`, `--file` and `--range`; it is not a prerequisite for them. It returns
 body-free declarations from explicitly named files with a shared cap of 100 declarations and
 visible omissions. It does not treat the already capped context-outline projection as a complete
 source of declaration facts.
@@ -227,8 +262,8 @@ records, formatting and the final newline. Token counting uses the effective `o2
 A request below either minimum is invalid. Its documented minimal error envelope is not required
 to fit an impossible requested limit. Every successful response to a valid request fits both
 limits; RepoScout never cuts JSON bytes or silently returns the beginning of a definition as complete.
-A full definition or explicitly requested file that does not fit is omitted with an explicit reason. There is no partial-source
-mode in this version. Ambiguity retains at most eight candidates rather than choosing the first
+A full definition, explicitly requested file or exact range that does not fit is omitted with an
+explicit reason. An explicit range is an excerpt; other selectors never silently become excerpts. Ambiguity retains at most eight candidates rather than choosing the first
 name silently.
 
 This budget differs from a context plan's `selected_tokens`: the plan estimates the source cost of
@@ -302,7 +337,9 @@ It keeps file facts, target outcomes and source content separate:
   references,
   and bounded candidates with total/omitted counts. The `selection` reason names exact qualified or
   simple-name matching, innermost-line selection, a file outline, or `file` for complete-file reads.
-  A complete-file result has no fabricated `definition`; its `source` references the captured chunk.
+  File and range results have no fabricated `definition`; their `source` references the captured
+  chunk. Range results add `selection: "range"` and optional `requested_range` independently of
+  merged source-chunk spans.
 - `sources` contains shared chunks with `id`, `file`, `span` and `content`. A result references its
   chunk instead of repeating the same source for each target. File and chunk IDs are stable
   references within the response, not offsets into the arrays.
@@ -338,7 +375,7 @@ substitute for a complete `sources[].content`.
 | `unmapped` | Changed ranges lie outside extracted declarations |
 | `binary`, `conflict` | Captured content is binary or the index entry is conflicted |
 | `ambiguous` | Multiple identities match; inspect candidate totals and omissions |
-| `not-found` | The selector did not resolve within the observed extraction |
+| `not-found` | No matching declaration, or the requested physical-line range extends beyond captured text |
 | `stale` | The captured file hash differs from the supplied expectation; no source |
 | `excluded`, `invalid-path`, `ignore-error` | Discovery or path policy could not admit the target |
 | `unsupported`, `unavailable`, `parse-error` | The required extraction is unsupported, unavailable or affected by parsing errors |
@@ -372,7 +409,8 @@ before reading source.
 Choose the entry point already available:
 
 - Known file and symbol or line: request the definition directly if its source is needed.
-- Need imports, registrations or other module context: explicitly request `read --file` for the relevant files.
+- Need a known small binding/registration span: use `read --range` with its snapshot/hash.
+- Need complete module context: explicitly request `read --file` for the relevant files.
 - Need a file's declaration surface: request its body-free outline from the relevant snapshot.
 - Known diff scope: use `changes` for changed definitions and request `--source` only when needed.
 - Unknown symbol location: use `locate`, lexical `find` or ordinary text search, then read only the
@@ -381,5 +419,5 @@ Choose the entry point already available:
   reading additional source.
 
 RepoScout executes no model, compiler or test command for retrieval. Debug logs retain their
-source-free contract. Successful retrieval proves the selected syntax was returned completely;
+source-free contract. Successful retrieval proves the explicitly selected source was returned completely;
 it does not prove that the definition is relevant or sufficient for the whole task.

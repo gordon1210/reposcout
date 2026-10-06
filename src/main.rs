@@ -148,6 +148,13 @@ fn read_selector_paths(args: &ReadArgs) -> impl Iterator<Item = &Path> {
                 .iter()
                 .map(|pair| Path::new(&pair[0])),
         )
+        .chain(
+            args.range
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|triple| Path::new(&triple[0])),
+        )
         .chain(args.file.iter().map(PathBuf::as_path))
         .chain(args.outline.iter().map(PathBuf::as_path))
 }
@@ -1003,6 +1010,9 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
             snapshot: snapshot.clone(),
         });
     }
+    for triple in args.range.as_chunks::<3>().0 {
+        targets.push(source_range_target(triple, &snapshot)?);
+    }
     for path in &args.outline {
         targets.push(SourceQueryTarget {
             path: path.clone(),
@@ -1013,7 +1023,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
     }
     if targets.is_empty() {
         return Err(usage_error(
-            "read requires at least one --symbol, --line, --file, or --outline selector",
+            "read requires at least one --symbol, --line, --range, --file, or --outline selector",
         ));
     }
     if targets.len() > 32 {
@@ -1038,6 +1048,32 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
         )));
     }
     Ok(targets)
+}
+
+fn source_range_target(
+    triple: &[String; 3],
+    snapshot: &reposcout::model::SourceRevision,
+) -> Result<reposcout::query::SourceQueryTarget> {
+    let parse_line = |value: &str| {
+        value.parse::<usize>().map_err(|_| {
+            usage_error(format!(
+                "--range requires positive one-based START and END lines, got '{value}'"
+            ))
+        })
+    };
+    let start = parse_line(&triple[1])?;
+    let end = parse_line(&triple[2])?;
+    if start == 0 || start > end {
+        return Err(usage_error(
+            "--range requires positive one-based START and END lines with START <= END",
+        ));
+    }
+    Ok(reposcout::query::SourceQueryTarget {
+        path: PathBuf::from(&triple[0]),
+        selector: reposcout::query::SourceSelector::Range { start, end },
+        expected_hash: None,
+        snapshot: snapshot.clone(),
+    })
 }
 
 fn parse_source_revision(value: &str) -> Result<reposcout::model::SourceRevision> {

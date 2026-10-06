@@ -33,11 +33,12 @@ const MAX_INPUT_TOTAL_BYTES: u64 = 32 * 1_024 * 1_024;
 pub enum SourceSelector {
     Symbol(String),
     Line(usize),
+    Range { start: usize, end: usize },
     File,
     Outline,
 }
 
-/// An explicit definition, complete file, or body-free outline selection within the requested snapshot.
+/// An explicit definition, line range, complete file, or body-free outline selection within a snapshot.
 #[derive(Debug, Clone)]
 pub struct SourceQueryTarget {
     pub path: PathBuf,
@@ -61,7 +62,7 @@ pub struct SourceQueryOutput {
     pub rendered: String,
 }
 
-/// Resolve explicit targets in the requested source snapshot and render complete definitions, files, or body-free outlines within shared output budgets.
+/// Resolve explicit snapshot targets and render complete selected definitions, ranges, files, or outlines within shared output budgets.
 ///
 /// # Errors
 ///
@@ -157,6 +158,9 @@ pub fn read_source(
                 file: None,
                 result: crate::model::SourceQueryResult {
                     status: crate::model::SourceQueryStatus::InvalidPath,
+                    selection: matches!(target.selector, SourceSelector::Range { .. })
+                        .then(|| "range".to_string()),
+                    requested_range: selection::requested_range(&target.selector),
                     ..selection::empty_result(index + 1, None)
                 },
                 source: None,
@@ -299,6 +303,10 @@ fn validate_targets(options: &SourceQueryOptions) -> Result<()> {
                 "source symbol must contain between 1 and 1024 bytes"
             ),
             SourceSelector::Line(line) => ensure!(*line > 0, "source line must be positive"),
+            SourceSelector::Range { start, end } => ensure!(
+                *start > 0 && start <= end,
+                "source range requires positive one-based start and end lines with start <= end"
+            ),
             SourceSelector::File | SourceSelector::Outline => {}
         }
         if let Some(hash) = &target.expected_hash {
@@ -451,6 +459,7 @@ pub(super) fn capability() -> SourceQueryCapability {
         selectors: [
             "--symbol FILE SYMBOL",
             "--line FILE LINE",
+            "--range FILE START END",
             "--file FILE",
             "--outline FILE",
         ]

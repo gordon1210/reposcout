@@ -115,6 +115,9 @@ pub struct SourceQueryResult {
     pub change: Option<SourceChangeEvidence>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<String>,
+    /// Inclusive physical lines explicitly requested, independent of shared source-chunk unions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_range: Option<super::LineRange>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition: Option<SourceQueryDefinition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -166,7 +169,7 @@ pub struct SourceQueryDefinition {
     pub signature: Option<String>,
 }
 
-/// One complete source range shared by target results to avoid repeated source content.
+/// One complete selected source range shared by target results to avoid repeated source content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceQueryChunk {
     pub id: usize,

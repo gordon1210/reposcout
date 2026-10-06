@@ -156,12 +156,12 @@ metadata are rejected because their health semantics cannot be established.
   churn, to populate the ordinary scan cache. Do not create a second query-only parser, index, or
   cache profile.
 - `reposcout read [PATH]` accepts repeatable `--symbol FILE SYMBOL`, `--line FILE LINE` and
-  explicit whole-file `--file FILE`, or
+  explicit whole-file `--file FILE` and line-excerpt `--range FILE START END`, or
   mutually exclusive repeatable `--outline FILE` and defaults to the `agent` profile. It reads
   explicit targets from `--snapshot worktree|index|REF` (default worktree); no preceding scout or
   outline/locate is required. Target-relative paths and absolute paths inside the
   target retain discovery, exclusion, configuration and no-follow policy. CLI target order is all
-  symbol pairs followed by all line pairs then all file selectors, preserving input order within each group; target IDs
+  symbol pairs, line pairs, file selectors, then range triples, preserving order within each group; target IDs
   are one-based and budget admission follows that order. The query API preserves vector order.
   Source and outline queries are Unix-only; `source_query.available` reflects the current build
   and `source_query.platforms` is `["unix"]`. Non-Unix calls fail before source I/O, without a
@@ -179,8 +179,11 @@ metadata are rejected because their health semantics cannot be established.
   metadata and newline: 4,096 tokens / 65,536 bytes by default, with allowed ranges 256–65,536
   tokens and 1,024–1,048,576 bytes. Below-minimum requests are invalid and return the documented
   minimum error envelope, not a falsely budget-compliant success.
-- Source queries return complete definitions or explicitly selected files, or explicit omissions,
-  never implicit partial bodies. File reads retain capture/hash checks and declaration-extraction
+- Source queries return complete definitions, explicitly selected files/ranges, or explicit
+  omissions, never implicitly clipped bodies. Ranges use inclusive one-based physical lines, exact
+  captured bytes and no EOF clipping. An empty file has no selectable physical line. `selection: "range"` and additive `requested_range` identify the requested excerpt without a definition;
+  shared source unions may cover other explicitly selected overlapping targets. Normal omissions
+  retain requested bounds; the minimal status envelope may omit them with other selection metadata. File reads retain capture/hash checks and declaration-extraction
   metadata without requiring successful extraction or fabricating a definition. Recognized text
   formats are eligible; unknown-extension policy is unchanged. `plan --file` remains a declaration seed.
   Cap explicit read targets at 32, ambiguity candidates at eight and outline declarations at 100;
