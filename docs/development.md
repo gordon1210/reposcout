@@ -72,13 +72,15 @@ end-to-end `reposcout dup` scan.
 The shared command helper applies the same global worker limit to every CLI child. New integration
 tests should use bounded synthetic repositories rather than scanning this repository.
 
-The opt-in [development scenarios](development-scenarios.md) exercise longer user journeys across
+The opt-in [development scenarios](development-scenarios.md) exercise connected behavior across
 scanning, navigation, Git revisions, caches, policies and output budgets. Run
 `./scripts/test-scenarios.sh` for the suite, or pass a domain/name to select a scenario. These tests
 are compiled but ignored by ordinary `cargo test`, including CI; their explicit runner uses the
 release binary and the same serialized test harness and two-worker CLI limit.
-For complete output-driven workflows, use `./scripts/test-scenarios.sh journeys`; the
-[journey design](development-journeys.md) describes task inputs, independent oracles and transcripts.
+For response-driven command chains, use `./scripts/test-scenarios.sh journeys`. For evidence needed
+by independently defined user tasks, use `./scripts/test-scenarios.sh acceptance` (also requires
+Python 3 for synthetic application probes). The [frozen requirements](user-acceptance-cases.md)
+precede CLI route design; the [journey guide](development-journeys.md) explains the distinction.
 
 ## Architecture
 

@@ -6,7 +6,7 @@ usage() {
 Usage: scripts/test-scenarios.sh [--list] [--keep-failed] [FILTER]
 
 Build the release CLI and run the opt-in development scenarios serially.
-FILTER selects a test name or domain (inventory, navigation, revisions, boundaries, journeys).
+FILTER selects a test name or domain (inventory, navigation, revisions, boundaries, journeys, acceptance).
 --list         List scenarios without running them (compiles the test target).
 --keep-failed  Retain synthetic repositories/caches when a scenario fails.
 HELP

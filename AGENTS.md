@@ -17,7 +17,7 @@ Markdown files are not loaded automatically. Use this router; this root file alw
 | [`metrics.md`](docs/agents/metrics.md) | changing/reviewing metric or diagnostic semantics, code-language support, or parsers/grammars |
 | [`reports-and-modes.md`](docs/agents/reports-and-modes.md) | changing report shapes/renderers, summary, change-summary, review, baseline, work-scope, or query behavior |
 | [`graph-context-daemon.md`](docs/agents/graph-context-daemon.md) | changing graph resolution, impact, context planning, daemon graph generation, or graph UX |
-| [`validation.md`](docs/agents/validation.md) | changing code/dependencies; writing/reviewing tests; running builds/tests; or handling processes, toolchains, fixtures, releases |
+| [`validation.md`](docs/agents/validation.md) | changing code/dependencies; writing/reviewing tests or user acceptance cases; running builds/tests; or handling processes, toolchains, fixtures, releases |
 
 When agent rules change, update the root router and every affected reference together. Do not let a
 rule exist only in `HANDOFF.md`, a skill, or chat history.

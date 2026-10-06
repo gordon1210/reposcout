@@ -1,15 +1,23 @@
 # Development scenarios
 
-These opt-in tests exercise complete RepoScout user journeys against purposeful synthetic
-repositories. They connect operations that can each work alone while disagreeing at their
-boundaries: a review report and its snapshot read, an import graph and its change context, or a
-warm cache and a changed health policy.
+These opt-in tests exercise RepoScout's public CLI against purposeful synthetic repositories.
+Focused scenarios and command chains connect operations that can each work alone while disagreeing
+at their boundaries: a review report and its snapshot read, an import graph and its change context,
+or a warm cache and a changed health policy.
 
 They check the public CLI contract. Expected paths, declarations, references, statuses and metric
 counts come from authored fixtures and documented rules, not copies of current CLI output. A
-scenario includes relevant distractors and negative controls so that returning extra evidence is
-also a failure. Metamorphic checks compare forwards/backwards changes, filename permutations,
-dirty worktrees, and cached/uncached analysis where the contract requires equivalent results.
+focused scenario can require exact results, with distractors and negative controls exposing
+incorrect extra evidence. Metamorphic checks compare forwards/backwards changes, filename
+permutations, dirty worktrees, and cached/uncached analysis where the contract requires equivalent
+results.
+
+The separate [user acceptance cases](user-acceptance-cases.md) freeze five user needs and their
+domain truth before CLI adaptation. They require enough truthful evidence for a stated decision;
+passing command contracts alone does not establish that outcome. Modest relevant extra context is
+allowed, subject to the shipping case's explicit reading budget.
+See [acceptance results](user-acceptance-results.md) for observed passes, remaining RED criteria
+and reproduction commands.
 
 ## Run
 
@@ -21,6 +29,7 @@ dirty worktrees, and cached/uncached analysis where the contract requires equiva
 ./scripts/test-scenarios.sh inventory
 ./scripts/test-scenarios.sh boundaries
 ./scripts/test-scenarios.sh journeys
+./scripts/test-scenarios.sh acceptance
 ./scripts/test-scenarios.sh --keep-failed SCENARIO_NAME
 ```
 
@@ -28,6 +37,8 @@ The script first refreshes the release CLI, compiles the test target, rejects a 
 no scenarios, and runs the selected tests. Compilation time is separate from test execution time.
 Rust/Cargo and a Unix host are required; the test runtime does not need network services, external
 projects, package installations, a daemon or a frontend server.
+The `acceptance` group also needs `python3` for bounded standard-library fixture probes. A missing
+interpreter is an environment failure and must not be reported as a product acceptance failure.
 
 `cargo test` still compiles these tests to catch drift, but `#[ignore]` keeps every scenario out of
 the default test run and existing CI. To run the target directly:
@@ -48,11 +59,11 @@ the current binary passed. No old binary or network download is required by the 
 
 ## Scenario families
 
-The additional [end-to-end journeys](development-journeys.md) chain actual CLI responses through
-complete review, navigation, diagnostic and cleanup tasks. Their drivers receive task inputs only;
+The [command-chain journeys](development-journeys.md) chain actual CLI responses through
+review, navigation, diagnostic and cleanup workflows. Their drivers receive task inputs only;
 independent oracles check the reached evidence without supplying hidden follow-up targets.
-The seven journeys bring this opt-in target to 27 scenarios; their separate validation results
-are recorded in the linked journey guide.
+The seven chains retain interface coverage; their historical validation results are recorded in
+the linked guide and do not establish outcomes for the new acceptance cases.
 
 | Family | Behaviors under test |
 | --- | --- |
@@ -60,6 +71,7 @@ are recorded in the linked journey guide.
 | Navigation | Search/read identity, call consumers and definition plans, aliases/shadowing, import impact and context, nested Godot projects, and whole-definition source admission |
 | Inventory | Source/content health separation, comment-aware markers, artifact duplication policy, cache equivalence/invalidation, exact output exclusion, and baseline gates |
 | Boundaries | Hierarchical ignore policy across scans and snapshot reads, project-configuration trust, and explicit input-limit gaps without losing small files |
+| Acceptance | Refund-boundary and helper-deletion review evidence, shipping investigation, tariff centralization, and new tariff debt despite improved aggregate totals |
 
 Large here means connected behavior and enough surrounding code to expose misleading shortcuts,
 not uncontrolled repository size. Repositories are generated from readable Rust fixture builders;
@@ -94,10 +106,17 @@ ignore reason. Use `support::Fixture` and the existing CLI helper; do not add a 
 resolver, cache or expected-output generator. Keep each journey's independent expected results
 close to its fixture, and assert availability/omissions as well as successful data.
 
-Prefer exact evidence sets and hand-derived discrete counts. Exclude timestamps and resource
+For focused contract scenarios, prefer exact evidence sets and hand-derived discrete counts.
+Exclude timestamps and resource
 timings from semantic equivalence checks. Assert an empty set only when the relevant extraction,
 resolution and output coverage is complete. If a documented behavior fails, preserve the failure
 as evidence and investigate it rather than weakening the assertion to match today's output.
+
+For acceptance cases, keep the frozen user inputs and evidence obligations separate from the CLI
+driver. Independent application probes check the authored truth, not expected RepoScout output.
+Missing necessary evidence is an explicit RED even when the CLI reports its limits honestly; keep
+the unmet criterion and reproducer rather than using an expected-failure wrapper. The acceptance
+group remains opt-in and adds no automatic CI execution.
 
 These tests supplement focused regressions. They do not establish runtime impact completeness,
 real test coverage, security certification, or whole-project correctness.

@@ -192,10 +192,14 @@ ask the user.
 - The sample fixture intentionally contains a duplicated block and TODO/FIXME/HACK markers. Keep
   them when editing fixtures or update the tests with the fixture.
 - `tests/development_scenarios.rs` is a separate, ignored-by-default integration target. The
-  opt-in `./scripts/test-scenarios.sh [FILTER]` builds release and runs its synthetic user journeys;
+  opt-in `./scripts/test-scenarios.sh [FILTER]` builds release and runs its synthetic scenarios;
   it is not a CI gate. Follow the same serialization/resource limits. See
   [development scenarios](../development-scenarios.md) for independent expectations, fixture
   isolation, command timeouts, filtered runs and opt-in failure retention.
-  Its `journeys` group chains real CLI responses through complete tasks; run it separately with
+  Its `journeys` group checks chains of real CLI responses; run it separately with
   `./scripts/test-scenarios.sh journeys`. See [journeys](../development-journeys.md) for input/oracle
-  separation and step transcripts. No model or external agent harness is involved.
+  separation and step transcripts. The `acceptance` group instead starts from the independently
+  frozen [user requirements](../user-acceptance-cases.md), with Python 3 probes establishing fixture
+  business behavior. Honest missing evidence does not satisfy a positive user task: preserve such
+  failures and their reproducers rather than weakening the oracle or adding expected-failure wrappers.
+  No model or external agent harness is involved.

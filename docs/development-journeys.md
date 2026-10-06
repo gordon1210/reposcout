@@ -1,8 +1,16 @@
-# End-to-end CLI journeys
+# CLI command-chain journeys
 
-The `journeys` group in the opt-in development scenarios plays through complete RepoScout tasks
-using real CLI processes. The user steps are ordinary deterministic test code. There is no model,
-agent harness, browser, network service, or automatic review decision involved.
+The `journeys` group in the opt-in development scenarios chains real CLI processes through
+review, navigation and health workflows. The steps are deterministic test code. These seven
+command chains check interface handoffs; they do not establish independent user success.
+There is no model, agent harness, browser, network service, or automatic review decision involved.
+
+The separate `acceptance` group starts from independently agreed user needs in
+[the frozen acceptance cases](user-acceptance-cases.md). Its criteria were fixed before inspecting
+the implementation, existing tests or outputs. Successful command handoffs cannot substitute for
+the source, relationships and regression evidence those cases require.
+Observed acceptance outcomes and their named unmet criteria are recorded separately in
+[the acceptance results](user-acceptance-results.md).
 
 ## Design contract
 
@@ -32,7 +40,7 @@ test actions outside the driver.
 
 ## Task families
 
-| Journey | Starting knowledge | Evidence-driven route | Independent outcome |
+| Journey | Starting knowledge | Evidence-driven route | Command contract checked |
 | --- | --- | --- | --- |
 | Guard-removal PR | Repository, base/head, budgets | Review discovery → changed declarations and concrete callers → pinned source reads | Both function versions and real unchanged callers; no homonym or dirty-worktree contamination |
 | Module-migration PR | Repository, base/head, budgets | Revision-local changes and aliases → per-side targets → pinned reads | Added/deleted sides, unchanged rename identity and old/new bindings remain distinguishable |
@@ -42,9 +50,11 @@ test actions outside the driver.
 | Regression investigation | Repository, baseline, threshold | Baseline changes → new/worsened locations → definition reads → repair and gate recheck | Existing debt is not a new regression; an incomplete comparison is not clean |
 | Production clone cleanup | Repository and cleanup policy | Ranked production clone locations → source reads → authored extraction and recheck | Production duplication is resolved while independent test-only duplication stays visible |
 
-These extend the existing focused development scenarios. They establish that a scripted public
-CLI workflow can reach the evidence needed for the authored task; they do not measure an actual
-agent's review quality or prove runtime impact completeness.
+These extend the focused development scenarios. They check that returned identities, revisions,
+locations and gaps can be followed through scripted CLI workflows. Their exact-source and
+coverage assertions retain contract value, but do not independently establish that the evidence
+is sufficient for a user's decision, measure an agent's review quality or prove runtime impact
+completeness.
 
 The diagnostic journey starts with a scoped inventory. A sibling package and an ambiguous basename
 are therefore unresolved inputs, not evidence that the resolver knows their actual definitions.
@@ -60,23 +70,34 @@ guess a source path from the fixture.
 ./scripts/test-scenarios.sh journeys::navigation
 ./scripts/test-scenarios.sh journeys::health
 ./scripts/test-scenarios.sh --keep-failed journeys
+./scripts/test-scenarios.sh acceptance
+./scripts/test-scenarios.sh --keep-failed acceptance
 ```
 
 Every journey is ignored by ordinary `cargo test`, including current CI. The existing runner
 refreshes the release binary and retains the serialized harness and shared two-worker CLI limit.
 Use a family or test-name filter for narrow investigations and resource-bounded validation.
+The acceptance fixtures additionally require `python3` for bounded, standard-library application
+probes. These probes establish fixture behavior independently of RepoScout; they start no server.
+An unavailable interpreter is an environment failure, not a demonstrated acceptance RED.
+
+A positive acceptance case fails when required evidence is missing, even if the CLI truthfully
+discloses that limitation. Preserve the named unmet obligation and transcript; do not add an
+expected-failure wrapper or weaken the frozen criterion. Each shipping source fragment counts
+against its stated reading budget, including irrelevant and repeated material.
 
 On 2026-10-06, all seven journeys passed on the development Linux host in 69 seconds after
 compilation, with a measured 238 MiB peak for the monitored process tree. These are local
-observations, not timing guarantees or CI estimates. The guard-removal journey also ran against
-the previously verified official v0.4.0 binary: the same test failed because its head-side changed
+observations of the command-chain group, not acceptance results, timing guarantees or CI estimates.
+The guard-removal journey also ran against the previously verified official v0.4.0 binary: the
+same test failed because its head-side changed
 declaration was missing, while the current binary passed. The suite itself needs no old binary
 or network download.
 
 The original 20 scenarios were also rechecked in four serialized groups. The normal target run
-confirmed all 27 tests remain ignored. Formatting, focused Clippy for this integration target and
-the release build passed. Validation was scoped to this test-only change; the full production Rust
-suite, all-target Clippy and macOS execution were not rerun.
+confirmed the then-existing 27 tests remained ignored. Formatting, focused Clippy for this
+integration target and the release build passed. Validation was scoped to this test-only change;
+the full production Rust suite, all-target Clippy and macOS execution were not rerun.
 
 Each named step records its arguments, exit status, stdout and stderr under the fixture's private
 state directory outside the scanned repository. JSON remains available even when a later assertion

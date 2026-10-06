@@ -1,4 +1,4 @@
 mod health;
 mod navigation;
 mod review;
-mod support;
+pub(crate) mod support;

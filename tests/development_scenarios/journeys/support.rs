@@ -5,21 +5,22 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 /// The driver can execute the public CLI, but cannot inspect or mutate its fixture directly.
-pub(super) struct Journey<'fixture> {
+pub(crate) struct Journey<'fixture> {
     fixture: &'fixture Fixture,
     transcript: PathBuf,
     steps: usize,
+    step_limit: Option<usize>,
 }
 
 /// An observed process result, without a dependency on internal report models.
-pub(super) struct Step {
+pub(crate) struct Step {
     label: String,
     prefix: PathBuf,
     stdout: Vec<u8>,
 }
 
 impl<'fixture> Journey<'fixture> {
-    pub(super) fn new(fixture: &'fixture Fixture) -> Self {
+    pub(crate) fn new(fixture: &'fixture Fixture) -> Self {
         // The outer fixture owns cleanup, including optional retention during assertion failure.
         let transcript = tempfile::Builder::new()
             .prefix("journey-")
@@ -31,11 +32,23 @@ impl<'fixture> Journey<'fixture> {
             fixture,
             transcript,
             steps: 0,
+            step_limit: None,
+        }
+    }
+
+    pub(crate) fn bounded(fixture: &'fixture Fixture, step_limit: usize) -> Self {
+        Self {
+            step_limit: Some(step_limit),
+            ..Self::new(fixture)
         }
     }
 
     /// Arguments are passed unchanged; format, profile, tokenization and budgets remain explicit.
-    pub(super) fn step(&mut self, label: &str, args: &[&str], expected_exit: i32) -> Step {
+    pub(crate) fn step(&mut self, label: &str, args: &[&str], expected_exit: i32) -> Step {
+        assert!(
+            self.step_limit.is_none_or(|limit| self.steps < limit),
+            "CLI route exceeded its invocation safeguard before {label:?}"
+        );
         self.steps += 1;
         let prefix = self.transcript.join(format!("{:03}", self.steps));
         let command = json!({
@@ -89,11 +102,11 @@ impl<'fixture> Journey<'fixture> {
 }
 
 impl Step {
-    pub(super) fn stdout_json(&self) -> Value {
+    pub(crate) fn stdout_json(&self) -> Value {
         self.parse_json("stdout", &self.stdout)
     }
 
-    pub(super) fn stdout_bytes(&self) -> &[u8] {
+    pub(crate) fn stdout_bytes(&self) -> &[u8] {
         &self.stdout
     }
 
