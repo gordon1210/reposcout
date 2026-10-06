@@ -37,7 +37,8 @@ reposcout read . \
 ```
 
 There are at most 32 targets. CLI order is all `--symbol` pairs in their input order, then all
-`--line` pairs in their input order; budget admission and one-based target IDs follow that order.
+`--line` pairs, then all `--file` paths, preserving input order within each group; budget admission
+and one-based target IDs follow that order.
 Interleaving flags does not interleave results. `--outline` is a separate mode.
 
 The complete rendered response, including headers, metadata,
@@ -52,6 +53,25 @@ emits one compact record. Human formats visibly escape controls other than newli
 so use machine output when exact decoded source is required. Ambiguous selections expose at
 most eight candidates; choose based on
 actual task evidence rather than silently taking the first.
+
+## Read missing module context explicitly
+
+```sh
+reposcout read . --file src/routes.py --file src/handler.py \
+  --expect-hash src/routes.py '<SHA256_FROM_PRIOR_RESULT>' --budget 4096 -f json
+```
+
+Use this only when imports, registration tables or other surrounding file context are needed.
+Batch discovered paths under one output budget; keep known hashes and the matching snapshot.
+Prefer a definition read when it already answers the next question. No automatic import traversal
+or source expansion occurs, and no new discovery call is required for an already known file.
+
+`--file` returns complete captured text or an explicit budget omission. It can share a batch with
+symbol/line selections; overlapping source is delivered once. Results use `selection: "file"`,
+no `definition`, and a shared source reference. Recognized text formats without definition support
+are eligible; extraction status remains separate from successful delivery. Empty files return an
+empty source chunk. Unknown extensions, binary content and policy-ineligible paths remain rejected.
+`plan --file` still selects declarations, not complete files.
 
 ## Read the correct snapshot or select changed definitions
 
@@ -90,7 +110,7 @@ matching names; use Git-detected path evidence.
 reposcout read . --outline src/service.ts --outline src/client.ts -f json
 ```
 
-`--outline` is body-free and conflicts with `--symbol` and `--line`. All files share a maximum of
+`--outline` is body-free and conflicts with `--symbol`, `--line` and `--file`. All files share a maximum of
 100 returned declarations and the same output budget. Inspect omissions; this is not guaranteed
 to list every declaration. Do not request an outline before a direct read when the target is
 already known.

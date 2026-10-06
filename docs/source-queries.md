@@ -4,7 +4,8 @@
 
 Use `reposcout read` when a file and symbol or line are already known and the next decision needs
 that definition's source. It returns complete supported definitions under one shared output budget.
-It does not choose which function is relevant from a bare file path. Use `reposcout changes` when
+Use explicit `--file FILE` when module-level imports, registrations or other file context are
+needed. It does not choose which function is relevant from a bare file path. Use `reposcout changes` when
 the entry point is a working-tree, staged or revision-based diff instead of a known symbol.
 
 `read`, including `--outline` and snapshot selection, and `changes` are available on Unix platforms. The project's release targets are
@@ -36,8 +37,8 @@ reposcout read . \
 ```
 
 `--symbol` and `--line` each take two values and are repeatable. A query accepts at most 32 explicit
-targets. CLI batching processes all `--symbol` pairs in their input order, followed by all `--line`
-pairs in their input order; interleaving those flags does not interleave their results. `--outline`
+targets. CLI batching processes all `--symbol` pairs, then all `--line` pairs, then all `--file`
+selectors, preserving input order within each group; interleaving flags does not interleave results. `--outline`
 is a separate mode. Budget admission and one-based target IDs follow this order. The shared query
 API preserves the order of its supplied target vector.
 
@@ -62,6 +63,28 @@ Returned source can include a statically established wrapper beyond the declarat
 Selection and retrieval ranges are therefore separate facts. Duplicate or overlapping selections
 are handled deterministically without repeating the same source merely because multiple targets
 selected it.
+
+## Read explicitly needed file context
+
+```sh
+reposcout read . --file src/routes.py --file src/handler.py \
+  --expect-hash src/routes.py '<SHA256>' --budget 4096 -f json
+```
+
+`--file` is repeatable and can share a batch with symbol or line selectors. It returns the complete
+captured text, including imports, registration tables, comments and trailing newlines, or an
+explicit budget omission. It never silently clips the file. Overlapping definition and file
+selections share source chunks. An empty file is a complete empty chunk with a content hash.
+
+Prefer definition reads when their smaller source already answers the question. Request a file
+only when its surrounding context matters, and batch known paths under one budget. There is no
+automatic expansion to imported files or model-dependent tokenizer selection. `plan --file`
+continues to seed declarations; it does not acquire this whole-file meaning.
+
+File reads accept regular UTF-8 text in recognized inventory formats, including formats without
+precise declaration support. A parse error does not prevent delivering the captured text; the
+file's extraction status remains separate from source delivery. Unknown extensions and binary
+input remain ineligible. The same policy, snapshot, hash and input limits apply as for definitions.
 
 ## Choose the source snapshot
 
@@ -185,7 +208,7 @@ reposcout read . --outline src/service.ts -f json
 reposcout read . --outline src/service.ts --outline src/client.ts -f json
 ```
 
-`--outline` is an alternative to `--symbol` and `--line`, not a prerequisite for them. It returns
+`--outline` conflicts with `--symbol`, `--line` and `--file`; it is not a prerequisite for them. It returns
 body-free declarations from explicitly named files with a shared cap of 100 declarations and
 visible omissions. It does not treat the already capped context-outline projection as a complete
 source of declaration facts.
@@ -204,7 +227,7 @@ records, formatting and the final newline. Token counting uses the effective `o2
 A request below either minimum is invalid. Its documented minimal error envelope is not required
 to fit an impossible requested limit. Every successful response to a valid request fits both
 limits; RepoScout never cuts JSON bytes or silently returns the beginning of a definition as complete.
-A full definition that does not fit is omitted with an explicit reason. There is no partial-source
+A full definition or explicitly requested file that does not fit is omitted with an explicit reason. There is no partial-source
 mode in this version. Ambiguity retains at most eight candidates rather than choosing the first
 name silently.
 
@@ -278,7 +301,8 @@ It keeps file facts, target outcomes and source content separate:
 - `results` associates each one-based input `target` with a `status`, optional file/definition/source
   references,
   and bounded candidates with total/omitted counts. The `selection` reason names exact qualified or
-  simple-name matching, innermost-line selection, or a file outline.
+  simple-name matching, innermost-line selection, a file outline, or `file` for complete-file reads.
+  A complete-file result has no fabricated `definition`; its `source` references the captured chunk.
 - `sources` contains shared chunks with `id`, `file`, `span` and `content`. A result references its
   chunk instead of repeating the same source for each target. File and chunk IDs are stable
   references within the response, not offsets into the arrays.
@@ -302,7 +326,8 @@ Snapshot objects use `kind: "worktree"`, `"index"`, `"tree"` or `"empty"`; tree 
 
 A definition's `declaration_span` determines selection; optional `source_span` describes the
 complete retrievable range, which can include a static wrapper. Spans use half-open byte offsets
-and inclusive one-based line bounds. The optional `signature` is body-free metadata, not a
+and inclusive one-based line bounds. Empty file chunks use byte range `0..0` and line bounds `1..1`.
+The optional `signature` is body-free metadata, not a
 substitute for a complete `sources[].content`.
 
 | Result status | Interpretation |
@@ -347,6 +372,7 @@ before reading source.
 Choose the entry point already available:
 
 - Known file and symbol or line: request the definition directly if its source is needed.
+- Need imports, registrations or other module context: explicitly request `read --file` for the relevant files.
 - Need a file's declaration surface: request its body-free outline from the relevant snapshot.
 - Known diff scope: use `changes` for changed definitions and request `--source` only when needed.
 - Unknown symbol location: use `locate`, lexical `find` or ordinary text search, then read only the

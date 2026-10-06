@@ -346,7 +346,7 @@ pub struct LocateArgs {
     pub limit: usize,
 }
 
-/// Select definitions or body-free file outlines from the requested source snapshot.
+/// Select definitions, complete files, or body-free outlines from the requested source snapshot.
 #[derive(Args, Debug, Clone)]
 pub struct ReadArgs {
     /// Repository or directory containing the selected files [default: .]
@@ -380,8 +380,12 @@ pub struct ReadArgs {
     )]
     pub line: Vec<String>,
 
-    /// List body-free declarations from a selected file; conflicts with --symbol and --line
-    #[arg(long, value_name = "FILE", conflicts_with_all = ["symbol", "line"])]
+    /// Read a complete file, including module-level source; repeat to share one budget
+    #[arg(long, value_name = "FILE", conflicts_with = "outline")]
+    pub file: Vec<PathBuf>,
+
+    /// List body-free declarations; conflicts with --symbol, --line, and --file
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["symbol", "line", "file"])]
     pub outline: Vec<PathBuf>,
 
     /// Require the selected file to match this SHA-256 hash; mismatches return no source

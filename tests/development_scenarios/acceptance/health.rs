@@ -71,11 +71,6 @@ fn investigate_tariff(journey: &mut Journey<'_>) -> TariffEvidence {
     for hit in candidates["hits"].as_array().unwrap() {
         let target = &hit["read"];
         let path = target["path"].as_str().unwrap();
-        arguments.extend([
-            "--symbol".to_owned(),
-            path.to_owned(),
-            target["selector"]["value"].as_str().unwrap().to_owned(),
-        ]);
         hashes.insert(
             path.to_owned(),
             target["expected_hash"].as_str().unwrap().to_owned(),
@@ -87,9 +82,8 @@ fn investigate_tariff(journey: &mut Journey<'_>) -> TariffEvidence {
     );
     for (path, hash) in hashes {
         arguments.extend([
-            "--line".to_owned(),
+            "--file".to_owned(),
             path.clone(),
-            "1".to_owned(),
             "--expect-hash".to_owned(),
             path,
             hash,

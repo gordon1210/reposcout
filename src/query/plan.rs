@@ -163,6 +163,10 @@ fn validate(options: &DefinitionPlanQueryOptions) -> Result<()> {
         );
     }
     for target in &options.targets {
+        ensure!(
+            !matches!(target.selector, SourceSelector::File),
+            "complete-file source selections belong to read; plan file seeds select declarations"
+        );
         let mut selected = target.clone();
         selected.snapshot = options.snapshot.clone();
         source::validate_options(&source_options(vec![selected], options))?;
@@ -300,6 +304,9 @@ fn explicit(
                             }
                             SourceSelector::Line(line) => DefinitionSelector::Line(*line),
                             SourceSelector::Outline => DefinitionSelector::File,
+                            SourceSelector::File => {
+                                anyhow::bail!("complete-file source selections belong to read")
+                            }
                         },
                     });
                 }
@@ -316,7 +323,7 @@ fn explicit(
                 name: match &target.selector {
                     SourceSelector::Symbol(name) => Some(name.clone()),
                     SourceSelector::Line(line) => Some(format!("line:{line}")),
-                    SourceSelector::Outline => None,
+                    SourceSelector::File | SourceSelector::Outline => None,
                 },
                 reason,
                 explicit: true,

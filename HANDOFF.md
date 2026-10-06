@@ -39,6 +39,7 @@ any path inside it**, so they can make decisions *before* diving in:
   dump.
 - **Read a known definition without guessing its end?** → `reposcout read [PATH]` with repeatable
   `--symbol FILE SYMBOL` or `--line FILE LINE`; `--outline FILE` is a body-free alternative.
+  Explicit `--file FILE` supplies needed module context under the same budget without expanding defaults.
   Unix-only worktree/index/revision source, SHA-256 expectations and rendered token/byte budgets preserve
   identity and visible omissions. See [source queries](docs/source-queries.md).
 - **Which definitions changed?** → `reposcout changes [PATH]` with one diff scope returns body-free
@@ -127,10 +128,12 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   `--changed-definitions` embeds body-free evidence in change-summary/review under its own
   4,096-token / 16,384-byte compact-JSON budget. Agent-summary remains unchanged.
 
-- **Explicit source queries.** On Unix, `read` selects known definitions or body-free file
+- **Explicit source queries.** On Unix, `read` selects known definitions, explicit complete files or body-free file
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
-  newline. Complete definitions are delivered or explicitly omitted; no partial-source mode.
+  newline. Complete definitions or files are delivered or explicitly omitted; no partial-source mode.
+  File reads include module imports and registrations, share overlapping source chunks, and do
+  not require declaration extraction. Recognized-format policy and captured identities stay intact.
   Cached definition facts use analyzer version 24 while the additive schema remains 2.0.
   The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
   analyzer 21 added the task-query facts, analyzer 22 added C# facts, and analyzer 23 corrects
@@ -252,9 +255,14 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   reviews, a support-ticket investigation and tariff maintenance. Python 3 probes establish
   fixture behavior independently. Missing necessary evidence remains a failing opt-in case,
   including when the CLI honestly discloses it. No model or agent harness is involved.
-  Current [acceptance results](docs/user-acceptance-results.md) retain a worktree source-query gap:
-  declaration reads omit module-level bindings needed by the shipping/cleanup tasks. Nine of 18
-  acceptance tests remain RED; PR review and specific new-debt detection cases pass.
+  The [acceptance baseline](docs/user-acceptance-results.md) exposed missing module-level bindings
+  in declaration reads: nine of 18 tests failed; PR review and specific new-debt cases passed.
+  Explicit `read --file` and C/D driver updates close that gap without changing the requirements,
+  fixtures or budgets: all 18 acceptance tests now pass. The seven existing journeys, 121 affected
+  CLI regressions and 20 query unit tests pass too; all-target Clippy, compilation of all test
+  targets and the release rebuild passed under a user-authorized, monitored compiler exception.
+  The [results](docs/user-acceptance-results.md) retain the RED baseline, output-size comparisons,
+  resource measurements and unexecuted checks; no model-token or review-quality gain is claimed.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and

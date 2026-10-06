@@ -97,6 +97,9 @@ no-follow traversal applies to source components below that anchor, not to every
 chosen root alias. File selectors reject `..`, stay within target scope and are capped at 4,096
 UTF-8 bytes; symbol selectors are capped at 1,024 bytes. Source hashes identify captured content;
 stale expectations never permit old spans to be applied to new bytes.
+Explicit `read --file` returns complete captured text without inventing a declaration or requiring
+successful declaration extraction. It reuses the same source admission and overlap deduplication;
+it does not expand default reads, change cached facts or bypass recognized-format policy.
 Worktree reads use Unix handle-relative no-follow traversal. Git-tree/index reads validate the
 pinned entry's regular-file mode and blob identity rather than current source-parent types;
 lexical paths, current ignore/exclusion policy and limits still apply. Non-Unix queries fail before source

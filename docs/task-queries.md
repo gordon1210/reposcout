@@ -80,6 +80,9 @@ reposcout plan . --file src/billing.rs --max-definitions 8 -f json
 `--symbol FILE SYMBOL`, `--line FILE LINE` and `--file FILE` supply explicit seeds. A file seed
 considers its declarations; it is not a request to return the entire file. Snapshot and hash
 expectations follow the [source-query identity contract](source-queries.md#choose-the-source-snapshot).
+When module imports or registration tables are required, `read --file FILE` explicitly retrieves
+the complete file under the rendered output budget. Prefer the smaller definition read when it
+already answers the question; neither route automatically expands the context.
 Unseeded planning is permitted for the worktree; index or revision planning requires explicit
 selectors. Without a seed, expansion is not presented as direct task evidence.
 

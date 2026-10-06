@@ -6,6 +6,12 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Add explicit `read --file FILE` for complete, budgeted source including module imports and
+  registration tables. Batched file and definition reads share captured identities, snapshot and
+  hash checks, source deduplication and output limits; compact defaults remain unchanged.
+
 ### Fixed
 
 - Keep frontend linting compatible with TypeScript 7 app builds by using Microsoft's TypeScript 6

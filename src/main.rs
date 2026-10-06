@@ -148,6 +148,7 @@ fn read_selector_paths(args: &ReadArgs) -> impl Iterator<Item = &Path> {
                 .iter()
                 .map(|pair| Path::new(&pair[0])),
         )
+        .chain(args.file.iter().map(PathBuf::as_path))
         .chain(args.outline.iter().map(PathBuf::as_path))
 }
 
@@ -994,6 +995,14 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
             snapshot: snapshot.clone(),
         });
     }
+    for path in &args.file {
+        targets.push(SourceQueryTarget {
+            path: path.clone(),
+            selector: SourceSelector::File,
+            expected_hash: None,
+            snapshot: snapshot.clone(),
+        });
+    }
     for path in &args.outline {
         targets.push(SourceQueryTarget {
             path: path.clone(),
@@ -1004,7 +1013,7 @@ fn source_query_targets(args: &ReadArgs) -> Result<Vec<reposcout::query::SourceQ
     }
     if targets.is_empty() {
         return Err(usage_error(
-            "read requires at least one --symbol, --line, or --outline selector",
+            "read requires at least one --symbol, --line, --file, or --outline selector",
         ));
     }
     if targets.len() > 32 {

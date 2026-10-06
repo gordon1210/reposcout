@@ -57,7 +57,7 @@ fn assert_no_sources(report: &Value) {
 }
 
 #[test]
-fn capabilities_match_the_read_cli_defaults_limits_and_language_matrix() {
+fn capabilities_match_the_read_cli_defaults_and_limits() {
     let capability = reposcout::query::capabilities().source_query.unwrap();
     assert!(capability.available);
     assert_eq!(capability.platforms, ["unix"]);
@@ -71,7 +71,12 @@ fn capabilities_match_the_read_cli_defaults_limits_and_language_matrix() {
     assert_eq!(capability.formats, ["table", "json", "markdown", "ndjson"]);
     assert_eq!(
         capability.selectors,
-        ["--symbol FILE SYMBOL", "--line FILE LINE", "--outline FILE"]
+        [
+            "--symbol FILE SYMBOL",
+            "--line FILE LINE",
+            "--file FILE",
+            "--outline FILE"
+        ]
     );
     assert_eq!(capability.snapshot, "worktree");
     assert_eq!(capability.hash_algorithm, "sha256");
@@ -89,6 +94,25 @@ fn capabilities_match_the_read_cli_defaults_limits_and_language_matrix() {
     assert_eq!(capability.max_outline_declarations, 100);
     assert_eq!(capability.max_input_file_bytes, 8 * 1_024 * 1_024);
     assert_eq!(capability.max_input_total_bytes, 32 * 1_024 * 1_024);
+
+    let mut command = reposcout_command();
+    let stdout = command
+        .args(["capabilities", "--format", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        report["source_query"],
+        serde_json::to_value(&capability).unwrap()
+    );
+}
+
+#[test]
+fn capabilities_list_the_precise_declaration_language_matrix() {
+    let capability = reposcout::query::capabilities().source_query.unwrap();
     let matrix = capability
         .languages
         .iter()
@@ -140,20 +164,6 @@ fn capabilities_match_the_read_cli_defaults_limits_and_language_matrix() {
             ),
             ("Godot Shader", vec!["function"]),
         ]
-    );
-
-    let mut command = reposcout_command();
-    let stdout = command
-        .args(["capabilities", "--format", "json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let report: Value = serde_json::from_slice(&stdout).unwrap();
-    assert_eq!(
-        report["source_query"],
-        serde_json::to_value(&capability).unwrap()
     );
 }
 

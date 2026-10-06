@@ -106,6 +106,8 @@ ask the user.
   remain pure projections of shared `ScanReport` facts.
 - Stable CLI JSON/NDJSON and shared query contracts are the automation surface. Do not add an MCP
   dependency or a second task-query implementation.
+- Whole-file source is explicit (`read --file`) and shares capture, identity and output budgets;
+  compact query defaults must not expand automatically.
 - PR review preparation supplies evidence and costs, never agent allocation or automatic task
   splitting. Tokenization stays default/configuration/explicit CLI; never select it by model.
 

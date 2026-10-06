@@ -53,7 +53,7 @@ check_canonical() {
 
   assert_route "Repository scouting" scouting.md
   assert_route "Context planning" context-planning.md
-  assert_route "Known definition or body-free file outline" source-queries.md
+  assert_route "Known definition, explicit file context or body-free file outline" source-queries.md
   assert_route "Change analysis" change-analysis.md
   assert_route "Quality assessment" quality.md
   assert_route "Conditional or compound JSON decision" decision-queries.md

@@ -155,12 +155,13 @@ metadata are rejected because their health semantics cannot be established.
 - Locate's cold path intentionally performs configured per-file analyzers, but not duplication or
   churn, to populate the ordinary scan cache. Do not create a second query-only parser, index, or
   cache profile.
-- `reposcout read [PATH]` accepts repeatable `--symbol FILE SYMBOL` and `--line FILE LINE`, or
+- `reposcout read [PATH]` accepts repeatable `--symbol FILE SYMBOL`, `--line FILE LINE` and
+  explicit whole-file `--file FILE`, or
   mutually exclusive repeatable `--outline FILE` and defaults to the `agent` profile. It reads
   explicit targets from `--snapshot worktree|index|REF` (default worktree); no preceding scout or
   outline/locate is required. Target-relative paths and absolute paths inside the
   target retain discovery, exclusion, configuration and no-follow policy. CLI target order is all
-  symbol pairs followed by all line pairs, preserving input order within each group; target IDs
+  symbol pairs followed by all line pairs then all file selectors, preserving input order within each group; target IDs
   are one-based and budget admission follows that order. The query API preserves vector order.
   Source and outline queries are Unix-only; `source_query.available` reflects the current build
   and `source_query.platforms` is `["unix"]`. Non-Unix calls fail before source I/O, without a
@@ -178,7 +179,10 @@ metadata are rejected because their health semantics cannot be established.
   metadata and newline: 4,096 tokens / 65,536 bytes by default, with allowed ranges 256–65,536
   tokens and 1,024–1,048,576 bytes. Below-minimum requests are invalid and return the documented
   minimum error envelope, not a falsely budget-compliant success.
-- Source queries return complete definitions or explicit omissions, never implicit partial bodies.
+- Source queries return complete definitions or explicitly selected files, or explicit omissions,
+  never implicit partial bodies. File reads retain capture/hash checks and declaration-extraction
+  metadata without requiring successful extraction or fabricating a definition. Recognized text
+  formats are eligible; unknown-extension policy is unchanged. `plan --file` remains a declaration seed.
   Cap explicit read targets at 32, ambiguity candidates at eight and outline declarations at 100;
   admit at most 128 derived change targets while retaining exact total/omitted counts. Retain
   extraction/input coverage separately from output omissions. `--expect-hash FILE SHA256` only

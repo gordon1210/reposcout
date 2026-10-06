@@ -253,7 +253,7 @@ fn validate(options: &ConsumersQueryOptions) -> Result<()> {
                 "invalid consumers symbol"
             ),
             SourceSelector::Line(line) => ensure!(*line > 0, "consumers line must be positive"),
-            SourceSelector::Outline => {
+            SourceSelector::File | SourceSelector::Outline => {
                 anyhow::bail!("consumers requires a symbol or line selector")
             }
         }
@@ -407,7 +407,7 @@ fn resolve_seeds(
                                 .unwrap_or(&definition.declaration_span)
                                 .end_line
                 }),
-                SourceSelector::Outline => false,
+                SourceSelector::File | SourceSelector::Outline => false,
             })
             .collect::<Vec<_>>();
         match &requested.selector {
@@ -443,7 +443,7 @@ fn resolve_seeds(
                     lengths.get(&declaration.symbol.declaration_span.start_byte) == smallest
                 });
             }
-            SourceSelector::Symbol(_) | SourceSelector::Outline => {}
+            SourceSelector::Symbol(_) | SourceSelector::File | SourceSelector::Outline => {}
         }
         ensure!(
             matches.len() == 1,

@@ -122,8 +122,9 @@ fn merge_source(
         .iter()
         .filter(|source| {
             source.file == file
-                && source.span.start_byte < span.end_byte
-                && source.span.end_byte > span.start_byte
+                && (source.span == span
+                    || (source.span.start_byte < span.end_byte
+                        && source.span.end_byte > span.start_byte))
         })
         .map(|source| source.id)
         .collect::<Vec<_>>();

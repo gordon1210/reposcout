@@ -124,6 +124,9 @@ reposcout locate HttpClient . --exact -f json
 # Read a known definition without a preceding scout or outline
 reposcout read . --symbol src/service.ts Service.start --budget 4096 -f json
 
+# Read an explicitly needed small file, including imports and module registrations
+reposcout read . --file src/routes.ts --budget 4096 -f json
+
 # Build a compact reading plan under hard limits
 reposcout --agent-summary --focus src/service.ts \
   --context-budget 24000 --context-max-files 15 .

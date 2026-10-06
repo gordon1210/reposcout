@@ -48,6 +48,18 @@ pub(crate) fn resolve<'a>(
         resolved.result.status = SourceQueryStatus::Stale;
         return resolved;
     }
+    if matches!(target.selector, SourceSelector::File) {
+        resolved.result.status = SourceQueryStatus::Complete;
+        resolved.result.selection = Some("file".to_string());
+        resolved.source = Some((
+            &loaded.content,
+            file_span(
+                &loaded.content,
+                loaded.report.as_ref().map(|report| report.loc),
+            ),
+        ));
+        return resolved;
+    }
     if matches!(
         loaded.definitions.status,
         DefinitionStatus::Unsupported | DefinitionStatus::Unavailable
@@ -110,6 +122,15 @@ pub(crate) fn resolve<'a>(
     resolved
 }
 
+fn file_span(content: &str, line_count: Option<usize>) -> SourceSpan {
+    SourceSpan {
+        start_byte: 0,
+        end_byte: content.len(),
+        start_line: 1,
+        end_line: line_count.unwrap_or_else(|| content.lines().count()).max(1),
+    }
+}
+
 pub(crate) fn empty_result(target: usize, file: Option<usize>) -> SourceQueryResult {
     SourceQueryResult {
         target,
@@ -164,6 +185,7 @@ fn select<'a>(
             (innermost(matches), "innermost-line")
         }
         SourceSelector::Outline => (Vec::new(), "file-outline"),
+        SourceSelector::File => (Vec::new(), "file"),
     }
 }
 

@@ -33,10 +33,11 @@ const MAX_INPUT_TOTAL_BYTES: u64 = 32 * 1_024 * 1_024;
 pub enum SourceSelector {
     Symbol(String),
     Line(usize),
+    File,
     Outline,
 }
 
-/// An explicit file-and-symbol, file-and-line, or body-free outline selection within the requested snapshot.
+/// An explicit definition, complete file, or body-free outline selection within the requested snapshot.
 #[derive(Debug, Clone)]
 pub struct SourceQueryTarget {
     pub path: PathBuf,
@@ -60,7 +61,7 @@ pub struct SourceQueryOutput {
     pub rendered: String,
 }
 
-/// Resolve explicit targets in the requested source snapshot and render complete definitions or body-free outlines within shared output budgets.
+/// Resolve explicit targets in the requested source snapshot and render complete definitions, files, or body-free outlines within shared output budgets.
 ///
 /// # Errors
 ///
@@ -298,7 +299,7 @@ fn validate_targets(options: &SourceQueryOptions) -> Result<()> {
                 "source symbol must contain between 1 and 1024 bytes"
             ),
             SourceSelector::Line(line) => ensure!(*line > 0, "source line must be positive"),
-            SourceSelector::Outline => {}
+            SourceSelector::File | SourceSelector::Outline => {}
         }
         if let Some(hash) = &target.expected_hash {
             ensure!(
@@ -447,9 +448,14 @@ pub(super) fn capability() -> SourceQueryCapability {
         formats: ["table", "json", "markdown", "ndjson"]
             .map(str::to_string)
             .to_vec(),
-        selectors: ["--symbol FILE SYMBOL", "--line FILE LINE", "--outline FILE"]
-            .map(str::to_string)
-            .to_vec(),
+        selectors: [
+            "--symbol FILE SYMBOL",
+            "--line FILE LINE",
+            "--file FILE",
+            "--outline FILE",
+        ]
+        .map(str::to_string)
+        .to_vec(),
         snapshot: "worktree".to_string(),
         snapshots: ["worktree", "index", "git-tree"]
             .map(str::to_string)

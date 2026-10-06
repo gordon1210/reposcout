@@ -182,7 +182,7 @@ print(json.dumps({"responses": responses, "rule": [quote_fee(True), quote_fee(Fa
 
 // This adapter receives only the ticket and a public CLI handle, never fixture/oracle paths.
 mod driver {
-    use super::{BTreeSet, Journey, Ticket, Value};
+    use super::{BTreeMap, BTreeSet, Journey, Ticket, Value};
 
     pub(super) fn discover(journey: &mut Journey<'_>, ticket: &Ticket) -> Value {
         let request_words = ticket
@@ -208,11 +208,16 @@ mod driver {
 
     pub(super) fn investigate(journey: &mut Journey<'_>, ticket: &Ticket) -> Vec<Value> {
         let search = discover(journey, ticket);
-        let candidates: BTreeSet<String> = search["hits"]
+        let candidates: BTreeMap<String, String> = search["hits"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|hit| hit["read"]["path"].as_str().map(str::to_owned))
+            .map(|hit| {
+                (
+                    hit["read"]["path"].as_str().unwrap().to_owned(),
+                    hit["read"]["expected_hash"].as_str().unwrap().to_owned(),
+                )
+            })
             .collect();
         let mut reports = vec![search];
         if candidates.is_empty() {
@@ -232,8 +237,8 @@ mod driver {
         .map(str::to_owned)
         .collect();
         args.push(ticket.max_files.to_string());
-        for path in candidates {
-            args.extend(["--graph-focus".to_owned(), path]);
+        for path in candidates.keys() {
+            args.extend(["--graph-focus".to_owned(), path.clone()]);
         }
         args.extend(["-f", "json", "--quiet"].map(str::to_owned));
         let graph = run(
@@ -253,30 +258,26 @@ mod driver {
         }
 
         let mut args: Vec<String> = [
-            "plan",
+            "read",
             ".",
-            "--source",
-            "--context-budget",
-            "12000",
-            "--max-definitions",
-            "32",
             "--budget",
             "32768",
             "--max-output-bytes",
             "262144",
-            "--max-plan-files",
         ]
         .into_iter()
         .map(str::to_owned)
         .collect();
-        args.push(ticket.max_files.to_string());
         for path in paths {
-            args.extend(["--file".to_owned(), path]);
+            args.extend(["--file".to_owned(), path.clone()]);
+            if let Some(hash) = candidates.get(&path) {
+                args.extend(["--expect-hash".to_owned(), path, hash.clone()]);
+            }
         }
         args.extend(["-f", "json", "--quiet"].map(str::to_owned));
         reports.push(run(
             journey,
-            "retrieve the discovered investigation source",
+            "retrieve the discovered request files with their module bindings",
             &args,
         ));
         reports

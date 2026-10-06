@@ -32,6 +32,9 @@ Do not repeat unchanged source already available in context. Optional `--outline
 first step. When the entry point is unknown, use lexical `find` only if its declaration candidates
 answer the next question. Known definitions can share a `plan`; known error logs can seed context.
 Use the matching focused guidance below and preserve snapshot/hash identity on follow-up reads.
+When module imports or registrations are essential, explicitly use `read --file` for those known
+files under one budget. Prefer smaller definition reads when sufficient; do not expand every read
+to whole files or repeat source already retained in context.
 
 For a known comparison, start with bounded `reposcout changes` when the next
 decision needs changed definitions; request `--source` only for bodies needed by that decision.
@@ -86,7 +89,7 @@ those workflows.
 | Representative task | Read |
 |---|---|
 | Repository scouting | [scouting.md](references/scouting.md) |
-| Known definition or body-free file outline | [source-queries.md](references/source-queries.md) |
+| Known definition, explicit file context or body-free file outline | [source-queries.md](references/source-queries.md) |
 | Context planning | [context-planning.md](references/context-planning.md) |
 | Change analysis | [change-analysis.md](references/change-analysis.md) |
 | Quality assessment | [quality.md](references/quality.md) |
