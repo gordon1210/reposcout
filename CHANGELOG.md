@@ -30,6 +30,8 @@ within their section.
 
 ### Fixed
 
+- Update transitive `source-map-js` to 1.2.2 in frontend build/test tooling to fix
+  CVE-2026-93749 (indexed source-map denial of service), without dependency overrides.
 - Keep frontend linting compatible with TypeScript 7 app builds by using Microsoft's TypeScript 6
   API compatibility package for ESLint and the local import-alias rule. App compilers remain on
   TypeScript 7 with the full existing lint checks.
