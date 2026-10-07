@@ -45,6 +45,12 @@ The external guard measures the enclosing serial test process tree. Per-command/
 is unavailable in the ledger and remains `null`; aggregate run peaks must not be presented as
 individual measurements. No latency threshold is used as a correctness gate.
 
+The historical argument-plus-response totals below, through the first 2026-10-07 follow-up,
+counted driver arguments but omitted the launched executable path. Greptile identified that
+accounting defect during PR review. Those historical combined totals are undercounts; their
+response, source and call measurements remain valid. The correction and fresh measurements
+below record the full launched argv. Frozen response/source budgets are unchanged.
+
 ## Baseline observations on 2026-10-06
 
 The production implementation is the one at `530c854` (0.4.1 plus the local `read --file` work).
@@ -257,6 +263,42 @@ took 39.3 seconds with a 653 MiB monitored process-tree peak; no new resource ex
 Actual family execution stayed below 239 MiB, with at least 23,350 MiB host RAM available across
 this validation. Production source was unchanged since the earlier affected regression runs;
 the complete ordinary Rust suite is also checked by PR CI.
+
+## PR review correction on 2026-10-07: complete invocation costs
+
+Greptile found that the cost ledger omitted the executable from each argument vector. A new
+public-CLI regression first failed on the old implementation: the recorded vector began with
+`read`, while the independently prepared shared command began with the release executable.
+The test exercises both an invalid-option failure and a successful retry with a spaced, Unicode
+filename. It compares the complete vector, compact JSON bytes, token count and aggregate costs.
+
+The journey now captures the executable and arguments from one prepared shared command, records
+them before launch, and executes that same command. Pending ledger entries survive launch failure;
+complete stdout/stderr and retries still count. The correction does not change product code,
+fixture expectations, source/response budgets or the shared command's timeout and configuration.
+The successful retry remains cache-cold because its preceding usage error did no analysis.
+
+The regression passed after the correction. All **28 efficiency tests passed** in 39.05 seconds;
+compilation plus execution took 78.1 seconds and peaked at 708 MiB for the monitored process tree.
+Fresh measurements now include the launched executable:
+
+| Case/phase | Calls | Response bytes | Response tokens | Full argv + response tokens | Emitted nonblank source lines |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| I: later multiline binding | 4 | 6,005 | 1,844 | 2,213 | 36 |
+| K: initial context | 4 | 4,998 | 1,484 | 1,827 | 20 |
+| K: disjoint follow-up | 4 | 4,801 | 1,463 | 1,896 | 8 |
+
+Executable paths are environment-specific; generated revision identities can also vary token
+counts between runs. These are measured CLI interactions, not model-session bills. All original
+budgets and evidence obligations still pass; historical combined-cost undercounts remain marked
+above rather than silently rewritten.
+
+The seven journeys and 18 acceptance scenarios using the shared helper also passed (16.51 and
+8.87 seconds respectively). Combined with the unchanged 20 focused scenarios validated above,
+all 73 development scenarios have passed; ordinary execution ignores all 73. All-target release
+Clippy, formatting, skill-mirror checks and the final release rebuild passed. The shared-helper
+correction received both personal and independent review. No additional resource exception was
+needed, and the manual hosted workflow was not dispatched.
 
 ## Reproduce
 

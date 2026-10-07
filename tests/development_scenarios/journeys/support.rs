@@ -48,26 +48,47 @@ impl<'fixture> Journey<'fixture> {
 
     /// Arguments are passed unchanged; format, profile, tokenization and budgets remain explicit.
     pub(crate) fn step(&mut self, label: &str, args: &[&str], expected_exit: i32) -> Step {
-        let step = self.execute(label, args, Some(expected_exit));
+        let step = self.execute(label, args, Some(expected_exit), |_| {});
         step.assert_exit(expected_exit);
         step
     }
 
-    /// Returns every process outcome so callers can account for errors before asserting status.
-    pub(crate) fn observe(&mut self, label: &str, args: &[&str]) -> Step {
-        self.execute(label, args, None)
+    /// Exposes the complete prepared argv before launch, then returns every process outcome.
+    pub(crate) fn observe_before_launch(
+        &mut self,
+        label: &str,
+        args: &[&str],
+        before_launch: impl FnOnce(&[&str]),
+    ) -> Step {
+        self.execute(label, args, None, before_launch)
     }
 
-    fn execute(&mut self, label: &str, args: &[&str], expected_exit: Option<i32>) -> Step {
+    fn execute(
+        &mut self,
+        label: &str,
+        args: &[&str],
+        expected_exit: Option<i32>,
+        before_launch: impl FnOnce(&[&str]),
+    ) -> Step {
         assert!(
             self.step_limit.is_none_or(|limit| self.steps < limit),
             "CLI route exceeded its invocation safeguard before {label:?}"
         );
         self.steps += 1;
         let prefix = self.transcript.join(format!("{:03}", self.steps));
+        let mut prepared = self.fixture.command(args);
+        let invocation: Vec<_> = std::iter::once(prepared.get_program())
+            .chain(prepared.get_args())
+            .map(|argument| {
+                argument
+                    .to_str()
+                    .expect("journey command argv must be UTF-8")
+            })
+            .collect();
         let command = json!({
             "label": label,
             "arguments": args,
+            "argv": invocation,
             "expected_exit": expected_exit,
         });
         fs::write(
@@ -75,10 +96,11 @@ impl<'fixture> Journey<'fixture> {
             serde_json::to_vec_pretty(&command).unwrap(),
         )
         .expect("record journey command before execution");
-        eprintln!("[journey step {}: {label}] reposcout {args:?}", self.steps);
+        eprintln!("[journey step {}: {label}] {invocation:?}", self.steps);
+        before_launch(&invocation);
 
         let started = Instant::now();
-        let output = self.fixture.command(args).output().unwrap_or_else(|error| {
+        let output = prepared.output().unwrap_or_else(|error| {
             panic!(
                 "journey step {label:?} could not execute: {error}; transcript {}",
                 prefix.display()

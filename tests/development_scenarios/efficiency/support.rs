@@ -135,14 +135,14 @@ impl CommandCost {
         counter: &TokenCounter,
         label: &str,
         phase: usize,
-        args: &[&str],
+        argv: &[&str],
         cache_state: CacheState,
     ) -> Self {
-        let serialized = serde_json::to_string(args).unwrap();
+        let serialized = serde_json::to_string(argv).unwrap();
         Self {
             label: label.to_owned(),
             phase,
-            argv: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            argv: argv.iter().map(|argument| (*argument).to_owned()).collect(),
             cache_state,
             exit: None,
             completed: false,
@@ -262,17 +262,18 @@ impl CostLedger {
             self.phase < self.report.phases.len(),
             "no frozen phase remains"
         );
-        // A process-launch failure must still leave its invocation/argv in the artifact.
-        self.report.commands.push(CommandCost::pending(
-            &self.counter,
-            label,
-            self.phase,
-            args,
-            cache_state,
-        ));
-        self.refresh_totals();
-        self.persist();
-        let step = journey.observe(label, args);
+        let step = journey.observe_before_launch(label, args, |argv| {
+            // A launch failure must retain the exact executable and prepared arguments.
+            self.report.commands.push(CommandCost::pending(
+                &self.counter,
+                label,
+                self.phase,
+                argv,
+                cache_state,
+            ));
+            self.refresh_totals();
+            self.persist();
+        });
         let command = self.report.commands.last_mut().unwrap();
         command.transcript = Some(step.transcript_prefix().to_path_buf());
         command.capture(
@@ -337,6 +338,106 @@ impl CostLedger {
         )
         .expect("retain complete cost metrics before driver parsing or criterion assertions");
     }
+}
+
+#[test]
+#[ignore = "opt-in efficiency accounting contract"]
+fn public_cli_argv_includes_the_prepared_executable_on_failure_and_retry() {
+    let fixture = Fixture::new("efficiency-ledger-full-argv");
+    let path = "space ünicode.py";
+    let source = "def payable():\n    return 904\n";
+    fixture.write(path, source);
+    let limits = Limits {
+        calls: 2,
+        response_bytes: 24 * 1024,
+        response_tokens: 7_500,
+        source_paths: 1,
+        source_nonblank_lines: 8,
+        source_tokens: Some(128),
+        body_nonblank_lines: Some(2),
+    };
+    let packet = PacketCost::new("o200k_base", &[EvidenceFragment { path, source }]);
+    let mut ledger = CostLedger::new(
+        &fixture,
+        "full argv",
+        "o200k_base",
+        vec![PhaseBudget {
+            label: "failed read and retry",
+            limits,
+            packet,
+        }],
+        limits,
+    );
+    let mut journey = Journey::bounded(&fixture, 2);
+    let retry_args = [
+        "read",
+        ".",
+        "--file",
+        path,
+        "--encoding",
+        "o200k_base",
+        "-f",
+        "json",
+        "--quiet",
+        "--error-format",
+        "json",
+    ];
+    let mut failed_args = retry_args.to_vec();
+    failed_args.push("--not-a-real-flag");
+    let mut expected = Vec::new();
+    let mut response_bytes = 0;
+    for (args, exit, cache) in [
+        (failed_args.as_slice(), 2, CacheState::Cold),
+        (retry_args.as_slice(), 0, CacheState::Cold),
+    ] {
+        let prepared = fixture.command(args);
+        let argv: Vec<_> = std::iter::once(prepared.get_program())
+            .chain(prepared.get_args())
+            .map(|argument| {
+                argument
+                    .to_str()
+                    .expect("fixture command argv is UTF-8")
+                    .to_owned()
+            })
+            .collect();
+        let step = ledger.step(&mut journey, "public read", args, cache);
+        step.assert_exit(exit);
+        response_bytes += step.stdout_bytes().len() + step.stderr_bytes().len();
+        expected.push(argv);
+    }
+    let phase = ledger.checkpoint();
+    assert_eq!(phase.excesses.len(), 0);
+    assert_eq!(phase.accounting_gaps.len(), 0);
+    let episode = ledger.finish();
+    let artifact: Value = serde_json::from_slice(&fs::read(&ledger.artifact).unwrap()).unwrap();
+    for (index, argv) in expected.iter().enumerate() {
+        assert_eq!(
+            artifact["commands"][index]["argv"],
+            serde_json::to_value(argv).unwrap(),
+            "record the actual executable and every prepared argument once"
+        );
+        let compact = serde_json::to_string(argv).unwrap();
+        assert_eq!(
+            artifact["commands"][index]["metrics"]["argv_bytes"],
+            compact.len()
+        );
+        assert_eq!(
+            artifact["commands"][index]["metrics"]["argv_tokens"],
+            ledger.counter.count(&compact)
+        );
+    }
+    assert_eq!(episode.metrics.calls, 2);
+    assert_eq!(episode.metrics.response_bytes, response_bytes);
+    assert_eq!(
+        episode.metrics.interaction_bytes,
+        episode.metrics.response_bytes + episode.metrics.argv_bytes
+    );
+    assert_eq!(
+        episode.metrics.interaction_tokens,
+        episode.metrics.response_tokens + episode.metrics.argv_tokens
+    );
+    assert_eq!(artifact["commands"][0]["exit"], 2);
+    assert_eq!(artifact["commands"][1]["exit"], 0);
 }
 
 #[test]

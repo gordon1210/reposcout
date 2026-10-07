@@ -272,13 +272,15 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   Complete CLI responses, arguments, repeated source and phase costs are recorded against the
   original limits; existing acceptance criteria remain unchanged. See the separate
   [efficiency results](docs/user-efficiency-results.md) for observed gaps, validation and limits.
-  Explicit `read --range` closes the two sparse-evidence gaps: all 27 efficiency tests now pass,
+  Explicit `read --range` closes the two sparse-evidence gaps: all 28 efficiency tests now pass,
   including the four formerly red cases. I retrieves its actual binding/helper in four calls;
   K emits five follow-up source lines instead of 12 by retaining the seven unchanged body lines.
   Two [follow-up cases](docs/user-efficiency-followups.md) additionally cover later multiline
   imports and two disjoint binding changes around retained context. They exposed driver gaps,
   corrected without weakening their frozen obligations or budgets; the original cases stay intact.
   The results preserve both RED baselines and do not infer model-session savings.
+  PR review corrected argument accounting to include the actual prepared executable before launch;
+  a failed-read/retry regression covers complete argv, including spaced and Unicode arguments.
   A [manual GitHub workflow](.github/workflows/development-scenarios.yml) runs all seven families
   or one selected family, serially, retaining bounded diagnostics for three days. It has no
   automatic triggers. The separate Linux [measurement tool](docs/scenario-measurements.md)
