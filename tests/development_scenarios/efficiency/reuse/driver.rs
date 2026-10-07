@@ -23,12 +23,12 @@ pub(super) struct Retained {
 
 #[derive(Default)]
 pub(super) struct Investigation {
-    pub(super) retained: BTreeMap<String, Retained>,
+    pub(super) retained: BTreeMap<String, Vec<Retained>>,
     pub(super) reports: Vec<Value>,
 }
 
 pub(super) struct Continuation {
-    pub(super) retained: BTreeMap<String, Retained>,
+    pub(super) retained: BTreeMap<String, Vec<Retained>>,
     pub(super) change: Value,
     pub(super) deliveries: Vec<Value>,
     pub(super) stale: Vec<Value>,
@@ -142,6 +142,38 @@ impl Session<'_, '_> {
         }
         self.run("read only a publicly discovered source target", args, false)
     }
+
+    fn read_imports(
+        &mut self,
+        targets: &[(String, String)],
+        snapshot: &str,
+        definitions: bool,
+    ) -> Value {
+        let mut args = vec![
+            "read".to_owned(),
+            ".".to_owned(),
+            "--snapshot".to_owned(),
+            snapshot.to_owned(),
+        ];
+        if definitions {
+            for (path, symbol) in targets {
+                args.extend(["--symbol".to_owned(), path.clone(), symbol.clone()]);
+            }
+        } else {
+            for path in targets
+                .iter()
+                .map(|(path, _)| path)
+                .collect::<BTreeSet<_>>()
+            {
+                args.extend(["--file".to_owned(), path.clone()]);
+            }
+        }
+        self.run(
+            "read targets from all delivered active bindings",
+            args,
+            false,
+        )
+    }
 }
 
 pub(super) fn initial(
@@ -179,23 +211,23 @@ pub(super) fn initial(
     let hash = text(&hit["read"], "expected_hash").to_owned();
     state.reports.push(search);
     let entry = session.read(&path, None, Some(&hash), task.snapshot);
-    let entry_capture = capture(&entry);
-    let policy = entry_capture.as_ref().and_then(import);
-    retain(&mut state.retained, entry_capture);
+    let entry_captures = captures(&entry);
+    let policies = imported_targets(&entry_captures);
+    retain(&mut state.retained, entry_captures);
     state.reports.push(entry);
-    let Some((path, _)) = policy else {
+    if policies.is_empty() {
         return state;
-    };
-    let report = session.read(&path, None, None, task.snapshot);
-    let policy_capture = capture(&report);
-    let helper = policy_capture.as_ref().and_then(import);
-    retain(&mut state.retained, policy_capture);
+    }
+    let report = session.read_imports(&policies, task.snapshot, false);
+    let policy_captures = captures(&report);
+    let helpers = imported_targets(&policy_captures);
+    retain(&mut state.retained, policy_captures);
     state.reports.push(report);
-    let Some((path, symbol)) = helper else {
+    if helpers.is_empty() {
         return state;
-    };
-    let report = session.read(&path, Some(&symbol), None, task.snapshot);
-    retain(&mut state.retained, capture(&report));
+    }
+    let report = session.read_imports(&helpers, task.snapshot, true);
+    retain(&mut state.retained, captures(&report));
     state.reports.push(report);
     state
 }
@@ -233,6 +265,7 @@ pub(super) fn follow_up(
         || previous
             .retained
             .values()
+            .flatten()
             .any(|retained| retained.capture.file["snapshot"] != report["change"]["base"])
     {
         return result;
@@ -245,7 +278,6 @@ pub(super) fn follow_up(
         ranges,
     } in refresh
     {
-        result.retained.remove(&path);
         let stale = session.read_selected(
             &path,
             old.symbol.as_deref(),
@@ -272,16 +304,22 @@ pub(super) fn follow_up(
             Some(text(&current, "sha256")),
             "worktree",
         );
-        let fresh = capture(&delivered);
-        let new_import = fresh
-            .as_ref()
-            .and_then(import)
-            .filter(|(target, _)| !result.retained.contains_key(target));
+        let fresh = captures(&delivered);
+        let new_imports: Vec<_> = imported_targets(&fresh)
+            .into_iter()
+            .filter(|(path, symbol)| {
+                result.retained.get(path).is_none_or(|fragments| {
+                    !fragments
+                        .iter()
+                        .any(|fragment| fragment.capture.symbol.as_deref() == Some(symbol.as_str()))
+                })
+            })
+            .collect();
         retain(&mut result.retained, fresh);
         result.deliveries.push(delivered);
-        if let Some((path, symbol)) = new_import {
-            let delivered = session.read(&path, Some(&symbol), None, "worktree");
-            retain(&mut result.retained, capture(&delivered));
+        if !new_imports.is_empty() {
+            let delivered = session.read_imports(&new_imports, "worktree", true);
+            retain(&mut result.retained, captures(&delivered));
             result.deliveries.push(delivered);
         }
     }
@@ -297,58 +335,61 @@ fn retain_unchanged(result: &mut Continuation, report: &Value) -> Vec<RefreshTar
         .map(|file| (text(file, "path").to_owned(), file.clone()))
         .collect();
     let mut refresh = Vec::new();
-    for (path, retained) in &mut result.retained {
+    for (path, fragments) in &mut result.retained {
         let Some(current) = changed.get(path) else {
-            retained.current_proof = Some(report.clone());
+            for retained in fragments {
+                retained.current_proof = Some(report.clone());
+            }
             continue;
         };
-        let same_base = report["files"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|file| {
-                file["path"] == *path
-                    && file["snapshot"] == report["change"]["base"]
-                    && file["sha256"] == retained.capture.file["sha256"]
-            });
-        let unchanged_fragment = same_base
-            && ["base", "current"].into_iter().all(|side| {
-                let ranges = changed_ranges(report, path, side);
-                !ranges.is_empty()
-                    && ranges
-                        .iter()
-                        .all(|range| disjoint(range, &retained.capture.source["span"]))
-            });
-        if unchanged_fragment {
-            retained.current_proof = Some(report.clone());
-        } else {
-            let mut ranges = Vec::new();
-            if let Some(quote) = after_binding_quote(&retained.capture) {
-                let quote_unchanged = same_base
-                    && ["base", "current"].into_iter().all(|side| {
-                        let ranges = changed_ranges(report, path, side);
-                        !ranges.is_empty()
-                            && ranges
-                                .iter()
-                                .all(|range| disjoint(range, &quote.source["span"]))
-                    });
-                if quote_unchanged {
-                    ranges = changed_ranges(report, path, "current")
-                        .iter()
-                        .filter_map(|range| range["start"].as_u64().zip(range["end"].as_u64()))
-                        .filter(|(start, end)| *start > 0 && end >= start)
-                        .collect::<BTreeSet<_>>()
-                        .into_iter()
-                        .collect();
-                    result.reused_pieces.push(Retained {
-                        capture: quote,
-                        current_proof: Some(report.clone()),
-                    });
-                }
+        for mut retained in std::mem::take(fragments) {
+            let same_base = report["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|file| {
+                    file["path"] == *path
+                        && file["snapshot"] == report["change"]["base"]
+                        && file["sha256"] == retained.capture.file["sha256"]
+                });
+            let unchanged_fragment = same_base
+                && ["base", "current"].into_iter().all(|side| {
+                    let ranges = changed_ranges(report, path, side);
+                    !ranges.is_empty()
+                        && ranges
+                            .iter()
+                            .all(|range| disjoint(range, &retained.capture.source["span"]))
+                });
+            if unchanged_fragment {
+                retained.current_proof = Some(report.clone());
+                fragments.push(retained);
+                continue;
+            }
+            let quotes = if same_base && retained.capture.symbol.is_none() {
+                unchanged_quotes(&retained.capture, report, path)
+            } else {
+                Vec::new()
+            };
+            let ranges = if quotes.is_empty() {
+                Vec::new()
+            } else {
+                changed_ranges(report, path, "current")
+                    .iter()
+                    .filter_map(|range| range["start"].as_u64().zip(range["end"].as_u64()))
+                    .filter(|(start, end)| *start > 0 && end >= start)
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect()
+            };
+            for quote in quotes {
+                result.reused_pieces.push(Retained {
+                    capture: quote,
+                    current_proof: Some(report.clone()),
+                });
             }
             refresh.push(RefreshTarget {
                 path: path.clone(),
-                previous: retained.capture.clone(),
+                previous: retained.capture,
                 current_file: current.clone(),
                 ranges,
             });
@@ -357,74 +398,128 @@ fn retain_unchanged(result: &mut Continuation, report: &Value) -> Vec<RefreshTar
     refresh
 }
 
-fn retain(retained: &mut BTreeMap<String, Retained>, value: Option<Capture>) {
-    if let Some(capture) = value {
-        retained.insert(
-            text(&capture.file, "path").to_owned(),
-            Retained {
+fn retain(retained: &mut BTreeMap<String, Vec<Retained>>, values: Vec<Capture>) {
+    for capture in values {
+        let fragments = retained
+            .entry(text(&capture.file, "path").to_owned())
+            .or_default();
+        if !fragments.iter().any(|previous| {
+            previous.capture.file == capture.file && previous.capture.source == capture.source
+        }) {
+            fragments.push(Retained {
                 capture,
                 current_proof: None,
-            },
-        );
-    }
-}
-
-fn import(captured: &Capture) -> Option<(String, String)> {
-    text(&captured.source, "content").lines().find_map(|line| {
-        let fields: Vec<_> = line.split_whitespace().collect();
-        if fields.len() != 4 || fields[0] != "from" || fields[2] != "import" {
-            return None;
+            });
         }
-        Some((
-            format!("{}.py", fields[1].replace('.', "/")),
-            fields[3].to_owned(),
-        ))
-    })
-}
-
-fn capture(report: &Value) -> Option<Capture> {
-    let result = report["results"]
-        .as_array()?
-        .iter()
-        .find(|result| result["status"] == "complete")?;
-    let file = report["files"]
-        .as_array()?
-        .iter()
-        .find(|file| file["id"] == result["file"])?;
-    let source = report["sources"]
-        .as_array()?
-        .iter()
-        .find(|source| source["id"] == result["source"] && source["file"] == file["id"])?;
-    Some(Capture {
-        file: file.clone(),
-        source: source.clone(),
-        symbol: result["definition"]["name"].as_str().map(str::to_owned),
-        quote_origin: None,
-    })
-}
-
-fn after_binding_quote(captured: &Capture) -> Option<Capture> {
-    let content = captured.source["content"].as_str()?;
-    let prefix_end = content.find("\n\n")? + 2;
-    if !content[..prefix_end]
-        .lines()
-        .all(|line| line.is_empty() || line.starts_with("from "))
-    {
-        return None;
     }
+}
+
+fn imported_targets(captured: &[Capture]) -> Vec<(String, String)> {
+    captured
+        .iter()
+        .flat_map(|captured| text(&captured.source, "content").lines())
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            if fields.len() != 4 || fields[0] != "from" || fields[2] != "import" {
+                return None;
+            }
+            Some((
+                format!("{}.py", fields[1].replace('.', "/")),
+                fields[3].to_owned(),
+            ))
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn captures(report: &Value) -> Vec<Capture> {
+    let mut seen = BTreeSet::new();
+    report["results"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|result| result["status"] == "complete")
+        .filter_map(|result| {
+            let file = report["files"]
+                .as_array()?
+                .iter()
+                .find(|file| file["id"] == result["file"])?;
+            let source = report["sources"]
+                .as_array()?
+                .iter()
+                .find(|source| source["id"] == result["source"] && source["file"] == file["id"])?;
+            seen.insert((file["id"].as_u64()?, source["id"].as_u64()?))
+                .then(|| Capture {
+                    file: file.clone(),
+                    source: source.clone(),
+                    symbol: result["definition"]["name"].as_str().map(str::to_owned),
+                    quote_origin: None,
+                })
+        })
+        .collect()
+}
+
+fn unchanged_quotes(captured: &Capture, report: &Value, path: &str) -> Vec<Capture> {
+    let mut changes = Vec::new();
+    for side in ["base", "current"] {
+        let ranges = changed_ranges(report, path, side);
+        if ranges.is_empty()
+            || ranges
+                .iter()
+                .any(|range| range["start"].as_u64().is_none() || range["end"].as_u64().is_none())
+        {
+            return Vec::new();
+        }
+        changes.extend(ranges);
+    }
+    let content = text(&captured.source, "content");
+    let first = captured.source["span"]["start_line"].as_u64().unwrap();
+    let mut offset = 0;
+    let mut start = None;
+    let mut quotes = Vec::new();
+    for (index, line) in content.split_inclusive('\n').enumerate() {
+        let number = first + index as u64;
+        let intersects = changes.iter().any(|range| {
+            range["start"].as_u64().unwrap() <= number && range["end"].as_u64().unwrap() >= number
+        });
+        if intersects {
+            if let Some((begin, begin_line)) = start.take() {
+                quote(captured, begin, offset, begin_line, number - 1, &mut quotes);
+            }
+        } else if start.is_none() {
+            start = Some((offset, number));
+        }
+        offset += line.len();
+    }
+    if let Some((begin, begin_line)) = start {
+        let last = captured.source["span"]["end_line"].as_u64().unwrap();
+        quote(captured, begin, offset, begin_line, last, &mut quotes);
+    }
+    quotes
+}
+
+fn quote(
+    captured: &Capture,
+    start: usize,
+    end: usize,
+    first_line: u64,
+    last_line: u64,
+    quotes: &mut Vec<Capture>,
+) {
+    let content = text(&captured.source, "content");
+    if content[start..end].trim().is_empty() {
+        return;
+    }
+    let base = captured.source["span"]["start_byte"].as_u64().unwrap();
     let mut quote = captured.clone();
     quote.quote_origin = Some(captured.source.clone());
-    quote.source["content"] = Value::String(content[prefix_end..].to_owned());
-    quote.source["span"]["start_byte"] =
-        Value::from(captured.source["span"]["start_byte"].as_u64()? + prefix_end as u64);
-    quote.source["span"]["start_line"] = Value::from(
-        captured.source["span"]["start_line"].as_u64()?
-            + content[..prefix_end]
-                .bytes()
-                .filter(|byte| *byte == b'\n')
-                .count() as u64,
-    );
-    Some(quote)
+    quote.source["content"] = Value::String(content[start..end].to_owned());
+    quote.source["span"]["start_byte"] = Value::from(base + start as u64);
+    quote.source["span"]["end_byte"] = Value::from(base + end as u64);
+    quote.source["span"]["start_line"] = Value::from(first_line);
+    quote.source["span"]["end_line"] = Value::from(last_line);
+    quotes.push(quote);
 }
 
 pub(super) fn complete_changes(report: &Value) -> bool {

@@ -81,6 +81,9 @@ For response-driven command chains, use `./scripts/test-scenarios.sh journeys`. 
 by independently defined user tasks, use `./scripts/test-scenarios.sh acceptance` (also requires
 Python 3 for synthetic application probes). The [frozen requirements](user-acceptance-cases.md)
 precede CLI route design; the [journey guide](development-journeys.md) explains the distinction.
+The [manual GitHub workflow](development-scenarios.md#manual-github-action) can run these families
+on demand. Separate [cold/warm measurements](scenario-measurements.md) record bounded CLI costs
+and peak RAM without running a model or adding an automatic performance gate.
 
 ## Architecture
 

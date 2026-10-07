@@ -24,6 +24,9 @@ for complete interactions, minimal source and evidence reuse. The `efficiency` g
 F, G, H, I and K; J is deferred because its retry investigation substantially overlaps existing
 causal-navigation and investigation coverage. These tests do not change the A–E acceptance criteria.
 See [efficiency results](user-efficiency-results.md) for scope, outcomes and measurement limits.
+The [two follow-up cases](user-efficiency-followups.md) freeze later multiline imports and
+disjoint binding changes before adapting their drivers. For separate serial cold/warm timing
+and individual CLI peak RAM, use the bounded [measurement tool](scenario-measurements.md).
 
 ## Run
 
@@ -50,7 +53,7 @@ they install no packages. A missing interpreter is an environment failure and mu
 as a product acceptance failure.
 
 `cargo test` still compiles these tests to catch drift, but `#[ignore]` keeps every scenario out of
-the default test run and existing CI. To run the target directly:
+the default test run and automatic CI. To run the target directly:
 
 ```sh
 cargo test --release --locked --test development_scenarios -- --ignored --nocapture
@@ -65,6 +68,44 @@ The normal target invocation separately confirmed that all 20 remain ignored wit
 The focused guard-mapping, budget-fairness and snapshot-handoff scenarios also ran against a previously
 verified official v0.4.0 binary: each failed on its corresponding known behavior defect, while
 the current binary passed. No old binary or network download is required by the suite itself.
+
+## Manual GitHub Action
+
+The [Development scenarios (manual) workflow](../.github/workflows/development-scenarios.yml) runs
+only through `workflow_dispatch`. Open **Actions → Development scenarios (manual) → Run workflow**,
+choose a branch and select `all` or one of the seven scenario families. It has no push, pull-request
+or scheduled trigger and is not a merge or release gate. Once the workflow exists on the default
+branch, the equivalent explicit CLI invocation is:
+
+```sh
+gh workflow run development-scenarios.yml --ref main -f family=all
+gh workflow run development-scenarios.yml --ref main -f family=efficiency
+```
+
+Each run uses one Ubuntu job. Concurrent manual dispatches share a concurrency group, so only one
+run executes at a time; GitHub may replace an older pending run when another dispatch is queued.
+The action first builds the release CLI and compiles the ignored scenario target, then runs the
+selected families sequentially with the repository's existing serialized harness and two-worker
+CLI configuration. `all` includes every test in each family, including newly added cases; it fails
+if the compiled target introduces an unlisted family. Empty selections also fail.
+
+The cold compilation phase has a separate 20-minute allowance. Each family has a 180-second runtime
+limit with 10 seconds for forced cleanup; the scenario step and whole job also have explicit limits.
+This compilation allowance applies to the manual hosted workflow, not local agent validation.
+Test failures remain failures while later selected families run, and timeout failures are reported
+separately through the recorded command exit status. Python 3 is checked on the runner, and Node.js
+is installed for the existing native ESM probes. The action installs no fixture packages and starts
+no daemon or frontend.
+
+Build logs, the compiled test listing, family stdout/stderr, exit statuses and the source commit are
+retained for three days. Failed fixtures use the existing retention mechanism in a run-private
+temporary directory; their synthetic Git history, cache state, command transcripts and efficiency
+ledgers are included in the diagnostic archive. Timeout termination may leave partially written
+fixtures instead of an unwound assertion. Successful fixtures clean themselves up normally.
+Archiving is capped at 64 MiB of raw diagnostics: oversized fixture sets are omitted with an explicit
+notice, and oversized logs fall back to the result summary and source identity. The archive preserves
+fixture symlinks without following their targets. A cancelled job or infrastructure failure can
+prevent artifact retention; the GitHub run log remains the primary execution record.
 
 ## Scenario families
 

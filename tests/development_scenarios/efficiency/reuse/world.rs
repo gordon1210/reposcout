@@ -27,6 +27,20 @@ pub(super) const POLICY_BODY: &str = r#"def quota_status(used_bytes, capacity_by
 
 pub(super) const OLD_BINDING: &str = "from service.quota_percent import rounded_usage\n";
 pub(super) const NEW_BINDING: &str = "from service.whole_percent import rounded_usage\n";
+pub(super) const OLD_THRESHOLD_BINDING: &str =
+    "from service.quota_percent import warning_threshold\n";
+pub(super) const NEW_THRESHOLD_BINDING: &str =
+    "from service.whole_percent import warning_threshold\n";
+pub(super) const THRESHOLD_90: &str = "def warning_threshold():\n    return 90\n";
+pub(super) const THRESHOLD_91: &str = "def warning_threshold():\n    return 91\n";
+pub(super) const DISJOINT_POLICY_BODY: &str = r#"def quota_status(used_bytes, capacity_bytes):
+    percentage = rounded_usage(used_bytes, capacity_bytes)
+    if percentage >= 100:
+        return "blocked"
+    if percentage >= warning_threshold():
+        return "warning"
+    return "clear"
+"#;
 
 pub(super) const FLOOR: &str = r#"def rounded_usage(used_bytes, capacity_bytes):
     if used_bytes < 0 or capacity_bytes <= 0:
@@ -53,6 +67,7 @@ pub(super) enum Variant {
     UnrelatedFile,
     UnrelatedDeclaration,
     Binding,
+    DisjointBindings,
 }
 
 impl Variant {
@@ -62,11 +77,16 @@ impl Variant {
             Self::UnrelatedFile => "unrelated-file",
             Self::UnrelatedDeclaration => "unrelated-declaration",
             Self::Binding => "new-binding",
+            Self::DisjointBindings => "two-disjoint-bindings",
         }
     }
 
     pub(super) fn expects_warning(self) -> bool {
         matches!(self, Self::Helper | Self::Binding)
+    }
+
+    pub(super) fn is_binding_change(self) -> bool {
+        matches!(self, Self::Binding | Self::DisjointBindings)
     }
 }
 
@@ -90,17 +110,12 @@ pub(super) struct QuotaWorld {
 impl QuotaWorld {
     pub(super) fn new(variant: Variant, encoding: &str) -> Self {
         let fixture = Fixture::new(&format!("efficiency-quota-{}-{encoding}", variant.label()));
-        let policy = format!("{OLD_BINDING}\n{POLICY_BODY}");
-        let before = BTreeMap::from([
-            (ENTRY_PATH.to_owned(), ENTRY.to_owned()),
-            (POLICY_PATH.to_owned(), policy.clone()),
-            (HELPER_PATH.to_owned(), format!("{FLOOR}\n{LABEL}")),
-            (ALTERNATE_PATH.to_owned(), CEIL.to_owned()),
-            (
-                "service/account_labels.py".to_owned(),
-                "def account_label(account):\n    return account.strip()\n".to_owned(),
-            ),
-        ]);
+        let policy = if matches!(variant, Variant::DisjointBindings) {
+            format!("{OLD_BINDING}\n{DISJOINT_POLICY_BODY}\n{OLD_THRESHOLD_BINDING}")
+        } else {
+            format!("{OLD_BINDING}\n{POLICY_BODY}")
+        };
+        let before = initial_sources(variant, &policy);
         for (path, source) in &before {
             fixture.write(path, source);
         }
@@ -133,18 +148,33 @@ impl QuotaWorld {
                     format!("{NEW_BINDING}\n{POLICY_BODY}"),
                 );
             }
+            Variant::DisjointBindings => {
+                after.insert(
+                    POLICY_PATH.to_owned(),
+                    format!("{NEW_BINDING}\n{DISJOINT_POLICY_BODY}\n{NEW_THRESHOLD_BINDING}"),
+                );
+            }
         }
-        let initial_packet = vec![
+        let mut initial_packet = vec![
             fragment(ENTRY_PATH, ENTRY),
             fragment(POLICY_PATH, &policy),
             fragment(HELPER_PATH, FLOOR),
         ];
+        if matches!(variant, Variant::DisjointBindings) {
+            initial_packet.push(fragment(HELPER_PATH, THRESHOLD_90));
+        }
         let delta_packet = match variant {
             Variant::Helper => vec![fragment(HELPER_PATH, CEIL)],
             Variant::UnrelatedFile | Variant::UnrelatedDeclaration => Vec::new(),
             Variant::Binding => vec![
                 fragment(POLICY_PATH, NEW_BINDING),
                 fragment(ALTERNATE_PATH, CEIL),
+            ],
+            Variant::DisjointBindings => vec![
+                fragment(POLICY_PATH, NEW_BINDING),
+                fragment(POLICY_PATH, NEW_THRESHOLD_BINDING),
+                fragment(ALTERNATE_PATH, CEIL),
+                fragment(ALTERNATE_PATH, THRESHOLD_91),
             ],
         };
         let world = Self {
@@ -168,17 +198,17 @@ impl QuotaWorld {
         assert_packet_bounds(&self.initial_packet, 48, 2 * 1024, 3);
         assert_packet_bounds(
             &self.delta_packet,
-            if matches!(self.variant, Variant::Binding) {
+            if self.variant.is_binding_change() {
                 24
             } else {
                 12
             },
-            if matches!(self.variant, Variant::Binding) {
+            if self.variant.is_binding_change() {
                 2 * 1024
             } else {
                 1024
             },
-            if matches!(self.variant, Variant::Binding) {
+            if self.variant.is_binding_change() {
                 2
             } else {
                 1
@@ -188,7 +218,7 @@ impl QuotaWorld {
         for source in [&self.before, &self.after] {
             assert!(source.values().map(String::len).sum::<usize>() <= 48 * 1024);
         }
-        let frozen = json!({
+        let mut frozen = json!({
             "case": "K",
             "variant": self.variant.label(),
             "encoding": encoding,
@@ -204,6 +234,15 @@ impl QuotaWorld {
             "initial_packet": initial,
             "delta_packet": delta,
         });
+        if matches!(self.variant, Variant::DisjointBindings) {
+            frozen["examples"] = json!([[895, 1000], [900, 1000], [905, 1000], [1000, 1000]]);
+            frozen["before"] = json!(["clear", "warning", "warning", "blocked"]);
+            frozen["after"] = json!(["clear", "clear", "warning", "blocked"]);
+            frozen["partial_binding_controls"] = json!({
+                "rounding_only": ["warning", "warning", "warning", "blocked"],
+                "threshold_only": ["clear", "clear", "clear", "blocked"],
+            });
+        }
         fs::write(
             self.fixture.state_path().join("frozen-quota-truth.json"),
             serde_json::to_vec_pretty(&frozen).unwrap(),
@@ -221,6 +260,10 @@ impl QuotaWorld {
     }
 
     pub(super) fn assert_probe(&self, after: bool) {
+        if matches!(self.variant, Variant::DisjointBindings) {
+            self.assert_disjoint_probe(after);
+            return;
+        }
         let program = r"import json
 from service.storage_api import storage_status
 examples = [(0,1000), (890,1000), (895,1000), (900,1000), (1000,1000)]
@@ -250,6 +293,82 @@ print(json.dumps([storage_status(used, capacity) for used, capacity in examples]
             "literal independent quota examples"
         );
     }
+
+    fn assert_disjoint_probe(&self, after: bool) {
+        let actual = probe(
+            &self.fixture,
+            r"import json
+from service.storage_api import storage_status
+from service import quota_policy, quota_percent, whole_percent
+examples = [(895,1000), (900,1000), (905,1000), (1000,1000)]
+def statuses():
+    return [storage_status(used, capacity)['status'] for used, capacity in examples]
+active = statuses()
+quota_policy.rounded_usage = whole_percent.rounded_usage
+quota_policy.warning_threshold = quota_percent.warning_threshold
+rounding_only = statuses()
+quota_policy.rounded_usage = quota_percent.rounded_usage
+quota_policy.warning_threshold = whole_percent.warning_threshold
+threshold_only = statuses()
+print(json.dumps({'active': active, 'rounding_only': rounding_only,
+                  'threshold_only': threshold_only}))
+",
+        );
+        let name = if after { "after" } else { "before" };
+        fs::write(
+            self.fixture
+                .state_path()
+                .join(format!("quota-probe-{name}.json")),
+            serde_json::to_vec_pretty(&actual).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            actual["active"],
+            if after {
+                json!(["clear", "clear", "warning", "blocked"])
+            } else {
+                json!(["clear", "warning", "warning", "blocked"])
+            },
+            "literal two-binding quota examples"
+        );
+        assert_eq!(
+            actual["rounding_only"],
+            json!(["warning", "warning", "warning", "blocked"]),
+            "rounding alone incorrectly warns at 895"
+        );
+        assert_eq!(
+            actual["threshold_only"],
+            json!(["clear", "clear", "clear", "blocked"]),
+            "threshold alone incorrectly clears at 905"
+        );
+    }
+}
+
+fn initial_sources(variant: Variant, policy: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (ENTRY_PATH.to_owned(), ENTRY.to_owned()),
+        (POLICY_PATH.to_owned(), policy.to_owned()),
+        (
+            HELPER_PATH.to_owned(),
+            if matches!(variant, Variant::DisjointBindings) {
+                format!("{FLOOR}\n{THRESHOLD_90}\n{LABEL}")
+            } else {
+                format!("{FLOOR}\n{LABEL}")
+            },
+        ),
+        (
+            ALTERNATE_PATH.to_owned(),
+            if matches!(variant, Variant::DisjointBindings) {
+                format!("{CEIL}\n{THRESHOLD_91}")
+            } else {
+                CEIL.to_owned()
+            },
+        ),
+        (
+            "service/account_labels.py".to_owned(),
+            "def account_label(account):\n    return account.strip()\n".to_owned(),
+        ),
+    ])
 }
 
 fn fragment(path: &'static str, source: &str) -> RequiredFragment {

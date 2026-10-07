@@ -54,7 +54,7 @@ pub(super) fn investigate(
         journey,
         ledger,
         task,
-        "read the discovered regression and a bounded preamble of the known module",
+        "read the discovered regression and a bounded window before the known definition",
         imports,
         (1100, 3584),
         CacheState::Warm,
@@ -88,20 +88,20 @@ fn regression_and_binding_targets(task: &Task, reports: &[Value]) -> Vec<String>
             args.extend(["--expect-hash".to_owned(), path, hash]);
         }
     }
-    // This is a bounded module-preamble heuristic, not fixture line knowledge or
-    // a claim that every import lies before the first requested definition.
-    let preamble_end = array(&reports[0]["sources"])
+    // Follow the delivered definition location. The preceding window stays bounded
+    // even when natural module helpers appear before the binding and definition.
+    let binding_end = array(&reports[0]["sources"])
         .iter()
         .filter_map(|source| source["span"]["start_line"].as_u64())
         .min()
         .and_then(|start| start.checked_sub(1).filter(|end| *end > 0))
-        .unwrap_or(16)
-        .min(16);
+        .unwrap_or(16);
+    let binding_start = binding_end.saturating_sub(15).max(1);
     args.extend([
         "--range".to_owned(),
         task.file.to_owned(),
-        "1".to_owned(),
-        preamble_end.to_string(),
+        binding_start.to_string(),
+        binding_end.to_string(),
     ]);
     if let Some(hash) = observed_hash(reports, task.file) {
         args.extend(["--expect-hash".to_owned(), task.file.to_owned(), hash]);
@@ -156,28 +156,54 @@ fn read_imported_support(
 }
 
 fn imported_modules(source: &str, names: &BTreeSet<String>) -> BTreeSet<String> {
-    source
-        .lines()
-        .filter_map(|line| {
-            let words: Vec<_> = line.split_whitespace().collect();
-            let ["from", module, "import", imported, rest @ ..] = words.as_slice() else {
-                return None;
-            };
-            let local = if let ["as", alias] = rest {
-                alias
-            } else {
-                imported
-            };
-            let simple_module = module.split('.').all(|part| {
-                !part.is_empty()
-                    && part
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-            });
-            (names.contains(*local) && simple_module)
-                .then(|| format!("{}.py", module.replace('.', "/")))
-        })
-        .collect()
+    let mut files = BTreeSet::new();
+    let mut statement = String::new();
+    for line in source.lines() {
+        let code = line.split('#').next().unwrap_or("").trim();
+        if statement.is_empty() {
+            if !code.starts_with("from ") {
+                continue;
+            }
+            statement.push_str(code);
+        } else {
+            statement.push(' ');
+            statement.push_str(code);
+        }
+        if statement.contains('(') && !statement.contains(')') {
+            continue;
+        }
+        if let Some(path) = imported_module(&statement, names) {
+            files.insert(path);
+        }
+        statement.clear();
+    }
+    files
+}
+
+fn imported_module(statement: &str, names: &BTreeSet<String>) -> Option<String> {
+    let (prefix, bindings) = statement.split_once(" import ")?;
+    let module = prefix.strip_prefix("from ")?.trim();
+    let simple_module = module.split('.').all(|part| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    });
+    let bindings = if bindings.starts_with('(') {
+        bindings.strip_prefix('(')?.strip_suffix(')')?.trim()
+    } else {
+        bindings
+    };
+    let needed = bindings.split(',').any(|binding| {
+        let words: Vec<_> = binding.split_whitespace().collect();
+        let local = match words.as_slice() {
+            [name] => name,
+            [_, "as", alias] => alias,
+            _ => return false,
+        };
+        names.contains(*local)
+    });
+    (simple_module && needed).then(|| format!("{}.py", module.replace('.', "/")))
 }
 
 fn observed_hash(reports: &[Value], path: &str) -> Option<String> {

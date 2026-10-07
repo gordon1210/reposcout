@@ -226,3 +226,18 @@ fn unrelated_invoice_handler_changes_do_not_expand_the_evidence_envelope() {
         "renamed and added natural handlers retain the original source/response envelope: {report}"
     );
 }
+
+#[test]
+#[ignore = "user efficiency scenario; run scripts/test-scenarios.sh efficiency::invoice"]
+fn multiline_invoice_bindings_after_natural_helpers_fit_original_budgets() {
+    let episodes = [episode(
+        "invoice-multiline-bindings",
+        Variant::MultilineBinding,
+        "o200k_base",
+    )];
+    let report = group_summary(&episodes);
+    assert!(
+        episodes[0].positive_failures().is_empty(),
+        "actual multiline bindings beyond the preamble require every original obligation within the original envelope: {report}"
+    );
+}

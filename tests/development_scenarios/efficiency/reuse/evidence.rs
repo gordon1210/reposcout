@@ -4,14 +4,19 @@ use super::driver::{
 };
 use super::sha256;
 use super::world::{
-    ALTERNATE_PATH, CEIL, ENTRY, ENTRY_PATH, FLOOR, HELPER_PATH, NEW_BINDING, OLD_BINDING,
-    POLICY_BODY, POLICY_PATH, QuotaWorld, RequiredFragment, Variant,
+    ALTERNATE_PATH, CEIL, DISJOINT_POLICY_BODY, ENTRY, ENTRY_PATH, FLOOR, HELPER_PATH, NEW_BINDING,
+    NEW_THRESHOLD_BINDING, OLD_BINDING, POLICY_BODY, POLICY_PATH, QuotaWorld, RequiredFragment,
+    THRESHOLD_91, Variant,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn initial_missing(world: &QuotaWorld, state: &Investigation) -> Vec<String> {
-    let mut missing = packet_missing(&world.initial_packet, state.retained.values());
-    for (path, retained) in &state.retained {
+    let mut missing = packet_missing(&world.initial_packet, state.retained.values().flatten());
+    for (path, retained) in state
+        .retained
+        .iter()
+        .flat_map(|(path, values)| values.iter().map(move |retained| (path, retained)))
+    {
         if retained.capture.file["snapshot"]["kind"] != "tree"
             || retained.capture.file["snapshot"]["revision"] != world.base_tree
         {
@@ -22,7 +27,7 @@ pub(super) fn initial_missing(world: &QuotaWorld, state: &Investigation) -> Vec<
     missing
 }
 
-pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<String> {
+fn current_packet(world: &QuotaWorld) -> Vec<RequiredFragment> {
     let binding = if matches!(world.variant, Variant::Binding) {
         NEW_BINDING
     } else {
@@ -38,7 +43,7 @@ pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<Str
     } else {
         HELPER_PATH
     };
-    let packet: Vec<_> = [
+    let mut packet: Vec<_> = [
         (ENTRY_PATH, ENTRY),
         (POLICY_PATH, binding),
         (POLICY_PATH, POLICY_BODY),
@@ -50,9 +55,33 @@ pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<Str
         source: source.trim_end_matches('\n').to_owned(),
     })
     .collect();
+    if matches!(world.variant, Variant::DisjointBindings) {
+        packet = [
+            (ENTRY_PATH, ENTRY),
+            (POLICY_PATH, NEW_BINDING),
+            (POLICY_PATH, DISJOINT_POLICY_BODY),
+            (POLICY_PATH, NEW_THRESHOLD_BINDING),
+            (ALTERNATE_PATH, CEIL),
+            (ALTERNATE_PATH, THRESHOLD_91),
+        ]
+        .into_iter()
+        .map(|(path, source)| RequiredFragment {
+            path,
+            source: source.trim_end_matches('\n').to_owned(),
+        })
+        .collect();
+    }
+    packet
+}
+
+pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<String> {
     let mut missing = packet_missing(
-        &packet,
-        state.retained.values().chain(state.reused_pieces.iter()),
+        &current_packet(world),
+        state
+            .retained
+            .values()
+            .flatten()
+            .chain(state.reused_pieces.iter()),
     );
     if !complete_changes(&state.change) {
         missing.push("complete public working change/identity coverage".to_owned());
@@ -76,7 +105,12 @@ pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<Str
     if actual_changed != reported_changed {
         missing.push("public change inventory does not justify all retained files".to_owned());
     }
-    for retained in state.retained.values().chain(state.reused_pieces.iter()) {
+    for retained in state
+        .retained
+        .values()
+        .flatten()
+        .chain(state.reused_pieces.iter())
+    {
         let path = text(&retained.capture.file, "path");
         if retained.capture.file["snapshot"]["kind"] == "worktree" {
             missing.extend(attribution(path, &retained.capture, &world.after));
@@ -94,6 +128,8 @@ pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<Str
             let body = text(source, "content");
             if body.contains(ENTRY.trim_end_matches('\n'))
                 || body.contains(POLICY_BODY.trim_end_matches('\n'))
+                || matches!(world.variant, Variant::DisjointBindings)
+                    && body.contains(DISJOINT_POLICY_BODY.trim_end_matches('\n'))
             {
                 missing.push(
                     "follow-up delivered a complete unchanged entrypoint or policy body again"
@@ -102,13 +138,46 @@ pub(super) fn final_missing(world: &QuotaWorld, state: &Continuation) -> Vec<Str
             }
         }
     }
+    if matches!(world.variant, Variant::DisjointBindings) {
+        disjoint_delivery_missing(state, &mut missing);
+    }
     if matches!(world.variant, Variant::Helper) && state.stale.is_empty() {
         missing.push("stale retained-hash handoff was not rejected before refresh".to_owned());
     }
     missing
 }
 
-fn packet_missing<'a>(
+fn disjoint_delivery_missing(state: &Continuation, missing: &mut Vec<String>) {
+    for report in &state.deliveries {
+        let files = report["files"].as_array().map_or(&[][..], Vec::as_slice);
+        for source in report["sources"].as_array().into_iter().flatten() {
+            if files
+                .iter()
+                .any(|file| file["id"] == source["file"] && file["path"] == POLICY_PATH)
+                && !matches!(
+                    source["content"].as_str(),
+                    Some(NEW_BINDING | NEW_THRESHOLD_BINDING)
+                )
+            {
+                missing.push(
+                    "binding refresh repeated unchanged policy lines or inter-range gaps"
+                        .to_owned(),
+                );
+            }
+        }
+    }
+    let ranges = changed_ranges(&state.change, POLICY_PATH, "current");
+    if ranges.len() != 2
+        || ranges.iter().any(|range| {
+            let first = range["start"].as_u64();
+            first.is_none() || first != range["end"].as_u64()
+        })
+    {
+        missing.push("two distinct single-line current binding ranges".to_owned());
+    }
+}
+
+pub(super) fn packet_missing<'a>(
     packet: &[RequiredFragment],
     retained: impl Iterator<Item = &'a Retained>,
 ) -> Vec<String> {

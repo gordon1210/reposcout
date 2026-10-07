@@ -18,6 +18,19 @@ The noise fixture renames unrelated invoice handlers and adds a dashboard
 selection handler; all necessary original packet spans remain byte-for-byte
 unchanged.
 
+The 2026-10-07 follow-up moves the model and rounding imports after the existing
+pagination, export and CSV helpers, immediately before `net_due`. Its valid
+parenthesized imports occupy lines 41–46 and the unchanged payable definition
+occupies lines 49–52. The other required spans stay unchanged. This independent
+packet has 29 necessary nonblank lines across the same four paths, with the
+same literal faulty-helper probe and genuine production regression. These
+private span guards never enter the CLI driver's inputs. The first run uses
+the unchanged driver under the original limits. That run delivered neither the
+active binding nor the active helper: it read the first 16 physical lines.
+The adapted driver derives a 16-line preceding window from the delivered
+definition location and follows complete single-line or parenthesized import
+statements in that source. It uses no authored fixture locations or bindings.
+
 An independent Python process imports production and checks literal payables
 `[900, 905, 1005, 0]` before repair and `[900, 904, 1005, 0]` after repair. It also
 executes the authored regression and records the actual helper module/name.

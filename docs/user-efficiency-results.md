@@ -3,7 +3,8 @@
 The requirements in [user-efficiency-cases.md](user-efficiency-cases.md) were frozen before the
 CLI drivers. The initial test-only extension implements F, G, H, I and K on
 `test/behavior-scenarios`. The baseline below records the original unmet needs; the subsequent
-correction adds explicit line-range reads. Dependencies, schema/analyzer versions and CI workflows
+correction adds explicit line-range reads. The later follow-up adds two scenarios, a separate
+measurement tool and an exclusively manual workflow. Dependencies and schema/analyzer versions
 remain unchanged.
 
 ## Scope and independent review
@@ -212,6 +213,51 @@ compilation or environment failure.
   occurred. Personal and independent reviews covered production logic, driver/oracle boundaries,
   resource protections and reported measurements.
 
+## Follow-up on 2026-10-07: later imports and disjoint changes
+
+The [two additional requirements](user-efficiency-followups.md) were frozen before either new
+scenario or driver adaptation. Both cases failed with the unchanged drivers against valid
+independent Python probes. I missed the actual multiline binding and its rounding helper beyond
+the first 16 lines. K missed the second old/new helper and repeated the unchanged policy body and
+inter-range gap. Neither failure exceeded a numeric budget; both violated necessary evidence or
+reuse obligations. These were driver limitations, not new demonstrated product defects.
+
+I now reads at most 16 physical lines immediately before the definition location delivered by
+the CLI, then follows complete multiline imports actually returned. K retains every complete
+chunk, batches all delivered simple bindings, and partitions old source using both public change
+range sets. Unchanged quotes keep their original identity and chunk provenance plus separate
+complete change proof. Both new import ranges are read explicitly, without their unchanged gap.
+No production code, old fixture, oracle obligation or budget changed for these corrections.
+
+All **27 efficiency tests passed** in 38.10 seconds excluding compilation (239 MiB monitored
+process-tree peak). The two new cases produced:
+
+| Case/phase | Calls | Response bytes | Response tokens | Arguments + response tokens | Emitted nonblank source lines |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| I: later multiline binding | 4 | 6,005 | 1,844 | 2,141 | 36 |
+| K: initial context | 4 | 4,998 | 1,488 | 1,759 | 20 |
+| K: disjoint follow-up | 4 | 4,801 | 1,467 | 1,828 | 8 |
+
+Every necessary fragment was supplied within its original envelope, with no accounting gaps.
+Removing individual indispensable fragments still fails the oracle. I is a bounded adjacent-import
+strategy, not exhaustive import discovery. K's exercised edits preserve the middle body's
+physical position; its independent attribution check rejects shifted or stale bytes. Arbitrary
+edit-coordinate remapping is not established by these cases.
+
+The [separate measurement tool](scenario-measurements.md) records exact per-child kernel peak RSS
+for a fixed known-source query. Its values do not fill the scenario ledger's unavailable individual
+RSS fields and do not measure complete user investigations or model-session savings.
+
+All 72 distinct development scenarios passed across the seven serial family runs, including the
+original 20 focused scenarios, seven journeys and 18 acceptance cases. Two navigation journeys
+also matched the broad local navigation filter; the manual workflow uses exact test names to
+avoid that duplication. Ordinary execution reported all 72 ignored. All-target release Clippy,
+formatting, four measurement-harness tests and three cold/warm pairs passed. Test compilation
+took 39.3 seconds with a 653 MiB monitored process-tree peak; no new resource exception was used.
+Actual family execution stayed below 239 MiB, with at least 23,350 MiB host RAM available across
+this validation. Production source was unchanged since the earlier affected regression runs;
+the complete ordinary Rust suite is also checked by PR CI.
+
 ## Reproduce
 
 ```sh
@@ -225,5 +271,6 @@ G's ESM case additionally requires Node.js, with no package installation. `--kee
 synthetic repositories, independent truth, frozen packets, full command transcripts and ledgers
 outside the scanned repository. Successful fixtures clean up; `--nocapture` still prints their
 cost summaries. The full `efficiency` filter now succeeds for the corrected cases.
-All scenarios remain ignored in ordinary tests and automatic CI. The runner can
-be used by a future manually dispatched workflow; no workflow was added here.
+All scenarios remain ignored in ordinary tests and automatic CI. The
+[manual workflow](development-scenarios.md#manual-github-action) can run individual families
+or the complete set on demand.

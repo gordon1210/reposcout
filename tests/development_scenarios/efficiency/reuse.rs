@@ -61,7 +61,10 @@ fn run(variant: Variant, encoding: &str) {
     let initial_packet = packet_cost(encoding, &world.initial_packet);
     let delta_packet = packet_cost(encoding, &world.delta_packet);
     let initial = limits(4, 8 * 1024, initial_packet.tokens + 2000, 3, 64, None);
-    let followup = if matches!(variant, Variant::Binding) {
+    if matches!(variant, Variant::DisjointBindings) {
+        controls::assert_disjoint_packet_sensitivity(&world);
+    }
+    let followup = if variant.is_binding_change() {
         limits(4, 8 * 1024, delta_packet.tokens + 2400, 2, 32, None)
     } else {
         limits(
@@ -175,4 +178,10 @@ fn unrelated_declaration_edit_reuses_source_under_its_original_identity() {
 #[ignore = "user efficiency case K; changed binding has a separately frozen necessary delta"]
 fn changed_binding_requires_new_binding_and_helper_without_repeating_policy_body() {
     run(Variant::Binding, "o200k_base");
+}
+
+#[test]
+#[ignore = "user efficiency K follow-up; separate binding chunks surround retained policy source"]
+fn disjoint_bindings_retain_middle_policy_and_deliver_both_active_helpers() {
+    run(Variant::DisjointBindings, "o200k_base");
 }

@@ -13,6 +13,7 @@ const REGRESSION: &str = include_str!("test_invoices.py");
 
 const IMPORTS: &str = "from src.models import Invoice\nfrom src.money.rounding import rounded_discount as discount_cent\n";
 const SWITCHED_IMPORTS: &str = "from src.models import Invoice\nfrom src.money.settlement_rounding import settlement_discount as discount_cent\n";
+const MULTILINE_IMPORTS: &str = "from src.models import (\n    Invoice,\n)\nfrom src.money.rounding import (\n    rounded_discount as discount_cent,\n)\n";
 const TARGET: &str = r#"def net_due(invoice: Invoice) -> int:
     """Return payable cents after applying the invoice's basis-point discount."""
     discounted_cents = discount_cent(invoice.amount_cents, invoice.discount_bps)
@@ -63,6 +64,7 @@ pub(super) enum Variant {
     Switched,
     Counterfeit,
     Noise,
+    MultilineBinding,
 }
 
 pub(super) struct InvoiceCase {
@@ -82,6 +84,7 @@ impl InvoiceCase {
         };
         let invoices = match variant {
             Variant::Switched => INVOICES.replacen(IMPORTS, SWITCHED_IMPORTS, 1),
+            Variant::MultilineBinding => multiline_binding_source(),
             Variant::Noise => {
                 let mut source = INVOICES
                     .replace("paginate_invoices", "invoice_page")
@@ -271,12 +274,31 @@ fn packet(variant: Variant) -> Vec<RequiredFragment> {
             SWITCHED_HELPER,
         ),
         Variant::Repaired => (IMPORTS, "src/money/rounding.py", REPAIRED_HELPER),
+        Variant::MultilineBinding => (MULTILINE_IMPORTS, "src/money/rounding.py", BROKEN_HELPER),
         _ => (IMPORTS, "src/money/rounding.py", BROKEN_HELPER),
     };
+    let (binding_start, binding_end, target_start, target_end) =
+        if variant == Variant::MultilineBinding {
+            (41, 46, 49, 52)
+        } else {
+            (1, 2, 5, 8)
+        };
     [
-        ("active module binding", "src/invoices.py", binding, 1, 2),
+        (
+            "active module binding",
+            "src/invoices.py",
+            binding,
+            binding_start,
+            binding_end,
+        ),
         ("cent and basis-point fields", "src/models.py", MODELS, 1, 9),
-        ("known payable definition", "src/invoices.py", TARGET, 5, 8),
+        (
+            "known payable definition",
+            "src/invoices.py",
+            TARGET,
+            target_start,
+            target_end,
+        ),
         ("active rounding change site", helper_path, helper, 1, 5),
         (
             "production regression",
@@ -296,6 +318,18 @@ fn packet(variant: Variant) -> Vec<RequiredFragment> {
         },
     )
     .collect()
+}
+
+fn multiline_binding_source() -> String {
+    let source = INVOICES
+        .strip_prefix(IMPORTS)
+        .unwrap()
+        .trim_start_matches('\n')
+        .strip_prefix(TARGET)
+        .unwrap()
+        .trim_start_matches('\n');
+    let (handlers, remainder) = source.split_once("def preview_invoice").unwrap();
+    format!("{handlers}{MULTILINE_IMPORTS}\n\n{TARGET}\n\ndef preview_invoice{remainder}")
 }
 
 fn nonblank(source: &str) -> usize {

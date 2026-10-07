@@ -8,6 +8,10 @@ within their section.
 
 ### Added
 
+- Add opt-in synthetic development scenarios for review preparation, investigations, repository
+  health and bounded evidence reuse, with an exclusively manual GitHub workflow. A separate Linux
+  measurement tool records known-source cold/warm query costs and individual CLI peak RAM.
+
 - Add explicit `read --range FILE START END` for exact, inclusive physical-line excerpts. Small
   module bindings and changed imports can be retrieved without repeating unrelated function
   bodies; existing snapshot/hash checks, source deduplication and output limits remain shared.

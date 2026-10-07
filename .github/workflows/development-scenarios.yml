@@ -1,0 +1,141 @@
+name: Development scenarios (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      family:
+        description: Synthetic scenario family to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - revisions
+          - navigation
+          - inventory
+          - boundaries
+          - journeys
+          - acceptance
+          - efficiency
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-scenarios-manual
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: never
+  CARGO_BUILD_JOBS: "2"
+
+jobs:
+  scenarios:
+    name: Synthetic development scenarios
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare private diagnostics and fixture storage
+        run: |
+          scenario_root="$RUNNER_TEMP/development-scenarios"
+          mkdir -p "$scenario_root/logs" "$scenario_root/fixtures" "$scenario_root/artifacts"
+          printf 'SCENARIO_ROOT=%s\n' "$scenario_root" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$scenario_root/logs/source-commit.txt"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install Node.js for native ESM fixture probes
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Check one-shot fixture prerequisites
+        run: |
+          python3 --version
+          node --version
+
+      - name: Build release CLI and compile the scenario target
+        timeout-minutes: 20
+        run: |
+          unset CARGO_BIN_EXE_reposcout
+          cargo build --release --locked 2>&1 | tee "$SCENARIO_ROOT/logs/build.log"
+          cargo test --release --locked --test development_scenarios --no-run 2>&1 | tee "$SCENARIO_ROOT/logs/compile.log"
+          cargo test --release --locked --test development_scenarios -- --ignored --list > "$SCENARIO_ROOT/logs/scenarios.txt"
+
+      - name: Run selected families serially
+        timeout-minutes: 25
+        env:
+          SCENARIO_FAMILY: ${{ inputs.family }}
+          REPOSCOUT_SCENARIO_KEEP_FAILED: "1"
+        run: |
+          unset CARGO_BIN_EXE_reposcout
+          export TMPDIR="$SCENARIO_ROOT/fixtures"
+          case "$SCENARIO_FAMILY" in
+            all) families=(revisions navigation inventory boundaries journeys acceptance efficiency) ;;
+            revisions|navigation|inventory|boundaries|journeys|acceptance|efficiency) families=("$SCENARIO_FAMILY") ;;
+            *) printf 'Unsupported scenario family: %s\n' "$SCENARIO_FAMILY" >&2; exit 2 ;;
+          esac
+          if [[ "$SCENARIO_FAMILY" == all ]] && awk -F '::' '/: test$/ && $1 !~ /^(revisions|navigation|inventory|boundaries|journeys|acceptance|efficiency)$/ { found = 1 } END { exit !found }' "$SCENARIO_ROOT/logs/scenarios.txt"; then
+            printf 'A scenario family is missing from the workflow allowlist.\n' >&2
+            exit 2
+          fi
+          overall=0
+          for family in "${families[@]}"; do
+            mapfile -t selected < <(awk -v family="$family" 'index($0, family "::") == 1 && /: test$/ { sub(/: test$/, ""); print }' "$SCENARIO_ROOT/logs/scenarios.txt")
+            if (( ${#selected[@]} == 0 )); then
+              printf 'No ignored development scenarios matched %s.\n' "$family" >&2
+              exit 2
+            fi
+            set +e
+            timeout --signal=TERM --kill-after=10s 180s cargo test --release --locked --test development_scenarios -- "${selected[@]}" --exact --ignored --nocapture 2>&1 | tee "$SCENARIO_ROOT/logs/$family.log"
+            statuses=("${PIPESTATUS[@]}")
+            set -e
+            printf '%s: cargo/timeout exit %s, log exit %s\n' "$family" "${statuses[0]}" "${statuses[1]}" | tee -a "$SCENARIO_ROOT/logs/results.txt" "$GITHUB_STEP_SUMMARY"
+            if (( statuses[0] != 0 || statuses[1] != 0 )); then overall=1; fi
+          done
+          exit "$overall"
+
+      - name: Package bounded diagnostics
+        if: ${{ always() }}
+        timeout-minutes: 2
+        run: |
+          if [[ -z "${SCENARIO_ROOT:-}" || ! -d "$SCENARIO_ROOT/logs" ]]; then exit 0; fi
+          limit=$((64 * 1024 * 1024))
+          logs_bytes=$(du --bytes --summarize "$SCENARIO_ROOT/logs" | cut -f1)
+          fixtures_bytes=$(du --bytes --summarize "$SCENARIO_ROOT/fixtures" | cut -f1)
+          if (( logs_bytes > limit )); then
+            printf 'Diagnostics exceed 64 MiB; retained only the summary and source identity.\n' | tee "$SCENARIO_ROOT/artifacts/omissions.txt" "$GITHUB_STEP_SUMMARY"
+            cp "$SCENARIO_ROOT/logs/source-commit.txt" "$SCENARIO_ROOT/artifacts/"
+            if [[ -f "$SCENARIO_ROOT/logs/results.txt" ]]; then cp "$SCENARIO_ROOT/logs/results.txt" "$SCENARIO_ROOT/artifacts/"; fi
+          elif (( logs_bytes + fixtures_bytes > limit )); then
+            printf 'Retained fixtures exceed the 64 MiB diagnostic budget; fixture archive omitted.\n' | tee "$SCENARIO_ROOT/artifacts/omissions.txt" "$GITHUB_STEP_SUMMARY"
+            tar --one-file-system -czf "$SCENARIO_ROOT/artifacts/diagnostics.tar.gz" -C "$SCENARIO_ROOT" logs
+          else
+            tar --one-file-system -czf "$SCENARIO_ROOT/artifacts/diagnostics.tar.gz" -C "$SCENARIO_ROOT" logs fixtures
+          fi
+
+      - name: Retain diagnostics and synthetic failure reproducers
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: development-scenarios-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/development-scenarios/artifacts/
+          retention-days: 3
+          if-no-files-found: ignore
+          compression-level: 0

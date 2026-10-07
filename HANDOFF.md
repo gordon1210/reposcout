@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-06 · latest release 0.4.1 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-07 · latest release 0.4.1 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 24_
 
 ---
@@ -130,10 +130,10 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   `--changed-definitions` embeds body-free evidence in change-summary/review under its own
   4,096-token / 16,384-byte compact-JSON budget. Agent-summary remains unchanged.
 
-- **Explicit source queries.** On Unix, `read` selects known definitions, explicit complete files or body-free file
+- **Explicit source queries.** On Unix, `read` selects known definitions, exact line ranges, complete files or body-free file
   outlines, with at most 32 targets, eight ambiguity candidates and 100 outline declarations.
   The default output budget is 4,096 tokens / 65,536 bytes including all rendered metadata and
-  newline. Complete definitions or files are delivered or explicitly omitted; no partial-source mode.
+  newline. Each selected definition, range or file is delivered completely or explicitly omitted.
   File reads include module imports and registrations, share overlapping source chunks, and do
   not require declaration extraction. Recognized-format policy and captured identities stay intact.
   Cached definition facts use analyzer version 24 while the additive schema remains 2.0.
@@ -272,11 +272,18 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   Complete CLI responses, arguments, repeated source and phase costs are recorded against the
   original limits; existing acceptance criteria remain unchanged. See the separate
   [efficiency results](docs/user-efficiency-results.md) for observed gaps, validation and limits.
-  Explicit `read --range` closes the two sparse-evidence gaps: all 25 efficiency tests now pass,
+  Explicit `read --range` closes the two sparse-evidence gaps: all 27 efficiency tests now pass,
   including the four formerly red cases. I retrieves its actual binding/helper in four calls;
   K emits five follow-up source lines instead of 12 by retaining the seven unchanged body lines.
-  Only the public I/K drivers changed; frozen requirements, fixtures and budgets remain intact.
-  The results preserve the RED baseline and do not infer model-session savings.
+  Two [follow-up cases](docs/user-efficiency-followups.md) additionally cover later multiline
+  imports and two disjoint binding changes around retained context. They exposed driver gaps,
+  corrected without weakening their frozen obligations or budgets; the original cases stay intact.
+  The results preserve both RED baselines and do not infer model-session savings.
+  A [manual GitHub workflow](.github/workflows/development-scenarios.yml) runs all seven families
+  or one selected family, serially, retaining bounded diagnostics for three days. It has no
+  automatic triggers. The separate Linux [measurement tool](docs/scenario-measurements.md)
+  records cold/warm known-source query costs and individual CLI kernel peak RSS; it is not a
+  discovery benchmark or model harness.
 - **Development install:** `~/.local/bin/reposcoutdev` is a symlink to
   `target/release/reposcout`; `reposcout` is reserved for the public release.
   **Rebuild release after any code change** (`cargo build --release`) — see `AGENTS.md` and
