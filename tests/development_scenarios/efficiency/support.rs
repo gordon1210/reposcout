@@ -394,7 +394,7 @@ fn raw_error_retry_and_repeated_source_all_consume_cost() {
         total.source_paths,
         BTreeSet::from(["invoices.py".to_owned(), "copied.py".to_owned()])
     );
-    assert!(failed.accounting_gaps.is_empty());
+    assert_eq!(failed.accounting_gaps, Vec::<String>::new());
 }
 
 #[test]
@@ -426,7 +426,7 @@ fn public_review_diffs_count_once_and_retain_both_rename_paths() {
         CacheState::Cold,
     );
     command.capture(&counter, &stdout, stderr, Some(0), 0.0);
-    assert!(command.accounting_gaps.is_empty());
+    assert_eq!(command.accounting_gaps, Vec::<String>::new());
     assert_eq!(command.occurrences.len(), 6);
     assert_eq!(
         command.metrics.body_nonblank_lines,
@@ -489,7 +489,7 @@ fn plan_source_uses_its_own_file_ids_and_never_inherits_missing_id_paths() {
         Some(0),
         0.0,
     );
-    assert!(valid.accounting_gaps.is_empty());
+    assert_eq!(valid.accounting_gaps, Vec::<String>::new());
     assert_eq!(
         valid.metrics.source_paths,
         BTreeSet::from(["inner.py".to_owned()])
@@ -576,7 +576,7 @@ fn failed_phase_checkpoints_preserve_episode_and_serialized_metrics() {
         let phase = ledger.checkpoint();
         assert_eq!(phase.metrics.calls, 1);
         assert_eq!(phase.excesses.len(), 2);
-        assert!(phase.accounting_gaps.is_empty());
+        assert_eq!(phase.accounting_gaps, Vec::<String>::new());
     }
     let episode = ledger.finish();
     assert_eq!(episode.metrics.calls, 2);

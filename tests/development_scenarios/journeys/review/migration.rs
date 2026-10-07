@@ -110,15 +110,15 @@ fn assert_lifecycle_inventory(report: &Value) {
             );
             assert_eq!(text(&change["base"], "sha256"), hash(CURRENCY));
             for side in ["base", "head"] {
-                assert!(array(&change[side], "definitions").is_empty());
-                assert!(array(&change[side], "ranges").is_empty());
+                assert_eq!(array(&change[side], "definitions"), &[] as &[Value]);
+                assert_eq!(array(&change[side], "ranges"), &[] as &[Value]);
             }
         } else if side_path(change, "base") == Some("src/invoice.ts") {
             // Only the import path changes. Do not manufacture a changed function.
             assert!(number(change, "hunks") > 0);
             for side in ["base", "head"] {
                 assert_eq!(text(&change[side], "mapping_status"), "available");
-                assert!(array(&change[side], "definitions").is_empty());
+                assert_eq!(array(&change[side], "definitions"), &[] as &[Value]);
             }
         }
     }

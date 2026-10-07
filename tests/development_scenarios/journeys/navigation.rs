@@ -606,7 +606,7 @@ fn caller_identities(report: &Value) -> BTreeSet<(String, String, u64)> {
 fn assert_call_sites(report: &Value, oracle: &RetryOracle) {
     let mut sites = BTreeSet::new();
     for hit in array(&report["hits"]) {
-        assert!(!array(&hit["evidence"]).is_empty());
+        assert_ne!(array(&hit["evidence"]), &[] as &[Value]);
         for edge in array(&hit["evidence"]) {
             assert_eq!(edge["kind"], "call");
             let source = &edge["source"];

@@ -207,7 +207,7 @@ fn read_finding_locations(
         let source = by_id(&read["sources"], &result["source"]);
         assert_eq!(source["file"], file["id"]);
         assert_eq!(source["span"], result["definition"]["source_span"]);
-        assert!(!source["content"].as_str().unwrap().is_empty());
+        assert_ne!(source["content"].as_str().unwrap(), "");
     }
     read
 }

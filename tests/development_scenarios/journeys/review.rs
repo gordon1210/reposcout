@@ -491,7 +491,7 @@ fn assert_guard_discovery(discovery: &ReviewDiscovery, counterpart_side: &str) {
         assert_eq!(text(&definitions[0]["symbol"], "name"), "debit");
         if side == counterpart_side {
             assert_eq!(number(file, "counterpart_definitions"), 1);
-            assert!(array(file, "ranges").is_empty());
+            assert_eq!(array(file, "ranges"), &[] as &[Value]);
         }
         let references: Vec<_> = array(report, "relations")
             .iter()

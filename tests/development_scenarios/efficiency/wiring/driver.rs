@@ -352,7 +352,7 @@ pub(super) fn prepare(
     task: &str,
     encoding: &str,
 ) -> Evidence {
-    assert!(!task.is_empty());
+    assert_ne!(task, "");
     let step = ledger.step(
         journey,
         "discover the supplied pinned wiring comparison",

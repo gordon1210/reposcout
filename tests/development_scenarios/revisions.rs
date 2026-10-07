@@ -505,7 +505,10 @@ fn file_lifecycle_preserves_raw_inventory_without_inventing_text_or_absent_sides
         for side in ["base", "head"] {
             assert_eq!(raw[side]["extraction"], "unsupported");
             assert!(names(&raw[side]).is_empty());
-            assert!(!raw[side]["ranges"].as_array().unwrap().is_empty());
+            assert_ne!(
+                raw[side]["ranges"].as_array().unwrap().as_slice(),
+                &[] as &[Value]
+            );
         }
     }
     assert!(change(&forward, "src/new_feature.ts")["base"].is_null());
@@ -758,7 +761,7 @@ fn read_with_flags(
 
 fn assert_no_source(report: &Value) {
     if let Some(sources) = report.get("sources") {
-        assert!(sources.as_array().unwrap().is_empty());
+        assert_eq!(sources.as_array().unwrap().as_slice(), &[] as &[Value]);
     }
 }
 

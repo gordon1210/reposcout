@@ -38,7 +38,10 @@ pub(super) fn assert_disjoint_packet_sensitivity(world: &QuotaWorld) {
             current_proof: None,
         })
         .collect();
-    assert!(packet_missing(&world.initial_packet, initial.iter()).is_empty());
+    assert_eq!(
+        packet_missing(&world.initial_packet, initial.iter()),
+        Vec::<String>::new()
+    );
     for removed in 0..initial.len() {
         assert!(
             !packet_missing(
@@ -76,7 +79,10 @@ pub(super) fn assert_disjoint_packet_sensitivity(world: &QuotaWorld) {
             }
         })
         .collect();
-    assert!(packet_missing(&world.delta_packet, delta.iter()).is_empty());
+    assert_eq!(
+        packet_missing(&world.delta_packet, delta.iter()),
+        Vec::<String>::new()
+    );
     for removed in 0..delta.len() {
         assert!(
             !packet_missing(
