@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-07 · latest release 0.4.1 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-07 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 24_
 
 ---

@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-07
+
 ### Added
 
 - Add opt-in synthetic development scenarios for review preparation, investigations, repository
@@ -20,6 +22,11 @@ within their section.
 - Add explicit `read --file FILE` for complete, budgeted source including module imports and
   registration tables. Batched file and definition reads share captured identities, snapshot and
   hash checks, source deduplication and output limits; compact defaults remain unchanged.
+
+### Changed
+
+- Update the bundled agent skill for explicit file/range reads, snapshot/hash identity and
+  reuse of unchanged source, including the limits of bounded import-context reads.
 
 ### Fixed
 
