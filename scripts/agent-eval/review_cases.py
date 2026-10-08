@@ -364,7 +364,6 @@ def answer_schema():
         return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
 
     text = {"type": "string"}
-    integer = {"type": "integer"}
     array = lambda items: {"type": "array", "items": items}
     location = {"path": text, "side": {"type": "string", "enum": ["base", "head"]}, "snapshot": text,
                 "start_line": {"type": "integer", "description": "Inclusive 1-based source line number; keep numbering out of quote."},
@@ -374,10 +373,17 @@ def answer_schema():
              "diff markers or Markdown fences. The final newline may be included or omitted."}
     finding = obj({"location": obj(location),
                    "trigger": obj({"input_json": text, "expected_json": text, "actual_json": text}),
-                   "cause": text, "impact": text, "evidence_indices": array(integer)})
+                   "cause": text, "impact": text,
+                   "evidence_indices": array({"type": "integer", "description":
+                       "Zero-based index into this answer's evidence array followed by retained_evidence."})})
     return obj({"conclusion": {"type": "string", "enum": ["issues", "no-issues", "insufficient-evidence"]},
                 "findings": array(finding), "evidence": array(obj({**location, "quote": quote})),
-                "retained_evidence": array(obj({"step": integer, "index": integer,
+                "retained_evidence": array(obj({"step": {"type": "integer", "description":
+                                                    "Zero-based step_id of the earlier review answer supplying the evidence. "
+                                                    "The first review is step 0; this must be less than the current step_id."},
+                                                "index": {"type": "integer", "description":
+                                                    "Zero-based index into that earlier answer's top-level evidence array. "
+                                                    "Its first evidence item is index 0; do not index its retained_evidence array."},
                                                 "side": location["side"], "snapshot": text,
                                                 "retention_proof": text})),
                 "limitations": array(text), "validation": array(text)})
@@ -389,9 +395,13 @@ indentation, characters and interior newlines, without added line numbers, displ
 diff markers or Markdown fences. The final newline may be included or omitted. snapshot is the
 full supplied tree OID and side is base or head. Findings must
 state a concrete trigger as JSON strings input_json, expected_json and actual_json, a cause and a
-user impact. evidence_indices indexes current evidence followed by retained_evidence. A retained
-entry references the earlier step's evidence array, names its side and full tree OID in the current
-comparison, and explains the public evidence that its content matches that side. Previous head
+user impact. Each prompt supplies the current zero-based step_id: the first review is step 0,
+and its first follow-up is step 1. All evidence array indices are zero-based. evidence_indices
+indexes current evidence followed by retained_evidence. Each retained entry's step is the
+originating earlier review's step_id, and index points into that answer's top-level evidence array,
+not its retained_evidence array. For the first evidence item from the first review, use step=0
+and index=0; step must be less than the current step_id. A retained entry names its side and full
+tree OID in the current comparison, and explains the public evidence that its content matches that side. Previous head
 evidence can describe current base; it must not be presented as changed current-head source.
 Do not repeat unchanged source solely to fill the schema. List tests
 actually run separately from suggested checks in validation; never imply a check ran when it did

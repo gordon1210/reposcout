@@ -100,6 +100,13 @@ Different witness representations, including a field-focused result instead of a
 require explicit semantic adjudication. A representation mismatch is not itself a demonstrated
 domain contradiction. The submitted source identities and verbatim quotes remain strictly checked.
 
+Every delivered task states its zero-based `step_id`: the initial review is step 0 and its first
+follow-up is step 1. A retained source reference uses the originating earlier answer's `step_id`
+and a zero-based `index` into that answer's top-level `evidence` array. It does not index an earlier
+`retained_evidence` array. Finding `evidence_indices` instead index the current answer's `evidence`
+followed by its `retained_evidence`. These conventions are shared across all arms and supplied in
+both answer guidance and schema descriptions; the grader does not infer or repair an omitted convention.
+
 Independent adjudication checks the semantic review against a fixed rubric, before exposing arm
 labels or costs. Reviewers and whether they are human or model-assisted are recorded; automated
 reviewer judgments are not presented as human validation. This is best-effort blinding: an answer

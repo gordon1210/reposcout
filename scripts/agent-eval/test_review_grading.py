@@ -193,7 +193,7 @@ class ReviewGradingTests(unittest.TestCase):
     def test_followup_preserves_valid_evidence_and_rejects_stale_source(self):
         case = self.prepare("review-followup")
         evidence = [source_evidence(case, 0, side, path) for side, path in (
-            ("base", "percentage.py"), ("head", "percentage.py"), ("head", "api.py"),
+            ("head", "api.py"), ("base", "percentage.py"), ("head", "percentage.py"),
             ("head", "policy.py"), ("head", "test_storage.py"))]
         finding = {"location": {"path": "percentage.py", "side": "head", "snapshot": case["steps"][0]["head_tree"], "start_line": 4, "end_line": 4},
                    "trigger": {"input_json": '{"used":895,"capacity":1000}', "expected_json": '"clear"', "actual_json": '"warning"'},
@@ -202,18 +202,24 @@ class ReviewGradingTests(unittest.TestCase):
         review_cases.activate_step(case, 1)
         retained = [{"step": 0, "index": item, "side": "head", "snapshot": case["steps"][1]["head_tree"],
                      "retention_proof": "The exact Git tree comparison changes only percentage.py; these files have identical blobs."}
-                    for item in (2, 3, 4)]
+                    for item in (0, 3, 4)]
         second = answer([source_evidence(case, 1, "head", "percentage.py")], retained=retained)
         grade = review_grading.grade_episode(case, [first, second])
         self.assertTrue(grade["automatic"]["passed"])
         self.assertTrue(review_grading.grade_episode(case, [first, second], adjudication(grade))["quality"]["passed"])
-        second["retained_evidence"].append({"step": 0, "index": 1, "side": "base", "snapshot": case["steps"][1]["base_tree"],
+        one_based_origin = copy.deepcopy(second)
+        for item in one_based_origin["retained_evidence"]:
+            item["step"] = 1
+        invalid = review_grading.grade_episode(case, [first, one_based_origin])
+        self.assertIn("invalid-retained-evidence", [item["code"] for item in invalid["automatic"]["hard_errors"]])
+        self.assertFalse(review_grading.grade_episode(case, [first, one_based_origin], adjudication(invalid))["quality"]["passed"])
+        second["retained_evidence"].append({"step": 0, "index": 2, "side": "base", "snapshot": case["steps"][1]["base_tree"],
                                             "retention_proof": "The previous head tree is exactly the current base tree."})
         historical = review_grading.grade_episode(case, [first, second])
         self.assertTrue(historical["automatic"]["passed"])
         self.assertEqual(historical["automatic"]["steps"][1]["evidence"][-1]["side"], "base")
         self.assertEqual(historical["automatic"]["steps"][1]["evidence"][-1]["origin_snapshot"], case["steps"][0]["head_tree"])
-        second["retained_evidence"].append({"step": 0, "index": 1, "side": "head", "snapshot": case["steps"][1]["head_tree"],
+        second["retained_evidence"].append({"step": 0, "index": 2, "side": "head", "snapshot": case["steps"][1]["head_tree"],
                                             "retention_proof": "Assume the old helper is still correct."})
         grade = review_grading.grade_episode(case, [first, second])
         self.assertIn("invalid-retained-evidence", [item["code"] for item in grade["automatic"]["hard_errors"]])

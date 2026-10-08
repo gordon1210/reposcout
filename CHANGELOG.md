@@ -15,6 +15,9 @@ within their section.
 
 ### Fixed
 
+- State the review episode's zero-based step ID and retained-evidence indexing convention in
+  delivered evaluation prompts and answer schemas. Preserve the ambiguous campaign's original
+  strict grades as excluded calibration; do not rewrite answers or relax source checks.
 - Confirm owned evaluation processes have fully exited before accepting transient missing-process
   observations, bind retained execution fences to their PID namespace, and preserve private
   observation diagnostics. Keep failed campaigns and separate recovery evidence intact.

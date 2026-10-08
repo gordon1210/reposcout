@@ -43,6 +43,13 @@ matching command evidence. Pass that JSON file to `report` or `export` with `--a
 Reviewer identities must reflect the model/profile actually used. Superseded judgments retain their
 original attribution and hashes; a fresh independent review does not rename an earlier reviewer.
 
+The supplied prompt identifies the current zero-based `step_id`. Retained references use the
+earlier review's zero-based step and the zero-based index in its top-level `evidence` array:
+`step=0, index=0` identifies the first evidence item from the initial review. Schema descriptions
+and shared guidance deliver the same convention in every arm. Exact source and retained-reference
+checks remain strict; a discovered prompt ambiguity requires a new campaign, not corrected answers
+or retroactively waived grades.
+
 After the eight smoke episodes (ten invocations, including two real follow-ups) have valid isolation, response structure and understood
 accounting, `qualify-smoke CAMPAIGN EVIDENCE.json` records the explicit qualification. The evidence
 contains the exact `plan_sha256`, true `isolation_passed`, `structurally_consumable` and

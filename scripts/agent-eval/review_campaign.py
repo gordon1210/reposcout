@@ -217,7 +217,9 @@ def verify_owned(root):
 def make_prompt(step, variant):
     from review_cases import ANSWER_GUIDANCE
     task = {key: step.get(key) for key in ("step_id", "task", "base_commit", "head_commit", "base_tree", "head_tree", "source_sha256")}
-    common = (step["task"] + "\n\nComparison revisions: base=" + step.get("base_commit", step["base_tree"])
+    common = (step["task"]
+              + f"\n\nCurrent episode step_id: {step['step_id']} (zero-based; the first review is step 0)."
+              + "\nComparison revisions: base=" + step.get("base_commit", step["base_tree"])
               + "; head=" + step.get("head_commit", step["head_tree"])
               + ". Evidence tree identities: base=" + step["base_tree"] + "; head=" + step["head_tree"]
               + ".\n\n" + ANSWER_GUIDANCE + "\n\n"

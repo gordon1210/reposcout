@@ -532,35 +532,55 @@ class ExecutionTests(unittest.TestCase):
                 with self.assertRaises(InvalidLedger):
                     campaign.execute_assignment(plan, assignment, auth, runner=runner)
 
-    def test_followup_resumes_exact_thread_once(self):
+    def test_followup_delivers_step_ids_and_resumes_exact_thread_once(self):
         with tempfile.TemporaryDirectory() as temporary:
-            _, plan = prepared(temporary, "exploratory")
-            assignment = next(run for run in plan["assignments"] if run["case_id"] == "review-followup")
+            _, plan = prepared(temporary, "exploratory", ablation=True)
             auth = Path(temporary) / "synthetic-auth.json"
             auth.write_text("synthetic")
-            resumes = []
-            thread = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-            def runner(spec):
-                resumes.append(spec.resume_thread_id)
-                answer = spec.artifact_dir / "answer.json"
-                campaign.write_new(answer, {"step": len(resumes)})
-                stdout = spec.artifact_dir / "stdout.jsonl"
-                stdout.write_text("synthetic trace")
-                return {"status": "completed", "thread_id": thread, "resumed_thread_id": spec.resume_thread_id,
-                        "stdout_path": str(stdout), "answer_path": str(answer)}
-            def activate(record, index):
-                self.assertEqual(index, record["active_step"] + 1)
-                record["active_step"] = index
-            with patch.object(campaign, "_trial_spec", side_effect=fake_spec), \
-                 patch("review_cases.activate_step", side_effect=activate), \
-                 patch("codex_trace.parse_exec_trace", return_value={"synthetic": True}), \
-                 patch("codex_trace.aggregate_episode", return_value={"invocation_count": 2}), \
-                 patch("review_grading.grade_episode", return_value={"adjudication_status": "pending"}):
-                result = campaign.execute_assignment(plan, assignment, auth, runner=runner, check_pins=False)
-            self.assertEqual(resumes, [None, thread])
-            self.assertEqual(result["status"], "completed")
-            self.assertEqual(result["invocation_count"], 2)
-            self.assertFalse((Path(assignment["run_dir"]) / "controller/auth.json").exists())
+            shared_hashes = [set(), set()]
+            for variant in ("baseline", "reposcout", "reposcout-cli"):
+                with self.subTest(variant=variant):
+                    assignment = next(run for run in plan["assignments"]
+                                      if run["case_id"] == "review-followup" and run["variant"] == variant)
+                    calls = []
+                    thread = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                    def runner(spec):
+                        calls.append(spec)
+                        answer = spec.artifact_dir / "answer.json"
+                        campaign.write_new(answer, {"step": len(calls)})
+                        stdout = spec.artifact_dir / "stdout.jsonl"
+                        stdout.write_text("synthetic trace")
+                        return {"status": "completed", "thread_id": thread,
+                                "resumed_thread_id": spec.resume_thread_id,
+                                "stdout_path": str(stdout), "answer_path": str(answer)}
+                    def activate(record, index):
+                        self.assertEqual(index, record["active_step"] + 1)
+                        record["active_step"] = index
+                    with patch("review_cases.activate_step", side_effect=activate), \
+                            patch("codex_trace.parse_exec_trace", return_value={"synthetic": True}), \
+                            patch("codex_trace.aggregate_episode", return_value={"invocation_count": 2}), \
+                            patch("review_grading.grade_episode", return_value={"adjudication_status": "pending"}):
+                        result = campaign.execute_assignment(plan, assignment, auth, runner=runner, check_pins=False)
+                    self.assertEqual([spec.resume_thread_id for spec in calls], [None, thread])
+                    self.assertEqual(result["status"], "completed")
+                    self.assertEqual(result["invocation_count"], 2)
+                    for step_id, spec in enumerate(calls):
+                        self.assertIn(f"Current episode step_id: {step_id} (zero-based; the first review is step 0).",
+                                      spec.prompt)
+                        guidance = " ".join(spec.prompt.split())
+                        self.assertIn("All evidence array indices are zero-based", guidance)
+                        self.assertIn("use step=0 and index=0", guidance)
+                        self.assertIn("index points into that answer's top-level evidence array", guidance)
+                        retained = spec.answer_schema["properties"]["retained_evidence"]["items"]["properties"]
+                        self.assertIn("Zero-based step_id of the earlier review answer", retained["step"]["description"])
+                        self.assertIn("less than the current step_id", retained["step"]["description"])
+                        self.assertIn("earlier answer's top-level evidence array", retained["index"]["description"])
+                        self.assertIn("do not index its retained_evidence array", retained["index"]["description"])
+                        delivered = read_json(Path(assignment["run_dir"]) / f"step-{step_id}/prompt.json")
+                        self.assertEqual(delivered["prompt"], spec.prompt)
+                        shared_hashes[step_id].add(delivered["shared_prompt_sha256"])
+                    self.assertFalse((Path(assignment["run_dir"]) / "controller/auth.json").exists())
+            self.assertEqual([len(values) for values in shared_hashes], [1, 1])
 
     def test_smoke_quality_failure_does_not_block_harness_qualification(self):
         with tempfile.TemporaryDirectory() as temporary:
