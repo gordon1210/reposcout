@@ -82,6 +82,14 @@ reserve. `prepare --timeout-seconds` can explicitly select a longer episode dead
 explicitly authorized changes are part of the campaign condition.
 Timeouts and interruptions are outcomes, not invisible retries.
 
+Process exit must be established for the whole owned process, including its threads. The
+supervisor retains process descriptors and records bounded observation diagnostics privately.
+A disappearing process entry may receive a bounded terminal-state check; permission errors,
+unconfirmed live identities and persistent observation failures still stop execution. A stale
+execution fence also retains its supervisor's PID namespace, so absence in another namespace
+cannot clear it. Separate verified recovery evidence may permit retiring a fence; it never
+rewrites an aborted outcome or restores missing usage observations.
+
 ## Quality and skill behavior
 
 Structured review answers identify the trigger, expected and actual behavior, cause, user impact

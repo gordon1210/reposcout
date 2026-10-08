@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import errno
 import fcntl
 import hashlib
 import json
@@ -9,6 +10,7 @@ import math
 import os
 from pathlib import Path
 import selectors
+import select
 import re
 import signal
 import stat
@@ -74,13 +76,15 @@ def _memory_available():
     raise OSError("Host available-memory measurement is unavailable")
 
 
-def _process_identity(pid):
+def _process_identity(pid, *, on_error=None):
     try:
         raw = Path(f"/proc/{pid}/stat").read_text()
         fields = raw[raw.rfind(")") + 2:].split()
         return {"pid": pid, "ppid": int(fields[1]), "state": fields[0], "start": int(fields[19]),
                 "rss": max(0, int(fields[21])) * os.sysconf("SC_PAGE_SIZE")}
-    except (OSError, ValueError, IndexError):
+    except (OSError, ValueError, IndexError) as error:
+        if on_error is not None:
+            on_error(error)
         return None
 
 
@@ -94,17 +98,47 @@ def _path_may_exist(path):
     return True
 
 
-def _process_children(pid):
+def _process_children(pid, *, on_error=None):
     # glob suppresses directory-read errors, which would hide live descendants.
     children = []
-    for task in Path(f"/proc/{pid}/task").iterdir():
-        try:
-            children.extend(int(value) for value in (task / "children").read_text().split())
-        except FileNotFoundError:
-            if _path_may_exist(task):
-                raise
-            # A thread may exit while its process and other threads remain live.
+    operation, tid = "list-tasks", None
+    try:
+        tasks = iter(Path(f"/proc/{pid}/task").iterdir())
+        while True:
+            operation, tid = "list-tasks", None
+            task = next(tasks, None)
+            if task is None:
+                break
+            operation, tid = "read-children", int(task.name)
+            try:
+                children.extend(int(value) for value in (task / "children").read_text().split())
+            except FileNotFoundError:
+                if _path_may_exist(task):
+                    raise
+                # A thread may exit while its process and other threads remain live.
+    except (OSError, ValueError) as error:
+        if on_error is not None:
+            on_error(operation, error, tid)
+        raise
     return children
+
+
+def _pidfd_terminal(descriptor, *, wait_ms=0):
+    """A flags=0 pidfd becomes ready only after the last thread has exited."""
+    poller = select.poll()
+    poller.register(descriptor, select.POLLIN)
+    events = poller.poll(wait_ms)
+    masks = [mask for fd, mask in events if fd == descriptor]
+    if any(mask & (select.POLLERR | select.POLLNVAL) for mask in masks):
+        raise OSError(errno.EBADF, "Cannot observe retained process descriptor")
+    return any(mask & (select.POLLIN | select.POLLHUP) for mask in masks)
+
+
+def _pid_namespace():
+    value = str(Path("/proc/self/ns/pid").readlink())
+    if re.fullmatch(r"pid:\[\d+\]", value) is None:
+        raise IsolationError("Supervisor PID namespace identity is unavailable")
+    return value
 
 
 class OwnedProcesses:
@@ -117,6 +151,9 @@ class OwnedProcesses:
         self.tracking_failed = False
         self.untracked_identities = {}
         self.scan_started = {}
+        self.observation_errors = []
+        self.observation_errors_dropped = 0
+        self.confirmed_exit_races = 0
         self.clock = clock
         if observe:
             self.observe()
@@ -129,21 +166,60 @@ class OwnedProcesses:
         identities = {**self.identities, **self.untracked_identities}
         return [{"pid": pid, "start": value["start"]} for pid, value in sorted(identities.items())]
 
+    def _note_error(self, operation, pid, error, *, tid=None, start=None):
+        # Private metadata only: exception messages can contain unrelated paths.
+        identity = self.identities.get(pid, self.untracked_identities.get(pid, {}))
+        record = {"operation": operation, "pid": pid,
+                  "start": identity.get("start") if start is None else start,
+                  "tid": tid, "errno": getattr(error, "errno", None),
+                  "error_type": type(error).__name__}
+        if record in self.observation_errors:
+            return
+        if len(self.observation_errors) == 64:
+            self.observation_errors.pop(0)
+            self.observation_errors_dropped += 1
+        self.observation_errors.append(record)
+
+    def _identity(self, pid, operation="read-stat", *, start=None):
+        return _process_identity(pid, on_error=lambda error: self._note_error(operation, pid, error, start=start))
+
     def _same_parent(self, identity, parent_pid, parent_start):
-        parent = _process_identity(parent_pid)
+        parent = self._identity(parent_pid, "read-parent-stat")
         if parent is None and parent_pid in self.identities:
             self._observation_failed(self.identities[parent_pid])
         return (identity.get("ppid") == parent_pid and parent is not None
                 and parent["start"] == parent_start)
 
-    def _observation_failed(self, identity):
-        if _record_alive(identity):
-            self.tracking_failed = True
-            self.untracked_identities[identity["pid"]] = identity
+    def _alive(self, identity):
+        descriptor = self.pidfds.get(identity["pid"])
+        retained = self.identities.get(identity["pid"])
+        if descriptor is not None and retained is not None and retained["start"] == identity["start"]:
+            try:
+                return not _pidfd_terminal(descriptor)
+            except OSError as error:
+                self._note_error("poll-pidfd", identity["pid"], error, start=identity["start"])
+                self.tracking_failed = True
+                self.untracked_identities[identity["pid"]] = identity
+                return True
+        return _record_alive(identity)
+
+    def _observation_failed(self, identity, *, error=None):
+        if not self._alive(identity):
+            return
+        descriptor = self.pidfds.get(identity["pid"])
+        if descriptor is not None and getattr(error, "errno", None) in (errno.ENOENT, errno.ESRCH):
+            try:
+                if _pidfd_terminal(descriptor, wait_ms=10):
+                    self.confirmed_exit_races += 1
+                    return
+            except OSError as poll_error:
+                self._note_error("poll-pidfd", identity["pid"], poll_error, start=identity["start"])
+        self.tracking_failed = True
+        self.untracked_identities[identity["pid"]] = identity
 
     def observe(self):
         for pid, descriptor in list(self.pidfds.items()):
-            if pid != self.root_pid and not _record_alive(self.identities[pid]):
+            if pid != self.root_pid and not self._alive(self.identities[pid]):
                 self.scan_started.pop((pid, self.identities[pid]["start"]), None)
                 os.close(descriptor)
                 del self.pidfds[pid]
@@ -156,7 +232,7 @@ class OwnedProcesses:
             if pid in visited:
                 continue
             visited.add(pid)
-            identity = _process_identity(pid)
+            identity = self._identity(pid)
             if identity is None:
                 if pid in self.identities:
                     self._observation_failed(self.identities[pid])
@@ -171,12 +247,13 @@ class OwnedProcesses:
                     continue
                 try:
                     descriptor = os.pidfd_open(pid, 0)
-                except (OSError, AttributeError):
+                except (OSError, AttributeError) as error:
+                    self._note_error("pidfd-open", pid, error, start=identity["start"])
                     if _record_alive(identity):
                         self.tracking_failed = True
                         self.untracked_identities[pid] = identity
                     continue
-                current = _process_identity(pid)
+                current = self._identity(pid, "verify-pidfd-stat", start=identity["start"])
                 if (current is None or current["start"] != identity["start"]
                         or (pid != self.root_pid and not self._same_parent(current, parent_pid, parent_start))):
                     os.close(descriptor)
@@ -186,7 +263,7 @@ class OwnedProcesses:
                 self.identities[pid] = identity
                 self.pidfds[pid] = descriptor
                 identity = current
-            if identity["state"] in ("Z", "X"):
+            if not self._alive(identity):
                 continue
             rss += identity["rss"]
             try:
@@ -198,15 +275,23 @@ class OwnedProcesses:
                     self.scan_started.setdefault(scan_identity, self.clock())
                 else:
                     self.scan_started.pop(scan_identity, None)
-                pending.extend((child, pid, identity["start"]) for child in _process_children(pid))
-            except (OSError, ValueError):
-                self._observation_failed(identity)
+            except (OSError, ValueError) as error:
+                self._note_error("read-exe", pid, error, start=identity["start"])
+                self._observation_failed(identity, error=error)
+                continue
+            try:
+                children = _process_children(pid, on_error=lambda operation, error, tid: self._note_error(
+                    operation, pid, error, tid=tid, start=identity["start"],
+                ))
+                pending.extend((child, pid, identity["start"]) for child in children)
+            except (OSError, ValueError) as error:
+                self._observation_failed(identity, error=error)
         return rss, scans
 
     def reposcout_timed_out(self):
         now = self.clock()
         for (pid, start), began in list(self.scan_started.items()):
-            if not _record_alive({"pid": pid, "start": start}):
+            if not self._alive({"pid": pid, "start": start}):
                 del self.scan_started[(pid, start)]
             elif now - began >= REPOSCOUT_CHILD_TIMEOUT_SECONDS:
                 return True
@@ -215,7 +300,7 @@ class OwnedProcesses:
     def living(self):
         return [
             pid for pid, old in self.identities.items()
-            if _record_alive(old)
+            if self._alive(old)
         ]
 
     def signal(self, sig):
@@ -237,7 +322,9 @@ def _record_alive(record):
     """Unknown proc access is not proof of exit; a different start identity is."""
     current = _process_identity(record["pid"])
     if current is not None:
-        return current["start"] == record["start"] and current["state"] not in ("Z", "X")
+        # A zombie group leader can still have live threads. Without a retained
+        # process-wide pidfd, only disappearance or a new birth proves exit.
+        return current["start"] == record["start"]
     return _path_may_exist(Path(f'/proc/{record["pid"]}'))
 
 
@@ -262,6 +349,7 @@ class SerialLease:
 
     def guard(self, result):
         self.result = result
+        result["supervisor_pid_namespace"] = self.pid_namespace
 
     def _store(self, value):
         data = json.dumps(value, sort_keys=True).encode() if value else b""
@@ -282,6 +370,7 @@ class SerialLease:
             os.close(self.fd)
             raise IsolationError("Another evaluation already owns the serial execution lease") from None
         try:
+            self.pid_namespace = _pid_namespace()
             raw = os.read(self.fd, 65537)
             if raw:
                 fence = json.loads(raw)
@@ -289,6 +378,7 @@ class SerialLease:
                     raise IsolationError("Invalid serialization fence")
                 records = fence.get("owned_processes")
                 if (len(raw) > 65536 or fence.get("ownership_complete") is not True
+                        or fence.get("supervisor_pid_namespace") != self.pid_namespace
                         or not isinstance(records, list) or not records
                         or any(not isinstance(item, dict) or type(item.get("pid")) is not int
                                or item["pid"] <= 0 or type(item.get("start")) is not int
@@ -308,6 +398,7 @@ class SerialLease:
                 try:
                     self._store({"schema": 1, "ownership_complete": self.result.get("ownership_complete", False),
                                  "owned_processes": self.result.get("owned_processes", []),
+                                 "supervisor_pid_namespace": self.pid_namespace,
                                  "reason": "unconfirmed-process-cleanup"})
                     self.result["serial_fence_written"] = True
                 except OSError:
@@ -334,6 +425,8 @@ def execute_process(command, *, input_bytes, stdout_path, stderr_path, timeout_s
         "stdout_truncated": False, "stderr_truncated": False,
         "stdout_total_bytes": 0, "stderr_total_bytes": 0,
         "owned_processes": [], "ownership_complete": True,
+        "observation_errors": [], "observation_errors_dropped": 0,
+        "confirmed_exit_races": 0,
     }
     try:
         if _memory_available() < host_memory_reserve_bytes:
@@ -481,6 +574,9 @@ def execute_process(command, *, input_bytes, stdout_path, stderr_path, timeout_s
         base["ownership_complete"] = owned.root_confirmed and not owned.tracking_failed
         base["process_tree_drained"] = base["process_tree_drained"] and base["ownership_complete"]
         base["owned_processes"] = owned.records()
+        base["observation_errors"] = owned.observation_errors
+        base["observation_errors_dropped"] = owned.observation_errors_dropped
+        base["confirmed_exit_races"] = owned.confirmed_exit_races
         for resource in [process.stdin, process.stdout, process.stderr, *files.values(), selector, owned]:
             if resource is not None:
                 try:

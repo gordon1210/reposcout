@@ -9,9 +9,13 @@ import unittest
 from unittest import mock
 import uuid
 import signal
+import select
 from types import SimpleNamespace
 
-from codex_runner import OwnedProcesses, SerialLease, _drain_owned_processes, _process_children, execute_process, run_trial
+from codex_runner import (
+    OwnedProcesses, SerialLease, _drain_owned_processes, _pidfd_terminal,
+    _process_children, _record_alive, execute_process, run_trial,
+)
 from codex_isolation import IsolationError, PROBE_CHECKS, prepare_isolation
 from test_codex_isolation import prepared_spec
 
@@ -204,6 +208,29 @@ class RunnerTests(unittest.TestCase):
                 pass
         self.assertEqual(self.lease_path.read_bytes(), b"")
 
+    def test_serial_fence_cannot_infer_exit_from_a_different_pid_namespace(self):
+        result = {"process_tree_drained": False, "ownership_complete": True,
+                  "owned_processes": [{"pid": 123, "start": 500}]}
+        with mock.patch("codex_runner._pid_namespace", return_value="pid:[111]"):
+            with SerialLease(self.lease_path) as lease:
+                lease.guard(result)
+        before = self.lease_path.read_bytes()
+        with mock.patch("codex_runner._pid_namespace", return_value="pid:[222]"), \
+                mock.patch("codex_runner._record_alive", return_value=False) as alive:
+            with self.assertRaisesRegex(IsolationError, "unconfirmed"):
+                with SerialLease(self.lease_path):
+                    self.fail("A private proc view must not clear a host-scoped fence")
+        alive.assert_not_called()
+        self.assertEqual(self.lease_path.read_bytes(), before)
+
+    def test_legacy_fence_without_namespace_identity_remains_unknown(self):
+        self.lease_path.write_text(json.dumps({"ownership_complete": True,
+                                              "owned_processes": [{"pid": 123, "start": 500}]}))
+        with mock.patch("codex_runner._record_alive", return_value=False):
+            with self.assertRaisesRegex(IsolationError, "unconfirmed"):
+                with SerialLease(self.lease_path):
+                    self.fail("A fence without observation scope cannot prove exit")
+
     def test_parent_can_pin_an_explicit_future_configuration(self):
         fake = FakeExecutor()
         configured = replace(self.spec, model="explicit-future-model", effort="high", timeout_seconds=40)
@@ -251,6 +278,11 @@ class RunnerTests(unittest.TestCase):
 
 
 class ProcessOwnershipTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch("codex_runner._pidfd_terminal", return_value=False)
+        self.terminal = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @staticmethod
     def identity(pid, start, ppid=1):
         return {"pid": pid, "ppid": ppid, "start": start, "state": "S", "rss": 4096}
@@ -295,7 +327,7 @@ class ProcessOwnershipTests(unittest.TestCase):
         parent, child = self.identity(123, 100), self.identity(456, 300, ppid=123)
         owned.identities[123] = parent
         owned.pidfds[123] = 91
-        with mock.patch("codex_runner._process_identity", side_effect=lambda pid: parent if pid == 123 else child), \
+        with mock.patch("codex_runner._process_identity", side_effect=lambda pid, **_: parent if pid == 123 else child), \
                 mock.patch("codex_runner.Path.readlink", return_value=Path("/usr/bin/bash")), \
                 mock.patch("codex_runner._process_children", return_value=[456]), \
                 mock.patch("codex_runner.os.pidfd_open", side_effect=OSError(errno.EMFILE, "synthetic descriptor exhaustion")), \
@@ -331,16 +363,130 @@ class ProcessOwnershipTests(unittest.TestCase):
         self.assertTrue(owned.tracking_failed)
         self.assertEqual(owned.records(), [{"pid": 123, "start": 100}])
 
+    def test_observation_diagnostics_bind_operation_identity_and_errno_without_error_text(self):
+        owned = OwnedProcesses(123, observe=False)
+        owned.identities[123] = self.identity(123, 100)
+        owned.pidfds[123] = 91
+        with mock.patch("codex_runner.Path.read_text", side_effect=PermissionError(errno.EACCES, "private path")), \
+                mock.patch("codex_runner._record_alive", return_value=True):
+            owned.observe()
+        self.assertTrue(owned.tracking_failed)
+        self.assertEqual(owned.observation_errors, [{
+            "operation": "read-stat", "pid": 123, "start": 100, "tid": None,
+            "errno": errno.EACCES, "error_type": "PermissionError",
+        }])
+        self.assertNotIn("private path", json.dumps(owned.observation_errors))
+
+    def test_children_diagnostic_identifies_exact_task_and_operation(self):
+        diagnostics = []
+        with mock.patch("codex_runner.Path.iterdir", return_value=[Path("/proc/123/task/456")]), \
+                mock.patch("codex_runner.Path.read_text", side_effect=PermissionError(errno.EACCES, "private path")):
+            with self.assertRaises(PermissionError):
+                _process_children(123, on_error=lambda operation, error, tid: diagnostics.append(
+                    (operation, error.errno, tid),
+                ))
+        self.assertEqual(diagnostics, [("read-children", errno.EACCES, 456)])
+
+    def test_observation_diagnostics_are_bounded_and_deduplicated(self):
+        owned = OwnedProcesses(123, observe=False)
+        for tid in range(70):
+            owned._note_error("read-children", 123, PermissionError(errno.EACCES, "ignored"), tid=tid)
+        owned._note_error("read-children", 123, PermissionError(errno.EACCES, "ignored"), tid=69)
+        self.assertEqual(len(owned.observation_errors), 64)
+        self.assertEqual(owned.observation_errors_dropped, 6)
+        self.assertEqual(owned.observation_errors[0]["tid"], 6)
+        self.assertEqual(owned.observation_errors[-1]["tid"], 69)
+
     def test_exited_identity_during_observation_does_not_create_incomplete_fence(self):
         owned = OwnedProcesses(123, observe=False)
         owned.identities[123] = self.identity(123, 100)
         owned.pidfds[123] = 91
+        self.terminal.side_effect = (False, True)
         with mock.patch("codex_runner._process_identity", return_value=owned.identities[123]), \
-                mock.patch("codex_runner.Path.readlink", side_effect=FileNotFoundError), \
-                mock.patch("codex_runner._record_alive", return_value=False):
+                mock.patch("codex_runner.Path.readlink", side_effect=FileNotFoundError):
             owned.observe()
         self.assertFalse(owned.tracking_failed)
         self.assertEqual(owned.untracked_identities, {})
+
+    def test_enoent_waits_only_for_confirmed_whole_process_exit(self):
+        for terminal in (False, True):
+            with self.subTest(terminal=terminal):
+                owned = OwnedProcesses(123, observe=False)
+                identity = self.identity(123, 100)
+                owned.identities[123], owned.pidfds[123] = identity, 91
+                self.terminal.reset_mock()
+                self.terminal.side_effect = (False, terminal)
+                owned._observation_failed(identity, error=FileNotFoundError(errno.ENOENT, "gone exe"))
+                self.assertEqual(owned.tracking_failed, not terminal)
+                self.assertEqual(owned.confirmed_exit_races, int(terminal))
+                self.assertEqual(self.terminal.call_args_list, [mock.call(91), mock.call(91, wait_ms=10)])
+
+    def test_live_permission_denial_and_missing_pidfd_never_receive_exit_grace(self):
+        owned = OwnedProcesses(123, observe=False)
+        identity = self.identity(123, 100)
+        owned.identities[123], owned.pidfds[123] = identity, 91
+        owned._observation_failed(identity, error=PermissionError(errno.EACCES, "denied"))
+        self.assertTrue(owned.tracking_failed)
+        self.terminal.assert_called_once_with(91)
+        self.terminal.reset_mock()
+        unknown = OwnedProcesses(456, observe=False)
+        with mock.patch("codex_runner._record_alive", return_value=True):
+            unknown._observation_failed(self.identity(456, 200), error=FileNotFoundError(errno.ENOENT, "gone exe"))
+        self.assertTrue(unknown.tracking_failed)
+        self.terminal.assert_not_called()
+
+    def test_zombie_group_leader_with_nonterminal_pidfd_is_live_and_not_pruned(self):
+        owned = OwnedProcesses(123, observe=False)
+        identities = {123: self.identity(123, 100), 456: self.identity(456, 200, ppid=123)}
+        identities[456]["state"] = "Z"
+        owned.identities.update(identities)
+        owned.pidfds.update({123: 91, 456: 92})
+
+        def executable(path):
+            if str(path) == "/proc/456/exe":
+                raise FileNotFoundError(errno.ENOENT, "leader exited while workers remain")
+            return Path("/usr/bin/bash")
+
+        with mock.patch("codex_runner._process_identity", side_effect=lambda pid, **_: identities.get(pid)), \
+                mock.patch("codex_runner.Path.readlink", new=executable), \
+                mock.patch("codex_runner._process_children", return_value=[]), \
+                mock.patch("codex_runner.os.close") as close:
+            owned.observe()
+            self.assertEqual(set(owned.living()), {123, 456})
+            self.assertTrue(owned.tracking_failed)
+            close.assert_not_called()
+            self.terminal.side_effect = lambda fd, **_: fd == 92
+            owned.observe()
+            self.assertEqual(owned.living(), [123])
+        close.assert_called_once_with(92)
+        self.assertTrue(owned.tracking_failed)
+
+    def test_stale_record_without_pidfd_does_not_treat_zombie_leader_as_drained(self):
+        identity = {**self.identity(123, 100), "state": "Z"}
+        with mock.patch("codex_runner._process_identity", return_value=identity):
+            self.assertTrue(_record_alive({"pid": 123, "start": 100}))
+            self.assertFalse(_record_alive({"pid": 123, "start": 99}))
+
+    def test_pidfd_terminal_requires_positive_terminal_masks_and_rejects_errors(self):
+        for mask in (select.POLLIN, select.POLLHUP, select.POLLIN | select.POLLHUP, 0,
+                     select.POLLERR, select.POLLNVAL, select.POLLIN | select.POLLERR):
+            with self.subTest(mask=mask), mock.patch("codex_runner.select.poll") as poll:
+                poll.return_value.poll.return_value = [(91, mask)] if mask else []
+                if mask & (select.POLLERR | select.POLLNVAL):
+                    with self.assertRaises(OSError):
+                        _pidfd_terminal(91, wait_ms=10)
+                else:
+                    self.assertEqual(_pidfd_terminal(91, wait_ms=10), bool(mask))
+                poll.return_value.register.assert_called_once_with(91, select.POLLIN)
+                poll.return_value.poll.assert_called_once_with(10)
+
+    def test_pidfd_poll_error_never_proves_drainage(self):
+        owned = OwnedProcesses(123, observe=False)
+        owned.identities[123], owned.pidfds[123] = self.identity(123, 100), 91
+        self.terminal.side_effect = OSError(errno.EBADF, "unobservable descriptor")
+        self.assertEqual(owned.living(), [123])
+        self.assertTrue(owned.tracking_failed)
+        self.assertEqual(owned.observation_errors[0]["operation"], "poll-pidfd")
 
     def test_task_enumeration_error_propagates_but_exited_thread_is_ignored(self):
         with mock.patch("codex_runner.Path.iterdir", side_effect=PermissionError):
@@ -357,11 +503,12 @@ class ProcessOwnershipTests(unittest.TestCase):
         current = {123: self.identity(123, 100), 456: self.identity(456, 300, ppid=123)}
         owned.identities.update(current)
         owned.pidfds.update({123: 91, 456: 92})
+        self.terminal.side_effect = lambda fd, **_: fd == 92 and current[456]["start"] != 300
 
         def executable(path):
             return Path("/opt/tools/reposcoutdev" if str(path) == "/proc/456/exe" else "/opt/codex/bin/codex")
 
-        with mock.patch("codex_runner._process_identity", side_effect=current.get), \
+        with mock.patch("codex_runner._process_identity", side_effect=lambda pid, **_: current.get(pid)), \
                 mock.patch("codex_runner.Path.readlink", new=executable), \
                 mock.patch("codex_runner._process_children", return_value=[]), \
                 mock.patch("codex_runner.os.close") as close:
@@ -402,6 +549,9 @@ class ProcessOwnershipTests(unittest.TestCase):
                 owned = mock.Mock()
                 owned.root_confirmed = True
                 owned.tracking_failed = False
+                owned.observation_errors = []
+                owned.observation_errors_dropped = 0
+                owned.confirmed_exit_races = 0
                 owned.observe.return_value = (512, int(scan_timed_out))
                 owned.reposcout_timed_out.return_value = scan_timed_out
                 owned.living.return_value = []
@@ -440,6 +590,10 @@ class ProcessOwnershipTests(unittest.TestCase):
         owned = mock.Mock()
         owned.root_confirmed = True
         owned.tracking_failed = False
+        owned.observation_errors = [{"operation": "read-exe", "pid": 123, "start": 100,
+                                     "tid": None, "errno": errno.ENOENT, "error_type": "FileNotFoundError"}]
+        owned.observation_errors_dropped = 0
+        owned.confirmed_exit_races = 0
         owned.observe.return_value = (4096, 0)
         owned.living.return_value = []
         owned.records.return_value = [{"pid": 123, "start": 100}]
@@ -456,6 +610,7 @@ class ProcessOwnershipTests(unittest.TestCase):
         self.assertTrue(result["process_tree_drained"])
         self.assertTrue(result["ownership_complete"])
         self.assertEqual(result["owned_processes"], [{"pid": 123, "start": 100}])
+        self.assertEqual(result["observation_errors"], owned.observation_errors)
         self.assertFalse(result["stream_complete"])
         owned.signal.assert_called_once_with(signal.SIGKILL)
         self.assertTrue(process.stdout.closed and process.stderr.closed and process.stdin.closed)
