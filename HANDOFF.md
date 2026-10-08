@@ -145,7 +145,15 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   basis; it does not replace historical ledgers or imply complete billing data. Evaluate input,
   cache-write, cache-read and output separately; input includes cache read. Episode totals exclude
   separate orchestration and independent judging. Live model runs stay outside ordinary CI.
-  Private raw records and adjudication provenance stay outside Git.
+  Private raw records, detailed exports, packets and adjudication provenance stay outside Git;
+  campaign preparation defaults to a fresh private temporary directory. Explicit output paths
+  reject Git checkouts and symlink aliases. `publish` emits only a strict typed public summary
+  of every assigned outcome and the four nullable token fields. The publication policy rejects
+  raw result trees, archives and authoring receipts; historical pilot bytes stay pinned.
+  The repository-owned pre-push hook checks all outgoing commit versions, while the CLI gate
+  reads exact index/commit objects. It is a scoped artifact policy, not a generic privacy scanner.
+  Runtime-specific usage calibration is an explicit private input, with unknown scope by default.
+  External fixture source reads enforce byte/file ceilings before opening excess data.
   Results must retain adverse and unknown outcomes; offline harness tests do not
   establish review improvements or model-token savings. External fixture presets
   support bounded development, heldout and follow-up tasks with fixed schedules.

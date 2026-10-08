@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import stat
 import subprocess
 import sys
 import tempfile
@@ -86,15 +87,36 @@ def _safe_path(value):
     return path
 
 
-def _directory_files(directory):
+def _directory_files(directory, *, max_files, max_bytes):
     require(directory.is_dir() and not directory.is_symlink(), "missing fixture directory")
     result = {}
-    for path in sorted(directory.rglob("*")):
-        require(not path.is_symlink(), "fixture symlinks are forbidden")
-        if path.is_file():
-            name = path.relative_to(directory).as_posix()
-            _safe_path(name)
-            result[name] = path.read_text(encoding="utf-8")
+    total = 0
+    seen = 0
+    pending = [directory]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                seen += 1
+                require(seen <= max_files * 16, "review fixture directory exceeds bounds")
+                metadata = entry.stat(follow_symlinks=False)
+                mode = metadata.st_mode
+                require(not stat.S_ISLNK(mode), "fixture symlinks are forbidden")
+                path = Path(entry.path)
+                if stat.S_ISDIR(mode):
+                    pending.append(path)
+                    continue
+                require(stat.S_ISREG(mode), "fixture source must be a regular file")
+                name = path.relative_to(directory).as_posix()
+                _safe_path(name)
+                require(len(result) < max_files and metadata.st_size <= max_bytes - total,
+                        "review fixture exceeds bounds")
+                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(descriptor, "rb") as stream:
+                    require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), "fixture source must be a regular file")
+                    data = stream.read(max_bytes - total + 1)
+                total += len(data)
+                require(total <= max_bytes, "review fixture exceeds bounds")
+                result[name] = data.decode("utf-8")
     return result
 
 
@@ -105,7 +127,8 @@ def snapshots(case_id, *, bundle_root=None):
     folder = root / case_id
     base_directory = case.get("base_directory")
     base = root / _safe_path(base_directory) if base_directory is not None else folder / "base"
-    current = _directory_files(base)
+    max_files, max_bytes = _source_limits(bundle_root)
+    current = _directory_files(base, max_files=max_files, max_bytes=max_bytes)
     current["AGENTS.md"] = PUBLIC_RULES
     check_readme = "# Application checks\n\nRun the checked-in request assertions with:\n\n```sh\n" + " ".join(check_command(case_id, bundle_root)) + "\n```\n\nNo dependency installation or service is required.\n"
     if bundle_root is not None and "README.md" in current:
@@ -113,8 +136,6 @@ def snapshots(case_id, *, bundle_root=None):
         current["REVIEW_CHECKS.md"] = check_readme
     else:
         current["README.md"] = check_readme
-    max_files, max_bytes = _source_limits(bundle_root)
-
     def within_bounds(files):
         require(len(files) <= max_files and sum(len(text.encode()) for text in files.values()) <= max_bytes,
                 "review fixture exceeds bounds")
@@ -124,7 +145,7 @@ def snapshots(case_id, *, bundle_root=None):
     for revision in case["revisions"]:
         _safe_path(revision)
         require("/" not in revision, "revision must be a single path component")
-        current = {**current, **_directory_files(folder / revision)}
+        current = {**current, **_directory_files(folder / revision, max_files=max_files, max_bytes=max_bytes)}
         for path in case.get("deletions", {}).get(revision, []):
             _safe_path(path)
             current.pop(path, None)
@@ -304,9 +325,10 @@ def _workspace_fingerprint(workspace):
 def prepare_case(case_id, destination, *, private_directory=None, signer=None, bundle_root=None):
     """Create a new public repository and a sibling private oracle, without running application code."""
     case = _case(case_id, bundle_root)
-    workspace = Path(destination).resolve()
+    from publication import private_destination
+    workspace = private_destination(destination)
     require(not workspace.exists(), "review workspace already exists")
-    private = Path(private_directory).resolve() if private_directory else workspace.parent / (workspace.name + "-private")
+    private = private_destination(private_directory) if private_directory else workspace.parent / (workspace.name + "-private")
     require(private != workspace and not private.is_relative_to(workspace) and not workspace.is_relative_to(private),
             "oracle and workspace must be separate directory trees")
     require(not private.exists(), "private review directory already exists")

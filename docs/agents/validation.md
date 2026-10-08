@@ -192,7 +192,15 @@ ask the user.
   including failed, interrupted and unmeasured runs; never replace adverse results silently.
   Expected behavior comes from independent domain requirements and probes, not RepoScout output.
   Keep quality, skill behavior, tool/source bytes, observed model usage and monetary cost distinct.
-  Missing usage fields stay unknown. See [Codex review evaluations](../codex-review-evaluation.md).
+  Missing usage fields stay unknown. Raw records, detailed reports, private packets and local
+  provenance must remain outside Git. Use only `review_campaign.py publish` for an explicitly
+  requested public summary, and run `python3 -B scripts/agent-eval/publication.py` before publishing
+  changes to evaluation files. This checks staged Git objects. The repository-owned
+  `.githooks/pre-push` checks all outgoing commit versions when enabled for the intended checkout
+  with `git config --local core.hooksPath .githooks`; the CI check validates committed objects.
+  This scoped artifact policy is not a generic privacy scanner. Never attach raw archives or
+  controller reports. Historical campaign evidence remains private; retain adverse outcomes and do not silently replace them.
+  See [Codex review evaluations](../codex-review-evaluation.md).
 - `tests/dup_languages.rs` consumes `tests/fixtures/dup_languages.toml` and requires actionable
   exact and Type-2 findings for every canonical `lang::detect` format through the frozen detector
   APIs and CLI JSON contract. Keep its explicit 36-format set synchronized with language support.

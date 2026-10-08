@@ -159,8 +159,8 @@ Do not assume a disjoint cache-write partition without supporting evidence. Outp
 includes observed reasoning; any reasoning breakdown is supplementary.
 Input contains cached input exactly once; output contains reasoning exactly once when those
 relationships are established by the supported export. Cumulative session counters must not be
-added again on resume. The supported binary and observed counter scope are bound to a recorded
-calibration; other binaries retain unknown scope until verified. The current exec adapter is a separate, explicitly identified observation
+added again on resume. `prepare --usage-calibration FILE` binds an explicit private counter proof
+to the chosen binary/version and model/effort. Without that proof the scope remains unknown. The current exec adapter is a separate, explicitly identified observation
 basis; it does not weaken the historical final-provider-call or native-window contracts.
 
 Unknown fields remain unknown. Controller closure, trace integrity and supported usage semantics
@@ -191,9 +191,14 @@ from intended-condition claims. Keep its actual answers and costs separately sco
 every aggregate containing it, and preserve unaffected comparisons only where their own conditions
 remain valid. A later no-model repair does not retroactively establish the missing model condition.
 
-Keep raw JSONL, stderr and controller records private. Public exports retain sanitized metrics,
-conditions and evidence hashes, not host paths, authentication data or arbitrary raw model/tool
-payloads. The 2026-09-12 pilot and its adverse results are not rewritten.
+Keep raw JSONL, stderr, reviewer attribution and controller records private, outside Git.
+`report`, `export` and `packets` contain private details. Only the explicit `publish` command
+produces a public summary with a strict typed field allowlist: fixed case/variant/outcome/quality
+states, repeat, accounting basis and separate nullable input/cache-write/cache-read/output tokens.
+It retains all assigned outcomes but excludes arbitrary text, source, commands, provenance,
+session/hash identities, runtime pins, timestamps and resource observations. Unsupported fields
+or values cannot be added to the public schema implicitly. See the [tool instructions](../scripts/agent-eval/README.md).
+The historical pilot is preserved byte for byte.
 
 ## Campaign stages
 

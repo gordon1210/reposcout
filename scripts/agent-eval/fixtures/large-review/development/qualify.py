@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from publication import private_destination
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--output", type=Path)
 parser.add_argument("--skip-base-tests", action="store_true")
@@ -15,9 +18,12 @@ parser.add_argument("--base-test-receipt", default=None)
 parser.add_argument("--case", action="append", dest="selected_cases")
 args = parser.parse_args()
 bundle = Path(__file__).resolve().parent
-output = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="meridian-qualification-"))
 if args.output:
-    output.mkdir(exist_ok=False)
+    output = private_destination(args.output)
+    output.mkdir(mode=0o700, exist_ok=False)
+else:
+    temp_parent = private_destination(tempfile.gettempdir())
+    output = Path(tempfile.mkdtemp(prefix="meridian-qualification-", dir=temp_parent))
 catalog = json.loads((bundle / "catalog.json").read_text())
 if args.selected_cases:
     unknown = set(args.selected_cases) - {case["case_id"] for case in catalog["cases"]}

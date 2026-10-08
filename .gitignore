@@ -5,3 +5,15 @@ node_modules/
 .reposcout/
 .tmp/
 *.profraw
+
+# Live evaluation records are private; only the explicit typed publication export is public.
+/scripts/agent-eval/results/*
+!/scripts/agent-eval/results/2026-09-12-native-pilot/
+/scripts/agent-eval/results/2026-09-12-native-pilot/*
+!/scripts/agent-eval/results/2026-09-12-native-pilot/results.json
+!/scripts/agent-eval/results/2026-09-12-native-pilot/integrity.json
+/scripts/agent-eval/fixtures/**/*.tar*
+/scripts/agent-eval/fixtures/**/*.zip
+/scripts/agent-eval/fixtures/**/freeze-manifest.json
+/scripts/agent-eval/fixtures/**/*-handoff.json
+**/__pycache__/

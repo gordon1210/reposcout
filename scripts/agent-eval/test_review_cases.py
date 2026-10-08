@@ -1,9 +1,11 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from accounting import InvalidLedger, fingerprint
 import review_cases
@@ -57,6 +59,54 @@ class ReviewCaseTests(unittest.TestCase):
             (bundle / "catalog.json").write_text(json.dumps(catalog))
             with self.assertRaises(InvalidLedger):
                 review_cases.snapshots("large-case", bundle_root=bundle)
+
+    def test_snapshots_rejects_oversized_source_before_reading_its_body(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            (bundle / "case/base").mkdir(parents=True)
+            (bundle / "case/head").mkdir()
+            oversized = bundle / "case/base/oversized.py"
+            oversized.write_text("x" * 512)
+            (bundle / "catalog.json").write_text(json.dumps({
+                "source_limits": {"max_files": 4, "max_bytes": 128},
+                "cases": [{"case_id": "case", "revisions": ["head"],
+                           "check_command": ["python3", "-B", "oversized.py"]}]}))
+            read_sources = []
+            original = Path.read_text
+            def observed_read(path, *args, **kwargs):
+                if path == oversized:
+                    read_sources.append(path.name)
+                return original(path, *args, **kwargs)
+            with patch.object(Path, "read_text", new=observed_read):
+                with self.assertRaisesRegex(InvalidLedger, "bounds"):
+                    review_cases.snapshots("case", bundle_root=bundle)
+            self.assertEqual(read_sources, [], "oversized source bytes were read before enforcing the bound")
+
+    def test_source_reader_checks_size_before_opening_an_oversized_blob(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "oversized.py").write_bytes(b"x" * 129)
+            with patch.object(review_cases.os, "open", side_effect=AssertionError("oversized source was opened")):
+                with self.assertRaisesRegex(InvalidLedger, "bounds"):
+                    review_cases._directory_files(directory, max_files=4, max_bytes=128)
+
+    def test_source_reader_stops_before_accumulating_excess_bytes_or_files(self):
+        for max_files, max_bytes in ((1, 1024), (4, 100)):
+            with self.subTest(files=max_files, size=max_bytes), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                (directory / "first.py").write_bytes(b"x" * 60)
+                (directory / "second.py").write_bytes(b"y" * 60)
+                with patch.object(review_cases.os, "open", wraps=os.open) as opened:
+                    with self.assertRaisesRegex(InvalidLedger, "bounds"):
+                        review_cases._directory_files(directory, max_files=max_files, max_bytes=max_bytes)
+                    self.assertEqual(opened.call_count, 1)
+
+    def test_source_reader_rejects_nonregular_inputs_without_blocking(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            os.mkfifo(directory / "input.py")
+            with self.assertRaisesRegex(InvalidLedger, "regular"):
+                review_cases._directory_files(directory, max_files=4, max_bytes=128)
 
     def test_main_inventory_and_frozen_holdout_are_separate(self):
         main = review_cases.list_cases()

@@ -26,7 +26,7 @@ There are exactly 36 assigned single-invocation reviews, all using `gpt-6.1-sol`
 Development covers two regressions and a clean change in a Python order/fulfillment application.
 The private heldout application uses Node ESM and a distinct document-publication domain. Its
 source, tasks and independent oracles must be sealed before the first development model output.
-Its author and independent reviewer retain those details away from the product-tuning owner until
+Its fixture author and independent reviewer retain those details away from the product-tuning owner until
 the single improvement is frozen. Neither adverse results nor easy tasks authorize replacements
 or favorable extra repetitions.
 
@@ -227,14 +227,14 @@ outputs belongs to this confirmation.
 
 ## Reporting
 
-Export each immutable campaign through the existing report/export commands, with independently
-adjudicated quality. Then pass the four sanitized results to `large_review_study.py report` using
+Export each immutable campaign privately outside Git through the report/export commands, with independently
+adjudicated quality. Then pass the four private detailed results to `large_review_study.py report` using
 `--development-original`, `--development-improved`, `--holdout-improved` and `--holdout-original`.
 The join binds case/repeat, source, oracle, task, runtime and harness identities; campaign identity
 disambiguates reused run IDs. The original-only heldout export intentionally has no within-campaign
 pair table. It joins the shared native arm only in the study report.
 
-Use new private packet directories and new sanitized export directories, retaining their integrity
+Use new private packet directories and new private export directories, retaining their integrity
 records. `ADJUDICATIONS_FILE` contains the independent verdicts bound to packet and answer hashes:
 
 ```sh

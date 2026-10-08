@@ -34,7 +34,7 @@ LARGE_STAGES = ("large-development", "large-holdout", "large-holdout-original", 
 VARIANTS = ("baseline", "reposcout", "reposcout-cli")
 TERMINAL_STATUSES = ("completed", "failed", "aborted")
 SOURCE_FILES = ("accounting.py", "review_campaign.py", "review_export.py", "review_cases.py", "review_grading.py",
-                "codex_runner.py", "codex_isolation.py", "codex_trace.py", "large_review_study.py")
+                "codex_runner.py", "codex_isolation.py", "codex_trace.py", "large_review_study.py", "publication.py")
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_ROOT = Path(__file__).resolve().parent
 LIMITS = {"timeout_seconds": 180, "memory_limit_bytes": 1024 ** 3,
@@ -114,14 +114,27 @@ def validated_timeout_seconds(value):
     return value
 
 
-def calibrated_usage_scope(cli_version, codex_sha256):
-    # Runtime-specific calibration evidence is private; absent evidence stays unknown.
-    return "unknown", None
+def calibrated_usage_scope(cli_version, codex_sha256, calibration_path=None):
+    if calibration_path is None:
+        return "unknown", None
+    from publication import private_destination
+    path = private_destination(calibration_path)
+    evidence = read_json(path)
+    require(evidence.get("schema") == 1 and evidence.get("cli_version") == cli_version
+            and evidence.get("codex_sha256") == codex_sha256 and evidence.get("model") == MODEL
+            and evidence.get("effort") == EFFORT and evidence.get("usage_scope") == "thread-cumulative",
+            "usage calibration does not match the pinned condition")
+    proof = evidence.get("proof") or {}
+    require(isinstance(proof, dict), "invalid usage calibration proof")
+    require(all(proof.get(key) is True for key in ("same_thread", "native_before_is_exact_prefix",
+            "prior_responses_unchanged", "new_response_equals_cumulative_delta", "exec_equals_final_native",
+            "stream_complete", "process_tree_drained")), "usage calibration lacks complete counter proof")
+    return "thread-cumulative", {"evidence_path": str(path), "evidence_sha256": file_hash(path)}
 
 
 def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file=None,
                  *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None,
-                 bundle_root=None, original_campaign=None):
+                 bundle_root=None, original_campaign=None, usage_calibration=None):
     limits = {**LIMITS, "timeout_seconds": validated_timeout_seconds(timeout_seconds)}
     codex_binary, reposcout_binary, skill_dir = map(Path, (codex_binary, reposcout_binary, skill_dir))
     codex_binary, reposcout_binary, skill_dir = (path.resolve() for path in
@@ -145,7 +158,7 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
                                         evidence={"expected_sha256": fingerprint(codex_version),
                                                   "actual_sha256": fingerprint(actual_version)})
     codex_sha256 = file_hash(codex_binary)
-    usage_scope, calibration = calibrated_usage_scope(actual_version, codex_sha256)
+    usage_scope, calibration = calibrated_usage_scope(actual_version, codex_sha256, usage_calibration)
     from review_cases import CHECK_COMMANDS, answer_schema
     from codex_isolation import (
         REQUIRED_RUNTIME_TOOLS, RuntimeUnavailableError, codex_runtime_manifest, controller_ca_manifest,
@@ -241,6 +254,8 @@ def _no_symlinks(path):
 
 
 def create_campaign_root(destination):
+    from publication import private_destination
+    destination = private_destination(destination)
     destination = _no_symlinks(destination)
     require(not destination.exists(), "campaign destination already exists")
     require(not destination.is_relative_to(ROOT), "campaign must be outside the source checkout")
@@ -286,14 +301,17 @@ def make_prompt(step, variant):
 def prepare(destination, *, stage, seed, codex_binary, codex_version, reposcout_binary,
             skill_dir, include_ablation=False, smoke_campaign=None, controller_ca_file=None,
             timeout_seconds=LIMITS["timeout_seconds"], bundle_root=None, original_campaign=None,
-            fixture_signer=None):
+            fixture_signer=None, usage_calibration=None):
     from review_cases import create_signer, list_cases, prepare_case
+    if destination is None:
+        destination = Path(tempfile.gettempdir()) / ("reposcout-review-" + os.urandom(12).hex())
     require((stage in LARGE_STAGES) == (bundle_root is not None),
             "large stages require an explicit separate fixture bundle")
     require((stage == "large-holdout-original") == (original_campaign is not None),
             "only the original holdout stage references a frozen original campaign")
     pins = capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file,
-                        timeout_seconds=timeout_seconds, bundle_root=bundle_root, original_campaign=original_campaign)
+                        timeout_seconds=timeout_seconds, bundle_root=bundle_root, original_campaign=original_campaign,
+                        usage_calibration=usage_calibration)
     plan = build_plan(stage, seed, pins, list_cases(include_holdout=stage in LARGE_STAGES, bundle_root=bundle_root), include_ablation)
     root, marker = create_campaign_root(destination)
     signer = create_signer(root / "signing") if fixture_signer is None else read_json(fixture_signer)
@@ -367,7 +385,8 @@ def verify_runtime_pins(plan):
         actual = capture_pins(pins["codex_binary"], pins["codex_version"], pins["reposcout_binary"], pins["skill_dir"],
                               pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"],
                               runtime_tool_paths=pins.get("runtime_tool_paths"), bundle_root=pins.get("case_bundle"),
-                              original_campaign=pins.get("original_campaign"))
+                              original_campaign=pins.get("original_campaign"),
+                              usage_calibration=(pins.get("usage_scope_calibration") or {}).get("evidence_path"))
     except CampaignPrerequisiteError:
         raise
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
@@ -985,7 +1004,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     create = commands.add_parser("prepare")
-    create.add_argument("campaign")
+    create.add_argument("campaign", nargs="?", help="Private campaign outside Git; defaults to a fresh temporary directory")
     create.add_argument("--stage", choices=("smoke", "exploratory", *LARGE_STAGES), required=True)
     create.add_argument("--seed", type=int, required=True)
     create.add_argument("--codex-binary", required=True)
@@ -998,6 +1017,7 @@ def main():
     create.add_argument("--original-campaign", help="Original development plan that validated the historical canonical treatment")
     create.add_argument("--fixture-signer", help="Private disposable signer record shared by matched campaign versions")
     create.add_argument("--controller-ca-file")
+    create.add_argument("--usage-calibration", help="Private counter-scope proof bound to the chosen runtime")
     create.add_argument("--timeout-seconds", type=float, default=LIMITS["timeout_seconds"])
     execute = commands.add_parser("run")
     execute.add_argument("campaign")
@@ -1015,22 +1035,24 @@ def main():
     cleanup.add_argument("campaign")
     cleanup.add_argument("exported")
     cleanup.add_argument("--expected-results-sha256", required=True)
-    for name in ("report", "export"):
+    for name in ("report", "export", "publish"):
         view = commands.add_parser(name)
         view.add_argument("campaign")
-        if name == "export":
+        if name in ("export", "publish"):
             view.add_argument("destination")
         view.add_argument("--adjudications")
     args = parser.parse_args()
     try:
         if args.command == "prepare":
-            plan = prepare(args.campaign, stage=args.stage, seed=args.seed, codex_binary=args.codex_binary,
+            destination = args.campaign or (Path(tempfile.gettempdir()) / ("reposcout-review-" + os.urandom(12).hex()))
+            plan = prepare(destination, stage=args.stage, seed=args.seed, codex_binary=args.codex_binary,
                            codex_version=args.codex_version, reposcout_binary=args.reposcout_binary,
                            skill_dir=args.skill_dir, include_ablation=args.ablation, smoke_campaign=args.smoke_campaign,
                            controller_ca_file=args.controller_ca_file, timeout_seconds=args.timeout_seconds,
                            bundle_root=args.case_bundle, original_campaign=args.original_campaign,
-                           fixture_signer=args.fixture_signer)
-            result = {"plan_sha256": plan["plan_sha256"], "assignment_count": plan["assignment_count"]}
+                           fixture_signer=args.fixture_signer, usage_calibration=args.usage_calibration)
+            result = {"plan_sha256": plan["plan_sha256"], "assignment_count": plan["assignment_count"],
+                      "private_campaign": str(Path(destination).absolute())}
         elif args.command == "run":
             result = run(args.campaign, auth_file=args.auth_file, limit=args.limit, preflight_only=args.preflight_only, run_id=args.run_id)
         elif args.command == "qualify-smoke":
@@ -1040,6 +1062,9 @@ def main():
             result = packets(args.campaign, args.destination)
         elif args.command == "cleanup-public":
             result = cleanup_public(args.campaign, args.exported, args.expected_results_sha256)
+        elif args.command == "publish":
+            from publication import publish
+            result = publish(args.campaign, args.destination, args.adjudications)
         else:
             from review_export import export, report
             result = (export(args.campaign, args.destination, args.adjudications) if args.command == "export"

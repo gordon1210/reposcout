@@ -32,6 +32,13 @@ within their section.
 
 ### Fixed
 
+- Keep live evaluation campaigns, detailed reports, controller evidence and private grading
+  packets outside Git checkouts. Add a strict typed public-summary export and a lightweight
+  publication policy that rejects raw results, archives and local authoring records.
+- Bound external review-fixture reads before loading source bytes, rejecting excessive byte/file
+  counts and nonregular files. Make counter-scope calibration an explicit private input instead
+  of relying on a controller-specific runtime fingerprint.
+
 - Retain affordable direct changed-declaration references before weaker body-free `review-context`
   metadata under output pressure, including resolved test callers. Human formats admit needed
   revision/hash handles together with each reference, including handles beyond the initial
