@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-07 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-08 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 24_
 
 ---
@@ -83,12 +83,27 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   counterpart seeds keep mapping partial and preserve file-based reference evidence. Strategy 2 reduces
   declaration/range details before dropping changed-file identities; per-side output omissions
   remain separate from analysis availability. Omitted compact identities are reconsidered against
-  both actual output budgets before restoring details, impact/context evidence and requested bodies.
+  both actual output budgets. In body-free output, affordable direct changed-declaration references,
+  including direct test callers, take precedence over weaker context metadata. Human output admits each reference
+  with its needed revision/hash handles atomically, including already captured handles beyond the
+  initial candidate prefix; final 100-entry caps remain. Smaller alternatives and existing
+  type/import/file-based fallback survive failed admission. Explicit source/diff requests retain
+  their established body allocation; source-selection order, costs and coverage remain unchanged.
   Snapshot read handoffs use Git file modes and blob
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
   See [review context](docs/review-context.md) for limits and trust boundaries.
+  The bundled skill provides self-contained starts for common repository, source and committed
+  review questions. Detailed guides are conditional on needed unfamiliar semantics, including
+  working/staged/deep-review workflows. Targeted native evidence is appropriate when
+  the next question needs no structural discovery; small diffs or known refs never waive needed
+  consumer/binding checks. Retain exact source provenance and validate remaining uncertainty
+  truthfully. This guidance does not change query allocation, defaults, or quality requirements.
+  For body-free committed-review orientation, Table is preferred only when its revision handles,
+  relations and uncertainty fields answer the next reading question. JSON remains the route for
+  automation, exact counters/spans/endpoint identities and ambiguous escaped paths; exact source
+  quotations retain literal bytes. No duplicate format request is required.  Output-size differences alone do not establish model-token savings.
 
 - **Tokenizer dependency refresh.** `tiktoken-rs` 0.12.1 updates its regex backends while keeping
   the supported encoding assets and user-selected/default encoding unchanged. Analyzer 24
@@ -115,11 +130,36 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   existing capture/analysis/cache facts. Analyzer 23 covers current parse-derived facts, including
   C# and corrected complexity; schema remains 2.0. Product scope and limits are in
   [task queries](docs/task-queries.md) and [task diagnostics](docs/task-diagnostics.md).
-  The offline [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
+  The [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
   canonical provider-call ledgers and externally attested native session windows. The historical, pre-review [38-run pilot](docs/agent-evaluation.md) passed all bounded
   retrieval/behavior oracles; all
   six routing comparisons and the composed workflow increased total tokens. No general net-saving
   or code-repair claim is established. Broader M2 evidence remains outside this pilot.
+
+- **Opt-in Codex review evaluation.** A separate [review study](docs/codex-review-evaluation.md)
+  uses signed disposable synthetic Git commits, independent domain probes and blinded review adjudication.
+  It compares competent native tools with RepoScout plus the canonical skill, with a separately
+  identified CLI-availability ablation. Controller authentication, raw traces and private oracles stay
+  outside the evaluated tool filesystem. Runs are serial, preflight isolation is mandatory and
+  every assigned outcome remains visible. Current exec usage has its own explicit observation
+  basis; it does not replace historical ledgers or imply complete billing data. Evaluate input,
+  cache-write, cache-read and output separately; input includes cache read. Episode totals exclude
+  separate orchestration and independent judging. Live model runs stay outside ordinary CI.
+  Private raw records, detailed exports, packets and adjudication provenance stay outside Git;
+  campaign preparation defaults to a fresh private temporary directory. Explicit output paths
+  reject Git checkouts and symlink aliases. `publish` emits only a strict typed public summary
+  of every assigned outcome and the four nullable token fields. The publication policy rejects
+  raw result trees, archives and authoring receipts; historical pilot bytes stay pinned.
+  The repository-owned pre-push hook checks all outgoing commit versions, while the CLI gate
+  reads exact index/commit objects. It is a scoped artifact policy, not a generic privacy scanner.
+  Runtime-specific usage calibration is an explicit private input, with unknown scope by default.
+  External fixture source reads enforce byte/file ceilings before opening excess data.
+  Results must retain adverse and unknown outcomes; offline harness tests do not
+  establish review improvements or model-token savings. External fixture presets
+  support bounded development, heldout and follow-up tasks with fixed schedules.
+  New campaigns validate runtimes and namespace isolation before consumption,
+  retain prerequisite failures and attributable partial costs, and preserve
+  exact revision/source evidence across follow-ups.
 
 - **Snapshot reads and changed definitions.** `read --snapshot worktree|index|REF`
   selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with

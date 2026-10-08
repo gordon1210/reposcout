@@ -6,10 +6,12 @@ mod tests;
 use crate::config::Config;
 use crate::metrics::tokens::TokenCounter;
 use crate::model::{
-    ReviewContextCapability, ReviewContextReport, ReviewContextTotals, SCHEMA_VERSION,
+    CallSymbolIdentity, ReviewChangeBasis, ReviewContextCapability, ReviewContextRelation,
+    ReviewContextReport, ReviewContextTotals, SCHEMA_VERSION,
 };
 use crate::report::Format;
 use anyhow::{Result, ensure};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const ENTRY_LIMIT: usize = 100;
@@ -163,12 +165,34 @@ fn project(
     deadline: std::time::Instant,
 ) -> Result<()> {
     report.changes.truncate(ENTRY_LIMIT);
-    report.context.truncate(ENTRY_LIMIT);
     report.relations.truncate(ENTRY_LIMIT);
+    // Keep already-captured handles needed by retained direct evidence, even when
+    // the source-selection order puts them beyond the output candidate cap.
+    let endpoints: BTreeSet<_> = report
+        .relations
+        .iter()
+        .filter(|relation| direct_relation(relation))
+        .filter_map(|relation| relation.symbol.as_ref().map(|symbol| (relation, symbol)))
+        .flat_map(|(relation, symbol)| {
+            [&symbol.source, &symbol.target]
+                .map(|endpoint| (relation.side.clone(), PathBuf::from(&endpoint.path)))
+        })
+        .collect();
+    let mut index = 0;
+    report.context.retain(|file| {
+        let keep = index < ENTRY_LIMIT
+            || (!options.include_source
+                && !options.include_diff
+                && endpoints.contains(&(file.side.clone(), file.path.clone())));
+        index += 1;
+        keep
+    });
     let originals = report.clone();
+    report.context.truncate(ENTRY_LIMIT);
     loop {
         if within_budget(report, options, counter, deadline)? {
             restore_change_identities(report, &originals.changes, options, counter, deadline)?;
+            restore_direct_evidence(report, &originals, options, counter, deadline)?;
             restore_change_details(report, &originals.changes, options, counter, deadline)?;
             restore_evidence(report, &originals, options, counter, deadline)?;
             return Ok(());
@@ -198,6 +222,158 @@ fn project(
             );
         }
     }
+}
+
+fn direct_relation(relation: &ReviewContextRelation) -> bool {
+    relation.kind == "symbol-reference"
+        && relation.change_basis == Some(ReviewChangeBasis::ChangedDefinition)
+        && relation.symbol.is_some()
+}
+
+fn same_relation(left: &ReviewContextRelation, right: &ReviewContextRelation) -> bool {
+    let same_type = match (&left.type_relation, &right.type_relation) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            left.source == right.source
+                && left.target == right.target
+                && left.relation == right.relation
+                && left.resolver == right.resolver
+        }
+        _ => false,
+    };
+    left.side == right.side
+        && left.kind == right.kind
+        && left.edge.source == right.edge.source
+        && left.edge.target == right.edge.target
+        && left.edge.resolver == right.edge.resolver
+        && left.change_basis == right.change_basis
+        && left.symbol == right.symbol
+        && same_type
+}
+
+fn endpoint_available(
+    report: &ReviewContextReport,
+    side: &str,
+    endpoint: &CallSymbolIdentity,
+) -> bool {
+    let snapshot = if side == "base" {
+        &report.comparison.base_tree
+    } else {
+        &report.comparison.head_tree
+    };
+    report.changes.iter().any(|change| {
+        let changed = if side == "base" {
+            &change.base
+        } else {
+            &change.head
+        };
+        changed.as_ref().is_some_and(|changed| {
+            changed.path == Path::new(&endpoint.path)
+                && changed.sha256.as_deref() == Some(endpoint.source_hash.as_str())
+        })
+    }) || report.context.iter().any(|file| {
+        file.side == side
+            && file.snapshot == *snapshot
+            && file.path == Path::new(&endpoint.path)
+            && file.sha256.as_deref() == Some(endpoint.source_hash.as_str())
+    })
+}
+
+fn admit_relation(
+    report: &mut ReviewContextReport,
+    relation: &ReviewContextRelation,
+    originals: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<bool> {
+    if report.relations.len() == ENTRY_LIMIT {
+        return Ok(false);
+    }
+    let context_len = report.context.len();
+    if !options.include_source
+        && !options.include_diff
+        && matches!(options.format, Format::Table | Format::Markdown)
+        && direct_relation(relation)
+        && let Some(symbol) = &relation.symbol
+    {
+        for endpoint in [&symbol.source, &symbol.target] {
+            if endpoint_available(report, &relation.side, endpoint) {
+                continue;
+            }
+            let file = originals.context.iter().find(|file| {
+                let snapshot = if relation.side == "base" {
+                    &report.comparison.base_tree
+                } else {
+                    &report.comparison.head_tree
+                };
+                file.side == relation.side
+                    && file.snapshot == *snapshot
+                    && file.path == Path::new(&endpoint.path)
+                    && file.sha256.as_deref() == Some(endpoint.source_hash.as_str())
+            });
+            let Some(file) = file.filter(|_| report.context.len() < ENTRY_LIMIT) else {
+                report.context.truncate(context_len);
+                return Ok(false);
+            };
+            let mut metadata = file.clone();
+            metadata.source = None;
+            report.context.push(metadata);
+        }
+    }
+    report.relations.push(relation.clone());
+    if within_budget(report, options, counter, deadline)? {
+        return Ok(true);
+    }
+    report.relations.pop();
+    report.context.truncate(context_len);
+    Ok(false)
+}
+
+fn restore_direct_evidence(
+    report: &mut ReviewContextReport,
+    originals: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    // Explicit body requests keep their established allocation and affordable bodies.
+    if options.include_source || options.include_diff {
+        return Ok(());
+    }
+    let direct: Vec<_> = originals
+        .relations
+        .iter()
+        .filter(|relation| direct_relation(relation))
+        .collect();
+    let human = matches!(options.format, Format::Table | Format::Markdown);
+    if direct.iter().all(|original| {
+        report
+            .relations
+            .iter()
+            .any(|relation| same_relation(relation, original))
+            && (!human
+                || original.symbol.as_ref().is_some_and(|symbol| {
+                    [&symbol.source, &symbol.target]
+                        .into_iter()
+                        .all(|endpoint| endpoint_available(report, &original.side, endpoint))
+                }))
+    }) {
+        return Ok(());
+    }
+    let previous_relations = std::mem::take(&mut report.relations);
+    let previous_context = std::mem::take(&mut report.context);
+    for relation in direct {
+        admit_relation(report, relation, originals, options, counter, deadline)?;
+    }
+    // If no whole direct packet fits, preserve the existing type/import/file
+    // fallback instead of trading useful evidence for an empty reservation.
+    if report.relations.is_empty() {
+        report.relations = previous_relations;
+        report.context = previous_context;
+    }
+    recount(report, options);
+    Ok(())
 }
 
 fn within_budget(
@@ -307,13 +483,26 @@ fn restore_evidence(
     counter: &TokenCounter,
     deadline: std::time::Instant,
 ) -> Result<()> {
-    for relation in originals.relations.iter().skip(report.relations.len()) {
-        report.relations.push(relation.clone());
-        if !within_budget(report, options, counter, deadline)? {
-            report.relations.pop();
+    for relation in &originals.relations {
+        if !report
+            .relations
+            .iter()
+            .any(|retained| same_relation(retained, relation))
+        {
+            admit_relation(report, relation, originals, options, counter, deadline)?;
         }
     }
-    for file in originals.context.iter().skip(report.context.len()) {
+    for file in &originals.context {
+        if report.context.len() == ENTRY_LIMIT {
+            break;
+        }
+        if report
+            .context
+            .iter()
+            .any(|retained| retained.side == file.side && retained.path == file.path)
+        {
+            continue;
+        }
         let mut metadata = file.clone();
         metadata.source = None;
         report.context.push(metadata);

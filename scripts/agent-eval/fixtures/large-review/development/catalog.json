@@ -1,0 +1,84 @@
+{
+  "cases": [
+    {
+      "base_directory": "application",
+      "case_id": "cancellation-change",
+      "check_command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "partition": "development",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review this cancellation release-planning refactor in Meridian for introduced behavior regressions. Use the application business documentation and actual request paths to establish the result. Report real defects once with a reachable valid witness, expected versus actual public behavior and exact revision source evidence. Distinguish checks actually executed from source inspection."
+        }
+      ],
+      "title": "Cancellation release planning"
+    },
+    {
+      "base_directory": "application",
+      "case_id": "event-routing-change",
+      "check_command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "partition": "development",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the event-key consolidation used by live provider ingestion and administrative delivery-manifest reconciliation. Assess whether the documented application behavior is preserved through the actual bindings and request paths. Report introduced defects once with a reachable request sequence, expected versus actual public behavior and exact revision source evidence. Distinguish tests actually executed from static inspection."
+        }
+      ],
+      "title": "Event-key consolidation for delivery reconciliation"
+    },
+    {
+      "base_directory": "application",
+      "case_id": "status-extraction",
+      "check_command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "partition": "development",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the fulfillment-status extraction and accompanying administrative promotion-preview update. Customer order status and related responses must preserve docs/fulfillment-states.md and docs/business-rules.md; the documented staff preview policy is intentionally independent of storefront pricing. Determine whether the comparison introduces a real customer defect. Support the conclusion with relevant before/after behavior and active path/isolation evidence. Scope evidence to this change and distinguish actual checks from static inspection."
+        }
+      ],
+      "title": "Fulfillment status extraction and administrative preview"
+    }
+  ],
+  "schema": 1,
+  "source_limits": {
+    "max_bytes": 2097152,
+    "max_files": 256
+  }
+}

@@ -10,6 +10,23 @@ import pilot
 
 
 class PilotTests(unittest.TestCase):
+    def test_preparation_rejects_existing_shared_directory_without_mutating_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            destination = root / 'shared'
+            destination.mkdir(mode=0o755)
+            destination.chmod(0o755)
+            sentinel = destination / 'unrelated.txt'
+            sentinel.write_text('user-owned data')
+            binary = root / 'synthetic-binary'
+            binary.write_bytes(b'never executed')
+            with patch.object(pilot, 'git', return_value='c' * 40):
+                with self.assertRaises(accounting.InvalidLedger):
+                    pilot.prepare(destination, binary, fixtures.ROOT / 'prompt-templates.json')
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
+            self.assertEqual([path.name for path in destination.iterdir()], ['unrelated.txt'])
+            self.assertEqual(sentinel.read_text(), 'user-owned data')
+
     def test_preparation_separates_oracles_and_arms_and_checks_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

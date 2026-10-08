@@ -1,41 +1,8 @@
 # Change analysis
 
-Use this reference for working-tree, staged, or reference-based diffs; bounded change summaries;
-impact analysis; and finding-level review.
-
-## Prepare a committed PR review
-
-```sh
-reposcout review-context <directory> --base origin/main --head HEAD --merge-base -f json
-```
-
-This Unix query resolves two local refs once and captures sources and resolver configuration from
-their immutable trees. Omit `--merge-base` for an exact direct comparison. Read coverage and
-omission counters before the changed declarations, revision-local impact relations and context
-costs. File-import dependents and concrete symbol references are distinct evidence; neither proves
-runtime completeness. Test hints are conventions/syntax, not executed tests.
-Check `hunk_status`, per-side `mapping_status` and `totals.changes_without_hunks` before interpreting
-empty change evidence. A captured side does not imply that its comparison with a missing side was
-analyzed. Literal Unix backslash paths retain source evidence but contribute an explicit
-`unsupported_graph_paths` gap rather than an ambiguous graph identity.
-For symbol references, `change_basis: "changed-definition"` identifies mapped changed declarations;
-`"changed-file"` preserves resolved references to or from a captured changed file whose declaration
-mapping is partial or unavailable. The latter does not establish which declarations changed.
-Pure insertions/deletions may retain opposite-side declarations through unchanged headers even
-when that side's `ranges` is empty. Check `counterpart_definitions`, `ambiguous_counterparts`,
-`unprocessed_counterparts`, `counterpart_seed_mapping_incomplete`
-and per-side `definitions_omitted` / `ranges_omitted` before interpreting missing detail.
-
-`totals.candidate_tokens` counts whole files once per revision/path. Unknown costs are explicit;
-base/head and unified-diff costs stay separate. Default/configured tokenization always applies;
-never select an encoding automatically based on a model. RepoScout does not allocate agents or
-split tasks. The calling agent makes those decisions using the measured facts and their gaps.
-
-Use `--context` only when an initial reading list is wanted; `--context-budget` and
-`--context-max-files` override its configured limits. `--source` requests complete selected files,
-and `--diff` requests patches. All returned content shares `--budget` and `--max-output-bytes`;
-source selection and output omissions are accounted separately. Follow-up definition reads can
-use the reported tree with `read --snapshot` and the reported SHA-256. No scout is required first.
+Use this reference for working-tree, staged, or since diffs; bounded change summaries;
+impact analysis; and finding-level review. For two committed revisions, use the entry guide
+directly; consult [committed-reviews.md](committed-reviews.md) for unresolved comparison details.
 
 ## Select exactly one diff scope
 
@@ -57,8 +24,9 @@ retain focused native fallback for missing or uncertain evidence.
 The direct query is body-free by default; source is explicit and uses one output budget. Working
 compares HEAD with worktree including staged, unstaged and untracked changes; staged compares
 HEAD with the captured index; since compares the specified ref directly with worktree rather
-than a merge-base. Read [source-query guidance](source-queries.md) for snapshot identity, Unix
-support, capture limits and mapping gaps. No preceding scout is required.
+than a merge-base. Consult [source-query guidance](source-queries.md) when needed snapshot,
+platform, capture-limit or mapping semantics remain unclear. A known request needs no preceding
+scout or guide.
 
 When the decision needs the broader change context, use the decision-oriented projection:
 

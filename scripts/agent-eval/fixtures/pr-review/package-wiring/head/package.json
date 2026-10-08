@@ -1,0 +1,1 @@
+{"name":"shipping-app","private":true,"type":"module","imports":{"#tariff":"./supplier.js"}}

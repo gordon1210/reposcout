@@ -1,0 +1,8 @@
+{
+  "name": "folio-publication-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "In-memory document collaboration and publication application",
+  "scripts": { "test": "node tests/run.mjs" }
+}

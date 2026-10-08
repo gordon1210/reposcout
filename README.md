@@ -44,6 +44,9 @@ For PRs, [review context](docs/review-context.md) combines changes and their obs
 from both Git revisions. Agent allocation and tokenizer choice remain the caller's decisions.
 The [38-run native pilot](docs/agent-evaluation.md) passed its retrieval/behavior checks but did not
 establish net token savings; it measures the pre-review development binary, not the 0.3.0 release.
+The opt-in [Codex review evaluator](docs/codex-review-evaluation.md) supports
+isolated comparisons on synthetic repositories. Passing evaluator tests alone
+does not establish better review quality or model-token savings.
 
 ## Highlights
 

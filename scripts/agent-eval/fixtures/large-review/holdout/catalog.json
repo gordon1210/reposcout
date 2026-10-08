@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "source_limits": {
+    "max_files": 256,
+    "max_bytes": 2097152
+  },
+  "cases": [
+    {
+      "case_id": "publication-change-a",
+      "title": "Publication pipeline change A",
+      "partition": "holdout",
+      "revisions": [
+        "head"
+      ],
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the supplied comparison for introduced behavior changes in this document collaboration and publishing application. Follow its documented business contracts through the active application paths as needed. Report actionable regressions with concrete inputs, expected and actual observable behavior, user impact, and source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ]
+    },
+    {
+      "case_id": "publication-change-b",
+      "title": "Publication pipeline change B",
+      "partition": "holdout",
+      "revisions": [
+        "head"
+      ],
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the supplied comparison for introduced behavior changes in this document collaboration and publishing application. Follow its documented business contracts through the active application paths as needed. Report actionable regressions with concrete inputs, expected and actual observable behavior, user impact, and source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ]
+    }
+  ]
+}
