@@ -1,0 +1,34 @@
+name: Evaluation publication policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/agent-eval/**
+      - .githooks/**
+      - .gitignore
+      - .github/workflows/evaluation-publication.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/agent-eval/**
+      - .githooks/**
+      - .gitignore
+      - .github/workflows/evaluation-publication.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate public evaluation files
+        run: python3 -B scripts/agent-eval/publication.py --commit HEAD
+      - name: Check export and private destination contracts
+        run: python3 -B -m unittest discover -s scripts/agent-eval -p test_publication.py

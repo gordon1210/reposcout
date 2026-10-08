@@ -1,0 +1,351 @@
+{
+  "domain_expected": {
+    "base": {
+      "after_collision": {
+        "a": {
+          "available": 10,
+          "on_hand": 10,
+          "reserved": 0
+        },
+        "b": {
+          "available": 11,
+          "on_hand": 11,
+          "reserved": 0
+        }
+      },
+      "final_stock": {
+        "a": {
+          "available": 14,
+          "on_hand": 14,
+          "reserved": 0
+        },
+        "b": {
+          "available": 13,
+          "on_hand": 13,
+          "reserved": 0
+        }
+      },
+      "reconciliation": {
+        "a": {
+          "applied_ids": [
+            "correctable",
+            "shared-receipt"
+          ],
+          "complete": false,
+          "missing_ids": [
+            "not-yet-delivered"
+          ]
+        },
+        "b": {
+          "applied_ids": [
+            "shared-receipt",
+            "trusted-context"
+          ],
+          "complete": true,
+          "missing_ids": []
+        },
+        "backup": {
+          "applied_ids": [
+            "shared-receipt"
+          ],
+          "complete": true,
+          "missing_ids": []
+        }
+      },
+      "responses": [
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": false,
+          "duplicate": true,
+          "status": 200
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": null,
+          "duplicate": null,
+          "status": 422
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        }
+      ]
+    },
+    "head": {
+      "after_collision": {
+        "a": {
+          "available": 10,
+          "on_hand": 10,
+          "reserved": 0
+        },
+        "b": {
+          "available": 0,
+          "on_hand": 0,
+          "reserved": 0
+        }
+      },
+      "final_stock": {
+        "a": {
+          "available": 14,
+          "on_hand": 14,
+          "reserved": 0
+        },
+        "b": {
+          "available": 2,
+          "on_hand": 2,
+          "reserved": 0
+        }
+      },
+      "reconciliation": {
+        "a": {
+          "applied_ids": [
+            "correctable",
+            "shared-receipt"
+          ],
+          "complete": false,
+          "missing_ids": [
+            "not-yet-delivered"
+          ]
+        },
+        "b": {
+          "applied_ids": [
+            "trusted-context"
+          ],
+          "complete": false,
+          "missing_ids": [
+            "shared-receipt"
+          ]
+        },
+        "backup": {
+          "applied_ids": [
+            "shared-receipt"
+          ],
+          "complete": true,
+          "missing_ids": []
+        }
+      },
+      "responses": [
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": false,
+          "duplicate": true,
+          "status": 200
+        },
+        {
+          "applied": false,
+          "duplicate": true,
+          "status": 200
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": null,
+          "duplicate": null,
+          "status": 422
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        },
+        {
+          "applied": true,
+          "duplicate": false,
+          "status": 200
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "provider-event-cross-tenant-deduplication",
+          "locations": [
+            {
+              "contains": "from meridian.events.identity import provider_receipt_key as event_identity",
+              "path": "meridian/events/routing.py",
+              "side": "head"
+            }
+          ],
+          "rubric": "One introduced defect: the live routing binding now selects the provider-local receipt key that is valid in tenant-filtered manifest reconciliation, while the unchanged live inbox remains shared across tenants. A valid later event in a different authenticated tenant is suppressed when provider and event ID collide. Establish the changed binding, actual key semantics and global receipt lookup, trusted tenant, bound handler and public domain consequence. Do not report the local helper or scoped reconciliation as inherently wrong. Any valid positive event witness through a registered handler is accepted; provider separation, replay and rejected-event retry controls remain valid.",
+          "witnesses": [
+            {
+              "actual": {
+                "second_applied": false,
+                "stock_b": 0
+              },
+              "expected": {
+                "second_applied": true,
+                "stock_b": 11
+              },
+              "input": {
+                "first": {
+                  "event_id": "shared-receipt",
+                  "provider": "acme",
+                  "quantity": 7,
+                  "tenant": "tenant-a",
+                  "type": "stock.received"
+                },
+                "initial_stock_b": 0,
+                "second": {
+                  "event_id": "shared-receipt",
+                  "provider": "acme",
+                  "quantity": 11,
+                  "tenant": "tenant-b",
+                  "type": "stock.received"
+                }
+              }
+            },
+            {
+              "actual": {
+                "on_hand_b": 0
+              },
+              "expected": {
+                "on_hand_b": 1
+              },
+              "input": {
+                "initial_stock_b": 0,
+                "same_provider_and_event_id": true,
+                "stock_received_b": 1,
+                "tenant_a": "A",
+                "tenant_b": "B"
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "from meridian.events.identity import event_identity",
+                "path": "meridian/events/routing.py",
+                "side": "base"
+              },
+              {
+                "contains": "from meridian.events.identity import provider_receipt_key as event_identity",
+                "path": "meridian/events/routing.py",
+                "side": "head"
+              },
+              {
+                "contains": "return envelope.provider, envelope.event_id",
+                "path": "meridian/events/identity.py",
+                "side": "head"
+              },
+              {
+                "contains": "return envelope.tenant, envelope.provider, envelope.event_id",
+                "path": "meridian/events/identity.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Identify the changed live key binding and distinguish provider-local from global identity semantics; equivalent exact source chains are accepted.",
+          "id": "binding-and-key-semantics"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "context = settings.credentials.get(credential)",
+                "path": "meridian/api/auth.py",
+                "side": "head"
+              },
+              {
+                "contains": "return route_event(app, context.tenant, provider, body)",
+                "path": "meridian/api/provider_events.py",
+                "side": "head"
+              },
+              {
+                "contains": "PROVIDER, provider_events.ingest",
+                "path": "meridian/api/routes.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish that the event tenant comes from authenticated configuration, then flows through the actual provider entry point. Equivalent authenticated call chains are accepted semantically.",
+          "id": "trusted-tenant-route"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "if prior_receipt(app.state, key) is not None:",
+                "path": "meridian/events/routing.py",
+                "side": "head"
+              },
+              {
+                "contains": "return state.inbox.get(key)",
+                "path": "meridian/events/inbox.py",
+                "side": "head"
+              },
+              {
+                "contains": "\"stock.received\": stock_received",
+                "path": "meridian/events/registry.py",
+                "side": "head"
+              },
+              {
+                "contains": "stock = receive_stock(app.state, app.settings, envelope.tenant",
+                "path": "meridian/events/handlers.py",
+                "side": "head"
+              },
+              {
+                "contains": "return stock_view(app.state, app.settings, context.tenant, params[\"sku\"])",
+                "path": "meridian/api/warehouse.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show the shared receipt check bypassing the bound domain handler and the resulting public stock effect; a complete order/credit handler alternative is acceptable.",
+          "id": "dedupe-to-domain"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "if receipt[\"tenant\"] == tenant and receipt[\"provider\"] == provider:",
+                "path": "meridian/events/reconciliation.py",
+                "side": "head"
+              },
+              {
+                "contains": "scoped_receipts[provider_receipt_key(envelope)] = receipt",
+                "path": "meridian/events/reconciliation.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Recognize why the normalized receipt key remains valid for the separate tenant-filtered manifest consumer. A narrow scope argument suffices; no full-system proof or prescribed file count is required.",
+          "id": "scoped-consumer-control"
+        }
+      ]
+    }
+  ]
+}

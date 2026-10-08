@@ -103,6 +103,105 @@ def traced_result(spec, *, status="completed", tokens=123):
 
 
 class AssignmentTests(unittest.TestCase):
+    def test_large_followup_has_twelve_balanced_single_step_assignments(self):
+        names = ("publication-change-a", "publication-change-b", "publication-change-c")
+        cases = [{"case_id": name, "partition": "holdout", "title": name,
+                  "step_count": 1, "fixture_sha256": fingerprint(name)} for name in names]
+        plan = campaign.build_plan("large-followup", 20261010, {}, cases)
+        runs = plan["assignments"]
+        self.assertEqual(plan["assignment_count"], 12)
+        self.assertEqual(len(runs), 12)
+        self.assertEqual(plan["repetitions"], 2)
+        self.assertFalse(plan["ablation"])
+        self.assertEqual(plan["cases"], cases)
+        self.assertEqual({(run["case_id"], run["repeat_id"], run["variant"]) for run in runs},
+                         {(name, repeat, arm) for name in names for repeat in (1, 2)
+                          for arm in ("baseline", "reposcout")})
+        self.assertEqual({run["step_count"] for run in runs}, {1})
+        self.assertEqual([run["sequence"] for run in runs], list(range(12)))
+        self.assertEqual([run["repeat_id"] for run in runs], [1] * 6 + [2] * 6)
+        self.assertEqual(len({run["run_id"] for run in runs}), 12)
+        self.assertEqual(len({run["pair_id"] for run in runs}), 6)
+        self.assertEqual(plan, campaign.build_plan("large-followup", 20261010, {}, list(reversed(cases))))
+        first_counts = []
+        for repeat in (1, 2):
+            selected = [run for run in runs if run["repeat_id"] == repeat]
+            first_counts.append(sum(run["variant"] == "baseline" and run["pair_position"] == 0 for run in selected))
+            for index in range(0, len(selected), 2):
+                pair = selected[index:index + 2]
+                self.assertEqual(pair[0]["pair_id"], pair[1]["pair_id"])
+                self.assertEqual(pair[0]["case_id"], pair[1]["case_id"])
+                self.assertEqual([run["pair_position"] for run in pair], [0, 1])
+        self.assertEqual(sorted(first_counts), [1, 2])
+        for name in names:
+            self.assertEqual(sum(run["case_id"] == name and run["variant"] == "baseline"
+                                 and run["pair_position"] == 0 for run in runs), 1)
+
+    def test_large_followup_keeps_bundle_partition_and_invocation_boundaries(self):
+        cases = [{"case_id": name, "partition": "holdout", "title": name,
+                  "step_count": 1, "fixture_sha256": fingerprint(name)}
+                 for name in ("publication-change-a", "publication-change-b", "publication-change-c")]
+        for field, value, message in (("partition", "development", "partition"),
+                                      ("step_count", 2, "one invocation")):
+            with self.subTest(field=field), self.assertRaisesRegex(InvalidLedger, message):
+                invalid = [dict(case) for case in cases]
+                invalid[0][field] = value
+                campaign.build_plan("large-followup", 20261010, {}, invalid)
+        with self.assertRaisesRegex(InvalidLedger, "incomplete case catalog"):
+            campaign.build_plan("large-followup", 20261010, {}, cases[:2])
+        with self.assertRaisesRegex(InvalidLedger, "ablation belongs to exploratory"):
+            campaign.build_plan("large-followup", 20261010, {}, cases, include_ablation=True)
+        for bundle, original, message in ((None, None, "explicit separate fixture bundle"),
+                                           ("/unexecuted/bundle", "/unexecuted/prior", "only the original holdout stage")):
+            with self.subTest(bundle=bundle, original=original), self.assertRaisesRegex(InvalidLedger, message):
+                campaign.prepare("/unexecuted/campaign", stage="large-followup", seed=20261010,
+                                 codex_binary="/unexecuted/codex", codex_version="codex-cli test",
+                                 reposcout_binary="/unexecuted/reposcout", skill_dir="/unexecuted/skill",
+                                 bundle_root=bundle, original_campaign=original)
+
+    def test_large_development_balances_an_odd_case_count_across_two_repeats(self):
+        cases = [{"case_id": name, "partition": "development", "title": name,
+                  "step_count": 1, "fixture_sha256": fingerprint(name)}
+                 for name in ("cancellation-change", "event-routing-change", "status-extraction")]
+        plan = campaign.build_plan("large-development", 20261008, {}, cases)
+        self.assertEqual(plan["assignment_count"], 12)
+        self.assertEqual(plan["repetitions"], 2)
+        for case in cases:
+            runs = [run for run in plan["assignments"] if run["case_id"] == case["case_id"]]
+            self.assertEqual({(run["variant"], run["repeat_id"]) for run in runs},
+                             {(variant, repeat) for variant in ("baseline", "reposcout") for repeat in (1, 2)})
+            self.assertEqual(sum(run["variant"] == "baseline" and run["pair_position"] == 0 for run in runs), 1)
+        self.assertEqual([run["sequence"] for run in plan["assignments"]], list(range(12)))
+        self.assertEqual(len({run["run_id"] for run in plan["assignments"]}), 12)
+        first_counts = []
+        for repeat in (1, 2):
+            selected = [run for run in plan["assignments"] if run["repeat_id"] == repeat]
+            first_counts.append(sum(run["variant"] == "baseline" and run["pair_position"] == 0 for run in selected))
+            for index in range(0, len(selected), 2):
+                self.assertEqual(selected[index]["pair_id"], selected[index + 1]["pair_id"])
+                self.assertEqual([selected[index]["pair_position"], selected[index + 1]["pair_position"]], [0, 1])
+        self.assertEqual(sorted(first_counts), [1, 2])
+
+    def test_historical_schedules_retain_their_reviewed_assignment_identities(self):
+        # Captured from the reviewed pre-large-suite planner at 74b0959, not the new implementation.
+        expected = {"smoke": "0a85035bdfe618abfdde88b75e56a5138be25613a37685981a5aec23567ef421",
+                    "exploratory": "fdae4ec32c65f1c512ec45d8f8d862034310ee34a04ea164f33c113b0dd9a860"}
+        for stage, digest in expected.items():
+            self.assertEqual(fingerprint(campaign.build_plan(stage, 917, {}, catalog(), stage == "exploratory")["assignments"]), digest)
+
+    def test_large_holdout_presets_assign_eight_paired_and_four_original_reviews(self):
+        cases = [{"case_id": name, "partition": "holdout", "title": name,
+                  "step_count": 1, "fixture_sha256": fingerprint(name)} for name in campaign.LARGE_HOLDOUT_CASES]
+        paired = campaign.build_plan("large-holdout", 20261008, {}, cases)
+        original = campaign.build_plan("large-holdout-original", 20261008, {}, cases)
+        self.assertEqual(paired["assignment_count"], 8)
+        self.assertEqual(original["assignment_count"], 4)
+        self.assertEqual({run["variant"] for run in original["assignments"]}, {"reposcout"})
+        self.assertEqual({(run["case_id"], run["repeat_id"]) for run in original["assignments"]},
+                         {(name, repeat) for name in campaign.LARGE_HOLDOUT_CASES for repeat in (1, 2)})
+        with self.assertRaises(InvalidLedger):
+            campaign.build_plan("large-development", 20261008, {}, cases)
+
     def test_smoke_has_exact_preselected_four_cases_and_eight_runs(self):
         plan = campaign.build_plan("smoke", 4, {}, catalog())
         self.assertEqual(plan["assignment_count"], 8)
@@ -162,6 +261,55 @@ class AssignmentTests(unittest.TestCase):
 
 
 class TimeoutTests(unittest.TestCase):
+    def test_original_condition_remains_bound_to_prior_canonical_skill_and_binary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            binary = directory / "synthetic-binary"
+            binary.write_bytes(b"frozen binary; not executed")
+            skill = directory / "archived-skill"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text("frozen canonical skill")
+            archived = campaign.directory_hash(skill)
+            original = {"stage": "large-development", "plan_sha256": fingerprint("original plan"),
+                        "pins": {"skill": archived, "reposcout_sha256": campaign.file_hash(binary)}}
+            directory_hash = campaign.directory_hash
+            def changed_canonical(path):
+                return {"sha256": fingerprint("new canonical"), "files": {}} if Path(path) == campaign.ROOT / "skills/reposcout" else directory_hash(path)
+            ca = {"path": str(directory / "public-ca.pem"), "sha256": fingerprint("ca"),
+                  "bytes": 10, "destination": "/etc/ssl/cert.pem"}
+            with patch.object(campaign, "directory_hash", side_effect=changed_canonical), \
+                    patch.object(campaign, "load_plan", return_value=original), \
+                    patch.object(campaign, "binary_version", return_value="synthetic version"), \
+                    patch.object(campaign.subprocess, "run", return_value=SimpleNamespace(stdout="synthetic revision")), \
+                    patch("codex_isolation.codex_runtime_manifest", return_value={"bin/codex": fingerprint("runtime")}), \
+                    patch("codex_isolation.controller_ca_manifest", return_value=ca), \
+                    patch("codex_isolation.runtime_tool_manifest", return_value={
+                        "node": {"path": "/unexecuted/node", "sha256": fingerprint("node")}}):
+                with self.assertRaisesRegex(InvalidLedger, "exact canonical"):
+                    campaign.capture_pins(binary, "synthetic version", binary, skill)
+                captured = campaign.capture_pins(binary, "synthetic version", binary, skill,
+                                                 original_campaign=directory / "prior")
+                self.assertEqual(captured["skill"], archived)
+                self.assertEqual(captured["original_plan_sha256"], original["plan_sha256"])
+                binary.write_bytes(b"different binary")
+                with self.assertRaisesRegex(InvalidLedger, "frozen canonical"):
+                    campaign.capture_pins(binary, "synthetic version", binary, skill,
+                                          original_campaign=directory / "prior")
+                binary.write_bytes(b"frozen binary; not executed")
+                (skill / "SKILL.md").write_text("different skill")
+                with self.assertRaisesRegex(InvalidLedger, "frozen canonical"):
+                    campaign.capture_pins(binary, "synthetic version", binary, skill,
+                                          original_campaign=directory / "prior")
+
+    def test_external_case_check_command_reaches_actual_runtime_attestation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            assignment = dict(plan["assignments"][0], case_id="publication-change-a")
+            record = read_json(Path(assignment["run_dir"]) / "case.json")
+            record["check_commands"] = [["node", "tests/run.mjs"]]
+            spec, _ = campaign._trial_spec(plan, assignment, record, record["steps"][0], root / "planned")
+            self.assertEqual(spec.required_runtimes, ("node",))
+
     def test_capture_refuses_nonpositive_nonfinite_or_excessive_timeout_before_reading_inputs(self):
         for value in (0, -1, 601, float("inf"), float("nan"), True, "600"):
             with self.subTest(timeout=value), self.assertRaises(InvalidLedger):
@@ -314,6 +462,30 @@ class OwnershipTests(unittest.TestCase):
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_explicit_assignment_selects_only_that_run_and_never_restarts_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            selected = plan["assignments"][5]["run_id"]
+            auth = Path(temporary) / "synthetic-auth.json"
+            auth.write_text("synthetic")
+            calls = []
+            @model_runner
+            def runner(spec):
+                calls.append(spec.run_id)
+                raise RuntimeError("synthetic failure")
+            with patch.object(campaign, "_trial_spec", side_effect=fake_spec):
+                first = campaign.run(root, auth_file=auth, run_id=selected, runner=runner, check_pins=False)
+                second = campaign.run(root, auth_file=auth, run_id=selected, runner=runner, check_pins=False)
+                with self.assertRaisesRegex(InvalidLedger, "explicit assignment"):
+                    campaign.run(root, auth_file=auth, run_id="unknown", runner=runner, check_pins=False)
+                with self.assertRaisesRegex(InvalidLedger, "explicit assignment"):
+                    campaign.run(root, auth_file=auth, run_id=selected, limit=1, runner=runner, check_pins=False)
+            self.assertEqual(calls, [selected])
+            self.assertEqual(first["runs"], [{"run_id": selected, "status": "failed"}])
+            self.assertEqual(second["runs"], [])
+            self.assertEqual([row["status"] for row in campaign.inventory(plan)],
+                             ["notrun"] * 5 + ["failed"] + ["notrun"] * 2)
+
     def test_campaign_entry_prerequisite_failure_has_private_evidence_without_consuming_runs(self):
         for missing in (False, True):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:

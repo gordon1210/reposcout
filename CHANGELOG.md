@@ -8,14 +8,46 @@ within their section.
 
 ### Added
 
+- Add bounded external fixture bundles, shared signed review identities and fixed development,
+  heldout and three-case follow-up schedules for larger local Codex evaluations, preserving all historical
+  cases and results. Qualification and real model results remain separate from harness tests.
 
 - Add opt-in Codex review evaluations over disposable synthetic repositories, with independent
   domain oracles, isolated baseline/RepoScout/skill comparisons, blinded quality adjudication and
   complete assigned-run reporting. Historical negative results remain intact; evaluator tests
   and smaller source outputs are not presented as evidence of model-token savings.
 
+### Changed
+
+- Make the bundled skill's entry point sufficient for common repository, source and review
+  questions. Load detailed guides only for needed unfamiliar semantics; preserve pinned source,
+  exact quotations, trust boundaries and uncertainty without a mandatory guide-reading chain.
+- Prefer body-free Table orientation in the committed-review skill when its revision handles,
+  relationships and uncertainty fields answer the reading question. Keep JSON for automation,
+  exact structured details and literal source, without requiring duplicate format requests or
+  changing CLI defaults. Deterministic output-size checks do not establish model-token savings.
+- Reuse pinned source provenance in committed reviews and choose validation for unresolved
+  questions. Keep working/staged/deep-review routes available without treating extra replay
+  breadth as better review quality or requiring a fixed tool sequence.
+
 ### Fixed
 
+- Keep live evaluation campaigns, detailed reports, controller evidence and private grading
+  packets outside Git checkouts. Add a strict typed public-summary export and a lightweight
+  publication policy that rejects raw results, archives and local authoring records.
+- Bound external review-fixture reads before loading source bytes, rejecting excessive byte/file
+  counts and nonregular files. Make counter-scope calibration an explicit private input instead
+  of relying on a controller-specific runtime fingerprint.
+
+- Retain affordable direct changed-declaration references before weaker body-free `review-context`
+  metadata under output pressure, including resolved test callers. Human formats admit needed
+  revision/hash handles together with each reference, including handles beyond the initial
+  candidate prefix; failed packets roll back without losing smaller alternatives. Source
+  selection, coverage, output caps and JSON shape remain unchanged. Explicit source/diff requests
+  retain their established body allocation.
+- Accept semantically verified clean review answers with the empty or partial evidence arrays
+  permitted by their visible contract. Preserve strict checks on supplied quotations, revisions,
+  findings and execution claims, and retain original grades alongside versioned offline corrections.
 - Require a distinct tool network namespace as well as a denied socket probe, retaining the
   observed namespace, operation and error. Preserve attributable normalized costs before an
   invalid review follow-up in separate partial-cost summaries without inventing complete totals

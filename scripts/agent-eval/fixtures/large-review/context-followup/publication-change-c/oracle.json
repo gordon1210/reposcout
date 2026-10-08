@@ -1,0 +1,306 @@
+{
+  "domain_expected": {
+    "base": {
+      "schema": 1,
+      "primary": {
+        "sourceComment": {
+          "line": 2,
+          "revisionMatchesDocument": true
+        },
+        "capture": {
+          "ok": true,
+          "range": {
+            "startLine": 2,
+            "endLine": 2,
+            "start": 18,
+            "end": 25,
+            "quote": "Target\n"
+          }
+        },
+        "guardedCapture": {
+          "ok": true,
+          "range": {
+            "startLine": 2,
+            "endLine": 2,
+            "start": 18,
+            "end": 25,
+            "quote": "Target\n"
+          }
+        },
+        "guardedEffects": {
+          "anchors": 1,
+          "events": 1,
+          "sequence": 1,
+          "stateUnchanged": false
+        },
+        "sourceCommentUnchanged": true,
+        "sourceRevisionUnchanged": true
+      },
+      "controls": {
+        "lf": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 7,
+              "end": 14,
+              "quote": "Target\n"
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "crlfUnicode": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 11,
+              "end": 19,
+              "quote": "Target\r\n"
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "empty": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 1,
+              "endLine": 1,
+              "start": 0,
+              "end": 0,
+              "quote": ""
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "finalEmpty": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 7,
+              "end": 7,
+              "quote": ""
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "finalUnterminated": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 7,
+              "end": 13,
+              "quote": "Target"
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        }
+      },
+      "followup": {
+        "preview": {
+          "ok": true,
+          "status": "relocated",
+          "exact": true,
+          "target": {
+            "startLine": 2,
+            "endLine": 2,
+            "start": 18,
+            "end": 25,
+            "quote": "Target\n"
+          }
+        },
+        "creation": {
+          "ok": true,
+          "line": 2,
+          "physicalLineText": "Target",
+          "targetQuote": "Target\n",
+          "revisionMatchesCurrent": true,
+          "sourceRevisionMatchesOriginal": true
+        },
+        "originalCommentUnchanged": true,
+        "originalRevisionUnchanged": true
+      }
+    },
+    "head": {
+      "schema": 1,
+      "primary": {
+        "sourceComment": {
+          "line": 2,
+          "revisionMatchesDocument": true
+        },
+        "capture": {
+          "ok": true,
+          "range": {
+            "startLine": 2,
+            "endLine": 2,
+            "start": 7,
+            "end": 18,
+            "quote": "Subheading\n"
+          }
+        },
+        "guardedCapture": {
+          "ok": false,
+          "error": "anchor_quote_conflict"
+        },
+        "guardedEffects": {
+          "anchors": 0,
+          "events": 0,
+          "sequence": 0,
+          "stateUnchanged": true
+        },
+        "sourceCommentUnchanged": true,
+        "sourceRevisionUnchanged": true
+      },
+      "controls": {
+        "lf": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 7,
+              "end": 14,
+              "quote": "Target\n"
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "crlfUnicode": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 11,
+              "end": 19,
+              "quote": "Target\r\n"
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "empty": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 1,
+              "endLine": 1,
+              "start": 0,
+              "end": 0,
+              "quote": ""
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "finalEmpty": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 7,
+              "end": 7,
+              "quote": ""
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        },
+        "finalUnterminated": {
+          "capture": {
+            "ok": true,
+            "range": {
+              "startLine": 2,
+              "endLine": 2,
+              "start": 7,
+              "end": 13,
+              "quote": "Target"
+            }
+          },
+          "commentUnchanged": true,
+          "revisionUnchanged": true
+        }
+      },
+      "followup": {
+        "preview": {
+          "ok": true,
+          "status": "relocated",
+          "exact": true,
+          "target": {
+            "startLine": 3,
+            "endLine": 3,
+            "start": 18,
+            "end": 25,
+            "quote": "Target\n"
+          }
+        },
+        "creation": {
+          "ok": true,
+          "line": 3,
+          "physicalLineText": "",
+          "targetQuote": "Target\n",
+          "revisionMatchesCurrent": true,
+          "sourceRevisionMatchesOriginal": true
+        },
+        "originalCommentUnchanged": true,
+        "originalRevisionUnchanged": true
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "source-line-representation-disagrees-with-comment-coordinates",
+          "severity": "medium",
+          "impact": "A valid saved comment can silently acquire a quotation from a different physical line, or expected-quote verification rejects its correct source. Exact mapped follow-up comments can likewise be stored on the wrong LF-delimited line.",
+          "locations": [
+            {
+              "side": "head",
+              "path": "src/structure/parse.mjs",
+              "contains": "  for (const match of source.matchAll(/\\r\\n|\\r|\\n/g)) {"
+            }
+          ],
+          "witnesses": [
+            {
+              "input": {
+                "body": "Header\rSubheading\nTarget\n",
+                "commentLine": 2,
+                "action": "capture anchor from the public comment without expectedQuote"
+              },
+              "expected": {
+                "quote": "Target\n",
+                "start": 18,
+                "end": 25,
+                "commentLine": 2
+              },
+              "actual": {
+                "quote": "Subheading\n",
+                "start": 7,
+                "end": 18,
+                "commentLine": 2
+              }
+            }
+          ],
+          "rubric": "One representation-contract defect recognizes lone CR as an extra structure line while unchanged persisted comments use LF-delimited physical coordinates. The meaningful regression is a reachable wrong quotation, rejected correct quotation, misplaced follow-up comment, or independently supported equivalent public consequence. A complete shorter or different witness receives full credit; no private body string, second symptom, follow-up route, file set, read count or tool route is required. A changed parser line count alone does not establish the asserted public comment-contract harm. Static proof is admissible. Review the actual active unchanged producer/consumer contract when adjudicating the claim, without requiring a canonical evidence path. Do not count the related capture and follow-up symptoms as separate defects. Independently review any genuine additional finding for all conditions."
+        }
+      ],
+      "evidence_obligations": []
+    }
+  ]
+}

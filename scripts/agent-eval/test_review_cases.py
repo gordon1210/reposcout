@@ -1,16 +1,113 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from accounting import InvalidLedger
+from accounting import InvalidLedger, fingerprint
 import review_cases
 from codex_isolation import RUNTIME_PROBES, TOOL_ENVIRONMENT, runtime_tool_manifest
 
 
 class ReviewCaseTests(unittest.TestCase):
+    def test_external_large_bundle_preserves_application_docs_and_binds_its_own_limits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "bundle"
+            (bundle / "application").mkdir(parents=True)
+            (bundle / "large-case/head").mkdir(parents=True)
+            (bundle / "application/README.md").write_text("# Public application contract\n")
+            for index in range(36):
+                (bundle / f"application/module_{index}.py").write_text(f"VALUE = {index}\n")
+            (bundle / "large-case/head/module_0.py").write_text("VALUE = 7\n")
+            case = {"case_id": "large-case", "title": "Large bounded application", "partition": "development",
+                    "base_directory": "application", "revisions": ["head"],
+                    "check_command": ["python3", "-B", "module_0.py"],
+                    "steps": [{"base": "base", "head": "head", "task": "Review the public contract."}]}
+            catalog = {"schema": 1, "source_limits": {"max_files": 64, "max_bytes": 65536}, "cases": [case]}
+            (bundle / "catalog.json").write_text(json.dumps(catalog))
+            snapshots = review_cases.snapshots("large-case", bundle_root=bundle)
+            self.assertEqual(snapshots["head"]["README.md"], "# Public application contract\n")
+            self.assertIn("python3 -B module_0.py", snapshots["head"]["REVIEW_CHECKS.md"])
+            self.assertGreater(len(snapshots["base"]), 32)
+            self.assertEqual(snapshots["base"]["module_0.py"], "VALUE = 0\n")
+            (bundle / "large-case/oracle.json").write_text(json.dumps({"domain_expected": {"base": 0, "head": 7},
+                "steps": [{"conclusion": "issues", "defects": [], "evidence_obligations": []}]}))
+            (bundle / "large-case/probe.py").write_text(
+                "import json, runpy, sys\nfrom pathlib import Path\nprint(json.dumps(runpy.run_path(str(Path(sys.argv[1])/'module_0.py'))['VALUE']))\n")
+            self.assertTrue(review_cases.verify_domain("large-case", bundle_root=bundle)["passed"])
+            signer = review_cases.create_signer(root / "shared-signer")
+            first = review_cases.prepare_case("large-case", root / "first", bundle_root=bundle, signer=signer)
+            second = review_cases.prepare_case("large-case", root / "second", bundle_root=bundle, signer=signer)
+            other = review_cases.prepare_case("large-case", root / "other", bundle_root=bundle)
+            self.assertEqual(first["steps"], second["steps"])
+            self.assertEqual(first["oracle_sha256"], second["oracle_sha256"])
+            self.assertEqual(first["check_commands"], [["python3", "-B", "module_0.py"]])
+            self.assertEqual(first["steps"][0]["base_tree"], other["steps"][0]["base_tree"])
+            self.assertNotEqual(first["steps"][0]["base_commit"], other["steps"][0]["base_commit"])
+            self.assertNotEqual(first["oracle_sha256"], other["oracle_sha256"])
+            from review_campaign import make_prompt
+            self.assertEqual(make_prompt(first["steps"][0], "baseline")[1]["task_sha256"],
+                             make_prompt(second["steps"][0], "reposcout")[1]["task_sha256"])
+            self.assertNotEqual(make_prompt(first["steps"][0], "baseline")[1]["task_sha256"],
+                                make_prompt(other["steps"][0], "reposcout")[1]["task_sha256"])
+            catalog["source_limits"]["max_files"] = 32
+            case["deletions"] = {"head": [f"module_{index}.py" for index in range(36)]}
+            (bundle / "catalog.json").write_text(json.dumps(catalog))
+            with self.assertRaises(InvalidLedger):
+                review_cases.snapshots("large-case", bundle_root=bundle)
+
+    def test_snapshots_rejects_oversized_source_before_reading_its_body(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            (bundle / "case/base").mkdir(parents=True)
+            (bundle / "case/head").mkdir()
+            oversized = bundle / "case/base/oversized.py"
+            oversized.write_text("x" * 512)
+            (bundle / "catalog.json").write_text(json.dumps({
+                "source_limits": {"max_files": 4, "max_bytes": 128},
+                "cases": [{"case_id": "case", "revisions": ["head"],
+                           "check_command": ["python3", "-B", "oversized.py"]}]}))
+            read_sources = []
+            original = Path.read_text
+            def observed_read(path, *args, **kwargs):
+                if path == oversized:
+                    read_sources.append(path.name)
+                return original(path, *args, **kwargs)
+            with patch.object(Path, "read_text", new=observed_read):
+                with self.assertRaisesRegex(InvalidLedger, "bounds"):
+                    review_cases.snapshots("case", bundle_root=bundle)
+            self.assertEqual(read_sources, [], "oversized source bytes were read before enforcing the bound")
+
+    def test_source_reader_checks_size_before_opening_an_oversized_blob(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "oversized.py").write_bytes(b"x" * 129)
+            with patch.object(review_cases.os, "open", side_effect=AssertionError("oversized source was opened")):
+                with self.assertRaisesRegex(InvalidLedger, "bounds"):
+                    review_cases._directory_files(directory, max_files=4, max_bytes=128)
+
+    def test_source_reader_stops_before_accumulating_excess_bytes_or_files(self):
+        for max_files, max_bytes in ((1, 1024), (4, 100)):
+            with self.subTest(files=max_files, size=max_bytes), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                (directory / "first.py").write_bytes(b"x" * 60)
+                (directory / "second.py").write_bytes(b"y" * 60)
+                with patch.object(review_cases.os, "open", wraps=os.open) as opened:
+                    with self.assertRaisesRegex(InvalidLedger, "bounds"):
+                        review_cases._directory_files(directory, max_files=max_files, max_bytes=max_bytes)
+                    self.assertEqual(opened.call_count, 1)
+
+    def test_source_reader_rejects_nonregular_inputs_without_blocking(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            os.mkfifo(directory / "input.py")
+            with self.assertRaisesRegex(InvalidLedger, "regular"):
+                review_cases._directory_files(directory, max_files=4, max_bytes=128)
+
     def test_main_inventory_and_frozen_holdout_are_separate(self):
         main = review_cases.list_cases()
         all_cases = review_cases.list_cases(include_holdout=True)
@@ -20,6 +117,7 @@ class ReviewCaseTests(unittest.TestCase):
         self.assertEqual(next(case["partition"] for case in all_cases if case["case_id"] == "renewal-holdout"), "holdout")
         self.assertTrue(set(review_cases.SMOKE_CASES).issubset({case["case_id"] for case in main}))
         self.assertEqual(len({case["fixture_sha256"] for case in all_cases}), 9)
+        self.assertEqual(fingerprint(all_cases), "a6d81f05ac39286e0e86efaae985745996b4e1ca1ad4f89823cdb1cfa63e1876")
 
     def test_preparation_pins_verified_signed_commits_without_private_files(self):
         with tempfile.TemporaryDirectory() as temporary:

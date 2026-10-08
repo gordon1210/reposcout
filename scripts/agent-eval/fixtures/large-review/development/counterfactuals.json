@@ -1,0 +1,33 @@
+{
+  "mutations": [
+    {
+      "case_id": "cancellation-change",
+      "expected_revision": "base",
+      "file": "meridian/fulfillment/cancellation_plan.py",
+      "from": "target = sum(reservation.reserved for reservation in reservations)",
+      "purpose": "Only the faulty quantity selection is repaired; all conservation and boundary controls must recover.",
+      "revision": "head",
+      "to": "target = requested_quantity"
+    },
+    {
+      "case_id": "event-routing-change",
+      "expected_revision": "base",
+      "file": "meridian/events/routing.py",
+      "from": "from meridian.events.identity import provider_receipt_key as event_identity",
+      "purpose": "Repair only the live routing binding; the provider-local reconciliation consumer and its outcomes remain valid, and all original tenant/replay/retry probes recover.",
+      "revision": "head",
+      "to": "from meridian.events.identity import event_identity"
+    },
+    {
+      "case_id": "status-extraction",
+      "expected_revision": "head",
+      "file": "meridian/fulfillment/status.py",
+      "from": "if shipped > 0:",
+      "must_differ": true,
+      "purpose": "A private one-line behavioral mutant must be rejected by the clean-case probes; restoring that line must restore all projections.",
+      "revision": "head",
+      "to": "if shipped > 1:"
+    }
+  ],
+  "schema": 1
+}

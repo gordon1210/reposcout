@@ -1,0 +1,474 @@
+{
+  "domain_expected": {
+    "base": {
+      "partialNewCollection": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "collection_mismatch",
+          "collection_mismatch"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": {
+          "previewApplicable": true,
+          "previewDiagnostics": [],
+          "code": "ok",
+          "imported": [
+            "a",
+            "b"
+          ],
+          "stateUnchangedOnFailure": null
+        }
+      },
+      "boundCollectionFailure": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "revision_conflict",
+          "revision_conflict"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": null
+      },
+      "atomicFailure": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b",
+          "c"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "allFailedPartial": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_empty_result",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "orderedSuccess": {
+        "previewNoMutation": true,
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "events": [
+          {
+            "action": "collection.created",
+            "sequence": 1,
+            "target": "collection_0001"
+          },
+          {
+            "action": "document.created",
+            "sequence": 2,
+            "target": "document_0001"
+          },
+          {
+            "action": "collection.created",
+            "sequence": 3,
+            "target": "collection_0002"
+          },
+          {
+            "action": "document.created",
+            "sequence": 4,
+            "target": "document_0002"
+          },
+          {
+            "action": "exchange.imported",
+            "sequence": 5,
+            "target": "exchange_0001"
+          }
+        ],
+        "documentSequences": [
+          2,
+          4
+        ],
+        "revisionSequences": [
+          2,
+          4
+        ],
+        "bindings": {
+          "x": "collection_0001",
+          "y": "collection_0002"
+        },
+        "firstBody": "[B](doc:document_0002)",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "diagnosticPriority": {
+        "diagnostics": [
+          "revision_conflict"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true
+      },
+      "synchronization": {
+        "previewNoMutation": true,
+        "counts": {
+          "unchanged": 1,
+          "create": 0,
+          "revise": 1,
+          "conflicting": 0,
+          "unmapped": 0
+        },
+        "predictedKeys": [
+          "b"
+        ],
+        "importedKeys": [
+          "b"
+        ],
+        "unchanged": [
+          "a"
+        ],
+        "firstHistoryLength": 1,
+        "secondHistoryLength": 2,
+        "secondBody": "Second B",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "establishedCollections": {
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "collectionCount": 1,
+        "membershipCount": 1,
+        "documentCount": 2,
+        "sameCollection": true,
+        "bindings": {
+          "manual": "collection_0001"
+        },
+        "events": [
+          "collection.created",
+          "document.created",
+          "document.created",
+          "exchange.imported"
+        ],
+        "documentSequences": [
+          2,
+          3
+        ],
+        "revisionSequences": [
+          2,
+          3
+        ]
+      }
+    },
+    "head": {
+      "partialNewCollection": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "collection_mismatch",
+          "collection_mismatch"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": {
+          "previewApplicable": true,
+          "previewDiagnostics": [],
+          "code": "ok",
+          "imported": [
+            "a",
+            "b"
+          ],
+          "stateUnchangedOnFailure": null
+        }
+      },
+      "boundCollectionFailure": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "revision_conflict",
+          "revision_conflict"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": null
+      },
+      "atomicFailure": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b",
+          "c"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "allFailedPartial": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_empty_result",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "orderedSuccess": {
+        "previewNoMutation": true,
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "events": [
+          {
+            "action": "collection.created",
+            "sequence": 1,
+            "target": "collection_0001"
+          },
+          {
+            "action": "document.created",
+            "sequence": 2,
+            "target": "document_0001"
+          },
+          {
+            "action": "collection.created",
+            "sequence": 3,
+            "target": "collection_0002"
+          },
+          {
+            "action": "document.created",
+            "sequence": 4,
+            "target": "document_0002"
+          },
+          {
+            "action": "exchange.imported",
+            "sequence": 5,
+            "target": "exchange_0001"
+          }
+        ],
+        "documentSequences": [
+          2,
+          4
+        ],
+        "revisionSequences": [
+          2,
+          4
+        ],
+        "bindings": {
+          "x": "collection_0001",
+          "y": "collection_0002"
+        },
+        "firstBody": "[B](doc:document_0002)",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "diagnosticPriority": {
+        "diagnostics": [
+          "revision_conflict"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true
+      },
+      "synchronization": {
+        "previewNoMutation": true,
+        "counts": {
+          "unchanged": 1,
+          "create": 0,
+          "revise": 1,
+          "conflicting": 0,
+          "unmapped": 0
+        },
+        "predictedKeys": [
+          "b"
+        ],
+        "importedKeys": [
+          "b"
+        ],
+        "unchanged": [
+          "a"
+        ],
+        "firstHistoryLength": 1,
+        "secondHistoryLength": 2,
+        "secondBody": "Second B",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "establishedCollections": {
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "collectionCount": 1,
+        "membershipCount": 1,
+        "documentCount": 2,
+        "sameCollection": true,
+        "bindings": {
+          "manual": "collection_0001"
+        },
+        "events": [
+          "collection.created",
+          "document.created",
+          "document.created",
+          "exchange.imported"
+        ],
+        "documentSequences": [
+          2,
+          3
+        ],
+        "revisionSequences": [
+          2,
+          3
+        ]
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "no-issues",
+      "defects": [],
+      "evidence_obligations": []
+    }
+  ],
+  "interpretation": "Public checks retain their existing coverage. Private workflow samples establish the specified boundary distinction, successful sequencing, diagnostics, replay and sync behavior; passing samples are not a universal correctness proof. The clean review has no mandatory nonempty evidence/quote or file-reading quota. All supplied quotations and revision identities must nevertheless be exact and factual claims supported."
+}

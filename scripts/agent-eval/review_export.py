@@ -1,4 +1,4 @@
-"""Project every frozen assignment, with adverse outcomes and conditional comparisons."""
+"""Private report of every frozen assignment, adverse outcomes and conditional comparisons."""
 
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -319,9 +319,12 @@ def report(root, adjudications=None):
                     "adjudication grader differs from frozen campaign")
     _apply_adjudications(private_runs, index)
     runs = [project_run(run) for run in private_runs]
-    paired = comparisons(runs)
+    paired = [] if plan["stage"] == "large-holdout-original" else comparisons(runs)
     pins = {key: value for key, value in plan["pins"].items()
-            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file", "runtime_tool_paths")}
+            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file", "runtime_tool_paths",
+                           "case_bundle", "original_campaign")}
+    if pins.get("usage_scope_calibration"):
+        pins["usage_scope_calibration"] = {"evidence_sha256": pins["usage_scope_calibration"]["evidence_sha256"]}
     result = {"schema": 1, "kind": "codex-review-campaign-report", "plan_sha256": plan["plan_sha256"],
               "stage": plan["stage"], "seed": plan["seed"], "repetitions": plan["repetitions"],
               "ablation": plan["ablation"], "model": plan["model"], "effort": plan["effort"], "pins": pins,
@@ -347,10 +350,11 @@ def report(root, adjudications=None):
 
 def export(root, destination, adjudications=None):
     result = report(root, adjudications)
-    destination = Path(destination)
+    from publication import private_destination
+    destination = private_destination(destination)
     require(not destination.exists() and not destination.is_symlink(), "export destination already exists")
     require(all(not parent.is_symlink() for parent in destination.absolute().parents), "export path traverses a symlink")
-    destination.mkdir(parents=True)
+    destination.mkdir(mode=0o700, parents=True)
     write_new(destination / "results.json", result)
     write_new(destination / "integrity.json", {"schema": 1, "plan_sha256": result["plan_sha256"],
                                                "results_canonical_json_sha256": fingerprint(result)})
@@ -373,7 +377,8 @@ def packets(root, destination):
             by_id[packet["packet_id"]] = packet
     selected = list(by_id.values())
     random.Random(plan["seed"] ^ 0xB11D).shuffle(selected)
-    destination = Path(destination)
+    from publication import private_destination
+    destination = private_destination(destination)
     require(not destination.exists() and not destination.is_symlink(), "packet destination already exists")
     require(all(not parent.is_symlink() for parent in destination.absolute().parents), "packet path traverses a symlink")
     destination.mkdir(mode=0o700)

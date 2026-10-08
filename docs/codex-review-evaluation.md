@@ -114,6 +114,13 @@ Different witness representations, including a field-focused result instead of a
 require explicit semantic adjudication. A representation mismatch is not itself a demonstrated
 domain contradiction. The submitted source identities and verbatim quotes remain strictly checked.
 
+A correct `no-issues` answer may omit final quotations or quote only part of its reasoning, as the
+visible prompt and schema permit. Independent semantic review is still required; private source
+coverage hints do not add an undisclosed quotation quota. Any supplied quotation, retained source,
+finding, schema field or execution claim remains subject to its existing accuracy checks. Preserve
+original grades when correcting an evaluator defect, and report a separately versioned assessment
+of the same unchanged answers and semantic decisions rather than silently replacing the old result.
+
 Every delivered task states its zero-based `step_id`: the initial review is step 0 and its first
 follow-up is step 1. A retained source reference uses the originating earlier answer's `step_id`
 and a zero-based `index` into that answer's top-level `evidence` array. It does not index an earlier
@@ -152,8 +159,8 @@ Do not assume a disjoint cache-write partition without supporting evidence. Outp
 includes observed reasoning; any reasoning breakdown is supplementary.
 Input contains cached input exactly once; output contains reasoning exactly once when those
 relationships are established by the supported export. Cumulative session counters must not be
-added again on resume. The supported binary and observed counter scope are bound to a recorded
-calibration; other binaries retain unknown scope until verified. The current exec adapter is a separate, explicitly identified observation
+added again on resume. `prepare --usage-calibration FILE` binds an explicit private counter proof
+to the chosen binary/version and model/effort. Without that proof the scope remains unknown. The current exec adapter is a separate, explicitly identified observation
 basis; it does not weaken the historical final-provider-call or native-window contracts.
 
 Unknown fields remain unknown. Controller closure, trace integrity and supported usage semantics
@@ -184,9 +191,14 @@ from intended-condition claims. Keep its actual answers and costs separately sco
 every aggregate containing it, and preserve unaffected comparisons only where their own conditions
 remain valid. A later no-model repair does not retroactively establish the missing model condition.
 
-Keep raw JSONL, stderr and controller records private. Public exports retain sanitized metrics,
-conditions and evidence hashes, not host paths, authentication data or arbitrary raw model/tool
-payloads. The 2026-09-12 pilot and its adverse results are not rewritten.
+Keep raw JSONL, stderr, reviewer attribution and controller records private, outside Git.
+`report`, `export` and `packets` contain private details. Only the explicit `publish` command
+produces a public summary with a strict typed field allowlist: fixed case/variant/outcome/quality
+states, repeat, accounting basis and separate nullable input/cache-write/cache-read/output tokens.
+It retains all assigned outcomes but excludes arbitrary text, source, commands, provenance,
+session/hash identities, runtime pins, timestamps and resource observations. Unsupported fields
+or values cannot be added to the public schema implicitly. See the [tool instructions](../scripts/agent-eval/README.md).
+The historical pilot is preserved byte for byte.
 
 ## Campaign stages
 
