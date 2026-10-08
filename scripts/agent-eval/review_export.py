@@ -319,9 +319,10 @@ def report(root, adjudications=None):
                     "adjudication grader differs from frozen campaign")
     _apply_adjudications(private_runs, index)
     runs = [project_run(run) for run in private_runs]
-    paired = comparisons(runs)
+    paired = [] if plan["stage"] == "large-holdout-original" else comparisons(runs)
     pins = {key: value for key, value in plan["pins"].items()
-            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file", "runtime_tool_paths")}
+            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file", "runtime_tool_paths",
+                           "case_bundle", "original_campaign")}
     result = {"schema": 1, "kind": "codex-review-campaign-report", "plan_sha256": plan["plan_sha256"],
               "stage": plan["stage"], "seed": plan["seed"], "repetitions": plan["repetitions"],
               "ablation": plan["ablation"], "model": plan["model"], "effort": plan["effort"], "pins": pins,

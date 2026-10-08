@@ -64,8 +64,11 @@ The supplied prompt identifies the current zero-based `step_id`. Retained refere
 earlier review's zero-based step and the zero-based index in its top-level `evidence` array:
 `step=0, index=0` identifies the first evidence item from the initial review. Schema descriptions
 and shared guidance deliver the same convention in every arm. Exact source and retained-reference
-checks remain strict; a discovered prompt ambiguity requires a new campaign, not corrected answers
-or retroactively waived grades.
+checks remain strict. A changed prompt or task requires a new campaign. An evaluator correction
+against the unchanged visible contract may instead be reported as a separate grading version bound
+to the original answers and decisions; original grades remain immutable. In particular, semantically
+verified clean answers may use the empty or partial evidence arrays that the prompt/schema permit,
+without a private quotation quota. Incorrect supplied quotes and unsupported execution claims fail.
 
 After the eight smoke episodes (ten invocations, including two real follow-ups) have valid isolation, response structure and understood
 accounting, `qualify-smoke CAMPAIGN EVIDENCE.json` records the explicit qualification. The evidence
@@ -91,6 +94,15 @@ remain inspectable without inventing missing runtime attestations or rewriting t
 Current trace accounting lives in `codex_trace.py`, separately from the historical native-window
 adapter. It preserves missing fields as unknown and never turns emitted turn usage into a claimed
 complete provider-call ledger.
+
+The separate [large-review study](../../docs/large-review-evaluation.md) adds fixed development and
+heldout presets over explicitly supplied larger bundles, a shared disposable signer across matched
+versions, and a 36-assignment order/report helper. It reuses this runner and its isolation and usage
+contracts. Original treatment hashes come from the original canonical development condition; the
+heldout tasks are sealed before development outputs and stay hidden from product tuning until freeze.
+The separate `large-followup` preset requires its own explicit bundle and fixes three cases, two
+repeats and twelve native/skill assignments. Reused opaque IDs never permit joining its new tasks
+to old campaigns without their distinct source, revision and prompt identities.
 
 If a later invocation cannot be attributed safely, `known_usage_prefix` preserves the normalized
 prefix and its per-field invocation indices/stop reasons while full episode fields remain unknown.

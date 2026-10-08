@@ -152,9 +152,19 @@ JSON entry is removed first. Omitted compact identities are then reconsidered ag
 renderer and tokenizer before any details are restored; a byte-heavy but token-affordable identity
 must not disappear merely because another path costs more tokens. The complete response must fit
 both budgets in the selected format.
+When bounded body-free output has lost concrete references touching changed declarations, those
+references are reconsidered before weaker neighborhood metadata. A resolved test caller has the same priority
+as any other resolved caller. Table and Markdown admit a reference together with any missing
+revision/hash handles needed to read its endpoints; JSON and NDJSON already carry those identities
+inside the reference. A packet that does not fit is rolled back completely, and smaller subsequent
+packets are still tried. If none fits, existing type/import/file-based evidence remains available.
+Already captured endpoint handles beyond the initial candidate prefix can participate, but the
+final response still contains at most 100 candidates and 100 relations. This is output allocation
+only: source-selection order, selected-file costs and analysis coverage do not change. Explicit
+`--source` and `--diff` requests retain their established allocation, including affordable bodies.
 Previously trimmed changes are reconsidered for complete detail restoration, smallest first,
 so removing an oversized entry can make room for a small change's ranges and declarations again.
-Omitted relations and context metadata are also reconsidered in their original evidence order;
+Remaining omitted relations and context metadata are reconsidered in their original evidence order;
 requested diff and whole-source bodies follow them. Every admission is checked against both
 actual output budgets, and all omission counts describe the final retained response.
 Relations alternate between head and base so either side cannot consume the entire output limit

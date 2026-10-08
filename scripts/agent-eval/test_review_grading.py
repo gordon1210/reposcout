@@ -136,8 +136,120 @@ class ReviewGradingTests(unittest.TestCase):
                          "trigger": {"input_json": '{"region":"domestic"}', "expected_json": "0", "actual_json": "499"},
                          "cause": "Domestic shipping should be free.", "impact": "Charges customers.", "evidence_indices": [1]}
         bad = answer(evidence, [false_finding])
-        grade = review_grading.grade_episode(case, [bad])
-        self.assertIn("clean-case-false-positive", [item["code"] for item in grade["automatic"]["hard_errors"]])
+        for conclusion in ("issues", "no-issues"):
+            with self.subTest(conclusion=conclusion):
+                bad["conclusion"] = conclusion
+                grade = review_grading.grade_episode(case, [bad])
+                self.assertIn("clean-case-false-positive", [item["code"] for item in grade["automatic"]["hard_errors"]])
+                self.assertFalse(review_grading.grade_episode(case, [bad], adjudication(grade))["quality"]["passed"])
+
+    def test_clean_answer_can_omit_final_quotes_after_semantic_review(self):
+        case = self.prepare("clean-refactor")
+        partial = [source_evidence(case, 0, "head", "shipping.py")]
+        for evidence in ([], partial):
+            with self.subTest(quoted_files=len(evidence)):
+                supplied = answer(evidence)
+                grade = review_grading.grade_episode(case, [supplied])
+                self.assertFalse(grade["quality"]["passed"])
+                self.assertEqual(grade["adjudication_status"], "pending")
+                decision = adjudication(grade)
+                decision["steps"][0]["resolutions"] = []
+                reviewed = review_grading.grade_episode(case, [supplied], decision)
+                self.assertTrue(reviewed["quality"]["passed"], reviewed["quality"])
+                self.assertEqual(reviewed["quality"]["missing_evidence"], [])
+                self.assertEqual(reviewed["automatic"]["hard_errors"], [])
+                self.assertFalse(reviewed["automatic"]["source_delivery_observed"])
+
+    def test_clean_adjudication_keeps_existing_alternative_evidence_resolutions(self):
+        case = self.prepare("clean-refactor")
+        supplied = answer([source_evidence(case, 0, "head", "shipping.py")])
+        grade = review_grading.grade_episode(case, [supplied])
+        decision = adjudication(grade)
+        decision["steps"][0]["resolutions"] = [
+            {"gap_id": "s0:evidence:" + identity, "evidence_indices": [0],
+             "reason": "The reviewer checked both pinned implementations and request behavior; the accurate head quote need not reproduce every private anchor."}
+            for identity in ("policy-preserved", "request-check")]
+        reviewed = review_grading.grade_episode(case, [supplied], decision)
+        self.assertTrue(reviewed["quality"]["passed"], reviewed["quality"])
+
+    def test_clean_answer_still_rejects_inaccurate_supplied_evidence(self):
+        case = self.prepare("clean-refactor")
+        mutations = [("quote", "return 0\n"), ("end_line", 1), ("end_line", 999),
+                     ("snapshot", "0" * 40), ("path", "../shipping.py")]
+        for field, value in mutations:
+            with self.subTest(field=field, value=value):
+                item = source_evidence(case, 0, "head", "shipping.py")
+                item[field] = value
+                supplied = answer([item])
+                grade = review_grading.grade_episode(case, [supplied])
+                reviewed = review_grading.grade_episode(case, [supplied], adjudication(grade))
+                self.assertFalse(reviewed["quality"]["passed"])
+                self.assertIn("invalid-source-evidence", [item["code"] for item in reviewed["quality"]["regressions"]])
+        supplied = answer([], retained=[{"step": 0, "index": 0, "side": "head",
+                                         "snapshot": case["steps"][0]["head_tree"],
+                                         "retention_proof": "The source was already inspected."}])
+        grade = review_grading.grade_episode(case, [supplied])
+        reviewed = review_grading.grade_episode(case, [supplied], adjudication(grade))
+        self.assertFalse(reviewed["quality"]["passed"])
+        self.assertIn("invalid-retained-evidence", [item["code"] for item in reviewed["quality"]["regressions"]])
+
+    def test_clean_answer_without_quotes_still_obeys_the_schema(self):
+        case = self.prepare("clean-refactor")
+        missing_field = answer([])
+        del missing_field["evidence"]
+        wrong_type = answer([])
+        wrong_type["evidence"] = "No issues."
+        for supplied in (missing_field, wrong_type):
+            with self.subTest(evidence=supplied.get("evidence")):
+                grade = review_grading.grade_episode(case, [supplied])
+                reviewed = review_grading.grade_episode(case, [supplied], adjudication(grade))
+                self.assertFalse(reviewed["quality"]["passed"])
+                self.assertIn("invalid-answer", [item["code"] for item in reviewed["quality"]["regressions"]])
+
+    def test_clean_answer_without_quotes_needs_a_favorable_semantic_verdict(self):
+        case = self.prepare("clean-refactor")
+        supplied = answer([])
+        grade = review_grading.grade_episode(case, [supplied])
+        for verdict in ({"semantic_passed": False}, {"missing_evidence": ["The claimed production-path equivalence is unsupported."]}):
+            with self.subTest(verdict=verdict):
+                decision = adjudication(grade)
+                decision["steps"][0].update(verdict)
+                reviewed = review_grading.grade_episode(case, [supplied], decision)
+                self.assertFalse(reviewed["quality"]["passed"])
+                self.assertIn("semantic-review-failed", [item["code"] for item in reviewed["quality"]["regressions"]])
+
+    def test_no_issues_answer_cannot_hide_a_real_defect(self):
+        case = self.prepare("refund-boundary")
+        supplied = answer([])
+        grade = review_grading.grade_episode(case, [supplied])
+        reviewed = review_grading.grade_episode(case, [supplied], adjudication(grade))
+        self.assertFalse(reviewed["quality"]["passed"])
+        self.assertIn("conclusion-mismatch", [item["code"] for item in reviewed["quality"]["regressions"]])
+        self.assertTrue(any(gap.get("defect_id") == "inclusive-refund-day" for gap in reviewed["quality"]["missing_evidence"]))
+
+    def test_clean_answer_without_quotes_must_substantiate_execution_claims(self):
+        case = self.prepare("clean-refactor")
+        supplied = answer([])
+        supplied["validation"] = ["The shipping request assertions were run and passed."]
+        grade = review_grading.grade_episode(case, [supplied])
+        decision = adjudication(grade)
+        decision["steps"][0]["execution_claims"] = "supported"
+        with self.assertRaises(InvalidLedger):
+            review_grading.grade_episode(case, [supplied], decision)
+        decision["steps"][0]["execution_claims"] = "unsupported"
+        rejected = review_grading.grade_episode(case, [supplied], decision)
+        self.assertFalse(rejected["quality"]["passed"])
+        self.assertIn("unsupported-test-execution-claim", [item["code"] for item in rejected["quality"]["regressions"]])
+        executions = [{"step_id": 0, "command": ["python3", "-B", "test_shipping.py"], "exit_code": 0,
+                       "trace_sha256": "1" * 64, "output_sha256": "2" * 64,
+                       "output_excerpt": ""}]
+        observed = review_grading.grade_episode(case, [supplied], execution_evidence=executions)
+        decision = adjudication(observed)
+        decision["steps"][0].update({"execution_claims": "supported", "execution_evidence_indices": [0],
+                                     "resolutions": []})
+        reviewed = review_grading.grade_episode(case, [supplied], decision, execution_evidence=executions)
+        self.assertTrue(reviewed["quality"]["passed"], reviewed["quality"])
+        self.assertTrue(reviewed["validation_execution_verified"])
 
     def test_missing_binding_is_distinct_from_correct_defect_identification(self):
         case = self.prepare("refund-boundary")

@@ -27,10 +27,14 @@ MAIN_CASES = ("clean-refactor", "refund-boundary", "import-wiring", "package-wir
               "wire-units-noise", "sparse-evidence", "review-followup", "staff-only")
 SMOKE_CASES = ("clean-refactor", "import-wiring", "sparse-evidence", "review-followup")
 ABLATION_CASES = ("refund-boundary", "import-wiring", "sparse-evidence", "review-followup")
+LARGE_DEVELOPMENT_CASES = ("cancellation-change", "event-routing-change", "status-extraction")
+LARGE_HOLDOUT_CASES = ("publication-change-a", "publication-change-b")
+LARGE_FOLLOWUP_CASES = ("publication-change-a", "publication-change-b", "publication-change-c")
+LARGE_STAGES = ("large-development", "large-holdout", "large-holdout-original", "large-followup")
 VARIANTS = ("baseline", "reposcout", "reposcout-cli")
 TERMINAL_STATUSES = ("completed", "failed", "aborted")
 SOURCE_FILES = ("accounting.py", "review_campaign.py", "review_export.py", "review_cases.py", "review_grading.py",
-                "codex_runner.py", "codex_isolation.py", "codex_trace.py")
+                "codex_runner.py", "codex_isolation.py", "codex_trace.py", "large_review_study.py")
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_ROOT = Path(__file__).resolve().parent
 LIMITS = {"timeout_seconds": 180, "memory_limit_bytes": 1024 ** 3,
@@ -116,14 +120,25 @@ def calibrated_usage_scope(cli_version, codex_sha256):
 
 
 def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file=None,
-                 *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None):
+                 *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None,
+                 bundle_root=None, original_campaign=None):
     limits = {**LIMITS, "timeout_seconds": validated_timeout_seconds(timeout_seconds)}
     codex_binary, reposcout_binary, skill_dir = map(Path, (codex_binary, reposcout_binary, skill_dir))
     codex_binary, reposcout_binary, skill_dir = (path.resolve() for path in
                                                 (codex_binary, reposcout_binary, skill_dir))
     require(codex_binary.is_file() and reposcout_binary.is_file(), "missing evaluation binary")
-    require(directory_hash(skill_dir) == directory_hash(ROOT / "skills/reposcout"),
-            "treatment requires the exact canonical RepoScout skill bundle")
+    skill = directory_hash(skill_dir)
+    original = None
+    if original_campaign is not None:
+        original = load_plan(original_campaign)
+        require(original["stage"] == "large-development" and not original["pins"].get("original_campaign"),
+                "original treatment must reference a directly qualified development condition")
+        require(skill == original["pins"]["skill"]
+                and file_hash(reposcout_binary) == original["pins"]["reposcout_sha256"],
+                "original treatment differs from the frozen canonical development condition")
+    else:
+        require(skill == directory_hash(ROOT / "skills/reposcout"),
+                "treatment requires the exact canonical RepoScout skill bundle")
     actual_version = binary_version(codex_binary)
     if actual_version != codex_version:
         raise CampaignPrerequisiteError("codex-version-drift", "declared Codex version differs from pinned binary",
@@ -147,7 +162,7 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
     tool_assets = runtime_tool_identities(tools)
     revision = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True,
                               capture_output=True, text=True, timeout=10).stdout.strip()
-    return {"codex_binary": str(codex_binary), "codex_sha256": codex_sha256,
+    result = {"codex_binary": str(codex_binary), "codex_sha256": codex_sha256,
             "codex_runtime_assets": runtime_assets, "codex_runtime_sha256": fingerprint(runtime_assets),
             "controller_ca_file": controller_ca["path"], "controller_ca_sha256": controller_ca["sha256"],
             "controller_ca_bytes": controller_ca["bytes"], "controller_ca_destination": controller_ca["destination"],
@@ -156,35 +171,47 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
             "codex_version": actual_version, "reposcout_binary": str(reposcout_binary),
             "reposcout_sha256": file_hash(reposcout_binary),
             "reposcout_version": binary_version(reposcout_binary), "skill_dir": str(skill_dir),
-            "skill": directory_hash(skill_dir), "fixture_bundle": directory_hash(SCRIPT_ROOT / "fixtures/pr-review"),
+            "skill": skill, "fixture_bundle": directory_hash(SCRIPT_ROOT / "fixtures/pr-review" if bundle_root is None else bundle_root),
             "harness_sources": {name: file_hash(SCRIPT_ROOT / name) for name in SOURCE_FILES},
             "repository_revision": revision, "model": MODEL, "effort": EFFORT,
             "answer_schema_sha256": fingerprint(answer_schema()), "limits": limits,
             "usage_scope": usage_scope, "usage_scope_calibration": calibration,
             "capabilities_sha256": fingerprint(CAPABILITIES)}
+    if bundle_root is not None:
+        result["case_bundle"] = str(Path(bundle_root).resolve())
+    if original is not None:
+        result["original_campaign"] = str(Path(original_campaign).resolve())
+        result["original_plan_sha256"] = original["plan_sha256"]
+    return result
 
 
 def build_plan(stage, seed, pins, cases, include_ablation=False):
     """Pure assignment planner: balanced main-arm order and fixed replicate identities."""
-    require(stage in ("smoke", "exploratory"), "unknown campaign stage")
+    require(stage in ("smoke", "exploratory", *LARGE_STAGES), "unknown campaign stage")
     require(type(seed) is int, "seed must be an integer")
     require(not include_ablation or stage == "exploratory", "ablation belongs to exploratory stage")
-    selected = SMOKE_CASES if stage == "smoke" else MAIN_CASES
+    selected = (LARGE_DEVELOPMENT_CASES if stage == "large-development" else
+                LARGE_FOLLOWUP_CASES if stage == "large-followup" else
+                LARGE_HOLDOUT_CASES if stage in LARGE_STAGES else
+                SMOKE_CASES if stage == "smoke" else MAIN_CASES)
     catalog = {item["case_id"]: item for item in cases}
     require(len(catalog) == len(cases) and all(name in catalog for name in selected), "incomplete case catalog")
-    require(all(catalog[name]["partition"] == "main" for name in selected), "held-out cases are excluded")
+    partition = "development" if stage == "large-development" else "holdout" if stage in LARGE_STAGES else "main"
+    require(all(catalog[name]["partition"] == partition for name in selected), "case partition differs from stage")
+    if stage in LARGE_STAGES:
+        require(all(catalog[name]["step_count"] == 1 for name in selected), "large review stages contain one invocation per episode")
     generator = random.Random(seed)
-    first_orders = [0] * (len(selected) // 2) + [1] * (len(selected) // 2)
+    first_orders = [0] * ((len(selected) + 1) // 2) + [1] * (len(selected) // 2)
     generator.shuffle(first_orders)
     orientations = dict(zip(selected, first_orders))
     assignments = []
-    repetitions = 1 if stage == "smoke" else 3
+    repetitions = 2 if stage in LARGE_STAGES else 1 if stage == "smoke" else 3
     for repeat in range(1, repetitions + 1):
         order = list(selected)
         generator.shuffle(order)
         for case_id in order:
             pair_id = "pair-" + fingerprint({"stage": stage, "seed": seed, "case": case_id, "repeat": repeat})[:24]
-            arms = ["baseline", "reposcout"]
+            arms = ["reposcout"] if stage == "large-holdout-original" else ["baseline", "reposcout"]
             if (orientations[case_id] + repeat - 1) % 2:
                 arms.reverse()
             if include_ablation and case_id in ABLATION_CASES:
@@ -258,13 +285,18 @@ def make_prompt(step, variant):
 
 def prepare(destination, *, stage, seed, codex_binary, codex_version, reposcout_binary,
             skill_dir, include_ablation=False, smoke_campaign=None, controller_ca_file=None,
-            timeout_seconds=LIMITS["timeout_seconds"]):
+            timeout_seconds=LIMITS["timeout_seconds"], bundle_root=None, original_campaign=None,
+            fixture_signer=None):
     from review_cases import create_signer, list_cases, prepare_case
+    require((stage in LARGE_STAGES) == (bundle_root is not None),
+            "large stages require an explicit separate fixture bundle")
+    require((stage == "large-holdout-original") == (original_campaign is not None),
+            "only the original holdout stage references a frozen original campaign")
     pins = capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file,
-                        timeout_seconds=timeout_seconds)
-    plan = build_plan(stage, seed, pins, list_cases(), include_ablation)
+                        timeout_seconds=timeout_seconds, bundle_root=bundle_root, original_campaign=original_campaign)
+    plan = build_plan(stage, seed, pins, list_cases(include_holdout=stage in LARGE_STAGES, bundle_root=bundle_root), include_ablation)
     root, marker = create_campaign_root(destination)
-    signer = create_signer(root / "signing")
+    signer = create_signer(root / "signing") if fixture_signer is None else read_json(fixture_signer)
     write_new(root / "signer.json", signer)
     plan["fixture_signer"] = {key: signer[key] for key in ("kind", "public_key_sha256", "principal")}
     if smoke_campaign:
@@ -281,7 +313,8 @@ def prepare(destination, *, stage, seed, codex_binary, codex_version, reposcout_
                                                "run_id": assignment["run_id"], "root": str(run_dir),
                                                "device": identity.st_dev, "inode": identity.st_ino,
                                                "owner": os.getuid()})
-        record = prepare_case(assignment["case_id"], run_dir / "workspace", private_directory=run_dir / "oracle", signer=signer)
+        record = prepare_case(assignment["case_id"], run_dir / "workspace", private_directory=run_dir / "oracle",
+                              signer=signer, bundle_root=bundle_root)
         require(record["fixture_sha256"] == assignment["fixture_sha256"], "fixture changed during preparation")
         write_new(run_dir / "case.json", record)
         (run_dir / "controller").mkdir(mode=0o700)
@@ -333,7 +366,8 @@ def verify_runtime_pins(plan):
     try:
         actual = capture_pins(pins["codex_binary"], pins["codex_version"], pins["reposcout_binary"], pins["skill_dir"],
                               pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"],
-                              runtime_tool_paths=pins.get("runtime_tool_paths"))
+                              runtime_tool_paths=pins.get("runtime_tool_paths"), bundle_root=pins.get("case_bundle"),
+                              original_campaign=pins.get("original_campaign"))
     except CampaignPrerequisiteError:
         raise
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
@@ -438,6 +472,9 @@ def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, time
     from codex_runner import TrialSpec
     from review_cases import CHECK_COMMANDS, answer_schema
     pins = plan["pins"]
+    checks = record.get("check_commands")
+    if checks is None:
+        checks = [CHECK_COMMANDS[assignment["case_id"]]]
     variant = assignment["variant"]
     prompt, hashes = make_prompt(step, variant)
     spec = TrialSpec(run_id=assignment["run_id"], workspace=Path(record["workspace"]),
@@ -462,7 +499,7 @@ def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, time
                    expected_workspace_sha256=record.get("public_workspace_sha256"),
                    runtime_tool_paths=pins.get("runtime_tool_paths"),
                    expected_runtime_tools_sha256=pins.get("runtime_tools_sha256"),
-                   required_runtimes=(CHECK_COMMANDS[assignment["case_id"]][0],))
+                   required_runtimes=tuple(sorted({command[0] for command in checks})))
     return spec, hashes
 
 
@@ -809,10 +846,12 @@ def qualify_smoke(root, evidence):
     return value
 
 
-def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, check_pins=True):
+def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, check_pins=True, run_id=None):
     plan = load_plan(root)
     require(not (Path(root) / "cleanup.json").exists(), "campaign public inputs have been retired")
     require(limit is None or type(limit) is int and limit > 0, "limit must be positive")
+    require(run_id is None or (limit is None and any(item["run_id"] == run_id for item in plan["assignments"])),
+            "an explicit assignment must exist and cannot be combined with a batch limit")
     if check_pins:
         verify_pins_with_receipt(plan, Path(root), "campaign-pins")
     if not preflight_only:
@@ -825,6 +864,8 @@ def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, 
     results = []
     with campaign_lock(root):
         for assignment in plan["assignments"]:
+            if run_id is not None and assignment["run_id"] != run_id:
+                continue
             directory = Path(assignment["run_dir"])
             if (directory / "started.json").exists() or (directory / "outcome.json").exists():
                 continue
@@ -945,7 +986,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     create = commands.add_parser("prepare")
     create.add_argument("campaign")
-    create.add_argument("--stage", choices=("smoke", "exploratory"), required=True)
+    create.add_argument("--stage", choices=("smoke", "exploratory", *LARGE_STAGES), required=True)
     create.add_argument("--seed", type=int, required=True)
     create.add_argument("--codex-binary", required=True)
     create.add_argument("--codex-version", required=True)
@@ -953,6 +994,9 @@ def main():
     create.add_argument("--skill-dir", default=str(ROOT / "skills/reposcout"))
     create.add_argument("--ablation", action="store_true")
     create.add_argument("--smoke-campaign")
+    create.add_argument("--case-bundle", help="Separate bounded source/oracle bundle for a large stage")
+    create.add_argument("--original-campaign", help="Original development plan that validated the historical canonical treatment")
+    create.add_argument("--fixture-signer", help="Private disposable signer record shared by matched campaign versions")
     create.add_argument("--controller-ca-file")
     create.add_argument("--timeout-seconds", type=float, default=LIMITS["timeout_seconds"])
     execute = commands.add_parser("run")
@@ -960,6 +1004,7 @@ def main():
     execute.add_argument("--auth-file")
     execute.add_argument("--limit", type=int)
     execute.add_argument("--preflight-only", action="store_true")
+    execute.add_argument("--run-id", help="Execute one existing assignment in a separately frozen inter-campaign order")
     qualify = commands.add_parser("qualify-smoke")
     qualify.add_argument("campaign")
     qualify.add_argument("evidence")
@@ -982,10 +1027,12 @@ def main():
             plan = prepare(args.campaign, stage=args.stage, seed=args.seed, codex_binary=args.codex_binary,
                            codex_version=args.codex_version, reposcout_binary=args.reposcout_binary,
                            skill_dir=args.skill_dir, include_ablation=args.ablation, smoke_campaign=args.smoke_campaign,
-                           controller_ca_file=args.controller_ca_file, timeout_seconds=args.timeout_seconds)
+                           controller_ca_file=args.controller_ca_file, timeout_seconds=args.timeout_seconds,
+                           bundle_root=args.case_bundle, original_campaign=args.original_campaign,
+                           fixture_signer=args.fixture_signer)
             result = {"plan_sha256": plan["plan_sha256"], "assignment_count": plan["assignment_count"]}
         elif args.command == "run":
-            result = run(args.campaign, auth_file=args.auth_file, limit=args.limit, preflight_only=args.preflight_only)
+            result = run(args.campaign, auth_file=args.auth_file, limit=args.limit, preflight_only=args.preflight_only, run_id=args.run_id)
         elif args.command == "qualify-smoke":
             result = qualify_smoke(args.campaign, read_json(args.evidence))
         elif args.command == "packets":

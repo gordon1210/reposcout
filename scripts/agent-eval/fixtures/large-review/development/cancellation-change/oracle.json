@@ -1,0 +1,274 @@
+{
+  "domain_expected": {
+    "base": {
+      "after": {
+        "available": 1,
+        "cancelled": 3,
+        "cancelled_quantity": 1,
+        "ordered": 10,
+        "release_units": 1,
+        "released_by_warehouse": [
+          [
+            "north",
+            1
+          ]
+        ],
+        "reserved": 3,
+        "shipped": 4,
+        "shipped_history": [
+          [
+            "north",
+            4,
+            2
+          ]
+        ]
+      },
+      "before": {
+        "available": 0,
+        "cancelled": 2,
+        "ordered": 10,
+        "reserved": 4,
+        "shipped": 4
+      },
+      "controls": {
+        "boolean": {
+          "status": 422,
+          "unchanged": true
+        },
+        "negative": {
+          "status": 422,
+          "unchanged": true
+        },
+        "over": {
+          "status": 409,
+          "unchanged": true
+        },
+        "same_warehouse_full": {
+          "available": 2,
+          "cancelled": 2,
+          "release_units": 2,
+          "reserved": 0,
+          "shipped": 1
+        },
+        "zero": {
+          "status": 200,
+          "unchanged": true
+        }
+      }
+    },
+    "head": {
+      "after": {
+        "available": 4,
+        "cancelled": 3,
+        "cancelled_quantity": 1,
+        "ordered": 10,
+        "release_units": 4,
+        "released_by_warehouse": [
+          [
+            "north",
+            2
+          ],
+          [
+            "south",
+            2
+          ]
+        ],
+        "reserved": 0,
+        "shipped": 4,
+        "shipped_history": [
+          [
+            "north",
+            4,
+            2
+          ]
+        ]
+      },
+      "before": {
+        "available": 0,
+        "cancelled": 2,
+        "ordered": 10,
+        "reserved": 4,
+        "shipped": 4
+      },
+      "controls": {
+        "boolean": {
+          "status": 422,
+          "unchanged": true
+        },
+        "negative": {
+          "status": 422,
+          "unchanged": true
+        },
+        "over": {
+          "status": 409,
+          "unchanged": true
+        },
+        "same_warehouse_full": {
+          "available": 2,
+          "cancelled": 2,
+          "release_units": 2,
+          "reserved": 0,
+          "shipped": 1
+        },
+        "zero": {
+          "status": 200,
+          "unchanged": true
+        }
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "cancellation-releases-all-reserved",
+          "locations": [
+            {
+              "contains": "target = sum(reservation.reserved for reservation in reservations)",
+              "path": "meridian/fulfillment/cancellation_plan.py",
+              "side": "head"
+            }
+          ],
+          "rubric": "One introduced defect: the release plan uses all outstanding reserved units instead of the validated requested count. It leaves the response and cancelled count based on the requested amount while releasing excess inventory and recording the excess ledger release. The exact private setup is reachable through stock receipt/order/ship/cancel/allocate requests, but any valid positive partial cancellation witness is acceptable. Do not count stock, ledger and order disagreement as separate defects. Do not invent negative quantities, over-cancellation acceptance or changes to prior shipment rows.",
+          "witnesses": [
+            {
+              "actual": {
+                "available_increase": 4,
+                "cancelled": 3,
+                "cancelled_quantity": 1,
+                "release_ledger_units": 4,
+                "reserved": 0
+              },
+              "expected": {
+                "available_increase": 1,
+                "cancelled": 3,
+                "cancelled_quantity": 1,
+                "release_ledger_units": 1,
+                "reserved": 3
+              },
+              "input": {
+                "ordered": 10,
+                "previously_cancelled": 2,
+                "requested_quantity": 1,
+                "reserved": 4,
+                "shipped": 4,
+                "warehouse_reservations": {
+                  "north": 2,
+                  "south": 2
+                }
+              }
+            },
+            {
+              "actual": {
+                "cancelled_quantity": 1,
+                "released": 4,
+                "reserved": 0
+              },
+              "expected": {
+                "cancelled_quantity": 1,
+                "released": 1,
+                "reserved": 3
+              },
+              "input": {
+                "ordered": 4,
+                "previously_cancelled": 0,
+                "requested_quantity": 1,
+                "reserved": 4,
+                "shipped": 0
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "target = requested_quantity",
+                "path": "meridian/fulfillment/cancellation_plan.py",
+                "side": "base"
+              },
+              {
+                "contains": "target = sum(reservation.reserved for reservation in reservations)",
+                "path": "meridian/fulfillment/cancellation_plan.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish the changed quantity selection relative to base; equivalent complete source evidence is acceptable.",
+          "id": "changed-quantity"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "CUSTOMER, customer_orders.cancel",
+                "path": "meridian/api/routes.py",
+                "side": "head"
+              },
+              {
+                "contains": "result = cancel_reserved_units",
+                "path": "meridian/api/customer_orders.py",
+                "side": "head"
+              },
+              {
+                "contains": "plan = cancellation_release_plan(rows, count)",
+                "path": "meridian/fulfillment/cancellations.py",
+                "side": "head"
+              },
+              {
+                "contains": "return bounded_quantity(requested, remaining, \"quantity\", allow_zero=True)",
+                "path": "meridian/fulfillment/cancellation_policy.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Connect the authenticated customer cancellation route to ownership/quantity validation and the active release plan; semantic review accepts another complete actual chain.",
+          "id": "reachable-cancellation"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "reservation.reserved -= released",
+                "path": "meridian/fulfillment/cancellations.py",
+                "side": "head"
+              },
+              {
+                "contains": "line.cancelled += count",
+                "path": "meridian/fulfillment/cancellations.py",
+                "side": "head"
+              },
+              {
+                "contains": "\"available\": stock.on_hand - held",
+                "path": "meridian/inventory/availability.py",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "reservation.reserved -= released",
+                "path": "meridian/fulfillment/cancellations.py",
+                "side": "head"
+              },
+              {
+                "contains": "line.cancelled += count",
+                "path": "meridian/fulfillment/cancellations.py",
+                "side": "head"
+              },
+              {
+                "contains": "-released, order.order_id, reservation.reservation_id)",
+                "path": "meridian/fulfillment/cancellations.py",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show the release mutation versus requested cancelled quantity, plus the public available-stock projection. Ledger evidence can replace an equivalent stock projection when the explanation still establishes the customer effect.",
+          "id": "public-state-effect"
+        }
+      ]
+    }
+  ]
+}

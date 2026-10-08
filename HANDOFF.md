@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-07 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-08 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 24_
 
 ---
@@ -83,12 +83,27 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   counterpart seeds keep mapping partial and preserve file-based reference evidence. Strategy 2 reduces
   declaration/range details before dropping changed-file identities; per-side output omissions
   remain separate from analysis availability. Omitted compact identities are reconsidered against
-  both actual output budgets before restoring details, impact/context evidence and requested bodies.
+  both actual output budgets. In body-free output, affordable direct changed-declaration references,
+  including direct test callers, take precedence over weaker context metadata. Human output admits each reference
+  with its needed revision/hash handles atomically, including already captured handles beyond the
+  initial candidate prefix; final 100-entry caps remain. Smaller alternatives and existing
+  type/import/file-based fallback survive failed admission. Explicit source/diff requests retain
+  their established body allocation; source-selection order, costs and coverage remain unchanged.
   Snapshot read handoffs use Git file modes and blob
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
   See [review context](docs/review-context.md) for limits and trust boundaries.
+  The bundled skill provides self-contained starts for common repository, source and committed
+  review questions. Detailed guides are conditional on needed unfamiliar semantics, including
+  working/staged/deep-review workflows. Targeted native evidence is appropriate when
+  the next question needs no structural discovery; small diffs or known refs never waive needed
+  consumer/binding checks. Retain exact source provenance and validate remaining uncertainty
+  truthfully. This guidance does not change query allocation, defaults, or quality requirements.
+  For body-free committed-review orientation, Table is preferred only when its revision handles,
+  relations and uncertainty fields answer the next reading question. JSON remains the route for
+  automation, exact counters/spans/endpoint identities and ambiguous escaped paths; exact source
+  quotations retain literal bytes. No duplicate format request is required.  Output-size differences alone do not establish model-token savings.
 
 - **Tokenizer dependency refresh.** `tiktoken-rs` 0.12.1 updates its regex backends while keeping
   the supported encoding assets and user-selected/default encoding unchanged. Analyzer 24

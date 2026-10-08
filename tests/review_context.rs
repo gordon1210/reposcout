@@ -18,6 +18,9 @@ mod post_review;
 #[path = "review_context/projection_regressions.rs"]
 mod projection_regressions;
 
+#[path = "review_context/direct_evidence.rs"]
+mod direct_evidence;
+
 #[path = "review_context/snapshot_handoff.rs"]
 mod snapshot_handoff;
 

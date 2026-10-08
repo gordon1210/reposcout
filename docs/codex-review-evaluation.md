@@ -114,6 +114,13 @@ Different witness representations, including a field-focused result instead of a
 require explicit semantic adjudication. A representation mismatch is not itself a demonstrated
 domain contradiction. The submitted source identities and verbatim quotes remain strictly checked.
 
+A correct `no-issues` answer may omit final quotations or quote only part of its reasoning, as the
+visible prompt and schema permit. Independent semantic review is still required; private source
+coverage hints do not add an undisclosed quotation quota. Any supplied quotation, retained source,
+finding, schema field or execution claim remains subject to its existing accuracy checks. Preserve
+original grades when correcting an evaluator defect, and report a separately versioned assessment
+of the same unchanged answers and semantic decisions rather than silently replacing the old result.
+
 Every delivered task states its zero-based `step_id`: the initial review is step 0 and its first
 follow-up is step 1. A retained source reference uses the originating earlier answer's `step_id`
 and a zero-based `index` into that answer's top-level `evidence` array. It does not index an earlier

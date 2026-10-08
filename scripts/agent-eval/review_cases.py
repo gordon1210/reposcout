@@ -25,6 +25,8 @@ CHECK_COMMANDS = {
     "renewal-holdout": ["python3", "-B", "test_renewal.py"],
 }
 MAX_FIXTURE_BYTES = 128 * 1024
+MAX_LARGE_FIXTURE_BYTES = 2 * 1024 * 1024
+MAX_LARGE_FIXTURE_FILES = 256
 SIGNER_PRINCIPAL = "review-fixture@example.invalid"
 PUBLIC_RULES = """# Review workspace
 
@@ -37,14 +39,42 @@ review history; references identify the current comparison, not an upstream proj
 """
 
 
-def _catalog():
-    return read_json(ROOT / "catalog.json")["cases"]
+def _bundle_root(bundle_root=None):
+    root = ROOT if bundle_root is None else Path(bundle_root)
+    require(root.is_dir() and not root.is_symlink(), "missing regular fixture bundle")
+    return root
 
 
-def _case(case_id):
-    matches = [case for case in _catalog() if case["case_id"] == case_id]
+def _catalog(bundle_root=None):
+    return read_json(_bundle_root(bundle_root) / "catalog.json")["cases"]
+
+
+def _case(case_id, bundle_root=None):
+    _safe_path(case_id)
+    require("/" not in case_id, "case identity must be a single path component")
+    matches = [case for case in _catalog(bundle_root) if case["case_id"] == case_id]
     require(len(matches) == 1, "unknown review case")
     return matches[0]
+
+
+def check_command(case_id, bundle_root=None):
+    command = (CHECK_COMMANDS[case_id] if bundle_root is None else
+               _case(case_id, bundle_root)["check_command"])
+    require(isinstance(command, list) and 0 < len(command) <= 16
+            and all(isinstance(part, str) and 0 < len(part) <= 4096 and "\x00" not in part for part in command)
+            and command[0] in ("python3", "node"), "unsupported application check command")
+    return list(command)
+
+
+def _source_limits(bundle_root):
+    if bundle_root is None:
+        return 32, MAX_FIXTURE_BYTES
+    limits = read_json(_bundle_root(bundle_root) / "catalog.json").get("source_limits", {})
+    files, size = limits.get("max_files"), limits.get("max_bytes")
+    require(type(files) is int and 0 < files <= MAX_LARGE_FIXTURE_FILES
+            and type(size) is int and 0 < size <= MAX_LARGE_FIXTURE_BYTES,
+            "external fixture bounds must be explicit and within the large-suite ceiling")
+    return files, size
 
 
 def _safe_path(value):
@@ -68,35 +98,52 @@ def _directory_files(directory):
     return result
 
 
-def snapshots(case_id):
+def snapshots(case_id, *, bundle_root=None):
     """Controller-only source snapshots; never pass this result to an evaluated agent."""
-    case = _case(case_id)
-    folder = ROOT / case_id
-    current = _directory_files(folder / "base")
+    case = _case(case_id, bundle_root)
+    root = _bundle_root(bundle_root)
+    folder = root / case_id
+    base_directory = case.get("base_directory")
+    base = root / _safe_path(base_directory) if base_directory is not None else folder / "base"
+    current = _directory_files(base)
     current["AGENTS.md"] = PUBLIC_RULES
-    current["README.md"] = "# Application checks\n\nRun the checked-in request assertions with:\n\n```sh\n" + " ".join(CHECK_COMMANDS[case_id]) + "\n```\n\nNo dependency installation or service is required.\n"
+    check_readme = "# Application checks\n\nRun the checked-in request assertions with:\n\n```sh\n" + " ".join(check_command(case_id, bundle_root)) + "\n```\n\nNo dependency installation or service is required.\n"
+    if bundle_root is not None and "README.md" in current:
+        require("REVIEW_CHECKS.md" not in current, "application collides with harness check guidance")
+        current["REVIEW_CHECKS.md"] = check_readme
+    else:
+        current["README.md"] = check_readme
+    max_files, max_bytes = _source_limits(bundle_root)
+
+    def within_bounds(files):
+        require(len(files) <= max_files and sum(len(text.encode()) for text in files.values()) <= max_bytes,
+                "review fixture exceeds bounds")
+
+    within_bounds(current)
     result = {"base": dict(current)}
     for revision in case["revisions"]:
+        _safe_path(revision)
+        require("/" not in revision, "revision must be a single path component")
         current = {**current, **_directory_files(folder / revision)}
         for path in case.get("deletions", {}).get(revision, []):
+            _safe_path(path)
             current.pop(path, None)
-        require(len(current) <= 32 and sum(len(text.encode()) for text in current.values()) <= MAX_FIXTURE_BYTES,
-                "review fixture exceeds bounds")
+        within_bounds(current)
         result[revision] = dict(current)
     return result
 
 
-def _fixture_hash(case_id):
-    folder = ROOT / case_id
-    return fingerprint({"case": _case(case_id), "snapshots": snapshots(case_id),
+def _fixture_hash(case_id, bundle_root=None):
+    folder = _bundle_root(bundle_root) / case_id
+    return fingerprint({"case": _case(case_id, bundle_root), "snapshots": snapshots(case_id, bundle_root=bundle_root),
                         "oracle": read_json(folder / "oracle.json"),
                         "probe": (folder / "probe.py").read_text()})
 
 
-def list_cases(include_holdout=False):
+def list_cases(include_holdout=False, *, bundle_root=None):
     return [{"case_id": case["case_id"], "title": case["title"], "partition": case["partition"],
-             "step_count": len(case["steps"]), "fixture_sha256": _fixture_hash(case["case_id"])}
-            for case in _catalog() if include_holdout or case["partition"] == "main"]
+             "step_count": len(case["steps"]), "fixture_sha256": _fixture_hash(case["case_id"], bundle_root)}
+            for case in _catalog(bundle_root) if include_holdout or case["partition"] in ("main", "development")]
 
 
 def _git(workspace, *arguments, data=None):
@@ -254,16 +301,17 @@ def _workspace_fingerprint(workspace):
     return fingerprint(files)
 
 
-def prepare_case(case_id, destination, *, private_directory=None, signer=None):
+def prepare_case(case_id, destination, *, private_directory=None, signer=None, bundle_root=None):
     """Create a new public repository and a sibling private oracle, without running application code."""
-    case = _case(case_id)
+    case = _case(case_id, bundle_root)
     workspace = Path(destination).resolve()
     require(not workspace.exists(), "review workspace already exists")
     private = Path(private_directory).resolve() if private_directory else workspace.parent / (workspace.name + "-private")
     require(private != workspace and not private.is_relative_to(workspace) and not workspace.is_relative_to(private),
             "oracle and workspace must be separate directory trees")
     require(not private.exists(), "private review directory already exists")
-    source_snapshots = snapshots(case_id)
+    source_snapshots = snapshots(case_id, bundle_root=bundle_root)
+    command = check_command(case_id, bundle_root)
     workspace.mkdir(parents=True)
     private.mkdir(mode=0o700, parents=True)
     signer = create_signer(private / "signing") if signer is None else dict(signer)
@@ -282,10 +330,10 @@ def prepare_case(case_id, destination, *, private_directory=None, signer=None):
                       "head_tree": snapshot_tree_id(source_snapshots[task["head"]]),
                       "base_commit": commits[task["base"]]["oid"],
                       "head_commit": commits[task["head"]]["oid"],
-                      "check_commands": [list(CHECK_COMMANDS[case_id])],
+                      "check_commands": [command],
                       "source_sha256": fingerprint({side: source_snapshots[task[side]] for side in ("base", "head")})})
-    oracle = _resolve_obligations(read_json(ROOT / case_id / "oracle.json"), source_snapshots, steps)
-    oracle.update({"schema": 1, "case_id": case_id, "fixture_sha256": _fixture_hash(case_id),
+    oracle = _resolve_obligations(read_json(_bundle_root(bundle_root) / case_id / "oracle.json"), source_snapshots, steps)
+    oracle.update({"schema": 1, "case_id": case_id, "fixture_sha256": _fixture_hash(case_id, bundle_root),
                    "snapshots": source_snapshots, "signed_commits": commits,
                    "signer_sha256": signer["public_key_sha256"]})
     _write_new(private / "oracle.json", oracle)
@@ -293,7 +341,7 @@ def prepare_case(case_id, destination, *, private_directory=None, signer=None):
               "private_oracle_path": str(private / "oracle.json"), "fixture_sha256": oracle["fixture_sha256"],
               "oracle_sha256": fingerprint(oracle),
               "signer": signer,
-              "check_commands": [list(CHECK_COMMANDS[case_id])],
+              "check_commands": [command],
               "steps": steps, "active_step": -1, "installed_files": []}
     activate_step(record, 0)
     return record
@@ -340,12 +388,12 @@ def activate_step(record, index):
     return dict(step)
 
 
-def verify_domain(case_id):
-    """Run the tiny independent application probe; intended for explicitly serialized validation."""
-    oracle = read_json(ROOT / case_id / "oracle.json")
-    probe = (ROOT / case_id / "probe.py").read_text()
+def verify_domain(case_id, *, bundle_root=None):
+    """Run the bounded independent application probe; intended for serialized validation."""
+    oracle = read_json(_bundle_root(bundle_root) / case_id / "oracle.json")
+    probe = (_bundle_root(bundle_root) / case_id / "probe.py").read_text()
     observations = {}
-    for revision, files in snapshots(case_id).items():
+    for revision, files in snapshots(case_id, bundle_root=bundle_root).items():
         with tempfile.TemporaryDirectory(prefix="reposcout-review-domain-") as temporary:
             workspace = Path(temporary)
             _install_sources(workspace, [], files)

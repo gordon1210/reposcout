@@ -141,6 +141,7 @@ def grade_episode(record, answers, adjudication=None, *, execution_evidence=None
     packet_id = fingerprint({"fixture_sha256": record["fixture_sha256"], "answer_sha256": answer_hash,
                              "execution_evidence_sha256": fingerprint(executions)})
     hard_errors, gaps, steps, evidence_by_step = [], [], [], []
+    clean_steps = set()
     if len(answers) != len(record["steps"]):
         hard_errors.append(_issue(None, "incomplete-episode", "Every requested turn needs its own final answer."))
     for index, expected in enumerate(oracle["steps"]):
@@ -155,6 +156,9 @@ def grade_episode(record, answers, adjudication=None, *, execution_evidence=None
         except (InvalidLedger, KeyError, TypeError) as error:
             hard_errors.append(_issue(index, "invalid-answer", str(error)))
             continue
+        if (answer["conclusion"] == expected["conclusion"] == "no-issues"
+                and not answer["findings"] and not expected["defects"]):
+            clean_steps.add(index)
         for evidence_index, item in enumerate(answer["evidence"]):
             try:
                 direct_evidence.append(_evidence(item, oracle, record, index))
@@ -183,7 +187,7 @@ def grade_episode(record, answers, adjudication=None, *, execution_evidence=None
                 available.append(None)
                 hard_errors.append(_issue(index, "invalid-retained-evidence", str(error)))
         row["evidence"] = [item for item in available if item is not None]
-        if not row["evidence"]:
+        if not row["evidence"] and index not in clean_steps:
             hard_errors.append(_issue(index, "missing-source-evidence", "A review conclusion needs actual pinned evidence."))
         if answer["conclusion"] != expected["conclusion"]:
             hard_errors.append(_issue(index, "conclusion-mismatch", "The answer does not satisfy the frozen review task."))
@@ -247,6 +251,10 @@ def grade_episode(record, answers, adjudication=None, *, execution_evidence=None
     if adjudication is not None:
         unresolved, semantic_errors = _adjudicate(adjudication, packet, answers)
         regressions.extend(semantic_errors)
+        # Preserve legacy gap resolutions without requiring final source quotes for an accepted clean review.
+        unresolved = [gap for gap in unresolved if not (
+            gap["step_id"] in clean_steps and gap["code"] == "evidence-obligation-needs-review"
+            and adjudication["steps"][gap["step_id"]]["semantic_passed"])]
         status = "accepted"
     missing = unresolved + ([] if adjudication is not None else ["blinded-semantic-adjudication-pending"])
     quality = {"passed": adjudication is not None and not regressions and not missing,
