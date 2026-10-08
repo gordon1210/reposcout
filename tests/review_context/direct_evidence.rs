@@ -221,7 +221,7 @@ fn json_evidence_gaps(report: &Value, example: &Example) -> Vec<String> {
             assert_eq!(relation["change_basis"], "changed-definition");
             assert_eq!(relation["symbol"]["kind"], "call");
             assert_eq!(relation["symbol"]["syntax"], "imported-binding");
-            assert!(!relation["edge"]["resolver"].as_str().unwrap().is_empty());
+            assert_ne!(relation["edge"]["resolver"].as_str().unwrap(), "");
             assert_eq!(relation["edge"]["source"], path);
             assert_eq!(relation["edge"]["target"], example.layout.target);
             let source = example.source(side, path);
@@ -420,7 +420,10 @@ fn direct_callers_keep_usable_identities_before_indirect_test_metadata() {
                 .fixture
                 .command_format(&["--encoding", "o200k_base"], "table"),
         );
-        assert!(table_evidence_gaps(&ample_table, &example).is_empty());
+        assert_eq!(
+            table_evidence_gaps(&ample_table, &example),
+            Vec::<String>::new()
+        );
         for (format, bytes, packet) in [
             ("json", JSON_BYTES, json_packet(&ample)),
             (
@@ -574,7 +577,7 @@ fn unaffordable_status_envelope_is_an_error_not_an_empty_review() {
         .assert()
         .failure();
     let result = result.get_output();
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, Vec::<u8>::new());
     assert!(
         String::from_utf8_lossy(&result.stderr)
             .contains("output budget cannot hold the status envelope")
@@ -630,7 +633,10 @@ fn assert_fanout_preserves_selection_and_coverage(report: &Value, original: &Val
 fn direct_caller_handles_survive_the_hundred_candidate_cap() {
     let mut example = Example::new(LAYOUTS[0]);
     let original = example.fixture.report(&["--encoding", "o200k_base"]);
-    assert!(json_evidence_gaps(&original, &example).is_empty());
+    assert_eq!(
+        json_evidence_gaps(&original, &example),
+        Vec::<String>::new()
+    );
 
     // Forty-eight indirect tests put both product sides at positions 101/102 in
     // the existing source-selection order: changes, direct tests, indirect tests,
