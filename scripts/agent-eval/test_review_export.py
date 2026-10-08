@@ -122,6 +122,55 @@ class ReportingTests(unittest.TestCase):
             self.assertFalse(comparison["eligible"])
             self.assertTrue(any("notrun" in reason for reason in comparison["ineligibility_reasons"]))
 
+    def test_failed_main_arm_is_incomplete_while_cli_only_failure_is_separate(self):
+        for failed_variant in ("baseline", "reposcout", "reposcout-cli"):
+            with self.subTest(failed_variant=failed_variant), tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary, "exploratory", ablation=True)
+                failed = next(item for item in plan["assignments"]
+                              if item["case_id"] == "review-followup" and item["variant"] == failed_variant)
+                for assignment in plan["assignments"]:
+                    value = measured(plan, assignment, "failed" if assignment == failed else "completed")
+                    if assignment == failed:
+                        value["invocations"] = value["invocations"][:1]
+                    campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", value)
+                report = exporting.report(root)
+                self.assertEqual(report["status_counts"], {"completed": 59, "failed": 1})
+                self.assertEqual(report["incomplete_main_pairs"], 0 if failed_variant == "reposcout-cli" else 1)
+                comparison = next(item for item in report["pair_inventory"]
+                                  if item["pair_id"] == failed["pair_id"] and item["candidate_variant"] == "reposcout")
+                if failed_variant != "reposcout-cli":
+                    self.assertFalse(comparison["eligible"])
+                    self.assertIn(failed_variant + ":failed", comparison["ineligibility_reasons"])
+
+    def test_runtime_hashes_and_private_failure_digest_export_without_runtime_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            assignment = plan["assignments"][0]
+            asset = fingerprint("Node executable")
+            plan["pins"].update(runtime_tool_paths={"node": "/home/private/selected/node"},
+                                runtime_tool_assets={"node": asset}, runtime_tools_sha256=fingerprint({"node": asset}))
+            plan.pop("plan_sha256")
+            plan["plan_sha256"] = fingerprint(plan)
+            (root / "plan.json").write_text(json.dumps(plan))
+            error = campaign._safe_error(ValueError("private exception text /home/private/credential"),
+                                         phase="runner", step_id=0, private_directory=Path(assignment["run_dir"]))
+            value = measured(plan, assignment, "failed")
+            value["errors"] = [error]
+            value["invocations"][0]["result"]["input_receipt"] = {
+                "runtime_tools": {"sha256": plan["pins"]["runtime_tools_sha256"],
+                                  "expected_sha256": plan["pins"]["runtime_tools_sha256"], "matched": True},
+                "runtime_tool_assets": {"node": asset}}
+            campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", value)
+            report = exporting.report(root)
+            self.assertEqual(report["pins"]["runtime_tool_assets"], {"node": asset})
+            self.assertEqual(report["runs"][0]["errors"][0]["private_evidence_sha256"], error["private_evidence_sha256"])
+            self.assertNotIn("runtime_tool_paths", report["pins"])
+            self.assertNotIn("/home/private", json.dumps(report))
+            self.assertNotIn("private exception text", json.dumps(report))
+            private = read_json(Path(assignment["run_dir"]) / "failures" / (error["private_evidence_sha256"] + ".json"))
+            self.assertEqual((private["phase"], private["error_type"]), ("runner", "ValueError"))
+            self.assertNotIn("private exception text", json.dumps(private))
+
     def test_only_adjudicated_quality_matched_comparable_pairs_get_deltas(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, plan = prepared(temporary)

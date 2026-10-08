@@ -7,6 +7,7 @@ import unittest
 
 from accounting import InvalidLedger
 import review_cases
+from codex_isolation import RUNTIME_PROBES, TOOL_ENVIRONMENT, runtime_tool_manifest
 
 
 class ReviewCaseTests(unittest.TestCase):
@@ -120,6 +121,24 @@ class ReviewCaseTests(unittest.TestCase):
             with self.subTest(case=case["case_id"]):
                 result = review_cases.verify_domain(case["case_id"])
                 self.assertTrue(result["passed"], json.dumps(result, sort_keys=True))
+
+    def test_package_regression_assertion_is_distinct_from_runtime_availability(self):
+        node = runtime_tool_manifest(required=("node",))["node"]["path"]
+        with tempfile.TemporaryDirectory() as temporary:
+            for revision, files in review_cases.snapshots("package-wiring").items():
+                directory = Path(temporary) / revision
+                for name, contents in files.items():
+                    target = directory / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(contents)
+                probe = subprocess.run([node, *RUNTIME_PROBES["node"][1:]], cwd=directory,
+                                       env=TOOL_ENVIRONMENT, capture_output=True, timeout=5, check=False)
+                self.assertEqual(probe.returncode, 0, "Node launcher/import prerequisite must succeed")
+                check = subprocess.run([node, *review_cases.CHECK_COMMANDS["package-wiring"][1:]], cwd=directory,
+                                       env=TOOL_ENVIRONMENT, capture_output=True, timeout=5, check=False)
+                self.assertEqual(check.returncode, 0 if revision == "base" else 1)
+                if revision != "base":
+                    self.assertIn(b"AssertionError", check.stderr)
 
 
 if __name__ == "__main__":

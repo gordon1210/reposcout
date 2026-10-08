@@ -77,6 +77,31 @@ def fake_spec(plan, assignment, record, step, artifact_dir, resumed=None, timeou
                            usage_baseline=usage_baseline), {"task_sha256": fingerprint(step["task"])}
 
 
+def model_runner(runner):
+    """These controller tests supply an explicit successful no-model environment attestation."""
+    def execute(spec, *, preflight_only=False):
+        if preflight_only:
+            return {"status": "preflight-passed", "preflight": {"passed": True}, "process_tree_drained": True}
+        return runner(spec)
+    return execute
+
+
+def traced_result(spec, *, status="completed", tokens=123):
+    from test_codex_trace import records, turn, usage
+    events = records(usage(tokens)) if status == "completed" else (
+        [{"type": "thread.started", "thread_id": "thread"}] + turn("failed", usage(tokens), "failed"))
+    stdout = spec.artifact_dir / "stdout.jsonl"
+    stdout.write_text("".join(json.dumps(event) + "\n" for event in events))
+    answer = spec.artifact_dir / "answer.json"
+    campaign.write_new(answer, {"synthetic": True})
+    return {"run_id": spec.run_id, "status": status, "thread_id": "thread",
+            "resumed_thread_id": spec.resume_thread_id, "returncode": 0 if status == "completed" else 1,
+            "stream_complete": True, "process_tree_drained": True, "stdout_truncated": False,
+            "termination_reason": None, "stdout_path": str(stdout), "answer_path": str(answer),
+            "stdout_bytes": stdout.stat().st_size, "stdout_sha256": campaign.file_hash(stdout),
+            "cli_version": "codex-cli test", "usage_scope": "unknown"}
+
+
 class AssignmentTests(unittest.TestCase):
     def test_smoke_has_exact_preselected_four_cases_and_eight_runs(self):
         plan = campaign.build_plan("smoke", 4, {}, catalog())
@@ -155,7 +180,9 @@ class TimeoutTests(unittest.TestCase):
                     patch.object(campaign, "file_hash", return_value=fingerprint("file")), \
                     patch.object(campaign.subprocess, "run", return_value=SimpleNamespace(stdout="synthetic revision")), \
                     patch("codex_isolation.codex_runtime_manifest", return_value={"bin/codex": fingerprint("runtime")}), \
-                    patch("codex_isolation.controller_ca_manifest", return_value=ca):
+                    patch("codex_isolation.controller_ca_manifest", return_value=ca), \
+                    patch("codex_isolation.runtime_tool_manifest", return_value={
+                        "node": {"path": "/unexecuted/node", "sha256": fingerprint("node")}}):
                 captured = campaign.capture_pins(binary, "synthetic version", binary, directory, timeout_seconds=600)
             self.assertEqual(captured["limits"], {**campaign.LIMITS, "timeout_seconds": 600})
             self.assertEqual(campaign.LIMITS["timeout_seconds"], 180)
@@ -287,6 +314,159 @@ class OwnershipTests(unittest.TestCase):
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_campaign_entry_prerequisite_failure_has_private_evidence_without_consuming_runs(self):
+        for missing in (False, True):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary)
+                actual = {**plan["pins"], "codex_sha256": fingerprint("replacement")}
+                options = {"side_effect": FileNotFoundError("/home/private/runtime disappeared")} if missing else {"return_value": actual}
+                with patch.object(campaign, "capture_pins", **options), self.assertRaises(campaign.CampaignPrerequisiteError):
+                    campaign.run(root, auth_file="unread-authentication", runner=lambda spec: self.fail("runner called"))
+                self.assertTrue(all(run["status"] == "notrun" for run in campaign.inventory(plan)))
+                files = list((root / "failures").glob("*.json"))
+                self.assertEqual(len(files), 1)
+                receipt = read_json(files[0])
+                self.assertEqual(files[0].stem, fingerprint(receipt))
+                self.assertEqual(receipt["phase"], "campaign-pins")
+                self.assertEqual(receipt["category"], "runtime-pins-unavailable" if missing else "runtime-pin-drift")
+                if missing:
+                    self.assertEqual(receipt["evidence"], {"cause_type": "FileNotFoundError"})
+                else:
+                    self.assertEqual(receipt["evidence"]["changed_pins"]["codex_sha256"], {
+                        "expected_sha256": fingerprint(plan["pins"]["codex_sha256"]),
+                        "actual_sha256": fingerprint(actual["codex_sha256"])})
+                self.assertNotIn("/home/private", json.dumps(receipt))
+
+    def test_preflight_setup_failure_retains_original_phase_without_attribute_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            result = {"status": "not-started", "process_tree_drained": True, "preflight": None,
+                      "failure_phase": "isolation-prepare", "error_type": "RuntimeUnavailableError"}
+            with self.assertRaises(campaign.CampaignPrerequisiteError):
+                campaign.run(root, preflight_only=True, runner=lambda spec, **options: result, check_pins=False)
+            assignment = Path(plan["assignments"][0]["run_dir"])
+            receipt = read_json(next((assignment / "failures").glob("*.json")))
+            self.assertEqual(receipt["category"], "isolation-preflight-failed")
+            self.assertEqual(receipt["evidence"], {"result_sha256": fingerprint(result), "failure_phase": "isolation-prepare"})
+            self.assertEqual(receipt["error_type"], "CampaignPrerequisiteError")
+            self.assertTrue(all(run["status"] == "notrun" for run in campaign.inventory(plan)))
+
+    def test_runtime_preflight_failure_leaves_every_assignment_unconsumed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            calls = []
+
+            def runner(spec, *, preflight_only=False):
+                calls.append((spec.run_id, preflight_only))
+                self.assertTrue(preflight_only)
+                self.assertFalse((Path(plan["assignments"][0]["run_dir"]) / "started.json").exists())
+                self.assertEqual(json.loads((spec.controller_dir / "auth.json").read_text()), {})
+                return {"status": "not-started", "process_tree_drained": True,
+                        "preflight": {"passed": False, "checks": {"required_runtimes": False}}}
+
+            with self.assertRaisesRegex(campaign.CampaignPrerequisiteError, "runtime preflight failed"):
+                campaign.run(root, auth_file="unread-credentials", runner=runner, check_pins=False)
+            self.assertEqual(calls, [(plan["assignments"][0]["run_id"], True)])
+            self.assertTrue(all(run["status"] == "notrun" for run in campaign.inventory(plan)))
+            self.assertFalse(any(Path(item["run_dir"]).joinpath("started.json").exists() for item in plan["assignments"]))
+
+    def test_pin_drift_after_a_result_preserves_costs_and_leaves_next_assignment_notrun(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            auth = Path(temporary) / "synthetic-auth.json"
+            auth.write_text("synthetic")
+            calls = []
+
+            @model_runner
+            def runner(spec):
+                calls.append(spec.run_id)
+                return traced_result(spec, status="failed", tokens=77)
+
+            def capture(*args, **kwargs):
+                return {**plan["pins"], **({"codex_sha256": fingerprint("replacement")} if calls else {})}
+
+            with patch.object(campaign, "capture_pins", side_effect=capture):
+                with self.assertRaisesRegex(InvalidLedger, "campaign conditions drifted"):
+                    campaign.run(root, auth_file=auth, runner=runner)
+            runs = campaign.inventory(plan)
+            self.assertEqual(calls, [plan["assignments"][0]["run_id"]])
+            self.assertEqual(runs[0]["status"], "failed")
+            self.assertEqual(runs[0]["accounting"]["observed_usage"]["input_tokens"], 77)
+            self.assertTrue(all(run["status"] == "notrun" for run in runs[1:]))
+            self.assertFalse(any(Path(item["run_dir"]).joinpath("started.json").exists()
+                                 for item in plan["assignments"][1:]))
+
+    def test_mid_episode_pin_drift_stops_batch_and_retains_private_gate_evidence_and_costs(self):
+        for receipt_failure in (False, True):
+            with self.subTest(receipt_failure=receipt_failure), tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary)
+                assignments = plan["assignments"]
+                first = next(item for item in assignments if item["case_id"] == "review-followup")
+                assignments.remove(first)
+                assignments.insert(0, first)
+                plan.pop("plan_sha256")
+                plan["plan_sha256"] = fingerprint(plan)
+                (root / "plan.json").write_text(json.dumps(plan))
+                auth = Path(temporary) / "synthetic-auth.json"
+                auth.write_text("synthetic secret that must never enter failure evidence")
+                calls = []
+
+                @model_runner
+                def runner(spec):
+                    calls.append(spec.run_id)
+                    return traced_result(spec)
+
+                def capture(*args, **kwargs):
+                    return {**plan["pins"], **({"codex_sha256": fingerprint("replacement")} if calls else {})}
+
+                original_write = campaign.write_new
+                def write(path, value):
+                    if receipt_failure and Path(path).parent.name == "failures":
+                        raise OSError("private storage message must not escape")
+                    return original_write(path, value)
+
+                with patch.object(campaign, "capture_pins", side_effect=capture), \
+                        patch.object(campaign, "write_new", side_effect=write):
+                    batch = campaign.run(root, auth_file=auth, runner=runner)
+                self.assertEqual(batch["runs"], [{"run_id": first["run_id"], "status": "failed"}])
+                self.assertEqual(calls, [first["run_id"]])
+                runs = campaign.inventory(plan)
+                self.assertTrue(runs[0]["campaign_fatal"])
+                self.assertEqual(runs[0]["accounting"]["observed_usage"]["input_tokens"], 123)
+                self.assertTrue(all(run["status"] == "notrun" for run in runs[1:]))
+                failure = runs[0]["errors"][-1]
+                self.assertEqual((failure["phase"], failure["step_id"], failure["category"]),
+                                 ("runtime-pins", 1, "runtime-pin-drift"))
+                if receipt_failure:
+                    self.assertEqual(failure["private_evidence_status"], "unavailable")
+                    self.assertNotIn("private storage message", json.dumps(runs[0]))
+                else:
+                    digest = failure["private_evidence_sha256"]
+                    receipt = read_json(Path(first["run_dir"]) / "failures" / (digest + ".json"))
+                    self.assertEqual(fingerprint(receipt), digest)
+                    self.assertEqual(receipt["evidence"]["changed_pins"], {
+                        "codex_sha256": {"expected_sha256": fingerprint(plan["pins"]["codex_sha256"]),
+                                         "actual_sha256": fingerprint(fingerprint("replacement"))}})
+                    self.assertNotIn("synthetic secret", json.dumps(receipt))
+
+    def test_ordinary_episode_failure_does_not_stop_other_assignments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            auth = Path(temporary) / "synthetic-auth.json"
+            auth.write_text("synthetic")
+            calls = []
+
+            @model_runner
+            def runner(spec):
+                calls.append(spec.run_id)
+                return traced_result(spec, status="failed")
+
+            result = campaign.run(root, auth_file=auth, limit=2, runner=runner, check_pins=False)
+            self.assertEqual(calls, [item["run_id"] for item in plan["assignments"][:2]])
+            self.assertEqual([item["status"] for item in result["runs"]], ["failed", "failed"])
+            self.assertTrue(all(run["accounting"]["observed_usage"]["input_tokens"] == 123
+                                for run in campaign.inventory(plan)[:2]))
+
     def test_uncalibrated_scope_is_unknown(self):
         self.assertEqual(campaign.calibrated_usage_scope("codex-cli synthetic", "0" * 64), ("unknown", None))
 
@@ -306,6 +486,7 @@ class ExecutionTests(unittest.TestCase):
                 first = {key: value for key, value in baseline.items()
                          if not optional_missing or key not in ("cache_write_input_tokens", "reasoning_output_tokens")}
                 calls = []
+                @model_runner
                 def runner(spec):
                     index = len(calls)
                     calls.append(spec)
@@ -374,6 +555,7 @@ class ExecutionTests(unittest.TestCase):
             assignment = plan["assignments"][0]
             auth = Path(temporary) / "synthetic-auth.json"
             auth.write_text("synthetic")
+            @model_runner
             def runner(spec):
                 stdout = spec.artifact_dir / "stdout.jsonl"
                 raw = "".join(json.dumps(event) + "\n" for event in records(usage(123))).encode()
@@ -403,6 +585,7 @@ class ExecutionTests(unittest.TestCase):
             auth = Path(temporary) / "synthetic-auth.json"
             auth.write_text("synthetic")
             calls = []
+            @model_runner
             def runner(spec):
                 index = len(calls)
                 calls.append(spec.resume_thread_id)
@@ -516,6 +699,7 @@ class ExecutionTests(unittest.TestCase):
             auth = Path(temporary) / "synthetic-auth.json"
             auth.write_text("synthetic credential; not host authentication")
             calls = []
+            @model_runner
             def runner(spec):
                 calls.append(spec.run_id)
                 raise ValueError("private error contents must not escape")
@@ -544,6 +728,7 @@ class ExecutionTests(unittest.TestCase):
                                       if run["case_id"] == "review-followup" and run["variant"] == variant)
                     calls = []
                     thread = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                    @model_runner
                     def runner(spec):
                         calls.append(spec)
                         answer = spec.artifact_dir / "answer.json"

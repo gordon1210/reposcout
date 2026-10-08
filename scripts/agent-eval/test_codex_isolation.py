@@ -9,8 +9,9 @@ import shutil
 from dataclasses import replace
 
 from codex_isolation import (
-    IsolationError, configuration_manifest, fingerprint_manifest, permission_overrides,
+    IsolationError, REQUIRED_RUNTIME_TOOLS, configuration_manifest, fingerprint_manifest, permission_overrides,
     codex_runtime_manifest, controller_ca_manifest, directory_sha256, prepare_isolation, validate_public_tree,
+    runtime_tool_identities, runtime_tool_manifest,
 )
 from codex_runner import TrialSpec
 
@@ -35,6 +36,8 @@ def prepared_spec(root):
         run_id="case-1-baseline", workspace=workspace, artifact_dir=root / "artifacts",
         controller_dir=controller, codex_binary=binary, cli_version="fixture-0.160.1",
         prompt="Review the two supplied trees.", answer_schema={"type": "object"}, controller_ca_file=ca_bundle,
+        runtime_tool_paths={name: str((Path("/usr/bin") / name).resolve())
+                            for name in (*REQUIRED_RUNTIME_TOOLS, "nl")},
     )
 
 
@@ -102,6 +105,64 @@ class IsolationTests(unittest.TestCase):
         with self.assertRaisesRegex(IsolationError, "cannot overlap"):
             prepare_isolation(replace(self.spec, codex_binary=binary))
         self.assertEqual((self.spec.controller_dir / "auth.json").read_text(), "{}")
+
+    def test_available_non_system_node_is_copied_pinned_and_probed(self):
+        node = self.root / "selected-node"
+        node.write_text("synthetic Node executable; never run by this staging test\n")
+        node.chmod(0o700)
+        original = Path.is_file
+        with mock.patch.object(Path, "is_file", lambda path: False if path == Path("/usr/bin/node") else original(path)), \
+                mock.patch("codex_isolation.shutil.which", side_effect=lambda name: str(node) if name == "node" else None):
+            selected = runtime_tool_manifest(required=(*REQUIRED_RUNTIME_TOOLS, "node"))
+        self.assertEqual(selected["node"]["path"], str(node))
+        paths = {name: value["path"] for name, value in selected.items()}
+        digest = fingerprint_manifest(runtime_tool_identities(selected))
+        spec = replace(self.spec, runtime_tool_paths=paths, required_runtimes=("node",),
+                       expected_runtime_tools_sha256=digest)
+        plan = prepare_isolation(spec)
+        try:
+            command = plan.outer_command
+            mounts = [command[index + 1:index + 3] for index, arg in enumerate(command) if arg == "--ro-bind"]
+            copied = next(Path(source) for source, target in mounts if target == "/usr/bin/node")
+            self.assertEqual(copied, plan.root / "runtime-tools/node")
+            self.assertEqual(copied.read_bytes(), node.read_bytes())
+            self.assertTrue(plan.input_receipt["runtime_tools"]["matched"])
+            self.assertEqual(plan.probe_expectations["runtime_probes"]["node"][0], "node")
+            self.assertIn("node:assert/strict", plan.probe_expectations["runtime_probes"]["node"][-1])
+            self.assertNotIn(str(node), json.dumps(plan.manifest))
+            node.write_text("changed after staging")
+            self.assertEqual(hashlib.sha256(copied.read_bytes()).hexdigest(), selected["node"]["sha256"])
+        finally:
+            plan.cleanup()
+
+    def test_missing_required_node_cannot_silently_drop_its_application_check(self):
+        with self.assertRaisesRegex(IsolationError, "Required runtime tool is unavailable: node"):
+            prepare_isolation(replace(self.spec, required_runtimes=("node",)))
+        self.assertFalse(self.spec.artifact_dir.exists())
+
+    def test_runtime_pin_drift_and_private_runtime_alias_are_rejected(self):
+        node = self.root / "selected-node"
+        node.write_text("original executable")
+        node.chmod(0o700)
+        paths = {**self.spec.runtime_tool_paths, "node": str(node)}
+        pinned = fingerprint_manifest(runtime_tool_identities(runtime_tool_manifest(paths)))
+        node.write_text("different executable")
+        spec = replace(self.spec, runtime_tool_paths=paths, required_runtimes=("node",),
+                       expected_runtime_tools_sha256=pinned)
+        with self.assertRaisesRegex(IsolationError, "Copied runtime_tools differs"):
+            prepare_isolation(spec)
+        self.spec.artifact_dir.rmdir()
+        private_node = self.spec.controller_dir / "node"
+        node.rename(private_node)
+        paths["node"] = str(private_node)
+        with self.assertRaisesRegex(IsolationError, "overlaps private data"):
+            prepare_isolation(replace(spec, expected_runtime_tools_sha256=None))
+
+    def test_runtime_selection_refuses_relative_unknown_and_nonexecutable_paths(self):
+        for paths in ({"unknown": "/usr/bin/bash"}, {"node": "relative/node"},
+                      {"node": str(self.spec.controller_ca_file)}):
+            with self.subTest(paths=paths), self.assertRaises(IsolationError):
+                runtime_tool_manifest(paths, required=())
 
     def test_unlisted_adjacent_runtime_files_are_never_exposed(self):
         adjacent = self.spec.codex_binary.parent.parent / "auth.json"

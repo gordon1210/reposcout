@@ -26,6 +26,14 @@ RUNTIME_TOOLS = (
     "python3", "node", "jq", "find", "sort", "cut", "wc", "pwd", "basename",
     "dirname", "readlink", "stat", "file", "env", "timeout", "sleep", "printf",
 )
+REQUIRED_RUNTIME_TOOLS = ("bash", "sh", "git", "rg", "python3")
+RUNTIME_PROBES = {
+    "python3": ["python3", "-I", "-B", "-c",
+                "import json, pathlib, unittest; assert json.loads('[1]') == [1]"],
+    "node": ["node", "--input-type=module", "-e",
+             "import assert from 'node:assert/strict'; import fs from 'node:fs'; "
+             "assert.equal(typeof fs.readFileSync, 'function')"],
+}
 TOOL_ENVIRONMENT = {
     "PATH": "/opt/tools:/usr/bin:/bin",
     "HOME": "/home/eval",
@@ -41,6 +49,12 @@ TOOL_ENVIRONMENT = {
 
 class IsolationError(ValueError):
     """A requested environment could expose non-public input or weaken isolation."""
+
+
+class RuntimeUnavailableError(IsolationError):
+    def __init__(self, tool):
+        super().__init__(f"Required runtime tool is unavailable: {tool}")
+        self.tool = tool
 
 
 def fingerprint_manifest(value):
@@ -128,8 +142,9 @@ def configuration_manifest(spec):
         "codex_runtime_assets": ["bin/codex", *CODEX_RUNTIME_ASSETS],
         "expected_inputs": {
             name: getattr(spec, f"expected_{name}_sha256")
-            for name in ("workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill")
+            for name in ("workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill", "runtime_tools")
         },
+        "required_runtimes": list(spec.required_runtimes),
         "controller_ca_destination": "/etc/ssl/cert.pem",
         "limits": {
             "timeout_seconds": spec.timeout_seconds,
@@ -207,6 +222,39 @@ def codex_runtime_manifest(binary):
     return {relative: _file_sha256(source) for relative, source in _codex_runtime_sources(binary).items()}
 
 
+def runtime_tool_manifest(paths=None, *, required=REQUIRED_RUNTIME_TOOLS):
+    """Resolve only known executables; persist selected paths privately and pin their bytes."""
+    if paths is not None and (not isinstance(paths, dict) or set(paths) - set(RUNTIME_TOOLS)):
+        raise IsolationError("Unknown runtime tool selection")
+    if set(required) - set(RUNTIME_TOOLS):
+        raise IsolationError("Unknown required runtime tool")
+    result = {}
+    for name in RUNTIME_TOOLS:
+        if paths is None:
+            system = Path("/usr/bin") / name
+            selected = str(system) if system.is_file() else shutil.which(name)
+        else:
+            selected = paths.get(name)
+        if selected is None:
+            if name in required:
+                raise RuntimeUnavailableError(name)
+            continue
+        source = Path(selected)
+        if not source.is_absolute():
+            raise IsolationError("Runtime tool paths must be absolute")
+        source = _regular_file(source.resolve(strict=True))
+        if not os.access(source, os.X_OK) or not 0 < source.stat().st_size <= MAX_RUNTIME_FILE_BYTES:
+            raise IsolationError(f"Runtime tool is not a bounded executable: {name}")
+        result[name] = {"path": str(source), "sha256": _file_sha256(source),
+                        "destination": f"/usr/bin/{name}"}
+    return result
+
+
+def runtime_tool_identities(manifest):
+    """Host paths are private; the copied tool names and bytes define the public identity."""
+    return {name: value["sha256"] for name, value in manifest.items()}
+
+
 def _controller_ca_source(path=None):
     candidates = [Path(path)] if path is not None else [
         Path("/etc/ssl/cert.pem"), Path("/etc/ssl/certs/ca-certificates.crt"),
@@ -278,7 +326,7 @@ PROBE_CHECKS = frozenset((
     "denied:/artifacts/isolation-canary", "denied:/proc/1/root/controller/auth.json",
     "private_pid_namespace", "private_process_roots", "host_home_absent",
     "host_workspace_absent", "skill_inventory", "tool_inventory", "secret_environment_absent",
-    "workspace_readonly", "scratch_writable", "network_denied",
+    "workspace_readonly", "scratch_writable", "network_denied", "required_runtimes",
 ))
 
 
@@ -295,7 +343,7 @@ os.execv(command[0], command)
 
 
 PROBE_SOURCE = r'''
-import errno, json, os, pathlib, socket, sys
+import errno, json, os, pathlib, socket, subprocess, sys
 expected = json.loads(sys.argv[1])
 checks = {}
 checks["public_read"] = pathlib.Path("/workspace").is_dir() and pathlib.Path("/inputs/review.schema.json").is_file()
@@ -329,6 +377,15 @@ checks["tool_inventory"] = pathlib.Path("/opt/tools/reposcout").is_file() == exp
 checks["secret_environment_absent"] = not any(
     word in key.upper() for key in os.environ for word in ("TOKEN", "SECRET", "API_KEY", "PASSWORD")
 )
+runtime_checks = {}
+for name, command in expected["runtime_probes"].items():
+    try:
+        check = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=5, check=False)
+        runtime_checks[name] = {"passed": check.returncode == 0, "returncode": check.returncode}
+    except (OSError, subprocess.TimeoutExpired) as error:
+        runtime_checks[name] = {"passed": False, "error_type": type(error).__name__}
+checks["required_runtimes"] = all(check["passed"] for check in runtime_checks.values())
 try:
     pathlib.Path("/workspace/.isolation-write-probe").write_text("probe")
 except (PermissionError, OSError):
@@ -349,7 +406,8 @@ try:
     checks["network_denied"] = result in (errno.EPERM, errno.EACCES, errno.ENETUNREACH, errno.EHOSTUNREACH)
 except OSError as error:
     checks["network_denied"] = error.errno in (errno.EPERM, errno.EACCES, errno.ENETUNREACH)
-print(json.dumps({"schema": 1, "passed": all(checks.values()), "checks": checks}, sort_keys=True))
+print(json.dumps({"schema": 1, "passed": all(checks.values()), "checks": checks,
+                  "runtime_checks": runtime_checks}, sort_keys=True))
 sys.exit(0 if all(checks.values()) else 3)
 '''
 
@@ -399,6 +457,10 @@ class IsolationPlan:
 
 def prepare_isolation(spec):
     workspace, controller, artifacts, binary = _validate_spec(spec)
+    if set(spec.required_runtimes) - set(RUNTIME_PROBES):
+        raise IsolationError("No availability probe for required application runtime")
+    tool_manifest = runtime_tool_manifest(spec.runtime_tool_paths,
+                                          required=(*REQUIRED_RUNTIME_TOOLS, *spec.required_runtimes))
     artifacts.mkdir(mode=0o700, parents=True, exist_ok=True)
     _private_directory(artifacts)
     if any(artifacts.iterdir()):
@@ -469,14 +531,18 @@ def prepare_isolation(spec):
                    "--dir", "/usr", "--dir", "/usr/bin", "--dir", "/etc", "--dir", "/opt",
                    "--dir", "/opt/tools", "--dir", "/home", "--symlink", "/usr/bin", "/bin"]
         runtime_destinations = []
-        for name in RUNTIME_TOOLS:
-            source = Path("/usr/bin") / name
-            if source.is_file():
-                destination = f"/usr/bin/{name}"
-                command += ["--ro-bind", str(source.resolve()), destination]
-                runtime_destinations.append(destination)
-        if "/usr/bin/python3" not in runtime_destinations or "/usr/bin/bash" not in runtime_destinations:
-            raise IsolationError("System Python 3 and Bash are required for isolation")
+        tool_hashes = {}
+        for name, selected in tool_manifest.items():
+            staged = root / "runtime-tools" / name
+            tool_hashes[name] = _stage_runtime_file(Path(selected["path"]), staged, private_roots)
+            if tool_hashes[name] != selected["sha256"]:
+                raise IsolationError(f"Runtime tool changed while copying: {name}")
+            command += ["--ro-bind", str(staged), selected["destination"]]
+            runtime_destinations.append(selected["destination"])
+        input_receipt["runtime_tools"] = _verify_copy(
+            "runtime_tools", fingerprint_manifest(tool_hashes), spec.expected_runtime_tools_sha256,
+        )
+        input_receipt["runtime_tool_assets"] = tool_hashes
         for name in ("/usr/lib", "/usr/lib64", "/lib", "/lib64", "/usr/share/git-core",
                      "/etc/ssl/certs", "/etc/ld.so.cache", "/etc/resolv.conf", "/etc/nsswitch.conf"):
             path = Path(name)
@@ -508,6 +574,7 @@ def prepare_isolation(spec):
         manifest["input_receipt"] = input_receipt
         expected = {"skills": ["reposcout"] if spec.skill_dir is not None else [],
                     "reposcout": spec.reposcout_binary is not None,
+                    "runtime_probes": {name: RUNTIME_PROBES[name] for name in spec.required_runtimes},
                     "host_home": str(Path.home()), "host_workspace": str(workspace)}
         return IsolationPlan(root, command, prefix, fingerprint_manifest(manifest), manifest, expected,
                              controller_canary, artifact_canary, created_canaries, input_receipt)

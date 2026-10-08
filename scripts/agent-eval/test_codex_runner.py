@@ -22,13 +22,14 @@ from test_codex_isolation import prepared_spec
 
 class FakeExecutor:
     def __init__(self, *, probe_passes=True, model_status="completed", thread_id=None,
-                 raise_model=False, truncated=False, model_drained=True):
+                 raise_model=False, truncated=False, model_drained=True, runtime_passes=True):
         self.probe_passes = probe_passes
         self.model_status = model_status
         self.thread_id = thread_id or str(uuid.uuid4())
         self.raise_model = raise_model
         self.truncated = truncated
         self.model_drained = model_drained
+        self.runtime_passes = runtime_passes
         self.calls = []
 
     def __call__(self, command, **kwargs):
@@ -38,8 +39,11 @@ class FakeExecutor:
         stderr.write_bytes(b"")
         if probe:
             stdout.write_text(json.dumps({
-                "schema": 1, "passed": self.probe_passes,
-                "checks": {key: self.probe_passes for key in sorted(PROBE_CHECKS)},
+                "schema": 1, "passed": self.probe_passes and self.runtime_passes,
+                "checks": {key: self.probe_passes and (self.runtime_passes or key != "required_runtimes")
+                           for key in sorted(PROBE_CHECKS)},
+                "runtime_checks": {"node": {"passed": self.runtime_passes,
+                                             "returncode": 0 if self.runtime_passes else 127}},
             }) + "\n")
         else:
             if self.raise_model:
@@ -107,6 +111,28 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(fake.calls[0][1]["input_bytes"], b"")
         self.assertEqual(result["status"], "preflight-passed")
         self.assertIsNone(result["thread_id"])
+
+    def test_required_runtime_failure_is_setup_failure_before_any_model(self):
+        fake = FakeExecutor()
+        result = run_trial(replace(self.spec, required_runtimes=("node",)), executor=fake)
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(result["status"], "not-started")
+        self.assertTrue(result["campaign_fatal"])
+        self.assertEqual(result["failure_phase"], "isolation-prepare")
+        self.assertIsNone(result["stdout_path"])
+
+    def test_runtime_probe_failure_is_retained_and_never_submits_prompt(self):
+        fake = FakeExecutor(runtime_passes=False)
+        spec = replace(self.spec, required_runtimes=("node",),
+                       runtime_tool_paths={**self.spec.runtime_tool_paths, "node": str(self.spec.codex_binary)})
+        result = run_trial(spec, executor=fake)
+        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(fake.calls[0][1]["input_bytes"], b"")
+        self.assertEqual(result["status"], "not-started")
+        self.assertTrue(result["campaign_fatal"])
+        self.assertEqual(result["failure_phase"], "isolation-preflight")
+        self.assertEqual(result["preflight"]["runtime_checks"]["node"], {"passed": False, "returncode": 127})
+        self.assertIsNone(result["stdout_path"])
 
     def test_setup_and_preflight_consume_the_invocation_time_budget(self):
         fake = FakeExecutor()

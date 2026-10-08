@@ -8,8 +8,16 @@ domain oracles remain outside the evaluated filesystem; raw traces and controlle
 never belong in the public results. Live runs are explicitly authorized, serial and separate from
 ordinary CI. The historical offline tools and 2026-09 pilot below retain their original contracts.
 
+Raw campaign records, reviewer attribution and local runtime identities are private.
+Keep them outside Git; offline tests do not establish product superiority.
+
 Use an explicit native Codex executable and a verified RepoScout binary. Campaign preparation pins
 their identities and the exact canonical skill; it does not change any installed tool or skill.
+Preparation also pins known tool executables, requiring Bash, Git, `rg`, Python and Node for the
+case catalog. Selection prefers `/usr/bin`, then the controller's `PATH`; use a trusted native
+runtime on that path rather than an environment-manager shim. Selected canonical paths stay
+private, and executable hashes remain in private reports. Execution uses copied bytes and
+refuses later pin drift; it never installs missing runtimes.
 
 ```sh
 python3 scripts/agent-eval/review_campaign.py prepare /tmp/review-smoke \
@@ -34,6 +42,15 @@ and limits. Eight smoke runs qualify isolation and accounting, not product super
 exploratory plan contains 48 A/B runs; `--ablation` adds twelve preselected CLI-only runs. The
 `qualify-smoke`, `report` and `export` commands preserve negative outcomes and explicitly pending
 semantic adjudication. Consult each command's `--help` for the complete arguments.
+
+Each new assignment first attests isolation and its Python/Node launcher and standard-library
+imports under the actual tool permissions, without a model call or host credentials. Failed
+setup leaves the assignment `notrun`; a prerequisite failure after an episode has started keeps
+that failed episode and its known costs, then stops the batch before another assignment starts.
+An ordinary review/episode failure does not itself stop the batch. Intentionally failing head
+assertions are review evidence, separate from runtime availability. Private `failures/` receipts
+retain fixed phases, cause categories and pin hashes without arbitrary exception text; public
+errors bind successful receipt writes by hash. Receipt-write failures cannot discard known costs.
 
 `packets CAMPAIGN DIRECTORY` writes private adjudication packets with arm labels and measured costs
 removed. Their source evidence and observed commands are intentionally private. A reviewer returns
@@ -67,6 +84,9 @@ recorded disposable repositories and controller directories, leaving private evi
 Live process uncertainty blocks cleanup. Keep the host authentication source outside every
 campaign; only its private per-trial copy is used. The public system CA bundle is copied and pinned
 separately; `--controller-ca-file` can select an explicit public certificate bundle.
+`incomplete_main_pairs` counts pairs whose baseline or skill episode is not `completed`, including
+`failed`. CLI-only failures and quality/usage eligibility are reported separately. Older campaigns
+remain inspectable without inventing missing runtime attestations or rewriting their evidence.
 
 Current trace accounting lives in `codex_trace.py`, separately from the historical native-window
 adapter. It preserves missing fields as unknown and never turns emitted turn usage into a claimed

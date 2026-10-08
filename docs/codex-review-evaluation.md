@@ -9,6 +9,9 @@ reduce the complete interaction's token use. It is separate from the determinist
 No live model run belongs to ordinary CI or a release gate. Offline tests validate the evaluator;
 they do not demonstrate better reviews or token savings.
 
+Private campaign observations are not committed with the evaluator.
+Keep adverse outcomes and unknown measurements in the private record.
+
 ## Comparison conditions
 
 | Arm | Available tools and guidance |
@@ -71,6 +74,12 @@ Before model execution, zero-model probes must establish the configured filesyst
 boundaries, including a private process namespace. Commands can inspect their own sanitized
 process environment; host and controller processes remain inaccessible. Missing support is a
 failed prerequisite, not permission to silently run unisolated.
+New campaigns also pin the known tool executable inventory. Native runtimes may be selected from
+the controller's trusted `PATH` when absent from `/usr/bin`; only copied executables are exposed,
+with the existing system-library layout. The same inventory is supplied to all arms. A per-case
+Python or Node launcher/import check runs under actual tool permissions before the assignment is
+consumed and again before each model invocation. This setup check does not run intentionally
+regressed head assertions or require those assertions to pass.
 The runner does not attach to or manage an existing Codex daemon. Cleanup targets only resources
 created for that trial. The public fixture and copied authentication state are disposable;
 private raw traces and sanitized results have separate retention.
@@ -146,7 +155,7 @@ Unknown fields remain unknown. Controller closure, trace integrity and supported
 are prerequisites for comparison. A successful final answer does not establish complete usage
 for failed requests. Tool/source bytes are explanatory measurements, never extra provider tokens.
 Subscription charges and money saved are unknown without a supported billing basis. Trial totals
-cover the evaluated review sessions; suite development and independent adjudication are separate
+cover the evaluated review sessions; suite development, orchestration and independent adjudication are separate
 experiment operations and are not included in the A/B episode totals.
 
 Every assigned run remains in the report, including not-started, failed, interrupted and
@@ -156,6 +165,10 @@ Savings accompanied by poorer reviews do not satisfy RepoScout's objective.
 Campaign-level fixture or isolation defects override pair eligibility. Such runs remain visible as
 calibration with a machine-readable data-quality exclusion; semantic passes do not restore their
 eligibility. A corrected campaign needs fresh preparation, qualification and execution.
+An independently established case-specific capability defect must likewise exclude that case
+from intended-condition claims. Keep its actual answers and costs separately scoped, disclose
+every aggregate containing it, and preserve unaffected comparisons only where their own conditions
+remain valid. A later no-model repair does not retroactively establish the missing model condition.
 
 Keep raw JSONL, stderr and controller records private. Public exports retain sanitized metrics,
 conditions and evidence hashes, not host paths, authentication data or arbitrary raw model/tool

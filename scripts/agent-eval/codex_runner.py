@@ -53,6 +53,9 @@ class TrialSpec:
     expected_reposcout_sha256: str | None = None
     expected_skill_sha256: str | None = None
     expected_workspace_sha256: str | None = None
+    runtime_tool_paths: dict | None = None
+    expected_runtime_tools_sha256: str | None = None
+    required_runtimes: tuple = ()
 
 
 def _write_json(path, value):
@@ -620,7 +623,7 @@ def _validate_spec(spec):
         uuid.UUID(spec.resume_thread_id)
     if spec.usage_scope not in ("invocation", "thread-cumulative", "unknown"):
         raise ValueError("Unknown usage scope")
-    for name in ("workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill"):
+    for name in ("workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill", "runtime_tools"):
         expected = getattr(spec, f"expected_{name}_sha256")
         if expected is not None and (not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None):
             raise ValueError(f"Invalid prepared {name} fingerprint")
@@ -677,14 +680,17 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
     }
     plan = None
     artifacts = Path(spec.artifact_dir)
+    phase = "serial-lease"
     try:
         with SerialLease() as lease:
             lease.guard(result)
+            phase = "isolation-prepare"
             plan = prepare_isolation(spec)
             result["profile_sha256"] = plan.profile_sha256
             result["input_receipt"] = plan.input_receipt
             _write_json(artifacts / "isolation.json", plan.manifest)
             probe_stdout, probe_stderr = artifacts / "preflight.stdout.jsonl", artifacts / "preflight.stderr.txt"
+            phase = "isolation-preflight"
             result.update(process_tree_drained=False, ownership_complete=False, owned_processes=[])
             control = _capture(executor, plan.probe_command(), spec, probe_stdout, probe_stderr, probe=True)
             result.update({name: control.get(name, default) for name, default in (
@@ -705,6 +711,7 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
             )
             receipt = {"schema": 1, "passed": passed, "profile_sha256": plan.profile_sha256,
                        "checks": probe.get("checks") if isinstance(probe, dict) else None,
+                       "runtime_checks": probe.get("runtime_checks") if isinstance(probe, dict) else None,
                        "controller": control,
                        "stdout_sha256": _digest_file(probe_stdout) if probe_stdout.exists() else None}
             receipt["receipt_sha256"] = fingerprint_manifest(receipt)
@@ -713,6 +720,8 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
             result["process_tree_drained"] = control["process_tree_drained"]
             if not passed:
                 result["termination_reason"] = "isolation-preflight-failed"
+                result["campaign_fatal"] = True
+                result["failure_phase"] = phase
                 return result
             if preflight_only:
                 result["status"] = "preflight-passed"
@@ -723,6 +732,7 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
                 result["termination_reason"] = "timeout-before-model"
                 return result
             stdout, stderr = artifacts / "stdout.jsonl", artifacts / "stderr.txt"
+            phase = "model-execution"
             result["stdout_path"], result["stderr_path"] = str(stdout), str(stderr)
             result.update(process_tree_drained=False, ownership_complete=False, owned_processes=[])
             result.update(_capture(executor, plan.model_command(spec), spec, stdout, stderr,
@@ -737,6 +747,7 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
             if stderr.exists():
                 result["stderr_bytes"] = stderr.stat().st_size
             answer = artifacts / "answer.json"
+            phase = "answer-validation"
             if answer.exists():
                 info = answer.lstat()
                 if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1024 * 1024:
@@ -753,6 +764,8 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
         result["termination_reason"] = "runner-error"
         result["error_type"] = type(error).__name__
         result["error"] = str(error)
+        result["failure_phase"] = phase
+        result["campaign_fatal"] = phase in ("serial-lease", "isolation-prepare", "isolation-preflight")
         return result
     finally:
         if plan is not None:

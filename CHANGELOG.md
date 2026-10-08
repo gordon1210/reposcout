@@ -8,6 +8,7 @@ within their section.
 
 ### Added
 
+
 - Add opt-in Codex review evaluations over disposable synthetic repositories, with independent
   domain oracles, isolated baseline/RepoScout/skill comparisons, blinded quality adjudication and
   complete assigned-run reporting. Historical negative results remain intact; evaluator tests
@@ -15,6 +16,10 @@ within their section.
 
 ### Fixed
 
+- Pin and copy the review evaluator's required runtimes, including Node outside `/usr/bin`, and
+  verify launcher/import availability before consuming a model assignment. Preserve redacted
+  private failure phases and pin differences, stop batches on shared prerequisite failures, and
+  count failed main-arm episodes as incomplete pairs without rewriting historical outcomes.
 - State the review episode's zero-based step ID and retained-evidence indexing convention in
   delivered evaluation prompts and answer schemas. Preserve the ambiguous campaign's original
   strict grades as excluded calibration; do not rewrite answers or relax source checks.

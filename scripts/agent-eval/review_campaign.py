@@ -43,6 +43,15 @@ CAPABILITIES = {
 }
 
 
+class CampaignPrerequisiteError(InvalidLedger):
+    """A shared setup failure must not consume subsequent assignments."""
+
+    def __init__(self, category, message, *, evidence=None):
+        super().__init__(message)
+        self.category = category
+        self.evidence = evidence or {}
+
+
 def write_new(path, value):
     """Publish complete JSON atomically, refusing an existing immutable artifact."""
     path = Path(path)
@@ -107,7 +116,7 @@ def calibrated_usage_scope(cli_version, codex_sha256):
 
 
 def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file=None,
-                 *, timeout_seconds=LIMITS["timeout_seconds"]):
+                 *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None):
     limits = {**LIMITS, "timeout_seconds": validated_timeout_seconds(timeout_seconds)}
     codex_binary, reposcout_binary, skill_dir = map(Path, (codex_binary, reposcout_binary, skill_dir))
     codex_binary, reposcout_binary, skill_dir = (path.resolve() for path in
@@ -116,19 +125,34 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
     require(directory_hash(skill_dir) == directory_hash(ROOT / "skills/reposcout"),
             "treatment requires the exact canonical RepoScout skill bundle")
     actual_version = binary_version(codex_binary)
-    require(actual_version == codex_version, "declared Codex version differs from pinned binary")
+    if actual_version != codex_version:
+        raise CampaignPrerequisiteError("codex-version-drift", "declared Codex version differs from pinned binary",
+                                        evidence={"expected_sha256": fingerprint(codex_version),
+                                                  "actual_sha256": fingerprint(actual_version)})
     codex_sha256 = file_hash(codex_binary)
     usage_scope, calibration = calibrated_usage_scope(actual_version, codex_sha256)
-    from review_cases import answer_schema
-    from codex_isolation import codex_runtime_manifest, controller_ca_manifest
+    from review_cases import CHECK_COMMANDS, answer_schema
+    from codex_isolation import (
+        REQUIRED_RUNTIME_TOOLS, RuntimeUnavailableError, codex_runtime_manifest, controller_ca_manifest,
+        runtime_tool_identities, runtime_tool_manifest,
+    )
     runtime_assets = codex_runtime_manifest(codex_binary)
     controller_ca = controller_ca_manifest(controller_ca_file)
+    try:
+        tools = runtime_tool_manifest(runtime_tool_paths,
+                                      required=(*REQUIRED_RUNTIME_TOOLS, *(command[0] for command in CHECK_COMMANDS.values())))
+    except RuntimeUnavailableError as error:
+        raise CampaignPrerequisiteError("required-runtime-unavailable", str(error),
+                                        evidence={"runtime": error.tool}) from None
+    tool_assets = runtime_tool_identities(tools)
     revision = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True,
                               capture_output=True, text=True, timeout=10).stdout.strip()
     return {"codex_binary": str(codex_binary), "codex_sha256": codex_sha256,
             "codex_runtime_assets": runtime_assets, "codex_runtime_sha256": fingerprint(runtime_assets),
             "controller_ca_file": controller_ca["path"], "controller_ca_sha256": controller_ca["sha256"],
             "controller_ca_bytes": controller_ca["bytes"], "controller_ca_destination": controller_ca["destination"],
+            "runtime_tool_paths": {name: value["path"] for name, value in tools.items()},
+            "runtime_tool_assets": tool_assets, "runtime_tools_sha256": fingerprint(tool_assets),
             "codex_version": actual_version, "reposcout_binary": str(reposcout_binary),
             "reposcout_sha256": file_hash(reposcout_binary),
             "reposcout_version": binary_version(reposcout_binary), "skill_dir": str(skill_dir),
@@ -306,9 +330,21 @@ def load_plan(root):
 
 def verify_runtime_pins(plan):
     pins = plan["pins"]
-    actual = capture_pins(pins["codex_binary"], pins["codex_version"], pins["reposcout_binary"], pins["skill_dir"],
-                          pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"])
-    require(actual == pins, "campaign conditions drifted; prepare a separate campaign")
+    try:
+        actual = capture_pins(pins["codex_binary"], pins["codex_version"], pins["reposcout_binary"], pins["skill_dir"],
+                              pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"],
+                              runtime_tool_paths=pins.get("runtime_tool_paths"))
+    except CampaignPrerequisiteError:
+        raise
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        raise CampaignPrerequisiteError("runtime-pins-unavailable", "campaign prerequisites are unavailable",
+                                        evidence={"cause_type": type(error).__name__}) from None
+    if actual != pins:
+        differences = {key: {"expected_sha256": fingerprint(pins.get(key)),
+                             "actual_sha256": fingerprint(actual.get(key))}
+                       for key in sorted(set(pins) | set(actual)) if pins.get(key) != actual.get(key)}
+        raise CampaignPrerequisiteError("runtime-pin-drift", "campaign conditions drifted; prepare a separate campaign",
+                                        evidence={"changed_pins": differences})
 
 
 @contextmanager
@@ -400,7 +436,7 @@ def private_probe_auth(controller):
 
 def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, timeout=None, usage_baseline=None):
     from codex_runner import TrialSpec
-    from review_cases import answer_schema
+    from review_cases import CHECK_COMMANDS, answer_schema
     pins = plan["pins"]
     variant = assignment["variant"]
     prompt, hashes = make_prompt(step, variant)
@@ -423,13 +459,76 @@ def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, time
                    expected_controller_ca_sha256=pins["controller_ca_sha256"],
                    expected_reposcout_sha256=pins["reposcout_sha256"] if variant != "baseline" else None,
                    expected_skill_sha256=pins["skill"]["sha256"] if variant == "reposcout" else None,
-                   expected_workspace_sha256=record.get("public_workspace_sha256"))
+                   expected_workspace_sha256=record.get("public_workspace_sha256"),
+                   runtime_tool_paths=pins.get("runtime_tool_paths"),
+                   expected_runtime_tools_sha256=pins.get("runtime_tools_sha256"),
+                   required_runtimes=(CHECK_COMMANDS[assignment["case_id"]][0],))
     return spec, hashes
 
 
-def _safe_error(error):
+def _safe_error(error, *, phase="controller", step_id=None, private_directory=None):
     # Raw exception strings may contain prompts, credentials or host paths.
-    return {"error_type": type(error).__name__, "reason": "controller-exception; inspect private artifacts"}
+    category = error.category if isinstance(error, CampaignPrerequisiteError) else "controller-exception"
+    result = {"error_type": type(error).__name__, "reason": "controller-exception; inspect private artifacts",
+              "phase": phase, "step_id": step_id, "category": category}
+    if private_directory is not None:
+        receipt = {"schema": 1, "phase": phase, "step_id": step_id,
+                   "error_type": type(error).__name__, "category": category,
+                   "errno": error.errno if isinstance(error, OSError) else None,
+                   "evidence": error.evidence if isinstance(error, CampaignPrerequisiteError) else {}}
+        digest = fingerprint(receipt)
+        try:
+            directory = Path(private_directory) / "failures"
+            directory.mkdir(mode=0o700, exist_ok=True)
+            require(not directory.is_symlink(), "private failure directory cannot be a symlink")
+            path = directory / (digest + ".json")
+            if path.exists():
+                require(not path.is_symlink() and read_json(path) == receipt, "private failure receipt changed")
+            else:
+                write_new(path, receipt)
+        except (OSError, ValueError, TypeError) as persistence_error:
+            result["private_evidence_status"] = "unavailable"
+            result["private_evidence_error_type"] = type(persistence_error).__name__
+        else:
+            result["private_evidence_status"] = "recorded"
+            result["private_evidence_sha256"] = digest
+    return result
+
+
+def verify_pins_with_receipt(plan, directory, phase):
+    try:
+        verify_runtime_pins(plan)
+    except Exception as error:
+        _safe_error(error, phase=phase, private_directory=directory)
+        raise
+
+
+def preflight_assignment(plan, assignment, record, runner):
+    """Attest the actual tool namespace without credentials or an assigned model attempt."""
+    directory = Path(assignment["run_dir"])
+    artifacts = Path(tempfile.mkdtemp(prefix="preflight-", dir=directory))
+    spec, _ = _trial_spec(plan, assignment, record, record["steps"][0], artifacts)
+    try:
+        with private_probe_auth(directory / "controller"):
+            result = runner(spec, preflight_only=True)
+        write_new(artifacts / "result.json", result)
+        if result.get("process_tree_drained") is not True:
+            raise CampaignPrerequisiteError("preflight-cleanup-unconfirmed", "isolation preflight process cleanup is unconfirmed")
+        preflight = result.get("preflight")
+        if not isinstance(preflight, dict) or preflight.get("passed") is not True:
+            phase = result.get("failure_phase")
+            if phase not in ("serial-lease", "isolation-prepare", "isolation-preflight"):
+                phase = "unknown"
+            raise CampaignPrerequisiteError("isolation-preflight-failed", "isolation or required runtime preflight failed",
+                                            evidence={"result_sha256": fingerprint(result), "failure_phase": phase})
+    except Exception as error:
+        failure = _safe_error(error, phase="assignment-preflight", private_directory=directory)
+        write_new(artifacts / "failure.json", failure)
+        if isinstance(error, CampaignPrerequisiteError):
+            raise
+        raise CampaignPrerequisiteError("assignment-preflight-error", "assignment preflight failed; inspect private artifacts",
+                                        evidence={"failure_sha256": fingerprint(failure)}) from None
+    return result
 
 
 def _resume_usage_baseline(trace, thread_id, cli_version):
@@ -519,7 +618,7 @@ def recover_attempts(assignment, outcome):
                                          expected_thread_id=result.get("thread_id") or result.get("resumed_thread_id"))
                 traces.append(trace)
             except (InvalidLedger, OSError, ValueError, KeyError, TypeError) as error:
-                recovery_errors.append(_safe_error(error))
+                recovery_errors.append(_safe_error(error, phase="recover-trace", step_id=index))
         elif (step / "trace-accounting.json").is_file():
             traces.append(read_json(step / "trace-accounting.json"))
     outcome["invocations"] = invocations
@@ -529,7 +628,7 @@ def recover_attempts(assignment, outcome):
         try:
             outcome["accounting"] = aggregate_episode(traces)
         except (InvalidLedger, ValueError, KeyError, TypeError) as error:
-            recovery_errors.append(_safe_error(error))
+            recovery_errors.append(_safe_error(error, phase="recover-accounting"))
     outcome["recovery_errors"] = recovery_errors
     return outcome
 
@@ -550,24 +649,31 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
             "private fixture record escapes its assigned run")
     require(fingerprint(read_json(record["private_oracle_path"])) == assignment["oracle_sha256"], "private oracle drift")
     verify_public_workspace(record, assignment["public_workspace_sha256"])
+    if check_pins:
+        verify_pins_with_receipt(plan, run_dir, "assignment-pins")
+    preflight_assignment(plan, assignment, record, runner)
     write_new(run_dir / "started.json", {"schema": SCHEMA, "run_id": assignment["run_id"],
                                         "plan_sha256": plan["plan_sha256"], "started_unix": time.time()})
     outcome = {"schema": SCHEMA, "run_id": assignment["run_id"], "plan_sha256": plan["plan_sha256"],
                "status": "failed", "invocations": [], "accounting": None, "quality": None,
-               "answers": [], "errors": []}
+               "answers": [], "errors": [], "campaign_fatal": False}
     traces = []
     answers = []
     execution_evidence = []
     episode_start = time.monotonic()
+    phase, index = "authentication", None
     try:
         with private_auth_copy(auth_file, run_dir / "controller"):
             thread = None
             usage_baseline = None
             for index in range(len(record["steps"])):
                 if check_pins:
+                    phase = "runtime-pins"
                     verify_runtime_pins(plan)
+                phase = "workspace-validation"
                 verify_public_workspace(record, record["public_workspace_sha256"])
                 if index:
+                    phase = "followup-activation"
                     require(thread is not None and len(record["steps"]) == 2 and assignment["case_id"] == "review-followup",
                             "exact resume is only permitted for the two-step followup")
                     activate_step(record, index)
@@ -578,6 +684,7 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                     outcome["errors"].append({"reason": "episode-time-limit-before-next-invocation"})
                     break
                 directory = run_dir / f"step-{index}"
+                phase = "trial-preparation"
                 directory.mkdir(mode=0o700)
                 artifacts = directory / "invocation"
                 artifacts.mkdir(mode=0o700)
@@ -597,6 +704,7 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                 invocation = {"step_id": index, "result": {"run_id": assignment["run_id"],
                               "invocation_id": marker["attempt_id"], "status": "aborted"}, "prompt_hashes": hashes}
                 outcome["invocations"].append(invocation)
+                phase = "runner"
                 result = runner(spec)
                 result.setdefault("invocation_id", f"{assignment['run_id']}-step-{index}")
                 result.setdefault("run_id", assignment["run_id"])
@@ -605,16 +713,20 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                 invocation["result"] = result
                 trace = None
                 try:
+                    phase = "trace-accounting"
                     trace = parse_exec_trace(result["stdout_path"], controller=result,
                                              expected_thread_id=thread or result.get("thread_id"))
                     traces.append(trace)
                     write_new(directory / "trace-accounting.json", trace)
+                    phase = "execution-evidence"
                     receipts = extract_execution_evidence(result["stdout_path"], step_id=index,
                                                           expected_sha256=result.get("stdout_sha256"))
                     write_new(directory / "execution-evidence.json", receipts)
                     execution_evidence.extend(receipts)
                 except (InvalidLedger, OSError, ValueError, KeyError, TypeError) as error:
-                    outcome["errors"].append(_safe_error(error))
+                    outcome["errors"].append(_safe_error(error, phase=phase, step_id=index, private_directory=run_dir))
+                if result.get("campaign_fatal") is True:
+                    outcome["campaign_fatal"] = True
                 status = result.get("status")
                 if result.get("process_tree_drained") is False:
                     outcome["status"] = "aborted"
@@ -623,6 +735,7 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                 if status != "completed":
                     outcome["status"] = "aborted" if status == "aborted" else "failed"
                     break
+                phase = "answer-validation"
                 answer = read_json(result["answer_path"])
                 answers.append(answer)
                 outcome["answers"].append({"step_id": index, "answer_sha256": fingerprint(answer)})
@@ -631,9 +744,11 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                             "runner did not resume the exact prior thread")
                 thread = result.get("thread_id")
                 if index + 1 < len(record["steps"]) and plan["pins"]["usage_scope"] == "thread-cumulative":
+                    phase = "resume-accounting"
                     usage_baseline = _resume_usage_baseline(trace, thread, plan["pins"]["codex_version"])
                 outcome["status"] = "completed" if len(answers) == len(record["steps"]) else "failed"
             if len(answers) == len(record["steps"]):
+                phase = "quality-grading"
                 outcome["quality"] = grade_episode(record, answers, execution_evidence=execution_evidence)
             outcome["execution_evidence"] = execution_evidence
     except KeyboardInterrupt:
@@ -641,12 +756,15 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
         outcome["errors"].append({"reason": "controller-interrupted"})
     except Exception as error:
         outcome["status"] = "failed"
-        outcome["errors"].append(_safe_error(error))
+        outcome["campaign_fatal"] = isinstance(error, CampaignPrerequisiteError) or phase in (
+            "authentication", "runtime-pins", "workspace-validation", "followup-activation", "trial-preparation",
+        )
+        outcome["errors"].append(_safe_error(error, phase=phase, step_id=index, private_directory=run_dir))
     if traces:
         try:
             outcome["accounting"] = aggregate_episode(traces)
         except (InvalidLedger, ValueError, KeyError, TypeError) as error:
-            outcome["errors"].append(_safe_error(error))
+            outcome["errors"].append(_safe_error(error, phase="episode-accounting", private_directory=run_dir))
     outcome["wall_seconds"] = round(time.monotonic() - episode_start, 6)
     recover_attempts(assignment, outcome)
     write_new(run_dir / "outcome.json", outcome)
@@ -696,7 +814,7 @@ def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, 
     require(not (Path(root) / "cleanup.json").exists(), "campaign public inputs have been retired")
     require(limit is None or type(limit) is int and limit > 0, "limit must be positive")
     if check_pins:
-        verify_runtime_pins(plan)
+        verify_pins_with_receipt(plan, Path(root), "campaign-pins")
     if not preflight_only:
         require(auth_file is not None, "live execution requires a private authentication source")
         if plan["stage"] == "exploratory":
@@ -714,18 +832,14 @@ def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, 
                 break
             if preflight_only:
                 record = read_json(directory / "case.json")
-                artifacts = Path(tempfile.mkdtemp(prefix="preflight-", dir=directory))
-                spec, _ = _trial_spec(plan, assignment, record, record["steps"][0], artifacts)
-                with private_probe_auth(directory / "controller"):
-                    result = runner(spec, preflight_only=True)
-                write_new(artifacts / "result.json", result)
+                if check_pins:
+                    verify_pins_with_receipt(plan, directory, "assignment-pins")
+                result = preflight_assignment(plan, assignment, record, runner)
                 results.append({"run_id": assignment["run_id"], "status": result.get("status"), "preflight": result.get("preflight")})
-                require(result.get("process_tree_drained") is True, "isolation preflight process cleanup is unconfirmed")
-                require(result.get("preflight", {}).get("passed") is True, "isolation preflight failed")
             else:
                 outcome = execute_assignment(plan, assignment, auth_file, runner=runner, check_pins=check_pins)
                 results.append({"run_id": assignment["run_id"], "status": outcome["status"]})
-                if outcome["status"] == "aborted":
+                if outcome["status"] == "aborted" or outcome.get("campaign_fatal") is True:
                     break
     return {"plan_sha256": plan["plan_sha256"], "preflight_only": preflight_only, "runs": results}
 

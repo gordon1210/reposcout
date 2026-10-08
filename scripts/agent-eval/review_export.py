@@ -11,12 +11,12 @@ REQUESTED_TOKEN_FIELDS = ("input_tokens", "cache_write_input_tokens", "cached_in
 RESULT_FIELDS = ("status", "exit_code", "returncode",
                  "peak_rss_bytes", "profile_sha256", "stdout_sha256", "trace_sha256", "stdout_bytes",
                  "stream_complete", "stdout_truncated", "process_tree_drained", "termination_reason",
-                 "usage_scope", "cli_version", "input_receipt")
+                 "usage_scope", "cli_version", "input_receipt", "campaign_fatal", "failure_phase")
 ACCOUNTING_FIELDS = ("schema", "adapter", "kind", "invocation_count", "usage_basis", "observed_usage",
                      "comparable_usage", "comparable_fields",
                      "usage_complete", "provider_call_ids_available", "unknown_fields", "episode_errors",
                      "command_statistics", "money", "evidence_sha256")
-INPUT_IDENTITIES = {"workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill"}
+INPUT_IDENTITIES = {"workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill", "runtime_tools"}
 
 
 def _optional_hash(value):
@@ -26,11 +26,11 @@ def _optional_hash(value):
 def project_input_receipt(receipt):
     if receipt is None:
         return None
-    require(isinstance(receipt, dict) and set(receipt) <= INPUT_IDENTITIES | {"codex_runtime_assets"},
+    require(isinstance(receipt, dict) and set(receipt) <= INPUT_IDENTITIES | {"codex_runtime_assets", "runtime_tool_assets"},
             "unsupported input receipt fields")
     result = {}
     for name, value in receipt.items():
-        if name == "codex_runtime_assets":
+        if name in ("codex_runtime_assets", "runtime_tool_assets"):
             require(isinstance(value, dict), "runtime asset identities must be an object")
             assets = {}
             for relative, digest in value.items():
@@ -156,6 +156,7 @@ def project_run(run):
                       "adjudication_blinded": run.get("adjudication_blinded"),
                       "adjudicator_identity_sha256": run.get("adjudicator_identity_sha256"),
                       "answer_hashes": run.get("answers", []), "errors": run.get("errors", []),
+                      "campaign_fatal": run.get("campaign_fatal"),
                       "recovery_errors": run.get("recovery_errors", []),
                       "invocations": []})
     for invocation in run.get("invocations", []):
@@ -309,7 +310,7 @@ def report(root, adjudications=None):
     runs = [project_run(run) for run in private_runs]
     paired = comparisons(runs)
     pins = {key: value for key, value in plan["pins"].items()
-            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file")}
+            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file", "runtime_tool_paths")}
     result = {"schema": 1, "kind": "codex-review-campaign-report", "plan_sha256": plan["plan_sha256"],
               "stage": plan["stage"], "seed": plan["seed"], "repetitions": plan["repetitions"],
               "ablation": plan["ablation"], "model": plan["model"], "effort": plan["effort"], "pins": pins,
@@ -318,7 +319,7 @@ def report(root, adjudications=None):
               "quality_counts": dict(Counter(quality_state(run) for run in runs)), "runs": runs,
               "all_assigned_run_costs": all_run_costs(runs), "pair_inventory": paired,
               "conditional_quality_matched_pairs": [pair for pair in paired if pair["eligible"]],
-              "incomplete_main_pairs": sum(any(arms["status"] == "notrun" or arms["status"] == "aborted"
+              "incomplete_main_pairs": sum(any(arms["status"] != "completed"
                                                for arms in runs if arms["pair_id"] == pair["pair_id"] and arms["variant"] in ("baseline", "reposcout"))
                                             for pair in paired if pair.get("candidate_variant") == "reposcout"),
               "statistical_inference": False, "synthetic_fixtures": True,
