@@ -122,7 +122,7 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   or code-repair claim is established. Broader M2 evidence remains outside this pilot.
 
 - **Opt-in Codex review evaluation.** A separate [review study](docs/codex-review-evaluation.md)
-  uses disposable synthetic Git trees, independent domain probes and blinded review adjudication.
+  uses signed disposable synthetic Git commits, independent domain probes and blinded review adjudication.
   It compares competent native tools with RepoScout plus the canonical skill, with a separately
   identified CLI-only ablation. Controller authentication, raw traces and private oracles stay
   outside the evaluated tool filesystem. Runs are serial, preflight isolation is mandatory and
@@ -130,6 +130,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   basis; it does not replace historical ledgers or imply complete billing data. Live model runs
   are opt-in, separate from CLI scenarios and ordinary CI. Implementation and passing evaluator
   tests alone establish neither better reviews nor full-session savings.
+  Private calibration records and reviewer provenance remain outside Git.
+
 
 - **Snapshot reads and changed definitions.** `read --snapshot worktree|index|REF`
   selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with

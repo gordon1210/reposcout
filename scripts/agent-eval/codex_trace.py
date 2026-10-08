@@ -467,7 +467,8 @@ def parse_exec_trace(path, *, controller=None, expected_thread_id=None):
         'emitted_usage_known_sum': _known_sum(reported),
         'emitted_usage_known_sum_basis': 'raw-terminal-observation-sum; may-repeat-cumulative-usage',
         'normalized_usage_records': deltas, 'turns': turns,
-        'comparable_usage': comparable, 'comparable_fields': list(CORE_FIELDS) if comparable else [],
+        'comparable_usage': comparable,
+        'comparable_fields': [field for field in USAGE_FIELDS if normalized[field] is not None] if comparable else [],
         'usage_complete': False, 'provider_call_ids_available': False,
         'unknown_fields': sorted(set(unknown)), 'validation_errors': validation,
         'closure_errors': closure_errors, 'controller_closed': closure_ok,
@@ -651,7 +652,9 @@ def aggregate_episode(traces):
         'run_id': run_id, 'thread_id': thread_id, 'invocation_count': len(traces),
         'usage_basis': traces[0]['usage_basis'], 'observed_usage': observed,
         'observed_input_plus_output_tokens': total,
-        'comparable_usage': comparable, 'comparable_fields': list(CORE_FIELDS) if comparable else [],
+        'comparable_usage': comparable,
+        'comparable_fields': [field for field in USAGE_FIELDS if observed[field] is not None and
+                              all(field in trace['comparable_fields'] for trace in traces)] if comparable else [],
         'usage_complete': False, 'provider_call_ids_available': False,
         'unknown_fields': sorted(set(field for trace in traces for field in trace['unknown_fields']) |
                                  {field for field in USAGE_FIELDS if observed[field] is None}),

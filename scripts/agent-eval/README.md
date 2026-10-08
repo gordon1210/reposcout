@@ -40,13 +40,19 @@ removed. Their source evidence and observed commands are intentionally private. 
 the packet/answer identities, their human or model-assisted identity and per-step semantic verdicts;
 claimed test execution must cite
 matching command evidence. Pass that JSON file to `report` or `export` with `--adjudications`.
+Reviewer identities must reflect the model/profile actually used. Superseded judgments retain their
+original attribution and hashes; a fresh independent review does not rename an earlier reviewer.
 
-After the eight smoke invocations have valid isolation, response structure and understood
+After the eight smoke episodes (ten invocations, including two real follow-ups) have valid isolation, response structure and understood
 accounting, `qualify-smoke CAMPAIGN EVIDENCE.json` records the explicit qualification. The evidence
 contains the exact `plan_sha256`, true `isolation_passed`, `structurally_consumable` and
 `accounting_basis_understood` fields, and a nonempty `reason`. This is a measurement gate, not a
 requirement that all reviews pass or that RepoScout wins. Prepare the next campaign with the same
 pins, `--stage exploratory --smoke-campaign CAMPAIGN --ablation`.
+Fixture qualification also requires a clean Git index and worktree matching the pinned head, both
+initially and after follow-up activation. A subsequently discovered fixture defect invalidates the
+old qualification for benefit comparisons. Preserve the campaign as excluded calibration and
+prepare a new smoke campaign after correction.
 
 `export CAMPAIGN DIRECTORY` writes sanitized results and their integrity hash. After checking the
 export, `cleanup-public CAMPAIGN DIRECTORY --expected-results-sha256 HASH` removes only the

@@ -54,6 +54,10 @@ agent sees the application and public review task, but no private expected findi
 answers. Base/head commits contain only synthetic source and are signed with a disposable test
 identity; they have no remotes or real history. Their commit and tree identities are recorded
 separately. Future follow-up source and commits are not inserted into the initial object database.
+At initial preparation and every follow-up activation, HEAD, the Git index and the worktree must
+describe that same head snapshot. Check actual Git status and both staged and worktree diffs;
+matching source bytes alone does not establish a valid Git review environment. A violated fixture
+condition excludes the campaign from benefit comparisons even when individual answers are correct.
 
 ## Isolation and lifetime
 
@@ -84,6 +88,9 @@ Structured review answers identify the trigger, expected and actual behavior, ca
 and source evidence. Automatic checks validate response structure, exact revision/range/quote
 identity and independently established domain witnesses. They do not pretend that matching a
 keyword proves a correct causal explanation.
+Different witness representations, including a field-focused result instead of a complete response,
+require explicit semantic adjudication. A representation mismatch is not itself a demonstrated
+domain contradiction. The submitted source identities and verbatim quotes remain strictly checked.
 
 Independent adjudication checks the semantic review against a fixed rubric, before exposing arm
 labels or costs. Reviewers and whether they are human or model-assisted are recorded; automated
@@ -131,6 +138,9 @@ Every assigned run remains in the report, including not-started, failed, interru
 unmeasurable runs. Primary tables show quality and the separate token counters together. A comparison restricted to
 quality-passing pairs is explicitly conditional and cannot hide costs or failures elsewhere.
 Savings accompanied by poorer reviews do not satisfy RepoScout's objective.
+Campaign-level fixture or isolation defects override pair eligibility. Such runs remain visible as
+calibration with a machine-readable data-quality exclusion; semantic passes do not restore their
+eligibility. A corrected campaign needs fresh preparation, qualification and execution.
 
 Keep raw JSONL, stderr and controller records private. Public exports retain sanitized metrics,
 conditions and evidence hashes, not host paths, authentication data or arbitrary raw model/tool
@@ -139,7 +149,10 @@ payloads. The 2026-09-12 pilot and its adverse results are not rewritten.
 ## Campaign stages
 
 1. Offline fixture, grader, accounting, lifecycle and isolation tests, with no model calls.
-2. Four smoke cases, two arms: eight real runs to qualify the measurement process.
+2. Four smoke cases, two arms: eight episodes to qualify the measurement process. The cases are
+   `clean-refactor`, `import-wiring`, `sparse-evidence` and `review-followup`; the two follow-up
+   episodes make ten actual Codex invocations. Qualification includes the real second-revision
+   activation, exact-session continuation and cumulative-usage boundary.
 3. Eight cases, two arms, three repetitions: 48 exploratory runs.
 4. Optional CLI-only arm for four preselected cases, three repetitions: twelve additional runs.
 

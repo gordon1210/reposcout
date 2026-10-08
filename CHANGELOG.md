@@ -13,6 +13,12 @@ within their section.
   complete assigned-run reporting. Historical negative results remain intact; evaluator tests
   and smaller source outputs are not presented as evidence of model-token savings.
 
+### Fixed
+
+- Align prepared review fixtures' Git index with each pinned head, including follow-up revisions,
+  and adjudicate alternative witness representations without treating their shape as a proven
+  behavior error. Preserve affected observed campaigns as excluded calibration evidence.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

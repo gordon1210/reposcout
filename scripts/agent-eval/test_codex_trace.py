@@ -104,11 +104,13 @@ class CodexTraceTests(unittest.TestCase):
         self.assertTrue(result['comparable_usage'])
         self.assertEqual(result['observed_input_plus_output_tokens'], 85147)
         self.assertEqual(result['observed_usage']['cache_write_input_tokens'], 0)
+        self.assertIn('cache_write_input_tokens', result['comparable_fields'])
         self.assertEqual(result['observed_usage']['reasoning_output_tokens'], 2007)
         self.assertNotIn('cache_write_input_tokens', result['unknown_fields'])
         self.assertFalse(result['usage_complete'])
         missing = self.parse(records(usage()))
         self.assertIsNone(missing['observed_usage']['cache_write_input_tokens'])
+        self.assertNotIn('cache_write_input_tokens', missing['comparable_fields'])
         self.assertIn('cache_write_input_tokens', missing['unknown_fields'])
         nonzero = self.parse(records({**usage(), 'cache_write_input_tokens': 10}))
         self.assertTrue(nonzero['comparable_usage'])
@@ -397,6 +399,24 @@ class CodexTraceTests(unittest.TestCase):
         self.assertIsNone(result['observed_input_plus_output_tokens'])
         self.assertEqual(result['invocations'][1]['turns'][0]['reported_usage']['input_tokens'], 150)
         self.assertIn('episode-resume-usage-scope-unknown', result['episode_errors'])
+
+    def test_resumed_cache_write_comparison_requires_observations_in_both_invocations(self):
+        initial = {**usage(), 'cache_write_input_tokens': 0}
+        first = self.parse(records(initial), controller_changes={'usage_scope': 'thread-cumulative'})
+        for known in (False, True):
+            with self.subTest(resume_cache_write_known=known):
+                terminal = usage(150, 90, 30)
+                if known:
+                    terminal['cache_write_input_tokens'] = 0
+                second = self.parse([{'type': 'thread.started', 'thread_id': 'thread'}] + turn('t2', terminal),
+                                    controller_changes={'invocation_id': 'invocation-2', 'resumed_thread_id': 'thread',
+                                                        'usage_scope': 'thread-cumulative', 'usage_baseline': initial})
+                result = codex_trace.aggregate_episode([first, second])
+                self.assertTrue(result['comparable_usage'])
+                self.assertEqual('cache_write_input_tokens' in second['comparable_fields'], known)
+                self.assertEqual('cache_write_input_tokens' in result['comparable_fields'], known)
+                self.assertEqual(result['observed_usage']['cache_write_input_tokens'], 0 if known else None)
+                self.assertIn('cache_write_partition_relationship', result['unknown_fields'])
 
     def test_episode_rejects_duplicate_identity_capture_and_projection_tampering(self):
         first = self.parse(records(), controller_changes={'usage_scope': 'turn'})

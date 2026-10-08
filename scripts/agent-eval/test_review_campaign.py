@@ -81,6 +81,7 @@ class AssignmentTests(unittest.TestCase):
     def test_smoke_has_exact_preselected_four_cases_and_eight_runs(self):
         plan = campaign.build_plan("smoke", 4, {}, catalog())
         self.assertEqual(plan["assignment_count"], 8)
+        self.assertEqual(sum(run["step_count"] for run in plan["assignments"]), 10)
         self.assertEqual({run["case_id"] for run in plan["assignments"]}, set(campaign.SMOKE_CASES))
         self.assertEqual(sum(run["variant"] == "baseline" and run["pair_position"] == 0
                              for run in plan["assignments"]), 2)
@@ -122,6 +123,17 @@ class AssignmentTests(unittest.TestCase):
         cases[0]["partition"] = "holdout"
         with self.assertRaises(InvalidLedger):
             campaign.build_plan("exploratory", 1, {}, cases)
+
+    def test_every_arm_receives_the_same_serial_resource_policy(self):
+        step = {"step_id": 0, "task": "Review this change.", "base_tree": "a" * 40,
+                "head_tree": "b" * 40, "source_sha256": fingerprint("shared")}
+        shared = set()
+        for variant in ("baseline", "reposcout", "reposcout-cli"):
+            prompt, hashes = campaign.make_prompt(step, variant)
+            self.assertIn("at most one build, test, benchmark, or RepoScout invocation at a time", prompt)
+            self.assertIn("including source-query commands", prompt)
+            shared.add(hashes["shared_prompt_sha256"])
+        self.assertEqual(len(shared), 1)
 
 
 class TimeoutTests(unittest.TestCase):
@@ -460,11 +472,28 @@ class ExecutionTests(unittest.TestCase):
             calls = []
             def runner(spec, *, preflight_only=False):
                 calls.append(preflight_only)
-                return {"status": "preflight-passed", "preflight": {"passed": True}}
+                return {"status": "preflight-passed", "preflight": {"passed": True}, "process_tree_drained": True}
             with patch.object(campaign, "_trial_spec", side_effect=fake_spec):
                 campaign.run(root, limit=2, preflight_only=True, runner=runner, check_pins=False)
             self.assertEqual(calls, [True, True])
             self.assertTrue(all(run["status"] == "notrun" for run in campaign.inventory(plan)))
+
+    def test_unconfirmed_preflight_drain_stops_before_another_probe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            calls = []
+
+            def runner(spec, *, preflight_only=False):
+                calls.append(spec.run_id)
+                return {"status": "failed", "preflight": {"passed": False}, "process_tree_drained": False}
+
+            with patch.object(campaign, "_trial_spec", side_effect=fake_spec):
+                with self.assertRaisesRegex(InvalidLedger, "cleanup is unconfirmed"):
+                    campaign.run(root, preflight_only=True, runner=runner, check_pins=False)
+            self.assertEqual(calls, [plan["assignments"][0]["run_id"]])
+            receipts = list(Path(plan["assignments"][0]["run_dir"]).glob("preflight-*/result.json"))
+            self.assertEqual(len(receipts), 1)
+            self.assertFalse(read_json(receipts[0])["process_tree_drained"])
 
     def test_started_without_outcome_is_aborted_and_not_retried(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -476,7 +505,7 @@ class ExecutionTests(unittest.TestCase):
             calls = []
             def runner(spec, *, preflight_only=False):
                 calls.append(spec.run_id)
-                return {"status": "preflight-passed", "preflight": {"passed": True}}
+                return {"status": "preflight-passed", "preflight": {"passed": True}, "process_tree_drained": True}
             with patch.object(campaign, "_trial_spec", side_effect=fake_spec):
                 campaign.run(root, limit=1, preflight_only=True, runner=runner, check_pins=False)
             self.assertEqual(calls, [plan["assignments"][1]["run_id"]])
@@ -539,9 +568,10 @@ class ExecutionTests(unittest.TestCase):
             for assignment in plan["assignments"]:
                 campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", outcome(
                     plan, assignment, "completed", quality={"adjudication_status": "accepted", "quality": {"passed": False}},
-                    accounting={"invocation_count": 1}, invocations=[{"step_id": 0, "result": {
+                    accounting={"invocation_count": assignment["step_count"]}, invocations=[{"step_id": index, "result": {
                         "preflight": {"passed": True}, "stream_complete": True,
-                        "process_tree_drained": True, "stdout_truncated": False}}]))
+                        "process_tree_drained": True, "stdout_truncated": False}}
+                        for index in range(assignment["step_count"])]))
             value = campaign.qualify_smoke(root, {"plan_sha256": plan["plan_sha256"], "isolation_passed": True,
                 "structurally_consumable": True, "accounting_basis_understood": True,
                 "reason": "Protocol checks pass; negative model quality is an observed product outcome."})

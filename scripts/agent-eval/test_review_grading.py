@@ -33,6 +33,20 @@ def refund_answer(record):
     return answer(evidence, [finding])
 
 
+def checkout_answer(record):
+    evidence = [source_evidence(record, 0, side, path) for side, path in (
+        ("base", "serializer.py"), ("head", "serializer.py"), ("head", "api.py"),
+        ("head", "calculator.py"), ("head", "test_checkout.py"))]
+    finding = {"location": {"path": "serializer.py", "side": "head", "snapshot": record["steps"][0]["head_tree"],
+                            "start_line": 2, "end_line": 2},
+               "trigger": {"input_json": '{"items":[{"quantity":2,"unit_price_cents":1250}]}',
+                           "expected_json": "2500", "actual_json": "25"},
+               "cause": "The serializer divides calculated cents by 100 before writing amount_cents.",
+               "impact": "The checkout response reports 25 cents instead of the required 2500 cents.",
+               "evidence_indices": list(range(len(evidence)))}
+    return answer(evidence, [finding])
+
+
 def adjudication(grade, passed=True):
     return {"schema": 1, "packet_id": grade["packet_id"], "answer_sha256": grade["answer_sha256"],
             "reviewer": "unit-test-semantic-reviewer", "blinded": True,
@@ -146,6 +160,35 @@ class ReviewGradingTests(unittest.TestCase):
         decision["steps"][0]["resolutions"] = [{"gap_id": gap["gap_id"], "reason": "The extra channel identifies the evidenced web entrypoint; day 14 still reaches the same policy.",
                                                 "evidence_indices": [0, 1, 2]} for gap in grade["automatic"]["manual_gaps"]]
         self.assertTrue(review_grading.grade_episode(case, [supplied], decision)["quality"]["passed"])
+
+    def test_field_projected_units_witness_requires_semantic_resolution(self):
+        case = self.prepare("wire-units-noise")
+        supplied = checkout_answer(case)
+        grade = review_grading.grade_episode(case, [supplied])
+        self.assertEqual(grade["automatic"]["hard_errors"], [])
+        self.assertFalse(grade["automatic"]["passed"])
+        self.assertFalse(grade["quality"]["passed"])
+        decision = adjudication(grade)
+        decision["steps"][0]["resolutions"] = [
+            {"gap_id": gap["gap_id"], "reason": "The finding explicitly scopes both numeric results to amount_cents. The two-item route calculates 2500 cents; old serializer preserves it and new serializer writes 25. Currency remains EUR in both quoted serializers.",
+             "evidence_indices": list(range(5))} for gap in grade["automatic"]["manual_gaps"]]
+        self.assertTrue(review_grading.grade_episode(case, [supplied], decision)["quality"]["passed"])
+
+    def test_wrong_units_results_remain_rejectable_for_projected_and_full_responses(self):
+        case = self.prepare("wire-units-noise")
+        supplied = checkout_answer(case)
+        supplied["findings"][0]["trigger"]["actual_json"] = "250"
+        grade = review_grading.grade_episode(case, [supplied])
+        self.assertFalse(grade["quality"]["passed"])
+        decision = adjudication(grade, passed=False)
+        decision["steps"][0].update({"unsupported_finding_indices": [0],
+                                     "notes": "The cited serializer yields amount_cents=25, not the claimed 250; a projected output still needs a true scoped result."})
+        self.assertFalse(review_grading.grade_episode(case, [supplied], decision)["quality"]["passed"])
+        supplied["findings"][0]["trigger"].update({"expected_json": '{"amount_cents":2500,"currency":"EUR"}',
+                                                   "actual_json": '{"amount_cents":250,"currency":"EUR"}'})
+        grade = review_grading.grade_episode(case, [supplied])
+        self.assertTrue(any("known-domain" in error["detail"] for error in grade["automatic"]["hard_errors"]))
+        self.assertFalse(review_grading.grade_episode(case, [supplied], adjudication(grade))["quality"]["passed"])
 
     def test_followup_preserves_valid_evidence_and_rejects_stale_source(self):
         case = self.prepare("review-followup")

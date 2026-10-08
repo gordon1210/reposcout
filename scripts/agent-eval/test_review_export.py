@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,18 +25,25 @@ def measured(plan, assignment, status="completed", *, tokens=100, quality_pass=T
              "adjudication_packet": {"packet_id": packet, "answer_sha256": fingerprint([{"synthetic": True}]),
                                      "tasks": ["Public review task"], "oracle_rubrics": [], "answers": [{"synthetic": True}]}}
     accounting = {"schema": 1, "adapter": "codex-exec-jsonl-v1", "kind": "codex-exec-episode",
-                  "invocation_count": 1, "usage_basis": basis, "observed_usage": usage,
+                  "invocation_count": assignment["step_count"], "usage_basis": basis, "observed_usage": usage,
                   "observed_input_plus_output_tokens": tokens + 20, "comparable_usage": comparable,
                   "comparable_fields": ["input_tokens", "cached_input_tokens", "output_tokens"] if comparable else [],
                   "usage_complete": False, "unknown_fields": ["provider_call_ids"], "episode_errors": [],
                   "money": {"provider_charge": None}, "invocations": []}
     invocation = {"step_id": 0, "prompt_hashes": {"task_sha256": fingerprint("shared-task")},
                   "result": {"status": status, "cli_version": "codex-cli test",
+                             "process_tree_drained": True,
                              "stdout_path": str(Path(assignment["run_dir"]) / "step-0/invocation/stdout.jsonl"),
                              "answer_path": str(Path(assignment["run_dir"]) / "step-0/invocation/answer.json"),
                              "thread_id": "private-session-" + assignment["run_id"]}}
+    invocations = []
+    for index in range(assignment["step_count"]):
+        result = {**invocation["result"],
+                  "stdout_path": str(Path(assignment["run_dir"]) / f"step-{index}/invocation/stdout.jsonl"),
+                  "answer_path": str(Path(assignment["run_dir"]) / f"step-{index}/invocation/answer.json")}
+        invocations.append({**invocation, "step_id": index, "result": result})
     return outcome(plan, assignment, status, accounting=accounting, quality=grade,
-                   invocations=[invocation], wall_seconds=3.0)
+                   invocations=invocations, wall_seconds=3.0)
 
 
 class ReportingTests(unittest.TestCase):
@@ -124,8 +132,70 @@ class ReportingTests(unittest.TestCase):
             report = exporting.report(root)
             selected = report["conditional_quality_matched_pairs"]
             self.assertEqual(len(selected), 1)
-            self.assertEqual(selected[0]["token_deltas"]["input_plus_output_tokens"], -40)
+            self.assertEqual(selected[0]["token_deltas"]["input_tokens"], -40)
+            self.assertEqual(selected[0]["token_deltas"]["output_tokens"], 0)
+            self.assertNotIn("input_plus_output_tokens", selected[0]["token_deltas"])
             self.assertNotIn("reasoning_output_tokens", selected[0]["token_deltas"])
+            self.assertFalse(selected[0]["all_requested_token_fields_comparable"])
+            fields = selected[0]["field_comparisons"]
+            self.assertTrue(fields["cached_input_tokens"]["eligible"])
+            self.assertFalse(fields["cache_write_input_tokens"]["eligible"])
+            self.assertIsNone(fields["cache_write_input_tokens"]["delta"])
+
+    def test_reports_and_exports_refuse_active_or_stale_campaign_lease(self):
+        for stale in (False, True):
+            with self.subTest(stale=stale), tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary)
+                assignment = plan["assignments"][0]
+                campaign.write_new(Path(assignment["run_dir"]) / "started.json", {
+                    "run_id": assignment["run_id"], "plan_sha256": plan["plan_sha256"]})
+                if stale:
+                    (root / "controller.lock").write_text('{"pid":123,"created_unix":0}')
+                    lease = None
+                else:
+                    lease = campaign.campaign_lock(root)
+                    lease.__enter__()
+                original = (root / "controller.lock").read_bytes()
+                try:
+                    with self.assertRaises(FileExistsError):
+                        exporting.report(root)
+                    destination = Path(temporary) / "export"
+                    with self.assertRaises(FileExistsError):
+                        exporting.export(root, destination)
+                    self.assertFalse(destination.exists())
+                    self.assertEqual((root / "controller.lock").read_bytes(), original)
+                finally:
+                    if lease is not None:
+                        lease.__exit__(None, None, None)
+
+    def test_cache_write_zero_is_comparable_but_one_missing_arm_remains_unknown(self):
+        for both_known in (False, True):
+            with self.subTest(both_known=both_known), tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary)
+                pair = plan["assignments"][0]["pair_id"]
+                for assignment in (item for item in plan["assignments"] if item["pair_id"] == pair):
+                    value = measured(plan, assignment)
+                    if both_known or assignment["variant"] == "baseline":
+                        value["accounting"]["observed_usage"]["cache_write_input_tokens"] = 0
+                        value["accounting"]["comparable_fields"].append("cache_write_input_tokens")
+                    campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", value)
+                comparison = exporting.report(root)["conditional_quality_matched_pairs"][0]
+                field = comparison["field_comparisons"]["cache_write_input_tokens"]
+                self.assertEqual(field["eligible"], both_known)
+                self.assertEqual(field["delta"], 0 if both_known else None)
+                self.assertEqual(comparison["all_requested_token_fields_comparable"], both_known)
+
+    def test_public_report_contains_no_duration_outcome_or_aggregate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            assignment = plan["assignments"][0]
+            value = measured(plan, assignment)
+            value["invocations"][0]["result"].update(wall_seconds=3, elapsed_seconds=4, duration_ms=3000)
+            campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", value)
+            report = exporting.report(root)
+            encoded = json.dumps(report)
+            for field in ("wall_seconds", "elapsed_seconds", "duration_ms", "wall_seconds_known_sum"):
+                self.assertNotIn('"' + field + '"', encoded)
 
     def test_pending_adjudication_and_usage_basis_drift_exclude_pairs(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -206,6 +276,43 @@ class ReportingTests(unittest.TestCase):
                 campaign.cleanup_public(root, exported, results_hash)
             self.assertEqual(sentinel.read_text(), "replacement data")
             self.assertTrue((Path(plan["assignments"][0]["run_dir"]) / "workspace").exists())
+            self.assertFalse((root / "cleanup.json").exists())
+
+    def test_cleanup_refuses_undrained_unknown_or_missing_preflight_receipt(self):
+        for drained in (False, None, "missing"):
+            with self.subTest(drained=drained), tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary)
+                run = Path(plan["assignments"][0]["run_dir"])
+                probe = run / "preflight-synthetic"
+                probe.mkdir()
+                if drained != "missing":
+                    campaign.write_new(probe / "result.json", {"process_tree_drained": drained})
+                destination = Path(temporary) / "export"
+                receipt = exporting.export(root, destination)
+                with self.assertRaisesRegex(InvalidLedger, "preflight"):
+                    campaign.cleanup_public(root, destination, receipt["results_canonical_json_sha256"])
+                self.assertTrue((run / "controller").is_dir())
+                self.assertTrue((run / "workspace").is_dir())
+                self.assertFalse((root / "cleanup.json").exists())
+
+    def test_cleanup_compares_export_inventory_after_acquiring_lease(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            assignment = plan["assignments"][0]
+            destination = Path(temporary) / "export"
+            receipt = exporting.export(root, destination)
+            original = campaign.campaign_lock
+
+            @contextmanager
+            def completed_before_acquisition(path):
+                campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", outcome(plan, assignment))
+                with original(path):
+                    yield
+
+            with patch("review_campaign.campaign_lock", new=completed_before_acquisition):
+                with self.assertRaisesRegex(InvalidLedger, "outcomes changed"):
+                    campaign.cleanup_public(root, destination, receipt["results_canonical_json_sha256"])
+            self.assertTrue((Path(assignment["run_dir"]) / "controller").is_dir())
             self.assertFalse((root / "cleanup.json").exists())
 
     def test_cleanup_unlinks_owned_native_links_without_following_external_targets(self):

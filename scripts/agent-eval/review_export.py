@@ -4,15 +4,16 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from accounting import fingerprint, read_json, require, sha256
-from review_campaign import SCRIPT_ROOT, file_hash, inventory, load_plan, write_new
+from review_campaign import SCRIPT_ROOT, campaign_lock, file_hash, inventory, load_plan, write_new
 
 USAGE_FIELDS = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
-RESULT_FIELDS = ("status", "exit_code", "returncode", "wall_seconds", "elapsed_seconds", "duration_ms",
+REQUESTED_TOKEN_FIELDS = ("input_tokens", "cache_write_input_tokens", "cached_input_tokens", "output_tokens")
+RESULT_FIELDS = ("status", "exit_code", "returncode",
                  "peak_rss_bytes", "profile_sha256", "stdout_sha256", "trace_sha256", "stdout_bytes",
                  "stream_complete", "stdout_truncated", "process_tree_drained", "termination_reason",
                  "usage_scope", "cli_version", "input_receipt")
 ACCOUNTING_FIELDS = ("schema", "adapter", "kind", "invocation_count", "usage_basis", "observed_usage",
-                     "observed_input_plus_output_tokens", "comparable_usage", "comparable_fields",
+                     "comparable_usage", "comparable_fields",
                      "usage_complete", "provider_call_ids_available", "unknown_fields", "episode_errors",
                      "command_statistics", "money", "evidence_sha256")
 INPUT_IDENTITIES = {"workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill"}
@@ -156,7 +157,7 @@ def project_run(run):
                       "adjudicator_identity_sha256": run.get("adjudicator_identity_sha256"),
                       "answer_hashes": run.get("answers", []), "errors": run.get("errors", []),
                       "recovery_errors": run.get("recovery_errors", []),
-                      "wall_seconds": run.get("wall_seconds"), "invocations": []})
+                      "invocations": []})
     for invocation in run.get("invocations", []):
         result = invocation["result"]
         result_projection = {key: result.get(key) for key in RESULT_FIELDS if key != "input_receipt"}
@@ -170,7 +171,7 @@ def project_run(run):
     if accounting:
         projected["accounting"]["invocations"] = [
             {key: trace.get(key) for key in ("trace_sha256", "trace_bytes", "status", "usage_scope", "usage_basis",
-                                            "observed_usage", "observed_input_plus_output_tokens", "comparable_usage",
+                                            "observed_usage", "comparable_usage",
                                             "comparable_fields", "usage_complete", "unknown_fields", "validation_errors",
                                             "emitted_usage_known_sum", "emitted_usage_known_sum_basis", "evidence_sha256")}
             for trace in accounting.get("invocations", [])]
@@ -232,11 +233,23 @@ def _comparison(reference, candidate):
             right_value = right.get("observed_usage", {}).get(field)
             require(type(left_value) is int and type(right_value) is int, "comparable token field is unavailable")
             deltas[field] = right_value - left_value
-        deltas["input_plus_output_tokens"] = deltas["input_tokens"] + deltas["output_tokens"]
+    field_comparisons = {}
+    for field in REQUESTED_TOKEN_FIELDS:
+        known = field in fields
+        field_comparisons[field] = {
+            "eligible": eligible and known,
+            "reference_value": left.get("observed_usage", {}).get(field),
+            "candidate_value": right.get("observed_usage", {}).get(field),
+            "delta": deltas.get(field),
+            "ineligibility_reasons": ([] if eligible else ["pair-ineligible"])
+                                     + ([] if known else ["field-not-comparable-in-both-arms"]),
+        }
     return {"reference_run": reference["run_id"], "candidate_run": candidate["run_id"],
             "reference_variant": reference["variant"], "candidate_variant": candidate["variant"],
             "eligible": eligible, "ineligibility_reasons": sorted(set(reasons)),
-            "usage_basis": left.get("usage_basis") if eligible else None, "token_deltas": deltas or None}
+            "usage_basis": left.get("usage_basis") if eligible else None, "token_deltas": deltas or None,
+            "field_comparisons": field_comparisons,
+            "all_requested_token_fields_comparable": eligible and set(REQUESTED_TOKEN_FIELDS) <= fields}
 
 
 def comparisons(runs):
@@ -271,16 +284,10 @@ def all_run_costs(runs):
             measured = [value for value in values if type(value) is int]
             token_totals[field] = sum(measured) if measured else None
             known_counts[field] = len(measured)
-        walls = [run["wall_seconds"] for run in selected if isinstance(run.get("wall_seconds"), (int, float))]
         result.append({"variant": variant, "usage_basis": basis, "assigned_runs": len(selected),
                        "status_counts": dict(Counter(run["status"] for run in selected)),
                        "observed_token_known_sums": token_totals, "token_known_run_counts": known_counts,
-                       "observed_input_plus_output_known_sum": sum(
-                           value for run in selected if type(value := (run.get("accounting") or {}).get(
-                               "observed_input_plus_output_tokens")) is int) if any(type((run.get("accounting") or {}).get(
-                                   "observed_input_plus_output_tokens")) is int for run in selected) else None,
-                       "wall_seconds_known_sum": round(sum(walls), 6) if walls else None,
-                       "wall_seconds_known_run_count": len(walls), "provider_charge": None,
+                       "provider_charge": None,
                        "subscription_charge": None, "money_basis": "not-reported-by-exec-stream",
                        "full_provider_ledger_complete_runs": sum((run.get("accounting") or {}).get("usage_complete") is True for run in selected),
                        "missing_accounting_runs": sum(run.get("accounting") is None for run in selected),
@@ -290,7 +297,8 @@ def all_run_costs(runs):
 
 def report(root, adjudications=None):
     plan = load_plan(root)
-    private_runs = inventory(plan)
+    with campaign_lock(root):
+        private_runs = inventory(plan)
     index = _adjudication_index(adjudications)
     if index:
         expected_grader = plan["pins"].get("harness_sources", {}).get("review_grading.py")
@@ -317,6 +325,8 @@ def report(root, adjudications=None):
               "measurement_limits": ["complete provider-call ledger and subscription charge unavailable",
                                      "quality requires independent semantic adjudication with treatment/cost labels withheld",
                                      "answer prose or observed command text may reveal tool identity despite packet blinding",
+                                     "input includes cache reads; cache-read and cache-write counts are separate, never added to input",
+                                     "token comparisons are field-specific; unknown cache counters remain incomparable",
                                      "observed token sums include all measured statuses and are partitioned by basis",
                                      "conditional pairs exclude adverse or unmatched quality and are reported separately"]}
     safe_projection(result)
@@ -341,7 +351,9 @@ def packets(root, destination):
     import random
     plan = load_plan(root)
     by_id = {}
-    for run in inventory(plan):
+    with campaign_lock(root):
+        runs = inventory(plan)
+    for run in runs:
         if run.get("quality"):
             packet = run["quality"]["adjudication_packet"]
             previous = by_id.get(packet["packet_id"])

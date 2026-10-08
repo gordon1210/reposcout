@@ -25,7 +25,7 @@ MODEL = "gpt-6.1-sol"
 EFFORT = "max"
 MAIN_CASES = ("clean-refactor", "refund-boundary", "import-wiring", "package-wiring",
               "wire-units-noise", "sparse-evidence", "review-followup", "staff-only")
-SMOKE_CASES = ("clean-refactor", "refund-boundary", "import-wiring", "sparse-evidence")
+SMOKE_CASES = ("clean-refactor", "import-wiring", "sparse-evidence", "review-followup")
 ABLATION_CASES = ("refund-boundary", "import-wiring", "sparse-evidence", "review-followup")
 VARIANTS = ("baseline", "reposcout", "reposcout-cli")
 TERMINAL_STATUSES = ("completed", "failed", "aborted")
@@ -220,7 +220,10 @@ def make_prompt(step, variant):
     common = (step["task"] + "\n\nComparison revisions: base=" + step.get("base_commit", step["base_tree"])
               + "; head=" + step.get("head_commit", step["head_tree"])
               + ". Evidence tree identities: base=" + step["base_tree"] + "; head=" + step["head_tree"]
-              + ".\n\n" + ANSWER_GUIDANCE)
+              + ".\n\n" + ANSWER_GUIDANCE + "\n\n"
+              + "Run resource-intensive commands serially: at most one build, test, benchmark, or RepoScout "
+                "invocation at a time, including source-query commands. Do not start these concurrently "
+                "through parallel tool calls or shell background jobs.")
     prompt = common + "\n\n" + CAPABILITIES[variant]
     return prompt, {"task_sha256": fingerprint(task), "shared_prompt_sha256": fingerprint(common),
                     "capabilities_sha256": fingerprint(CAPABILITIES[variant]),
@@ -715,6 +718,7 @@ def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, 
                     result = runner(spec, preflight_only=True)
                 write_new(artifacts / "result.json", result)
                 results.append({"run_id": assignment["run_id"], "status": result.get("status"), "preflight": result.get("preflight")})
+                require(result.get("process_tree_drained") is True, "isolation preflight process cleanup is unconfirmed")
                 require(result.get("preflight", {}).get("passed") is True, "isolation preflight failed")
             else:
                 outcome = execute_assignment(plan, assignment, auth_file, runner=runner, check_pins=check_pins)
@@ -751,6 +755,11 @@ def _verify_disposable_tree(path, expected):
 def cleanup_public(root, exported, expected_results_sha256):
     """Retire only recorded public fixtures/controller copies after a verified export."""
     plan = load_plan(root)
+    with campaign_lock(root):
+        return _cleanup_public_locked(root, plan, exported, expected_results_sha256)
+
+
+def _cleanup_public_locked(root, plan, exported, expected_results_sha256):
     exported = Path(exported)
     results = read_json(exported / "results.json")
     integrity = read_json(exported / "integrity.json")
@@ -761,24 +770,33 @@ def cleanup_public(root, exported, expected_results_sha256):
             {item["assignment"]["run_id"]: item["status"] for item in inventory(plan)},
             "run outcomes changed since export")
     targets = []
+    for run in inventory(plan):
+        require(all(invocation["result"].get("process_tree_drained") is True
+                    for invocation in run.get("invocations", [])), "cleanup cannot race an unconfirmed process tree")
     for assignment in plan["assignments"]:
         run_dir = Path(assignment["run_dir"])
+        for probe in run_dir.iterdir():
+            if not probe.name.startswith("preflight-"):
+                continue
+            require(probe.is_dir() and not probe.is_symlink(), "private preflight directory changed type")
+            receipt = probe / "result.json"
+            if not receipt.exists():
+                receipt = probe / "lifecycle.json"
+            require(receipt.is_file() and not receipt.is_symlink(), "preflight cleanup evidence is missing")
+            require(read_json(receipt).get("process_tree_drained") is True,
+                    "cleanup cannot race an unconfirmed preflight process tree")
         for name in ("workspace", "controller"):
             path = run_dir / name
             expected = assignment["disposable_identities"][name]
             _verify_disposable_tree(path, expected)
             targets.append(path)
-    with campaign_lock(root):
-        for run in inventory(plan):
-            require(all(invocation["result"].get("process_tree_drained") is not False
-                        for invocation in run.get("invocations", [])), "cleanup cannot race an undrained process tree")
-        write_new(Path(root) / "cleanup.json", {"schema": SCHEMA, "plan_sha256": plan["plan_sha256"],
-                  "results_canonical_json_sha256": expected_results_sha256,
-                  "targets": [str(path) for path in targets], "private_evidence_retained": True})
-        for path in targets:
-            assignment = next(item for item in plan["assignments"] if Path(item["run_dir"]) == path.parent)
-            _verify_disposable_tree(path, assignment["disposable_identities"][path.name])
-            shutil.rmtree(path)
+    write_new(Path(root) / "cleanup.json", {"schema": SCHEMA, "plan_sha256": plan["plan_sha256"],
+              "results_canonical_json_sha256": expected_results_sha256,
+              "targets": [str(path) for path in targets], "private_evidence_retained": True})
+    for path in targets:
+        assignment = next(item for item in plan["assignments"] if Path(item["run_dir"]) == path.parent)
+        _verify_disposable_tree(path, assignment["disposable_identities"][path.name])
+        shutil.rmtree(path)
     return {"removed_public_directories": len(targets), "private_evidence_retained": True}
 
 

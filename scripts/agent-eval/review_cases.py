@@ -11,7 +11,7 @@ import tempfile
 from accounting import InvalidLedger, fingerprint, read_json, require
 
 ROOT = Path(__file__).resolve().parent / "fixtures" / "pr-review"
-SMOKE_CASES = ("clean-refactor", "refund-boundary", "import-wiring", "sparse-evidence")
+SMOKE_CASES = ("clean-refactor", "import-wiring", "sparse-evidence", "review-followup")
 ABLATION_CASES = ("refund-boundary", "import-wiring", "sparse-evidence", "review-followup")
 CHECK_COMMANDS = {
     "clean-refactor": ["python3", "-B", "test_shipping.py"],
@@ -333,6 +333,7 @@ def activate_step(record, index):
     _git(workspace, "symbolic-ref", "HEAD", "refs/heads/review")
     files = oracle["snapshots"][step["head_revision"]]
     _install_sources(workspace, record["installed_files"], files)
+    _git(workspace, "read-tree", step["head_tree"])
     record["installed_files"] = sorted(files)
     record["active_step"] = index
     record["public_workspace_sha256"] = _workspace_fingerprint(workspace)

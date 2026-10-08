@@ -84,6 +84,29 @@ def _process_identity(pid):
         return None
 
 
+def _path_may_exist(path):
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _process_children(pid):
+    # glob suppresses directory-read errors, which would hide live descendants.
+    children = []
+    for task in Path(f"/proc/{pid}/task").iterdir():
+        try:
+            children.extend(int(value) for value in (task / "children").read_text().split())
+        except FileNotFoundError:
+            if _path_may_exist(task):
+                raise
+            # A thread may exit while its process and other threads remain live.
+    return children
+
+
 class OwnedProcesses:
     """Only signal identities descended from this invocation, using retained pidfds."""
 
@@ -108,8 +131,15 @@ class OwnedProcesses:
 
     def _same_parent(self, identity, parent_pid, parent_start):
         parent = _process_identity(parent_pid)
+        if parent is None and parent_pid in self.identities:
+            self._observation_failed(self.identities[parent_pid])
         return (identity.get("ppid") == parent_pid and parent is not None
                 and parent["start"] == parent_start)
+
+    def _observation_failed(self, identity):
+        if _record_alive(identity):
+            self.tracking_failed = True
+            self.untracked_identities[identity["pid"]] = identity
 
     def observe(self):
         for pid, descriptor in list(self.pidfds.items()):
@@ -128,6 +158,10 @@ class OwnedProcesses:
             visited.add(pid)
             identity = _process_identity(pid)
             if identity is None:
+                if pid in self.identities:
+                    self._observation_failed(self.identities[pid])
+                elif _path_may_exist(Path(f"/proc/{pid}")):
+                    self.tracking_failed = True
                 continue
             old = self.identities.get(pid)
             if old is not None and old["start"] != identity["start"]:
@@ -146,6 +180,8 @@ class OwnedProcesses:
                 if (current is None or current["start"] != identity["start"]
                         or (pid != self.root_pid and not self._same_parent(current, parent_pid, parent_start))):
                     os.close(descriptor)
+                    if current is None:
+                        self._observation_failed(identity)
                     continue
                 self.identities[pid] = identity
                 self.pidfds[pid] = descriptor
@@ -162,11 +198,9 @@ class OwnedProcesses:
                     self.scan_started.setdefault(scan_identity, self.clock())
                 else:
                     self.scan_started.pop(scan_identity, None)
-                for child_file in Path(f"/proc/{pid}/task").glob("*/children"):
-                    pending.extend((int(value), pid, identity["start"])
-                                   for value in child_file.read_text().split())
+                pending.extend((child, pid, identity["start"]) for child in _process_children(pid))
             except (OSError, ValueError):
-                continue
+                self._observation_failed(identity)
         return rss, scans
 
     def reposcout_timed_out(self):
@@ -204,13 +238,7 @@ def _record_alive(record):
     current = _process_identity(record["pid"])
     if current is not None:
         return current["start"] == record["start"] and current["state"] not in ("Z", "X")
-    try:
-        Path(f'/proc/{record["pid"]}').stat()
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return True
-    return True
+    return _path_may_exist(Path(f'/proc/{record["pid"]}'))
 
 
 def _drain_owned_processes(process, owned, *, timeout=0.25, clock=time.monotonic, sleep=time.sleep):

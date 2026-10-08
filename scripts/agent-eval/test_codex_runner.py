@@ -11,7 +11,7 @@ import uuid
 import signal
 from types import SimpleNamespace
 
-from codex_runner import OwnedProcesses, SerialLease, _drain_owned_processes, execute_process, run_trial
+from codex_runner import OwnedProcesses, SerialLease, _drain_owned_processes, _process_children, execute_process, run_trial
 from codex_isolation import IsolationError, PROBE_CHECKS, prepare_isolation
 from test_codex_isolation import prepared_spec
 
@@ -282,10 +282,9 @@ class ProcessOwnershipTests(unittest.TestCase):
         owned.identities[123] = parent
         owned.pidfds[123] = 91
         identities = [parent, self.identity(456, 300, ppid=123), self.identity(123, 200)]
-        children = SimpleNamespace(read_text=lambda: "456")
         with mock.patch("codex_runner._process_identity", side_effect=identities), \
                 mock.patch("codex_runner.Path.readlink", return_value=Path("/usr/bin/bash")), \
-                mock.patch("codex_runner.Path.glob", return_value=[children]), \
+                mock.patch("codex_runner._process_children", return_value=[456]), \
                 mock.patch("codex_runner.os.pidfd_open") as opened:
             owned.observe()
         self.assertEqual(set(owned.identities), {123})
@@ -296,10 +295,9 @@ class ProcessOwnershipTests(unittest.TestCase):
         parent, child = self.identity(123, 100), self.identity(456, 300, ppid=123)
         owned.identities[123] = parent
         owned.pidfds[123] = 91
-        children = SimpleNamespace(read_text=lambda: "456")
         with mock.patch("codex_runner._process_identity", side_effect=lambda pid: parent if pid == 123 else child), \
                 mock.patch("codex_runner.Path.readlink", return_value=Path("/usr/bin/bash")), \
-                mock.patch("codex_runner.Path.glob", return_value=[children]), \
+                mock.patch("codex_runner._process_children", return_value=[456]), \
                 mock.patch("codex_runner.os.pidfd_open", side_effect=OSError(errno.EMFILE, "synthetic descriptor exhaustion")), \
                 mock.patch("codex_runner.signal.pidfd_send_signal") as send:
             owned.observe()
@@ -308,6 +306,50 @@ class ProcessOwnershipTests(unittest.TestCase):
         self.assertEqual(owned.untracked_identities, {456: child})
         self.assertIn({"pid": 456, "start": 300}, owned.records())
         send.assert_called_once_with(91, signal.SIGKILL)
+
+    def test_live_owned_proc_read_failure_marks_supervision_incomplete(self):
+        for target in ("codex_runner.Path.readlink", "codex_runner._process_children"):
+            with self.subTest(target=target):
+                owned = OwnedProcesses(123, observe=False)
+                parent = self.identity(123, 100)
+                owned.identities[123] = parent
+                owned.pidfds[123] = 91
+                with mock.patch("codex_runner._process_identity", return_value=parent), \
+                        mock.patch("codex_runner.Path.readlink", return_value=Path("/usr/bin/bash")), \
+                        mock.patch(target, side_effect=PermissionError(errno.EACCES, "unreadable owned proc")):
+                    owned.observe()
+                self.assertTrue(owned.tracking_failed)
+                self.assertEqual(owned.untracked_identities, {123: parent})
+
+    def test_unreadable_tracked_identity_is_not_treated_as_exit(self):
+        owned = OwnedProcesses(123, observe=False)
+        owned.identities[123] = self.identity(123, 100)
+        owned.pidfds[123] = 91
+        with mock.patch("codex_runner._process_identity", return_value=None), \
+                mock.patch("codex_runner.Path.stat", return_value=SimpleNamespace()):
+            owned.observe()
+        self.assertTrue(owned.tracking_failed)
+        self.assertEqual(owned.records(), [{"pid": 123, "start": 100}])
+
+    def test_exited_identity_during_observation_does_not_create_incomplete_fence(self):
+        owned = OwnedProcesses(123, observe=False)
+        owned.identities[123] = self.identity(123, 100)
+        owned.pidfds[123] = 91
+        with mock.patch("codex_runner._process_identity", return_value=owned.identities[123]), \
+                mock.patch("codex_runner.Path.readlink", side_effect=FileNotFoundError), \
+                mock.patch("codex_runner._record_alive", return_value=False):
+            owned.observe()
+        self.assertFalse(owned.tracking_failed)
+        self.assertEqual(owned.untracked_identities, {})
+
+    def test_task_enumeration_error_propagates_but_exited_thread_is_ignored(self):
+        with mock.patch("codex_runner.Path.iterdir", side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                _process_children(123)
+        with mock.patch("codex_runner.Path.iterdir", return_value=[Path("/proc/123/task/456")]), \
+                mock.patch("codex_runner.Path.read_text", side_effect=FileNotFoundError), \
+                mock.patch("codex_runner.Path.stat", side_effect=FileNotFoundError):
+            self.assertEqual(_process_children(123), [])
 
     def test_reposcout_clock_tracks_birth_identity_and_ignores_reused_pid(self):
         now = [0.0]
@@ -321,7 +363,7 @@ class ProcessOwnershipTests(unittest.TestCase):
 
         with mock.patch("codex_runner._process_identity", side_effect=current.get), \
                 mock.patch("codex_runner.Path.readlink", new=executable), \
-                mock.patch("codex_runner.Path.glob", return_value=[]), \
+                mock.patch("codex_runner._process_children", return_value=[]), \
                 mock.patch("codex_runner.os.close") as close:
             self.assertEqual(owned.observe()[1], 1)
             now[0] = 179.999

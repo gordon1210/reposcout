@@ -80,6 +80,23 @@ class ReviewCaseTests(unittest.TestCase):
                 self.assertFalse(Path(signer["private_key"]).is_relative_to(record["workspace"]))
                 self.assertFalse((Path(record["workspace"]) / "fixture_ed25519").exists())
 
+    def test_initial_and_followup_repositories_have_clean_index_and_worktree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            signer = review_cases.create_signer(root / "signing")
+            for case in review_cases.list_cases(include_holdout=True):
+                record = review_cases.prepare_case(case["case_id"], root / case["case_id"], signer=signer)
+                workspace = Path(record["workspace"])
+                for step_index in range(case["step_count"]):
+                    with self.subTest(case=case["case_id"], step=step_index):
+                        if step_index:
+                            review_cases.activate_step(record, step_index)
+                        self.assertEqual(review_cases._git(workspace, "status", "--porcelain=v1", "--untracked-files=all"), "")
+                        self.assertEqual(review_cases._git(workspace, "diff", "--cached", "--exit-code", "HEAD", "--"), "")
+                        self.assertEqual(review_cases._git(workspace, "diff", "--exit-code", "--"), "")
+                        self.assertEqual(review_cases._git(workspace, "write-tree"), record["steps"][step_index]["head_tree"])
+                        self.assertEqual(set(review_cases._git(workspace, "ls-files").splitlines()), set(record["installed_files"]))
+
     def test_changed_fixture_and_nested_oracle_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             public = Path(temporary) / "public"

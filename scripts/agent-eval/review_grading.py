@@ -83,6 +83,14 @@ def _result_value(value):
     return value
 
 
+def _result_shape(value):
+    if isinstance(value, dict):
+        return ("object", tuple((key, _result_shape(item)) for key, item in sorted(value.items())))
+    if isinstance(value, list):
+        return ("array", tuple(_result_shape(item) for item in value))
+    return type(value).__name__
+
+
 def _witness(trigger, defects):
     observed = {key: _json_value(trigger[key + "_json"]) for key in ("input", "expected", "actual")}
     same_inputs = [(defect["id"], witness) for defect in defects for witness in defect["witnesses"]
@@ -90,7 +98,10 @@ def _witness(trigger, defects):
     matches = {identity for identity, witness in same_inputs
                if all(fingerprint(_result_value(observed[key])) == fingerprint(_result_value(witness[key]))
                       for key in ("expected", "actual"))}
-    return observed, matches, bool(same_inputs) and not matches
+    comparable = any(all(_result_shape(_result_value(observed[key])) == _result_shape(_result_value(witness[key]))
+                         for key in ("expected", "actual")) for _, witness in same_inputs)
+    # A field projection or different response envelope needs semantic review, not a literal contradiction.
+    return observed, matches, comparable and not matches
 
 
 def _issue(step, code, detail, **extra):
