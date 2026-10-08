@@ -1,7 +1,12 @@
 import json
 import hashlib
 import os
+import errno
+import io
+import sys
+from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest import mock
@@ -9,7 +14,7 @@ import shutil
 from dataclasses import replace
 
 from codex_isolation import (
-    IsolationError, REQUIRED_RUNTIME_TOOLS, configuration_manifest, fingerprint_manifest, permission_overrides,
+    IsolationError, PROBE_SOURCE, REQUIRED_RUNTIME_TOOLS, configuration_manifest, fingerprint_manifest, permission_overrides,
     codex_runtime_manifest, controller_ca_manifest, directory_sha256, prepare_isolation, validate_public_tree,
     runtime_tool_identities, runtime_tool_manifest,
 )
@@ -49,6 +54,47 @@ class IsolationTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_network_probe_rejects_route_failure_without_namespace_isolation(self):
+        expected = {"outer_pid_namespace_inode": 10, "outer_network_namespace_inode": 20,
+                    "host_home": "/host-home", "host_workspace": "/host-source", "skills": [],
+                    "reposcout": False, "runtime_probes": {}}
+        for private_network, error, denied in ((False, errno.ENETUNREACH, False),
+                                               (False, errno.EHOSTUNREACH, False),
+                                               (True, errno.ENETUNREACH, True),
+                                               (True, errno.EPERM, True), (True, 0, False)):
+            with self.subTest(private_network=private_network, error=error):
+                output = io.StringIO()
+                connection = mock.Mock()
+                connection.connect_ex.return_value = error
+                def namespace(path):
+                    return SimpleNamespace(st_ino=11 if str(path).endswith("/pid") else 21 if private_network else 20)
+                def write(path, *_args, **_kwargs):
+                    if str(path).startswith("/workspace/"):
+                        raise PermissionError()
+                    return 0
+                with mock.patch.dict(os.environ, {}, clear=True), \
+                        mock.patch.object(sys, "argv", ["probe", json.dumps(expected)]), \
+                        mock.patch("os.stat", side_effect=namespace), \
+                        mock.patch("os.open", side_effect=PermissionError), \
+                        mock.patch.object(Path, "is_dir", return_value=True), \
+                        mock.patch.object(Path, "is_file", lambda path: str(path).endswith("review.schema.json")), \
+                        mock.patch.object(Path, "exists", return_value=False), \
+                        mock.patch.object(Path, "iterdir", return_value=iter(())), \
+                        mock.patch.object(Path, "write_text", write), \
+                        mock.patch.object(Path, "unlink"), \
+                        mock.patch("socket.socket", return_value=connection), redirect_stdout(output):
+                    with self.assertRaises(SystemExit) as stopped:
+                        exec(PROBE_SOURCE, {})
+                result = json.loads(output.getvalue())
+                self.assertEqual(result["checks"]["network_denied"], denied)
+                self.assertEqual(result["checks"]["private_network_namespace"], private_network)
+                self.assertEqual(result["network_probe"]["outer_namespace_inode"], 20)
+                self.assertEqual(result["network_probe"]["tool_namespace_inode"], 21 if private_network else 20)
+                self.assertEqual(result["network_probe"]["errno"], error)
+                self.assertEqual(result["network_probe"]["stage"], "connect")
+                self.assertEqual(result["passed"], denied)
+                self.assertEqual(stopped.exception.code, 0 if denied else 3)
 
     def test_public_fixture_rejects_symlinks_and_hardlinks(self):
         secret = self.root / "private-oracle"

@@ -326,7 +326,7 @@ PROBE_CHECKS = frozenset((
     "denied:/artifacts/isolation-canary", "denied:/proc/1/root/controller/auth.json",
     "private_pid_namespace", "private_process_roots", "host_home_absent",
     "host_workspace_absent", "skill_inventory", "tool_inventory", "secret_environment_absent",
-    "workspace_readonly", "scratch_writable", "network_denied", "required_runtimes",
+    "workspace_readonly", "scratch_writable", "private_network_namespace", "network_denied", "required_runtimes",
 ))
 
 
@@ -335,6 +335,7 @@ import json, os, sys
 prefix = json.loads(sys.argv[1])
 expected = json.loads(sys.argv[2])
 expected["outer_pid_namespace_inode"] = os.stat("/proc/self/ns/pid").st_ino
+expected["outer_network_namespace_inode"] = os.stat("/proc/self/ns/net").st_ino
 command = prefix + ["sandbox", "--permission-profile", "eval", "-C", "/workspace", "--",
                     "/usr/bin/python3", "/inputs/isolation_probe.py",
                     json.dumps(expected, sort_keys=True)]
@@ -396,18 +397,29 @@ scratch = pathlib.Path("/scratch/isolation-write-probe")
 scratch.write_text("probe")
 scratch.unlink()
 checks["scratch_writable"] = True
+network_probe = {
+    "outer_namespace_inode": expected["outer_network_namespace_inode"],
+    "tool_namespace_inode": os.stat("/proc/self/ns/net").st_ino,
+    "stage": "socket", "errno": None,
+}
+checks["private_network_namespace"] = (
+    network_probe["tool_namespace_inode"] != network_probe["outer_namespace_inode"]
+)
 try:
     connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     connection.settimeout(0.2)
     try:
-        result = connection.connect_ex(("192.0.2.1", 9))
+        network_probe["stage"] = "connect"
+        network_probe["errno"] = connection.connect_ex(("192.0.2.1", 9))
     finally:
         connection.close()
-    checks["network_denied"] = result in (errno.EPERM, errno.EACCES, errno.ENETUNREACH, errno.EHOSTUNREACH)
 except OSError as error:
-    checks["network_denied"] = error.errno in (errno.EPERM, errno.EACCES, errno.ENETUNREACH)
+    network_probe["errno"] = error.errno
+checks["network_denied"] = checks["private_network_namespace"] and network_probe["errno"] in (
+    errno.EPERM, errno.EACCES, errno.ENETUNREACH, errno.EHOSTUNREACH
+)
 print(json.dumps({"schema": 1, "passed": all(checks.values()), "checks": checks,
-                  "runtime_checks": runtime_checks}, sort_keys=True))
+                  "runtime_checks": runtime_checks, "network_probe": network_probe}, sort_keys=True))
 sys.exit(0 if all(checks.values()) else 3)
 '''
 

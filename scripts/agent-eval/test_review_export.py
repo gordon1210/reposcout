@@ -111,6 +111,41 @@ class ReportingTests(unittest.TestCase):
             integrity = read_json(destination / "integrity.json")
             self.assertEqual(integrity["results_canonical_json_sha256"], fingerprint(stored))
 
+    def test_failed_episode_exports_known_partial_costs_without_complete_totals(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            assignment = next(item for item in plan["assignments"] if item["step_count"] == 2)
+            failed = measured(plan, assignment, "failed", tokens=77, quality_pass=False, comparable=False)
+            accounting = failed["accounting"]
+            accounting["observed_usage"] = dict.fromkeys(exporting.USAGE_FIELDS)
+            accounting["known_usage_prefix"] = {
+                "basis": "normalized-nonoverlapping-invocations; not-a-complete-episode-total",
+                "invocation_count": 1, "stopped_at_invocation": 1,
+                "stop_reasons": ["episode-thread-or-run-mismatch"],
+                "observed_usage": {**dict.fromkeys(exporting.USAGE_FIELDS), "input_tokens": 77,
+                                   "cached_input_tokens": 10, "cache_write_input_tokens": 0, "output_tokens": 20},
+                "field_invocation_indices": {field: [0] if field in exporting.REQUESTED_TOKEN_FIELDS else []
+                                             for field in exporting.USAGE_FIELDS},
+            }
+            campaign.write_new(Path(assignment["run_dir"]) / "outcome.json", failed)
+            stored = exporting.report(root)
+            costs = next(group for group in stored["all_assigned_run_costs"] if group["usage_basis"] != "unavailable")
+            self.assertIsNone(costs["observed_token_known_sums"]["input_tokens"])
+            self.assertEqual(costs.get("observed_partial_token_known_sums", {}).get("input_tokens"), 77)
+            self.assertEqual(costs["observed_partial_token_known_sums"]["cache_write_input_tokens"], 0)
+            self.assertIsNone(costs["observed_partial_token_known_sums"]["total_tokens"])
+            self.assertEqual(costs["partial_token_known_run_counts"]["input_tokens"], 1)
+            self.assertEqual(costs["token_known_run_counts"]["input_tokens"], 0)
+            exported = next(item for item in stored["runs"] if item["run_id"] == assignment["run_id"])
+            self.assertEqual(exported["accounting"]["known_usage_prefix"], accounting["known_usage_prefix"])
+            self.assertEqual(stored["conditional_quality_matched_pairs"], [])
+            # A field already represented by a whole episode must not also enter its partial sum.
+            exported["accounting"]["observed_usage"]["input_tokens"] = 77
+            costs = exporting.all_run_costs([exported])[0]
+            self.assertEqual(costs["observed_token_known_sums"]["input_tokens"], 77)
+            self.assertIsNone(costs["observed_partial_token_known_sums"]["input_tokens"])
+            self.assertEqual(costs["partial_token_known_run_counts"]["input_tokens"], 0)
+
     def test_incomplete_pairs_are_visible_and_not_eligible(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, plan = prepared(temporary)

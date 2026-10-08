@@ -607,26 +607,28 @@ def aggregate_episode(traces):
     errors = []
     thread_id = traces[0].get('thread_id')
     run_id = traces[0].get('run_id')
-    scopes = {trace.get('usage_scope') for trace in traces}
     digests = set()
-    versions = {trace.get('cli_version') for trace in traces}
+    prefix = []
+    prefix_stop_reasons = []
     for index, trace in enumerate(traces):
         require(trace.get('adapter') == ADAPTER and trace.get('schema') == SCHEMA, 'unsupported episode trace')
         require(trace.get('evidence_sha256') == fingerprint({key: value for key, value in trace.items() if key != 'evidence_sha256'}),
                 'episode trace projection hash mismatch')
+        current_errors = []
+        unbound_baseline_fields = []
         invocation = trace.get('invocation_id')
         if not _identity(invocation) or invocation in seen:
-            errors.append('duplicate-or-missing-invocation-id')
+            current_errors.append('duplicate-or-missing-invocation-id')
         seen.add(invocation)
         if trace.get('trace_sha256') in digests:
-            errors.append('duplicate-captured-trace')
+            current_errors.append('duplicate-captured-trace')
         digests.add(trace.get('trace_sha256'))
         if trace.get('thread_id') != thread_id or thread_id is None or trace.get('run_id') != run_id:
-            errors.append('episode-thread-or-run-mismatch')
+            current_errors.append('episode-thread-or-run-mismatch')
         if index == 0 and trace.get('resumed_thread_id') is not None:
-            errors.append('episode-starts-with-resume')
+            current_errors.append('episode-starts-with-resume')
         if index > 0 and trace.get('resumed_thread_id') != thread_id:
-            errors.append('missing-or-foreign-resume-link')
+            current_errors.append('missing-or-foreign-resume-link')
         if index > 0 and trace.get('usage_scope') == 'thread-cumulative':
             previous_turns = traces[index - 1].get('turns', [])
             previous = previous_turns[-1]['reported_usage'] if previous_turns else None
@@ -634,13 +636,26 @@ def aggregate_episode(traces):
             if previous is None or not isinstance(baseline, dict) or any(baseline.get(field) != previous.get(field)
                     for field in USAGE_FIELDS if field in CORE_FIELDS or
                     previous.get(field) is not None and baseline.get(field) is not None):
-                errors.append('cumulative-resume-baseline-mismatch')
-    if len(scopes) != 1:
-        errors.append('episode-usage-scope-changed')
-    if len(versions) != 1:
-        errors.append('episode-cli-version-changed')
-    if len(traces) > 1 and 'unknown' in scopes:
-        errors.append('episode-resume-usage-scope-unknown')
+                current_errors.append('cumulative-resume-baseline-mismatch')
+            if previous is not None and isinstance(baseline, dict):
+                unbound_baseline_fields = [field for field in USAGE_FIELDS
+                                           if previous.get(field) is None and baseline.get(field) is not None]
+        if trace.get('usage_scope') != traces[0].get('usage_scope'):
+            current_errors.append('episode-usage-scope-changed')
+        if trace.get('cli_version') != traces[0].get('cli_version'):
+            current_errors.append('episode-cli-version-changed')
+        if index > 0 and 'unknown' in (traces[0].get('usage_scope'), trace.get('usage_scope')):
+            current_errors.append('episode-resume-usage-scope-unknown')
+        errors.extend(current_errors)
+        if not prefix_stop_reasons:
+            prefix_stop_reasons.extend(current_errors)
+            prefix_stop_reasons.extend('cumulative-resume-baseline-unbound-field:' + field
+                                       for field in unbound_baseline_fields)
+            if trace.get('controller_closed') is not True:
+                prefix_stop_reasons.append('invocation-controller-not-closed')
+            prefix_stop_reasons.extend('invocation:' + error['code'] for error in trace['validation_errors'])
+            if not prefix_stop_reasons:
+                prefix.append(trace)
     safe_total = not errors
     values = [trace['observed_usage'] for trace in traces]
     observed = _sum_usage(values) if safe_total else dict.fromkeys(USAGE_FIELDS)
@@ -651,6 +666,17 @@ def aggregate_episode(traces):
         'schema': SCHEMA, 'adapter': ADAPTER, 'kind': 'codex-exec-episode',
         'run_id': run_id, 'thread_id': thread_id, 'invocation_count': len(traces),
         'usage_basis': traces[0]['usage_basis'], 'observed_usage': observed,
+        'known_usage_prefix': {
+            'basis': 'normalized-nonoverlapping-invocations; not-a-complete-episode-total',
+            'invocation_count': len(prefix),
+            'observed_usage': _known_sum([trace['observed_usage'] for trace in prefix]),
+            'field_invocation_indices': {
+                field: [index for index, trace in enumerate(prefix) if trace['observed_usage'][field] is not None]
+                for field in USAGE_FIELDS
+            },
+            'stopped_at_invocation': len(prefix) if len(prefix) < len(traces) else None,
+            'stop_reasons': sorted(set(prefix_stop_reasons)),
+        },
         'observed_input_plus_output_tokens': total,
         'comparable_usage': comparable,
         'comparable_fields': [field for field in USAGE_FIELDS if observed[field] is not None and

@@ -712,6 +712,7 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
             receipt = {"schema": 1, "passed": passed, "profile_sha256": plan.profile_sha256,
                        "checks": probe.get("checks") if isinstance(probe, dict) else None,
                        "runtime_checks": probe.get("runtime_checks") if isinstance(probe, dict) else None,
+                       "network_probe": probe.get("network_probe") if isinstance(probe, dict) else None,
                        "controller": control,
                        "stdout_sha256": _digest_file(probe_stdout) if probe_stdout.exists() else None}
             receipt["receipt_sha256"] = fingerprint_manifest(receipt)

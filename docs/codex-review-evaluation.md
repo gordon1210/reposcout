@@ -74,6 +74,11 @@ Before model execution, zero-model probes must establish the configured filesyst
 boundaries, including a private process namespace. Commands can inspect their own sanitized
 process environment; host and controller processes remain inaccessible. Missing support is a
 failed prerequisite, not permission to silently run unisolated.
+The network probe requires a tool network namespace distinct from its protected controller as
+well as a denied socket attempt. Its private receipt preserves both namespace identities and the
+operation/error. A destination-specific routing failure in the same namespace cannot satisfy the
+gate. Older boolean-only receipts retain their original, narrower proof; the new observations
+must not be attributed to historical runs.
 New campaigns also pin the known tool executable inventory. Native runtimes may be selected from
 the controller's trusted `PATH` when absent from `/usr/bin`; only copied executables are exposed,
 with the existing system-library layout. The same inventory is supplied to all arms. A per-case
@@ -154,6 +159,15 @@ basis; it does not weaken the historical final-provider-call or native-window co
 Unknown fields remain unknown. Controller closure, trace integrity and supported usage semantics
 are prerequisites for comparison. A successful final answer does not establish complete usage
 for failed requests. Tool/source bytes are explanatory measurements, never extra provider tokens.
+A failed or unidentified follow-up can leave whole-episode fields unknown while earlier incurred
+costs remain known. `known_usage_prefix` records a conservative attributable prefix of normalized,
+nonoverlapping invocations, per-field indices and its stopping reason. It does not require a
+successful answer or comparable quality. The all-assigned summary keeps these partial values in
+`observed_partial_token_known_sums`, with `partial_token_known_run_counts`; a field already in
+`observed_token_known_sums` is never counted there again. Neither raw cumulative snapshots nor
+unknown later-session costs are added to the prefix.
+An optional cumulative baseline supplied without a matching prior observation also stops the
+prefix; a missing counter is not a recorded zero.
 Subscription charges and money saved are unknown without a supported billing basis. Trial totals
 cover the evaluated review sessions; suite development, orchestration and independent adjudication are separate
 experiment operations and are not included in the A/B episode totals.

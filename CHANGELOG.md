@@ -16,6 +16,10 @@ within their section.
 
 ### Fixed
 
+- Require a distinct tool network namespace as well as a denied socket probe, retaining the
+  observed namespace, operation and error. Preserve attributable normalized costs before an
+  invalid review follow-up in separate partial-cost summaries without inventing complete totals
+  or adding cumulative counters twice; original evaluation exports remain unchanged.
 - Pin and copy the review evaluator's required runtimes, including Node outside `/usr/bin`, and
   verify launcher/import availability before consuming a model assignment. Preserve redacted
   private failure phases and pin differences, stop batches on shared prerequisite failures, and

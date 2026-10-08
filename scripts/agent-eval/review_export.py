@@ -13,6 +13,7 @@ RESULT_FIELDS = ("status", "exit_code", "returncode",
                  "stream_complete", "stdout_truncated", "process_tree_drained", "termination_reason",
                  "usage_scope", "cli_version", "input_receipt", "campaign_fatal", "failure_phase")
 ACCOUNTING_FIELDS = ("schema", "adapter", "kind", "invocation_count", "usage_basis", "observed_usage",
+                     "known_usage_prefix",
                      "comparable_usage", "comparable_fields",
                      "usage_complete", "provider_call_ids_available", "unknown_fields", "episode_errors",
                      "command_statistics", "money", "evidence_sha256")
@@ -280,14 +281,24 @@ def all_run_costs(runs):
     for (variant, basis), selected in sorted(groups.items()):
         token_totals = {}
         known_counts = {}
+        partial_totals = {}
+        partial_counts = {}
         for field in USAGE_FIELDS:
             values = [(run.get("accounting") or {}).get("observed_usage", {}).get(field) for run in selected]
             measured = [value for value in values if type(value) is int]
             token_totals[field] = sum(measured) if measured else None
             known_counts[field] = len(measured)
+            partial_values = [((run.get("accounting") or {}).get("known_usage_prefix") or {})
+                              .get("observed_usage", {}).get(field)
+                              for run, value in zip(selected, values) if value is None]
+            partial = [value for value in partial_values if type(value) is int]
+            partial_totals[field] = sum(partial) if partial else None
+            partial_counts[field] = len(partial)
         result.append({"variant": variant, "usage_basis": basis, "assigned_runs": len(selected),
                        "status_counts": dict(Counter(run["status"] for run in selected)),
                        "observed_token_known_sums": token_totals, "token_known_run_counts": known_counts,
+                       "observed_partial_token_known_sums": partial_totals,
+                       "partial_token_known_run_counts": partial_counts,
                        "provider_charge": None,
                        "subscription_charge": None, "money_basis": "not-reported-by-exec-stream",
                        "full_provider_ledger_complete_runs": sum((run.get("accounting") or {}).get("usage_complete") is True for run in selected),

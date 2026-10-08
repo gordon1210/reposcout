@@ -382,6 +382,8 @@ class CodexTraceTests(unittest.TestCase):
         self.assertTrue(result['comparable_usage'])
         self.assertEqual(result['observed_input_plus_output_tokens'], 180)
         self.assertEqual(result['observed_usage']['reasoning_output_tokens'], 9)
+        self.assertEqual(result['known_usage_prefix']['observed_usage']['input_tokens'], 150)
+        self.assertEqual(result['known_usage_prefix']['field_invocation_indices']['input_tokens'], [0, 1])
         second = self.parse([{'type': 'thread.started', 'thread_id': 'thread'}] + turn('t2', usage(150, 90, 30, 9)),
                             controller_changes={'invocation_id': 'invocation-2', 'resumed_thread_id': 'thread',
                                                 'usage_scope': 'thread-cumulative', 'usage_baseline': usage(80, 60, 15, 4)})
@@ -389,6 +391,86 @@ class CodexTraceTests(unittest.TestCase):
         self.assertFalse(result['comparable_usage'])
         self.assertIsNone(result['observed_input_plus_output_tokens'])
         self.assertIn('cumulative-resume-baseline-mismatch', result['episode_errors'])
+        self.assertEqual(result['known_usage_prefix']['observed_usage']['input_tokens'], 100)
+        self.assertEqual(result['known_usage_prefix']['invocation_count'], 1)
+
+    def test_failed_resume_without_thread_preserves_known_normalized_prefix(self):
+        initial = {**usage(), 'cache_write_input_tokens': 0}
+        first = self.parse(records(initial), controller_changes={'usage_scope': 'thread-cumulative'})
+        failed = self.parse(raw=b'', controller_changes={
+            'invocation_id': 'invocation-2', 'resumed_thread_id': 'thread', 'thread_id': None,
+            'usage_scope': 'thread-cumulative', 'usage_baseline': initial,
+            'status': 'failed', 'returncode': 1,
+        })
+        result = codex_trace.aggregate_episode([first, failed])
+        self.assertFalse(result['comparable_usage'])
+        self.assertIsNone(result['observed_usage']['input_tokens'])
+        prefix = result.get('known_usage_prefix', {})
+        self.assertEqual(prefix.get('observed_usage', {}).get('input_tokens'), 100)
+        self.assertEqual(prefix['observed_usage']['cached_input_tokens'], 70)
+        self.assertEqual(prefix['observed_usage']['cache_write_input_tokens'], 0)
+        self.assertEqual(prefix['observed_usage']['output_tokens'], 20)
+        self.assertIsNone(prefix['observed_usage']['total_tokens'])
+        self.assertEqual(prefix['invocation_count'], 1)
+        self.assertEqual(prefix['field_invocation_indices']['input_tokens'], [0])
+        self.assertEqual(prefix['stopped_at_invocation'], 1)
+
+    def test_known_prefix_rejects_optional_baseline_not_observed_in_prior_trace(self):
+        first = self.parse(records(), controller_changes={'usage_scope': 'thread-cumulative'})
+        second = self.parse(
+            [{'type': 'thread.started', 'thread_id': 'thread'}] +
+            turn('t2', {**usage(150, 90, 30), 'cache_write_input_tokens': 10}),
+            controller_changes={'invocation_id': 'invocation-2', 'resumed_thread_id': 'thread',
+                                'usage_scope': 'thread-cumulative',
+                                'usage_baseline': {**usage(), 'cache_write_input_tokens': 0}})
+        result = codex_trace.aggregate_episode([first, second])
+        self.assertTrue(result['comparable_usage'])
+        self.assertIsNone(result['observed_usage']['cache_write_input_tokens'])
+        prefix = result['known_usage_prefix']
+        self.assertIsNone(prefix['observed_usage']['cache_write_input_tokens'])
+        self.assertEqual(prefix['observed_usage']['input_tokens'], 100)
+        self.assertEqual(prefix['field_invocation_indices']['cache_write_input_tokens'], [])
+        self.assertEqual(prefix['invocation_count'], 1)
+        self.assertEqual(prefix['stopped_at_invocation'], 1)
+        self.assertIn('cumulative-resume-baseline-unbound-field:cache_write_input_tokens',
+                      prefix['stop_reasons'])
+
+    def test_known_prefix_stops_at_unattributable_or_invalid_resume(self):
+        first = self.parse(records(), controller_changes={'usage_scope': 'thread-cumulative'})
+        cases = (
+            {'run_id': 'foreign-run'}, {'invocation_id': 'invocation-1'},
+            {'resumed_thread_id': 'foreign-thread'}, {'cli_version': 'different'},
+            {'usage_scope': 'turn'}, {'usage_scope': 'unknown'}, {'stream_complete': False},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                second = self.parse([{'type': 'thread.started', 'thread_id': 'thread'}] + turn('t2', usage(150, 90, 30)),
+                                    controller_changes={'invocation_id': 'invocation-2', 'resumed_thread_id': 'thread',
+                                                        'usage_scope': 'thread-cumulative', 'usage_baseline': usage(),
+                                                        **changes})
+                prefix = codex_trace.aggregate_episode([first, second])['known_usage_prefix']
+                self.assertEqual(prefix['observed_usage']['input_tokens'], 100)
+                self.assertEqual(prefix['invocation_count'], 1)
+                self.assertEqual(prefix['stopped_at_invocation'], 1)
+                self.assertTrue(prefix['stop_reasons'])
+        malformed = self.parse(raw=b'{', controller_changes={'status': 'failed', 'returncode': 1,
+                               'thread_id': None, 'usage_scope': 'thread-cumulative'})
+        prefix = codex_trace.aggregate_episode([malformed])['known_usage_prefix']
+        self.assertEqual(prefix['invocation_count'], 0)
+        self.assertIsNone(prefix['observed_usage']['input_tokens'])
+
+    def test_known_prefix_keeps_emitted_failed_turn_costs_without_promoting_quality(self):
+        first = self.parse(records(), controller_changes={'usage_scope': 'thread-cumulative'})
+        second = self.parse([{'type': 'thread.started', 'thread_id': 'thread'}] + turn('t2', usage(150, 90, 30), 'failed'),
+                            controller_changes={'invocation_id': 'invocation-2', 'resumed_thread_id': 'thread',
+                                                'usage_scope': 'thread-cumulative', 'usage_baseline': usage(),
+                                                'status': 'failed', 'returncode': 1})
+        result = codex_trace.aggregate_episode([first, second])
+        self.assertFalse(result['comparable_usage'])
+        self.assertFalse(result['usage_complete'])
+        self.assertEqual(result['known_usage_prefix']['observed_usage']['input_tokens'], 150)
+        self.assertEqual(result['known_usage_prefix']['invocation_count'], 2)
+        self.assertIsNone(result['known_usage_prefix']['stopped_at_invocation'])
 
     def test_unknown_resume_does_not_guess_cumulative_or_turn_sum(self):
         first = self.parse(records())
@@ -399,6 +481,7 @@ class CodexTraceTests(unittest.TestCase):
         self.assertIsNone(result['observed_input_plus_output_tokens'])
         self.assertEqual(result['invocations'][1]['turns'][0]['reported_usage']['input_tokens'], 150)
         self.assertIn('episode-resume-usage-scope-unknown', result['episode_errors'])
+        self.assertEqual(result['known_usage_prefix']['observed_usage']['input_tokens'], 100)
 
     def test_resumed_cache_write_comparison_requires_observations_in_both_invocations(self):
         initial = {**usage(), 'cache_write_input_tokens': 0}
@@ -424,6 +507,8 @@ class CodexTraceTests(unittest.TestCase):
         self.assertFalse(result['comparable_usage'])
         self.assertIn('duplicate-or-missing-invocation-id', result['episode_errors'])
         self.assertIn('duplicate-captured-trace', result['episode_errors'])
+        self.assertEqual(result['known_usage_prefix']['observed_usage']['input_tokens'], 100)
+        self.assertEqual(result['known_usage_prefix']['invocation_count'], 1)
         forged = copy.deepcopy(first)
         forged['observed_usage']['input_tokens'] = 0
         with self.assertRaises(InvalidLedger):

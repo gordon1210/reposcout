@@ -90,7 +90,17 @@ remain inspectable without inventing missing runtime attestations or rewriting t
 
 Current trace accounting lives in `codex_trace.py`, separately from the historical native-window
 adapter. It preserves missing fields as unknown and never turns emitted turn usage into a claimed
-complete provider-call ledger. Run offline evaluator tests without launching a model:
+complete provider-call ledger.
+
+If a later invocation cannot be attributed safely, `known_usage_prefix` preserves the normalized
+prefix and its per-field invocation indices/stop reasons while full episode fields remain unknown.
+The all-assigned report lists `observed_partial_token_known_sums` and their run counts separately;
+fields already included in whole-episode known sums are excluded from partial sums. Failed turns
+with valid observations retain their costs without becoming eligible quality comparisons.
+Network preflight requires distinct controller/tool network namespaces plus a denied socket
+attempt and retains the actual operation/error. Same-namespace routing failures are rejected.
+
+Run the offline tests without launching a model:
 
 ```sh
 python3 -m unittest discover -s scripts/agent-eval -p 'test_*.py'
