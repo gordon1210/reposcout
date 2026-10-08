@@ -16,7 +16,8 @@ apps/
 packages/
   eslint-config/      Shared flat ESLint configuration for both frontend apps.
 scripts/
-  agent-eval/        Bounded offline tasks, quality oracles and explicit usage accounting.
+  agent-eval/        Synthetic tasks, private quality oracles, opt-in isolated Codex trials,
+                     and explicit usage accounting; historical campaigns remain immutable.
   reposcout-skill.sh  Synchronizes and validates the bundled skill mirror.
 skills/
   reposcout/          Canonical distributable agent skill and focused references.

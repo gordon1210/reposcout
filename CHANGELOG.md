@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Add opt-in Codex review evaluations over disposable synthetic repositories, with independent
+  domain oracles, isolated baseline/RepoScout/skill comparisons, blinded quality adjudication and
+  complete assigned-run reporting. Historical negative results remain intact; evaluator tests
+  and smaller source outputs are not presented as evidence of model-token savings.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

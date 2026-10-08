@@ -183,6 +183,16 @@ ask the user.
   `tests/fixtures/test-global.toml`, isolating developer settings and capping each CLI child at two
   workers; precedence tests explicitly override it. Repository Cargo configuration serializes the
   test harness, and process-I/O tests use bounded synthetic trees.
+- Live agent evaluations are separate from deterministic CLI scenarios and ordinary CI. Run them
+  only when the user authorizes model execution. Use fresh synthetic, disposable Git repositories,
+  explicit model/effort settings and serial resource supervision. Agent-visible files must exclude
+  real repositories, private answer oracles, peer trials, host credentials and global skills.
+  Verify filesystem/network isolation before starting a model. Authentication belongs to the
+  protected controller, not the evaluated agent's tools. Preserve every assigned outcome,
+  including failed, interrupted and unmeasured runs; never replace adverse results silently.
+  Expected behavior comes from independent domain requirements and probes, not RepoScout output.
+  Keep quality, skill behavior, tool/source bytes, observed model usage and monetary cost distinct.
+  Missing usage fields stay unknown. See [Codex review evaluations](../codex-review-evaluation.md).
 - `tests/dup_languages.rs` consumes `tests/fixtures/dup_languages.toml` and requires actionable
   exact and Type-2 findings for every canonical `lang::detect` format through the frozen detector
   APIs and CLI JSON contract. Keep its explicit 36-format set synchronized with language support.

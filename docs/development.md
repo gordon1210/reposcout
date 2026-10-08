@@ -85,6 +85,11 @@ The [manual GitHub workflow](development-scenarios.md#manual-github-action) can 
 on demand. Separate [cold/warm measurements](scenario-measurements.md) record bounded CLI costs
 and peak RAM without running a model or adding an automatic performance gate.
 
+The separate [Codex review evaluation](codex-review-evaluation.md) compares real agent sessions
+with and without RepoScout and the bundled skill. It uses disposable synthetic PRs, independent
+review oracles and explicit full-episode measurements. Live model runs are opt-in and remain
+separate from deterministic scenario tests and ordinary CI.
+
 ## Architecture
 
 The stable serialized contract lives in [`src/model.rs`](../src/model.rs). Analyzers write those

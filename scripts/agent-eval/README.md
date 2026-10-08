@@ -1,5 +1,70 @@
 # Agent evaluation fixtures and usage accounting
 
+## Opt-in Codex PR-review campaigns
+
+The [Codex review study](../../docs/codex-review-evaluation.md) adds actual non-interactive agent
+trials to these development tools. All source repositories are synthetic and disposable. Private
+domain oracles remain outside the evaluated filesystem; raw traces and controller authentication
+never belong in the public results. Live runs are explicitly authorized, serial and separate from
+ordinary CI. The historical offline tools and 2026-09 pilot below retain their original contracts.
+
+Use an explicit native Codex executable and a verified RepoScout binary. Campaign preparation pins
+their identities and the exact canonical skill; it does not change any installed tool or skill.
+
+```sh
+python3 scripts/agent-eval/review_campaign.py prepare /tmp/review-smoke \
+  --stage smoke --seed 20261007 \
+  --codex-binary /absolute/path/to/native/codex --codex-version 'codex-cli VERSION' \
+  --reposcout-binary /absolute/path/to/verified/reposcout \
+  --skill-dir skills/reposcout --timeout-seconds 600
+
+# Verify isolation without consuming an assigned model run.
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-smoke --preflight-only --limit 1
+
+# The auth source is read only by the trusted controller, never printed or added to the fixture.
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-smoke \
+  --auth-file /absolute/path/to/private/auth.json
+
+python3 scripts/agent-eval/review_campaign.py report /tmp/review-smoke
+```
+
+`prepare` refuses an existing campaign destination. `run` never silently reruns an already started
+assignment. The plan fixes `gpt-6.1-sol` / `max`, the cases, repetition identities, randomized order
+and limits. Eight smoke runs qualify isolation and accounting, not product superiority. The
+exploratory plan contains 48 A/B runs; `--ablation` adds twelve preselected CLI-only runs. The
+`qualify-smoke`, `report` and `export` commands preserve negative outcomes and explicitly pending
+semantic adjudication. Consult each command's `--help` for the complete arguments.
+
+`packets CAMPAIGN DIRECTORY` writes private adjudication packets with arm labels and measured costs
+removed. Their source evidence and observed commands are intentionally private. A reviewer returns
+the packet/answer identities, their human or model-assisted identity and per-step semantic verdicts;
+claimed test execution must cite
+matching command evidence. Pass that JSON file to `report` or `export` with `--adjudications`.
+
+After the eight smoke invocations have valid isolation, response structure and understood
+accounting, `qualify-smoke CAMPAIGN EVIDENCE.json` records the explicit qualification. The evidence
+contains the exact `plan_sha256`, true `isolation_passed`, `structurally_consumable` and
+`accounting_basis_understood` fields, and a nonempty `reason`. This is a measurement gate, not a
+requirement that all reviews pass or that RepoScout wins. Prepare the next campaign with the same
+pins, `--stage exploratory --smoke-campaign CAMPAIGN --ablation`.
+
+`export CAMPAIGN DIRECTORY` writes sanitized results and their integrity hash. After checking the
+export, `cleanup-public CAMPAIGN DIRECTORY --expected-results-sha256 HASH` removes only the
+recorded disposable repositories and controller directories, leaving private evidence for audit.
+Live process uncertainty blocks cleanup. Keep the host authentication source outside every
+campaign; only its private per-trial copy is used. The public system CA bundle is copied and pinned
+separately; `--controller-ca-file` can select an explicit public certificate bundle.
+
+Current trace accounting lives in `codex_trace.py`, separately from the historical native-window
+adapter. It preserves missing fields as unknown and never turns emitted turn usage into a claimed
+complete provider-call ledger. Run offline evaluator tests without launching a model:
+
+```sh
+python3 -m unittest discover -s scripts/agent-eval -p 'test_*.py'
+```
+
+## Historical offline evaluator
+
 This offline evaluator supports the six-feature RepoScout program. It validates canonical usage
 ledgers, prepares bounded task fixtures and checks answers. It does not execute a model, run a
 compiler, start an agent or estimate missing provider usage. These scripts are development tools;
