@@ -5,7 +5,8 @@ import unittest
 
 from accounting import InvalidLedger
 from claude_trace import (
-    ADAPTER, aggregate_episode, extract_execution_evidence, map_usage, parse_exec_trace, structured_output,
+    ADAPTER, adoption_observations, aggregate_episode, extract_execution_evidence, map_usage, parse_exec_trace,
+    structured_output,
 )
 
 SESSION = "7776f03d-0967-4787-86a5-37407d0be1ed"
@@ -276,6 +277,92 @@ class ParseTraceTest(TraceCase):
         self.assertIn("claude-resume-unsupported", aggregate_episode([trace, other])["episode_errors"])
         with self.assertRaises(InvalidLedger):
             aggregate_episode([dict(trace, adapter="codex-exec-jsonl-v1")])
+
+
+def bash(identifier, message, command):
+    return [assistant(message, [tool_use(identifier, "Bash", {"command": command})]),
+            tool_result(identifier, "ok", details={"stdout": "ok", "interrupted": False})]
+
+
+def observe(events):
+    return adoption_observations(list(enumerate(events, 1)))
+
+
+class AdoptionObservationTest(unittest.TestCase):
+    def test_skill_call_without_a_result_counts_as_adoption(self):
+        observed = observe([init(), assistant("msg_1", [tool_use("toolu_1", "Skill", {"skill": "reposcout"})])])
+        self.assertTrue(observed["adopted"])
+        self.assertEqual(observed["adoption_kind"], "skill-tool")
+        self.assertEqual(observed["first_adoption_turn"], 1)
+        self.assertTrue(observed["adopted_before_diff"])
+        self.assertFalse(observed["capped"])
+
+    def test_compound_command_with_the_brief_is_adoption(self):
+        events = [init(), *bash("toolu_1", "msg_1", "cd /workspace && reposcout review-context . --base a --head b --brief")]
+        observed = observe(events)
+        self.assertTrue(observed["adopted"])
+        self.assertTrue(observed["invoked"])
+        self.assertTrue(observed["brief_called"])
+        self.assertEqual(observed["adoption_kind"], "bash-token")
+
+    def test_failed_or_denied_commands_still_count(self):
+        events = [init(), assistant("msg_1", [tool_use("toolu_1", "Bash", {"command": "reposcout --help"})]),
+                  tool_result("toolu_1", "Permission denied", error=True, decision="reject")]
+        self.assertTrue(observe(events)["adopted"])
+
+    def test_skill_file_read_counts(self):
+        events = [init(), assistant("msg_1", [tool_use("toolu_1", "Read", {
+            "file_path": "/workspace/.claude/skills/reposcout/SKILL.md"})])]
+        self.assertEqual(observe(events)["adoption_kind"], "skill-file-read")
+
+    def test_token_mention_is_adoption_but_not_an_invocation(self):
+        observed = observe([init(), *bash("toolu_1", "msg_1", "grep -r reposcout .")])
+        self.assertTrue(observed["adopted"])
+        self.assertFalse(observed["invoked"])
+        self.assertFalse(observed["brief_called"])
+        self.assertFalse(observe([init(), *bash("toolu_1", "msg_1", "echo reposcoutdev")])["adopted"])
+
+    def test_adoption_order_relative_to_the_first_diff(self):
+        diff_first = observe([init(), *bash("toolu_1", "msg_1", "git diff base head"),
+                              *bash("toolu_2", "msg_2", "reposcout review-context . --brief")])
+        self.assertTrue(diff_first["adopted"])
+        self.assertFalse(diff_first["adopted_before_diff"])
+        self.assertEqual((diff_first["first_adoption_turn"], diff_first["first_diff_turn"]), (2, 1))
+        adopted_first = observe([init(), *bash("toolu_1", "msg_1", "reposcout review-context . --brief"),
+                                 *bash("toolu_2", "msg_2", "git -C /workspace show HEAD")])
+        self.assertTrue(adopted_first["adopted_before_diff"])
+        same_command = observe([init(), *bash("toolu_1", "msg_1", "git diff a b && reposcout --help")])
+        self.assertFalse(same_command["adopted_before_diff"])
+        same_command = observe([init(), *bash("toolu_1", "msg_1", "reposcout --help && git log -p -2")])
+        self.assertTrue(same_command["adopted_before_diff"])
+
+    def test_log_without_patch_is_not_a_diff(self):
+        observed = observe([init(), *bash("toolu_1", "msg_1", "git log --oneline -5"),
+                            *bash("toolu_2", "msg_2", "reposcout --help")])
+        self.assertIsNone(observed["first_diff_turn"])
+        self.assertTrue(observed["adopted_before_diff"])
+
+    def test_no_adoption(self):
+        observed = observe(standard_events())
+        self.assertFalse(observed["adopted"])
+        self.assertFalse(observed["adopted_before_diff"])
+        self.assertIsNone(observed["first_adoption_turn"])
+        self.assertEqual(observed["tokens"], {"uncached_input_tokens": 10, "cache_read_input_tokens": 22,
+                                              "cache_write_input_tokens": 14, "output_tokens": 30, "source": "result"})
+
+    def test_capped_stream_is_reported_and_keeps_tokens(self):
+        capped = result(usage(3, 5, 8, 13), subtype="error_max_turns", is_error=True, num_turns=6,
+                        terminal_reason="max_turns")
+        events = [init(), *bash("toolu_1", "msg_1", "git diff a b"), *bash("toolu_2", "msg_2", "reposcout --help"), capped]
+        observed = observe(events)
+        self.assertTrue(observed["capped"])
+        self.assertEqual(observed["cap_reason"], "max-turns")
+        self.assertEqual(observed["num_turns"], 6)
+        self.assertTrue(observed["adopted"])
+        self.assertEqual(observed["tokens"]["cache_read_input_tokens"], 8)
+        budget = observe([init(), result(subtype="error_max_budget_usd", is_error=True)])
+        self.assertEqual(budget["cap_reason"], "max-budget")
+        self.assertFalse(observe(standard_events())["capped"])
 
 
 if __name__ == "__main__":

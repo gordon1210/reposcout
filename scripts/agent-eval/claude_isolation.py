@@ -103,7 +103,7 @@ def claude_settings():
 
 def claude_arguments(spec):
     """Fixed headless flags; the prompt arrives on stdin after the launcher consumes the token line."""
-    return [
+    arguments = [
         CLAUDE_DESTINATION, "-p", "--output-format", "stream-json", "--verbose",
         "--model", spec.model, "--effort", spec.effort,
         "--tools", ",".join(CLAUDE_TOOLS), "--allowedTools", ",".join(CLAUDE_TOOLS),
@@ -111,6 +111,11 @@ def claude_arguments(spec):
         "--settings", "/inputs/settings.json", "--add-dir", "/scratch",
         "--json-schema", json.dumps(spec.answer_schema, sort_keys=True, separators=(",", ":")),
     ]
+    if spec.max_turns is not None:
+        arguments += ["--max-turns", str(spec.max_turns)]
+    if spec.max_budget_usd is not None:
+        arguments += ["--max-budget-usd", format(spec.max_budget_usd, "g")]
+    return arguments
 
 
 def expected_skills(spec):

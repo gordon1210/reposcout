@@ -1,6 +1,6 @@
 """Run one serial, isolated Claude Code headless invocation with bounded lifecycle evidence."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -70,6 +70,8 @@ class ClaudeTrialSpec:
     sandbox_tool_paths: dict | None = None
     expected_sandbox_tools_sha256: str | None = None
     required_runtimes: tuple = ()
+    max_turns: int | None = None
+    max_budget_usd: float | None = None
 
 
 class ClaudeAuthenticationError(IsolationError):
@@ -95,6 +97,13 @@ def _validate_spec(spec):
         raise ValueError("Host memory reserve cannot be negative")
     if not (0 < spec.max_output_bytes <= 16 * 1024 ** 2):
         raise ValueError("Output retention must be positive and at most 16 MiB")
+    if spec.max_turns is not None and (type(spec.max_turns) is not int or not 0 < spec.max_turns <= 1000):
+        raise ValueError("A turn cap must be a positive integer of at most 1000")
+    if spec.max_budget_usd is not None and (isinstance(spec.max_budget_usd, bool)
+                                            or not isinstance(spec.max_budget_usd, (int, float))
+                                            or not math.isfinite(spec.max_budget_usd)
+                                            or not 0 < spec.max_budget_usd <= 100):
+        raise ValueError("A budget cap must be a positive amount of at most 100 USD")
     if not isinstance(spec.prompt, str) or len(spec.prompt.encode()) > 1024 ** 2:
         raise ValueError("Prompt exceeds the 1 MiB input bound")
     if not isinstance(spec.answer_schema, dict) or len(json.dumps(spec.answer_schema).encode()) > 128 * 1024:
@@ -145,6 +154,16 @@ def load_oauth_token(path, *, valid_for_seconds, now=time.time):
     if not isinstance(token, str) or TOKEN_PATTERN.fullmatch(token) is None:
         raise ClaudeAuthenticationError("Authentication source has no supported access token")
     return token.encode()
+
+
+def capped_reason(spec, final):
+    """The cap that ended the invocation, if the final result reports one this spec requested."""
+    subtype = final.get("subtype") if isinstance(final, dict) else None
+    if subtype == "error_max_turns" and spec.max_turns is not None:
+        return "max-turns"
+    if subtype == "error_max_budget_usd" and spec.max_budget_usd is not None:
+        return "max-budget"
+    return None
 
 
 def preflight_steps(plan):
@@ -432,7 +451,9 @@ def _run_preflight(spec, executor, artifacts, result):
             plan.write_probe_expectations(api.port)
             prompt = b"Run the isolation preflight."
             result.update(process_tree_drained=False, ownership_complete=False, owned_processes=[])
-            control = _capture(executor, plan.model_command(spec, base_url=api.base_url), spec, stdout, stderr,
+            # The scripted calls must all run, so the caps apply to the model invocation only.
+            scripted = replace(spec, max_turns=None, max_budget_usd=None)
+            control = _capture(executor, plan.model_command(scripted, base_url=api.base_url), spec, stdout, stderr,
                                input_bytes=canary_token.encode() + b"\n" + prompt,
                                timeout=min(spec.timeout_seconds, PREFLIGHT_TIMEOUT_SECONDS),
                                max_output=min(spec.max_output_bytes, PREFLIGHT_MAX_OUTPUT_BYTES))
@@ -553,6 +574,12 @@ def run_trial(spec, *, preflight_only=False, executor=execute_process):
                 return result
             if state["init"] is not None and not all(checks.values()):
                 result.update(status="failed", termination_reason="runtime-isolation-violation", campaign_fatal=True)
+                return result
+            cap = capped_reason(spec, state["result"])
+            if (cap is not None and result["stream_complete"] is True and result["process_tree_drained"] is True
+                    and result["status"] in ("completed", "failed")):
+                # A requested cap ends the run on purpose; the trace stays valid evidence.
+                result["status"], result["termination_reason"] = "capped", cap
                 return result
             if result["status"] != "completed":
                 return result

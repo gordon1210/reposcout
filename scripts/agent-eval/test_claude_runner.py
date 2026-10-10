@@ -7,9 +7,11 @@ import time
 import unittest
 from unittest import mock
 
-from claude_isolation import CLAUDE_DESTINATION, LAUNCHER_SOURCE, prepare_isolation
+from claude_isolation import CLAUDE_DESTINATION, LAUNCHER_SOURCE, claude_arguments, prepare_isolation
+from claude_runner import _run_preflight as real_preflight
 from claude_runner import (
-    MINIMAL_ANSWER, ClaudeAuthenticationError, ClaudeTrialSpec, load_oauth_token, run_trial,
+    MINIMAL_ANSWER, ClaudeAuthenticationError, ClaudeTrialSpec, _validate_spec, capped_reason, load_oauth_token,
+    run_trial,
 )
 from codex_isolation import REQUIRED_RUNTIME_TOOLS
 from codex_runner import SerialLease
@@ -201,6 +203,75 @@ class RunnerTests(unittest.TestCase):
     def test_resume_is_rejected_before_execution(self):
         with self.assertRaises(ValueError):
             run_trial(replace(self.spec, resume_thread_id=SESSION), executor=FakeExecutor([]))
+
+    def capped_events(self, subtype="error_max_turns"):
+        events = model_events(final=False)[:-2]
+        events.append(result(usage(10, 14, 22, 30), subtype=subtype, is_error=True, num_turns=6))
+        events[-1].pop("structured_output")
+        return events
+
+    def run_capped(self, spec, events):
+        class Failing(FakeExecutor):
+            def __call__(self, command, **kwargs):
+                outcome = super().__call__(command, **kwargs)
+                return {**outcome, "status": "failed", "returncode": 1}
+
+        self.spec = spec
+        fake = Failing(events)
+        return run_trial(spec, executor=fake), fake
+
+    def test_arguments_carry_the_requested_caps_only(self):
+        self.assertNotIn("--max-turns", claude_arguments(self.spec))
+        self.assertNotIn("--max-budget-usd", claude_arguments(self.spec))
+        arguments = claude_arguments(replace(self.spec, max_turns=6, max_budget_usd=0.05))
+        self.assertEqual(arguments[arguments.index("--max-turns") + 1], "6")
+        self.assertEqual(arguments[arguments.index("--max-budget-usd") + 1], "0.05")
+        self.assertEqual(claude_arguments(replace(self.spec, max_turns=None)), claude_arguments(self.spec))
+
+    def test_invalid_caps_are_rejected(self):
+        for options in ({"max_turns": 0}, {"max_turns": True}, {"max_turns": 2.5}, {"max_budget_usd": 0},
+                        {"max_budget_usd": float("inf")}, {"max_budget_usd": True}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                _validate_spec(replace(self.spec, **options))
+
+    def test_requested_turn_cap_is_a_capped_outcome_that_keeps_the_trace(self):
+        outcome, fake = self.run_capped(replace(self.spec, max_turns=6), self.capped_events())
+        self.assertEqual(outcome["status"], "capped")
+        self.assertEqual(outcome["termination_reason"], "max-turns")
+        self.assertNotIn("campaign_fatal", outcome)
+        self.assertIsNone(outcome["answer_path"])
+        self.assertTrue(Path(outcome["stdout_path"]).exists())
+        self.assertIn("--max-turns", json.loads(fake.calls[0][0][5]))
+
+    def test_the_scripted_preflight_is_never_capped(self):
+        spec = replace(self.spec, max_turns=6, max_budget_usd=0.05)
+        fake = FakeExecutor(model_events())
+        plan, _ = real_preflight(spec, fake, self.spec.artifact_dir, {})
+        self.plans.append(plan)
+        arguments = json.loads(fake.calls[0][0][5])
+        self.assertNotIn("--max-turns", arguments)
+        self.assertNotIn("--max-budget-usd", arguments)
+        capped, uncapped = prepare_isolation(spec), prepare_isolation(self.spec)
+        self.plans.extend((capped, uncapped))
+        self.assertEqual(plan.profile_sha256, capped.profile_sha256)
+        self.assertNotEqual(plan.profile_sha256, uncapped.profile_sha256)
+
+    def test_budget_cap_is_classified_separately(self):
+        outcome, _ = self.run_capped(replace(self.spec, max_budget_usd=0.05),
+                                     self.capped_events("error_max_budget_usd"))
+        self.assertEqual((outcome["status"], outcome["termination_reason"]), ("capped", "max-budget"))
+
+    def test_a_cap_that_was_not_requested_stays_a_failure(self):
+        outcome, _ = self.run_capped(self.spec, self.capped_events())
+        self.assertEqual(outcome["status"], "failed")
+        self.assertNotEqual(outcome["termination_reason"], "max-turns")
+        self.assertIsNone(capped_reason(self.spec, {"subtype": "error_max_turns"}))
+
+    def test_a_cap_does_not_mask_runtime_isolation_violations(self):
+        events = self.capped_events()
+        events[0] = init(tools=["Agent", "Bash", "Glob", "Grep", "Read", "Skill", "StructuredOutput"])
+        outcome, _ = self.run_capped(replace(self.spec, max_turns=6), events)
+        self.assertEqual(outcome["termination_reason"], "runtime-isolation-violation")
 
 
 class TokenTests(unittest.TestCase):

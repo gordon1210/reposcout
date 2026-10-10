@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "dev": [
+    {"id": "d1", "text": "Review this PR."},
+    {"id": "d2", "text": "Check this branch before merge."},
+    {"id": "d3", "text": "What could these commits break?"}
+  ],
+  "held_out": [
+    {"id": "h1", "text": "Is this change safe to ship?"},
+    {"id": "h2", "text": "Do a code review of base..head and list real defects."},
+    {"id": "h3", "text": "Walk me through what changed between these two revisions and flag risks."},
+    {"id": "h4", "text": "Audit the diff for regressions."}
+  ]
+}

@@ -31,6 +31,17 @@ MODEL_USAGE = {'input_tokens': 'inputTokens', 'cache_creation_input_tokens': 'ca
 ANSWER_FAILURES = ('answer-schema-invalid', 'missing-structured-output', 'claude-result-error',
                    'invalid-answer-artifact', 'runtime-isolation-violation', 'credential-exposure')
 EXIT_CODE = re.compile(r'Exit code (-?\d{1,20})(?:\n|$)')
+CAP_SUBTYPES = {'error_max_turns': 'max-turns', 'error_max_budget_usd': 'max-budget'}
+SKILL_FILE = re.compile(r'(?:^|/)skills/reposcout/SKILL\.md$')
+REPOSCOUT_TOKEN = re.compile(r'(?<![\w-])reposcout(?![\w-])')
+_WRAPPERS = r'(?:(?:[A-Za-z_]\w*=\S*|env|time|exec|command|nice|sudo)\s+|timeout\s+\S+\s+)*'
+REPOSCOUT_INVOCATION = re.compile(r'(?:^|[;&|(`{\n]|\$\()\s*' + _WRAPPERS + r'(?:\S*/)?reposcout(?![\w-])')
+_VCS_OPTIONS = r'(?:-[Cc]\s+\S+\s+|--[\w-]+(?:=\S+)?\s+|-\w\s+)*'
+DIFF_COMMAND = re.compile(r'(?<![\w-])git\s+' + _VCS_OPTIONS + r'(?:diff|show)(?![\w-])')
+LOG_PATCH_COMMAND = re.compile(r'(?<![\w-])git\s+' + _VCS_OPTIONS
+                               + r'log(?![\w-])[^;&|\n]*?\s(?:-p|--patch|-[A-Za-z]*p[A-Za-z]*)(?=\s|$)')
+REVIEW_CONTEXT = re.compile(r'(?<![\w-])review-context(?![\w-])')
+BRIEF_FLAG = re.compile(r'(?<![\w-])--brief(?![\w-])')
 
 
 def _claude_usage(value):
@@ -451,6 +462,99 @@ def parse_exec_trace(path, *, controller=None, expected_thread_id=None):
     }
     evidence['evidence_sha256'] = fingerprint(evidence)
     return evidence
+
+
+def token_breakdown(state):
+    """Reported tokens split into uncached input, cache read, cache write and output."""
+    final = state['result']
+    raw, errors = (_claude_usage(final.get('usage')) if final is not None
+                   else (dict.fromkeys(CLAUDE_USAGE), ['no-result']))
+    source = 'result'
+    if errors or any(value is None for value in raw.values()):
+        raw = {field: sum(state['messages'][identity][field] or 0 for identity in state['message_order'])
+               for field in CLAUDE_USAGE}
+        source = 'assistant-messages-start-of-stream'
+    return {'uncached_input_tokens': raw['input_tokens'], 'cache_read_input_tokens': raw['cache_read_input_tokens'],
+            'cache_write_input_tokens': raw['cache_creation_input_tokens'], 'output_tokens': raw['output_tokens'],
+            'source': source}
+
+
+def adoption_observations(records):
+    """RepoScout adoption read from raw tool_use events in stream order.
+
+    Results, exit codes and permission decisions are ignored, so a call that never
+    received a result, was denied or failed still counts as an attempt to use it.
+    ``adopted`` holds for the Skill tool with ``skill=reposcout``, a Read of the skill's
+    SKILL.md, or a Bash command naming a ``reposcout`` token anywhere; ``invoked`` is the
+    stricter reading where the token sits at a command position. ``adopted_before_diff``
+    also holds when the run never inspects a diff. A requested cap ends a run with an
+    error result that is reported as ``capped``, not as a failure.
+    """
+    state = scan_stream(records)
+    turns = {identity: number for number, identity in enumerate(state['message_order'], 1)}
+    events = []
+    adoption = None
+    diff = None
+    brief = False
+    invoked = False
+    for order, identity in enumerate(state['exchange_order']):
+        exchange = state['exchanges'][identity]
+        name, arguments = exchange['name'], exchange['input']
+        turn = turns.get(exchange['message_id'])
+        event = {'order': order, 'turn': turn, 'tool': name}
+        kinds = []
+        position = None
+        if name == 'Skill' and arguments.get('skill') == 'reposcout':
+            kinds.append('skill-tool')
+            position = 0
+        elif name == 'Read' and isinstance(arguments.get('file_path'), str) and SKILL_FILE.search(arguments['file_path']):
+            kinds.append('skill-file-read')
+            position = 0
+        elif name == 'Bash' and isinstance(arguments.get('command'), str):
+            command = arguments['command']
+            event['command'] = command[:300]
+            token = REPOSCOUT_TOKEN.search(command)
+            if token:
+                kinds.append('bash-token')
+                position = token.start()
+            if REVIEW_CONTEXT.search(command) and BRIEF_FLAG.search(command):
+                brief = True
+                kinds.append('review-brief')
+            if REPOSCOUT_INVOCATION.search(command):
+                kinds.append('bash-invocation')
+                invoked = True
+            matches = [match.start() for match in (DIFF_COMMAND.search(command), LOG_PATCH_COMMAND.search(command))
+                       if match]
+            if matches:
+                kinds.append('diff-inspection')
+                if diff is None:
+                    diff = (order, min(matches), turn)
+        if position is not None and adoption is None:
+            adoption = (order, position, turn, kinds[0])
+        event['kinds'] = kinds
+        events.append(event)
+    final = state['result'] or {}
+    cap = CAP_SUBTYPES.get(final.get('subtype'))
+    num_turns = final.get('num_turns') if _integer(final.get('num_turns')) else len(state['message_order'])
+    return {
+        'adopted': adoption is not None,
+        'adoption_kind': adoption[3] if adoption else None,
+        'first_adoption_turn': adoption[2] if adoption else None,
+        'adopted_before_diff': adoption is not None and (diff is None or adoption[:2] < diff[:2]),
+        'first_diff_turn': diff[2] if diff else None,
+        'invoked': invoked,
+        'brief_called': brief,
+        'num_turns': num_turns,
+        'capped': cap is not None,
+        'cap_reason': cap,
+        'result_subtype': final.get('subtype'),
+        'terminal_reason': final.get('terminal_reason'),
+        'tool_use_count': len(events),
+        'events': events,
+        'tokens': token_breakdown(state),
+        'list_price_usd': final.get('total_cost_usd') if isinstance(final.get('total_cost_usd'), (int, float)) else None,
+        'trace_problems': sorted({problem['code'] for problem in state['problems']}),
+    }
 
 
 def structured_output(path):
