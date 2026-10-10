@@ -1,13 +1,18 @@
+mod brief;
+
+use super::source::body_block;
 use super::{Format, json_string, terminal_text};
 use crate::model::{ReviewAnalysisStatus, ReviewChangeBasis, ReviewContextReport};
 use anyhow::{Result, bail};
 use std::fmt::Write as _;
 
+pub(crate) use brief::render as render_brief;
+
 pub(crate) fn render(report: &ReviewContextReport, format: Format, pretty: bool) -> Result<String> {
     let mut output = match format {
         Format::Json => json_string(report, pretty)?,
         Format::Ndjson => json_string(report, false)?,
-        Format::Table | Format::Markdown => human(report),
+        Format::Table | Format::Markdown => human(report, format == Format::Markdown),
         _ => bail!("review-context supports table, JSON, Markdown, or NDJSON output"),
     };
     if !output.ends_with('\n') {
@@ -16,11 +21,11 @@ pub(crate) fn render(report: &ReviewContextReport, format: Format, pretty: bool)
     Ok(output)
 }
 
-fn human(report: &ReviewContextReport) -> String {
+fn human(report: &ReviewContextReport, markdown: bool) -> String {
     let mut output = header(report);
     coverage(report, &mut output);
-    changes(report, &mut output);
-    context(report, &mut output);
+    changes(report, &mut output, markdown);
+    context(report, &mut output, markdown);
     relations(report, &mut output);
     output
 }
@@ -163,7 +168,7 @@ fn coverage(report: &ReviewContextReport, output: &mut String) {
     }
 }
 
-fn changes(report: &ReviewContextReport, output: &mut String) {
+fn changes(report: &ReviewContextReport, output: &mut String, markdown: bool) {
     for change in &report.changes {
         let _ = writeln!(
             output,
@@ -237,12 +242,12 @@ fn changes(report: &ReviewContextReport, output: &mut String) {
             }
         }
         if let Some(diff) = &change.diff {
-            let _ = writeln!(output, "{}", terminal_text(diff));
+            output.push_str(&body_block(diff, markdown));
         }
     }
 }
 
-fn context(report: &ReviewContextReport, output: &mut String) {
+fn context(report: &ReviewContextReport, output: &mut String, markdown: bool) {
     for file in &report.context {
         let _ = writeln!(
             output,
@@ -264,7 +269,7 @@ fn context(report: &ReviewContextReport, output: &mut String) {
             file.sha256.as_deref().unwrap_or("unknown")
         );
         if let Some(source) = &file.source {
-            let _ = writeln!(output, "{}", terminal_text(source));
+            output.push_str(&body_block(source, markdown));
         }
     }
 }

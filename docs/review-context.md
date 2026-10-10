@@ -21,6 +21,9 @@ reposcout review-context . --base origin/main --context \
 # Include selected whole-file source and unified patches in one output allowance
 reposcout review-context . --base origin/main --source --diff \
   --budget 16000 --max-output-bytes 131072 -f json
+
+# Compact agent brief: definitions, diff hunks, direct consumers and docs in about 3,000 tokens
+reposcout review-context . --base origin/main --head HEAD --brief
 ```
 
 References must already exist locally; the command does not fetch, checkout or contact a PR
@@ -114,6 +117,51 @@ their bodies explicitly; it never cuts source mid-file. The source selection bud
 grant extra output capacity. Selection totals describe the initial list before output projection.
 Further definition reads can use `read --snapshot <reported-tree>` with the reported path/hash.
 
+## Agent brief
+
+`--brief` is an opt-in text projection of the same pinned facts for an agent's first read. It
+renders Table (the default for `--brief`, also when stdout is not a terminal) or one fenced
+Markdown block; JSON and NDJSON are rejected, and it cannot be combined with `--context`,
+`--context-budget`, `--context-max-files` or `--source`. Unified diffs are included without
+`--diff`. Without `--budget` the rendered brief is limited to 3,000 tokens; `--budget` and
+`--max-output-bytes` apply as usual.
+
+- The header names short base/head commits, comparison mode and totals. Trees, blobs, hashes and
+  modes are not repeated; read files with `git show <commit>:<path>`. A `gaps:` line lists only
+  nonzero capture, mapping, graph and call-resolution gaps with exact base/head counts, so a
+  missing gap line means none were recorded, while unknown hunk counts read `hunks unknown`.
+- Each change lists its status and path, changed definitions paired by kind and name with line
+  ranges per revision, and the unified diff hunks.
+- Impact lists only distance-1 evidence for each change: direct importers and imports, then
+  concrete call/reference sites as `path:line source -> target`. `[test]` marks filename/syntax
+  test hints. Evidence identical in both revisions renders once; single-revision evidence is
+  marked `(base only)` or `(head only)`. Transitive dependents and resolver-configuration scope
+  are counted, not listed; at most one shortest `entry:` chain per changed file leads from a
+  non-test head file without non-test importers through its intermediate importers.
+- For direct importers without a resolved call/reference to the changed file (for example Python,
+  which has no call-reference resolver), `usage lines` list importer lines that name identifiers
+  of that change as `path:line  text`. Terms are the change's own doc-mention terms plus
+  declarations of the changed file whose spans use them, and names bound by `TERM as ALIAS` on the
+  importer's import lines. Code matches whole words case-sensitively; quoted literals that are
+  not declared identifiers and are a single lowercase word match only inside quotes. Import
+  statements count only when an importer has no other matching line. Lines come from the pinned
+  head snapshot, or from base (marked `(base)`) for importers seen only in the base graph; lines
+  inside a changed importer's own hunks or at a resolved reference site are skipped. Each importer
+  shows at most three lines, allocated round-robin across importers up to sixteen in total.
+- Unchanged Markdown and text files in the pinned head tree that name changed identifiers appear as
+  `path:line text` (trimmed, at most three lines per file and twelve in total). Terms come from
+  changed definition names, declared identifiers on changed diff lines and quoted identifier-like
+  literals there. Compound identifiers also match as word phrases (`event_identity` matches
+  "event identity"); single-word identifiers match whole and case-sensitively, and all-lowercase
+  ones only when quoted as code. Working-tree and index content never contribute.
+
+When the brief exceeds a budget, trailing hunks of the largest diff are removed first, halving the
+retained hunks each step, then whole diffs, usage lines, doc lines, relations, definition details
+and finally whole changes. Omitted relations, doc lines, usage lines and whole diffs are then
+reconsidered in that order against both budgets. The
+`omitted from output:` line and per-change `… N more hunks omitted` markers count every removal
+exactly, so a shown prefix plus the omitted count equals the change's hunk count.
+
 ## Limits and omissions
 
 | Bound | Default / ceiling |
@@ -176,7 +224,8 @@ Inventory truncation also includes unrepresentable unchanged path names. Unsuppo
 counts refer to unrecognized formats, not just failed parsers; Markdown is recognized.
 
 Table, Markdown, JSON and single-record NDJSON use the same facts and output budgets. Source and
-diff text are absent by default. Human output includes blob IDs, changed ranges, mapping status,
+diff text are absent by default. Table and Markdown render source and diff bodies with real
+newlines and tabs, escaping other control characters; Markdown fences each body. Human output includes blob IDs, changed ranges, mapping status,
 context distances and predecessors, and concrete symbol/type evidence; JSON and NDJSON retain the
 complete structured records. `--output` and `--debug-log` must be outside the worktree and its
 Git metadata (including linked-worktree common metadata) to

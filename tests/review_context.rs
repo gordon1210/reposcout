@@ -24,6 +24,9 @@ mod direct_evidence;
 #[path = "review_context/snapshot_handoff.rs"]
 mod snapshot_handoff;
 
+#[path = "review_context/brief.rs"]
+mod brief;
+
 use git2::{IndexAddOption, Oid, Repository, Signature};
 use reposcout::metrics::tokens::TokenCounter;
 use serde_json::Value;

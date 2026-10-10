@@ -89,19 +89,7 @@ fn human(report: &SourceQueryReport, markdown: bool) -> Result<String> {
             source.file,
             span_text(source.span)
         )?;
-        let content = source_text(&source.content);
-        if markdown {
-            let longest = content
-                .split(|ch| ch != '`')
-                .map(str::len)
-                .max()
-                .unwrap_or(0);
-            let fence = "`".repeat((longest + 1).max(3));
-            writeln!(output, "\n{fence}\n{content}")?;
-            writeln!(output, "{fence}")?;
-        } else {
-            writeln!(output, "{content}")?;
-        }
+        output.push_str(&body_block(&source.content, markdown));
     }
     Ok(output)
 }
@@ -259,7 +247,24 @@ fn label(value: &impl Serialize) -> Result<String> {
     Ok(json_string(value, false)?.trim_matches('"').to_string())
 }
 
-fn source_text(value: &str) -> String {
+/// Captured body text with visible non-newline/tab controls; Markdown uses a fence longer
+/// than every backtick run in the body.
+pub(super) fn body_block(content: &str, markdown: bool) -> String {
+    let content = source_text(content);
+    if markdown {
+        let longest = content
+            .split(|ch| ch != '`')
+            .map(str::len)
+            .max()
+            .unwrap_or(0);
+        let fence = "`".repeat((longest + 1).max(3));
+        format!("\n{fence}\n{content}\n{fence}\n")
+    } else {
+        format!("{content}\n")
+    }
+}
+
+pub(super) fn source_text(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     for ch in value.chars() {
         if ch.is_control() && !matches!(ch, '\n' | '\t') {

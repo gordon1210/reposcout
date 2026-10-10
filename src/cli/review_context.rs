@@ -38,9 +38,14 @@ pub struct ReviewContextArgs {
     /// Include captured unified diffs within the shared output budget
     #[arg(long)]
     pub diff: bool,
+    /// Compact text projection for agents: changed definitions, diff hunks, direct
+    /// consumers and head-snapshot documentation mentions (table or Markdown only)
+    #[arg(long, conflicts_with_all = ["context", "context_budget", "context_max_files", "source"])]
+    pub brief: bool,
     /// Maximum tokens in the complete rendered response, using the configured encoding
-    #[arg(long, default_value_t = 4096, value_parser = parse_source_token_budget)]
-    pub budget: usize,
+    /// [default: 4096, or 3000 with --brief]
+    #[arg(long, value_parser = parse_source_token_budget)]
+    pub budget: Option<usize>,
     /// Maximum bytes in the complete rendered response
     #[arg(long, default_value_t = 65_536, value_parser = parse_source_byte_budget)]
     pub max_output_bytes: usize,

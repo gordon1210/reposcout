@@ -8,6 +8,12 @@ within their section.
 
 ### Added
 
+- Add `review-context --brief`, a compact Table/Markdown review brief with changed definitions,
+  diff hunks, direct consumers, nonzero analysis gaps and head-snapshot doc mentions under a
+  3,000-token default budget. Direct importers without resolved call/reference evidence, such as
+  Python modules, list bounded usage lines that name the change's identifiers. Omissions are
+  counted exactly; JSON output is unchanged.
+
 - Add bounded external fixture bundles, shared signed review identities and fixed development,
   heldout and three-case follow-up schedules for larger local Codex evaluations, preserving all historical
   cases and results. Qualification and real model results remain separate from harness tests.
@@ -38,6 +44,9 @@ within their section.
   dependency and also links an existing `name` submodule. Missing modules below a scanned package
   directory now count as unresolved imports instead of silently disappearing. Bumped the cached
   analyzer version to 25.
+
+- Render `review-context` Table and Markdown diff and source bodies with real newlines instead of
+  literal `\n`, still escaping other control characters.
 
 - Keep live evaluation campaigns, detailed reports, controller evidence and private grading
   packets outside Git checkouts. Add a strict typed public-summary export and a lightweight

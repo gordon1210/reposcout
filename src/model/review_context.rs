@@ -85,6 +85,51 @@ pub struct ReviewContextReport {
     pub changes: Vec<ReviewContextChange>,
     pub relations: Vec<ReviewContextRelation>,
     pub context: Vec<ReviewContextFile>,
+    /// Facts for the text-only agent brief; never part of the JSON contract.
+    #[serde(skip)]
+    pub brief: Option<ReviewBrief>,
+}
+
+/// Brief-only evidence derived from the same captured revisions before output projection.
+#[derive(Debug, Clone, Default)]
+pub struct ReviewBrief {
+    /// Direct relations touching changed paths before output projection.
+    pub direct_relations: usize,
+    /// Per revision (base, head): dependents at distance two or more, counted but not listed.
+    pub transitive_dependents: [usize; 2],
+    /// Per revision: files included only through a changed resolver configuration's scope.
+    pub config_scope_files: [usize; 2],
+    /// Head-side shortest import chains from a changed file to its nearest non-test entry.
+    pub entry_chains: Vec<Vec<PathBuf>>,
+    /// Changed identifiers searched in head-snapshot documentation.
+    pub terms: Vec<String>,
+    pub mentions: Vec<ReviewDocMention>,
+    /// Matching documentation lines before per-file and output limits.
+    pub mentions_total: usize,
+    /// Direct importer lines naming identifiers of their change, in admission priority order.
+    pub usage: Vec<ReviewUsageLine>,
+    /// Matching importer lines before per-file and output limits.
+    pub usage_total: usize,
+}
+
+/// One line in a direct importer without resolved references that names an identifier of a change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewUsageLine {
+    /// Base and head paths of the change whose file the importer imports.
+    pub change: [Option<PathBuf>; 2],
+    /// Revision whose snapshot supplied the line: `head`, or `base` for base-only importers.
+    pub side: String,
+    pub path: PathBuf,
+    pub line: usize,
+    pub text: String,
+}
+
+/// One documentation line in the head snapshot that names a changed identifier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewDocMention {
+    pub path: PathBuf,
+    pub line: usize,
+    pub text: String,
 }
 
 /// Git change identity, including modes and explicit per-side availability.
@@ -101,6 +146,9 @@ pub struct ReviewContextChange {
     pub diff_tokens: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff: Option<String>,
+    /// Trailing diff hunks removed by brief output projection.
+    #[serde(skip)]
+    pub diff_hunks_omitted: usize,
 }
 
 /// Old/new declaration and raw line evidence from the same captured bytes.

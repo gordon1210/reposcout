@@ -61,6 +61,7 @@ fn expired_output_cannot_succeed_even_when_the_envelope_fits() {
         changes: Vec::new(),
         relations: Vec::new(),
         context: Vec::new(),
+        brief: None,
     };
     let options = ReviewContextOptions {
         base: "base".into(),
@@ -69,6 +70,7 @@ fn expired_output_cannot_succeed_even_when_the_envelope_fits() {
         context: false,
         include_source: false,
         include_diff: false,
+        brief: false,
         token_budget: 65536,
         byte_budget: 1_048_576,
         format: Format::Json,

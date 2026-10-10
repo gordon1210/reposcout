@@ -19,6 +19,12 @@ must keep counterpart coverage partial even when every supplied declaration was 
 Budget projection reconsiders omitted identities against the actual format/tokenizer and retains compact
 file identities ahead of declaration/range details; per-side output omissions must not downgrade
 analysis availability or be confused with absent declarations.
+`--brief` is an opt-in Table/Markdown projection of the same facts (3,000-token default budget).
+It omits per-file identities, lists only distance-1 impact and nonzero gaps, counts transitive
+dependents, and adds head-snapshot doc mentions and text-matched usage lines of direct importers
+without resolved references, held outside the JSON contract. Its projection removes trailing
+hunks before whole diffs, usage lines, doc lines, relations, details and changes, with exact
+omission counts. Existing flag combinations and JSON output stay unchanged.
 
 RepoScout never allocates agents or automatically partitions review work. Tokenization remains the
 existing default/configuration/explicit CLI choice, without model-based selection.

@@ -1,4 +1,5 @@
 mod analysis;
+mod brief;
 mod changes;
 #[cfg(test)]
 mod tests;
@@ -15,6 +16,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const ENTRY_LIMIT: usize = 100;
+/// Default rendered-token allowance of the agent brief when `--budget` is absent.
+pub const REVIEW_BRIEF_TOKENS: usize = 3000;
 
 /// Immutable comparison, explicit content options, and independent source/output budgets.
 #[expect(
@@ -28,6 +31,8 @@ pub struct ReviewContextOptions {
     pub context: bool,
     pub include_source: bool,
     pub include_diff: bool,
+    /// Render the compact agent brief; requires `include_diff` and a table/Markdown format.
+    pub brief: bool,
     pub token_budget: usize,
     pub byte_budget: usize,
     pub format: Format,
@@ -75,10 +80,24 @@ pub fn review_context(
     let changes = changes::describe(&capture, &counter, options.include_diff)?;
     let mut graph_limits = crate::graph::GraphReadLimits::from_config(&config);
     graph_limits.deadline = Some(capture.deadline);
-    let (mut context, relations) =
+    let (mut context, mut relations) =
         analysis::analyze(&mut capture, &changes, &counter, graph_limits)?;
     check_deadline(capture.deadline)?;
     let mut totals = totals(&changes, &context, relations.len(), capture.total_changes);
+    let brief = if options.brief {
+        ensure!(
+            options.include_diff && !options.context && !options.include_source,
+            "review-context brief requires diffs and no reading-list selection"
+        );
+        Some(brief::prepare(
+            &capture,
+            &changes,
+            &mut relations,
+            &context,
+        )?)
+    } else {
+        None
+    };
     let selection = options.context || options.include_source;
     if selection {
         crate::context::review::select(
@@ -115,11 +134,14 @@ pub fn review_context(
             "An empty dependency result is inconclusive for excluded, unavailable or unsupported graph files.",
             "Literal Unix backslash paths retain source/change evidence but are excluded from graph inputs; unsupported_graph_paths counts them.",
         ].map(str::to_string).to_vec(),
-        changes, relations, context,
+        changes, relations, context, brief,
     };
-    project(&mut report, options, &counter, capture.deadline)?;
-    let rendered =
-        crate::report::review_context::render(&report, options.format, options.pretty_json)?;
+    if options.brief {
+        project_brief(&mut report, options, &counter, capture.deadline)?;
+    } else {
+        project(&mut report, options, &counter, capture.deadline)?;
+    }
+    let rendered = render(&report, options)?;
     check_deadline(capture.deadline)?;
     Ok(ReviewContextOutput { report, rendered })
 }
@@ -222,6 +244,169 @@ fn project(
             );
         }
     }
+}
+
+/// Brief projection keeps change identities, definitions, direct relations, documentation
+/// mentions and importer usage lines ahead of trailing diff hunks; the omitted hunks remain
+/// counted per change.
+fn project_brief(
+    report: &mut ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    report.changes.truncate(ENTRY_LIMIT);
+    report.relations.truncate(ENTRY_LIMIT);
+    let originals = report.clone();
+    loop {
+        if within_budget(report, options, counter, deadline)? {
+            restore_change_identities(report, &originals.changes, options, counter, deadline)?;
+            restore_change_details(report, &originals.changes, options, counter, deadline)?;
+            restore_brief(report, &originals, options, counter, deadline)?;
+            return Ok(());
+        }
+        if trim_diff_hunks(report)
+            || report
+                .brief
+                .as_mut()
+                .is_some_and(|brief| brief.usage.pop().is_some() || brief.mentions.pop().is_some())
+            || report.relations.pop().is_some()
+            || trim_definitions(report)
+            || trim_ranges(report)
+        {
+            continue;
+        }
+        if !remove_largest_change(report)? {
+            anyhow::bail!(
+                "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
+            );
+        }
+    }
+}
+
+fn restore_brief(
+    report: &mut ReviewContextReport,
+    originals: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    for relation in &originals.relations {
+        if !report
+            .relations
+            .iter()
+            .any(|retained| same_relation(retained, relation))
+        {
+            admit_relation(report, relation, originals, options, counter, deadline)?;
+        }
+    }
+    if let Some(brief) = originals.brief.as_ref() {
+        restore_items(
+            report,
+            &brief.mentions,
+            |brief| &mut brief.mentions,
+            options,
+            counter,
+            deadline,
+        )?;
+        restore_items(
+            report,
+            &brief.usage,
+            |brief| &mut brief.usage,
+            options,
+            counter,
+            deadline,
+        )?;
+    }
+    for index in 0..report.changes.len() {
+        if report.changes[index].diff.is_some() {
+            continue;
+        }
+        let Some(original) = originals
+            .changes
+            .iter()
+            .find(|original| same_change(original, &report.changes[index]))
+        else {
+            continue;
+        };
+        report.changes[index].diff.clone_from(&original.diff);
+        report.changes[index].diff_hunks_omitted = 0;
+        if report.changes[index].diff.is_some()
+            && !within_budget(report, options, counter, deadline)?
+        {
+            report.changes[index].diff = None;
+        }
+    }
+    recount(report, options);
+    Ok(())
+}
+
+/// Reinsert omitted brief items that fit, keeping their original relative order.
+fn restore_items<T: Clone + PartialEq>(
+    report: &mut ReviewContextReport,
+    originals: &[T],
+    items: fn(&mut crate::model::ReviewBrief) -> &mut Vec<T>,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    for (index, item) in originals.iter().enumerate() {
+        let Some(retained) = report.brief.as_mut().map(items) else {
+            break;
+        };
+        if retained.contains(item) {
+            continue;
+        }
+        let position = retained
+            .iter()
+            .take_while(|retained| originals[..index].contains(retained))
+            .count();
+        retained.insert(position, item.clone());
+        if !within_budget(report, options, counter, deadline)?
+            && let Some(retained) = report.brief.as_mut().map(items)
+        {
+            retained.remove(position);
+        }
+    }
+    Ok(())
+}
+
+fn same_change(
+    left: &crate::model::ReviewContextChange,
+    right: &crate::model::ReviewContextChange,
+) -> bool {
+    left.base.as_ref().map(|side| &side.path) == right.base.as_ref().map(|side| &side.path)
+        && left.head.as_ref().map(|side| &side.path) == right.head.as_ref().map(|side| &side.path)
+}
+
+/// Halve the hunks of the largest retained diff, or drop a single-hunk diff entirely.
+fn trim_diff_hunks(report: &mut ReviewContextReport) -> bool {
+    let Some(change) = report
+        .changes
+        .iter_mut()
+        .filter(|change| change.diff.is_some())
+        .max_by_key(|change| change.diff.as_ref().map_or(0, String::len))
+    else {
+        return false;
+    };
+    let Some(diff) = change.diff.as_mut() else {
+        return false;
+    };
+    let starts: Vec<_> = diff
+        .starts_with("@@")
+        .then_some(0)
+        .into_iter()
+        .chain(diff.match_indices("\n@@").map(|(index, _)| index + 1))
+        .collect();
+    let keep = starts.len() / 2;
+    if keep == 0 {
+        change.diff = None;
+        change.diff_hunks_omitted = 0;
+    } else {
+        diff.truncate(starts[keep]);
+        change.diff_hunks_omitted += starts.len() - keep;
+    }
+    true
 }
 
 fn direct_relation(relation: &ReviewContextRelation) -> bool {
@@ -376,6 +561,17 @@ fn restore_direct_evidence(
     Ok(())
 }
 
+fn render(report: &ReviewContextReport, options: &ReviewContextOptions) -> Result<String> {
+    if options.brief {
+        Ok(crate::report::review_context::render_brief(
+            report,
+            options.format == Format::Markdown,
+        ))
+    } else {
+        crate::report::review_context::render(report, options.format, options.pretty_json)
+    }
+}
+
 fn within_budget(
     report: &mut ReviewContextReport,
     options: &ReviewContextOptions,
@@ -384,8 +580,7 @@ fn within_budget(
 ) -> Result<bool> {
     check_deadline(deadline)?;
     recount(report, options);
-    let rendered =
-        crate::report::review_context::render(report, options.format, options.pretty_json)?;
+    let rendered = render(report, options)?;
     let fits =
         rendered.len() <= options.byte_budget && counter.count(&rendered) <= options.token_budget;
     check_deadline(deadline)?;
@@ -461,6 +656,7 @@ fn restore_change_details(
         {
             let mut restored = original.clone();
             restored.diff.clone_from(&change.diff);
+            restored.diff_hunks_omitted = change.diff_hunks_omitted;
             candidates.push((serde_json::to_vec(&restored)?.len(), index, restored));
         }
     }

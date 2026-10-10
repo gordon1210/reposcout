@@ -93,6 +93,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
+  Opt-in `--brief` renders a compact Table/Markdown projection (3,000-token default budget) with
+  diff hunks, distance-1 impact, counted transitive dependents and head-snapshot doc mentions.
   See [review context](docs/review-context.md) for limits and trust boundaries.
   The bundled skill provides self-contained starts for common repository, source and committed
   review questions. Detailed guides are conditional on needed unfamiliar semantics, including
