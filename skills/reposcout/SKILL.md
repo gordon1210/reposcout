@@ -1,6 +1,6 @@
 ---
 name: reposcout
-description: Use first when reviewing a PR, branch or two commits. One call, `reposcout review-context . --base <base> --head <head> --profile safe --brief`, prints the diff hunks, changed definitions, direct importers and call sites, and docs naming changed identifiers in about 1-3k tokens, replacing git diff plus consumer searches. Also use for repository orientation, symbol lookup and reads, change impact and code health.
+description: "Use for any question about a change between two commits, branches or a pull request: reviewing it, judging whether it is safe to merge or ship, explaining what changed, or finding defects, regressions and risks. Run `reposcout review-context . --base <base> --head <head> --profile safe --brief` before `git diff` or `git log`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them. Also for repo orientation, symbol lookup, change impact and code health."
 ---
 
 # RepoScout
