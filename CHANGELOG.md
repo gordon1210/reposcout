@@ -32,6 +32,9 @@ within their section.
 
 ### Changed
 
+- Start committed reviews in the bundled skill with one `review-context --brief` call and read
+  only what it leaves open. Listed consumers are leads: before concluding that nothing breaks,
+  agents check each call site in context or run the tests that exercise it.
 - Make the bundled skill's entry point sufficient for common repository, source and review
   questions. Load detailed guides only for needed unfamiliar semantics; preserve pinned source,
   exact quotations, trust boundaries and uncertainty without a mandatory guide-reading chain.

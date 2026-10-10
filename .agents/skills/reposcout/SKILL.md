@@ -1,90 +1,69 @@
 ---
 name: reposcout
-description: Use the RepoScout CLI for repository orientation, source and symbol queries, dependency or change-impact evidence, review preparation, and code-health assessment.
+description: Use first when reviewing a PR, branch or two commits. One call, `reposcout review-context . --base <base> --head <head> --profile safe --brief`, prints the diff hunks, changed definitions, direct importers and call sites, and docs naming changed identifiers in about 1-3k tokens, replacing git diff plus consumer searches. Also use for repository orientation, symbol lookup and reads, change impact and code health.
 ---
 
 # RepoScout
 
-Choose the smallest evidence request that answers the next question. Reuse sufficient retained
-source; a known native diff/read or RepoScout request needs no preliminary scout or guide.
+Every byte you load stays in context for the rest of the task. Make one targeted RepoScout call
+instead of several native lookups, then read only the line ranges you still need.
 
-## Shared boundaries
+## Boundaries
 
-Use an installed CLI whose provenance the user trusts; if uncertain, stop at the
-[verified installation flow](https://github.com/gordon1210/reposcout/blob/main/docs/getting-started.md#verified-installation).
-Do not clone/build/install/update the CLI, edit project/global configuration or ignore files,
-or start services without explicit authorization. Reading configuration is non-mutating. Skip routine version,
-capability and availability preflights; if the command is missing, report it and stop.
+Use the installed CLI as is: do not install, build, configure it or edit ignore files. If the
+command is missing, say so and continue natively. Add `--profile safe` for unfamiliar or untrusted
+checkouts. `read`, `changes` and `review-context` are Unix-only.
 
-Use narrow targets and one scan at a time; retain cache and stdout unless requested otherwise.
-Add `--profile safe` for unfamiliar or untrusted checkouts; it ignores project configuration. Preserve configured encoding. Source/diff
-costs, source-selection budgets, rendered-output budgets and native model usage are different
-measures. Agent allocation and task splitting belong to the caller.
+## Review two commits (PR or branch review)
 
-Keep capture gaps, unsupported/disabled analysis, unresolved bindings, selection exclusions and
-output omissions distinct. Missing relations do not prove absent consumers; imports and test hints
-do not prove runtime behavior or executed coverage. Rankings guide investigation, not findings.
-State target/profile/scope and relevant uncertainty; distinguish static proof, executed checks and
-unexecuted suggestions. Validate remaining uncertainty and required checks proportionally.
+1. Run once:
 
-## Direct starts
+   ```sh
+   reposcout review-context . --base <base> --head <head> --profile safe --brief
+   ```
 
-- Unknown repository: `reposcout --agent-summary DIR` gives bounded JSON orientation. Add repeated
-  `--focus PATH` flags in one invocation for known related paths sharing a reading budget.
-- Unknown declaration: `reposcout find 'QUERY' DIR -f json` returns lexical candidates; empty or
-  ambiguous results need coverage checks or native search.
-- Known definition: `reposcout read DIR --symbol FILE SYMBOL -f json`; `--line FILE LINE` selects
-  the containing declaration. No outline/locate step is required. Use `--file FILE` only when whole
-  module context is needed. Batch known related targets under one output budget.
-- Health: `reposcout --agent-summary --profile full DIR` includes duplication/churn signals;
-  retain safe-profile protection for untrusted input. Check analyzer availability before interpreting
-  a missing metric. `reposcout explain FILE -f json` supplies file-level evidence.
-- Working/staged/since changes: `reposcout changes DIR --working -f json` is body-free. Choose one
-  scope: working is HEAD→worktree, staged is HEAD→index, since is REF→worktree, not merge-base.
-  Request `--source` only for needed bodies; use the change guide for broader/deep review semantics.
+   It pins both commits and prints the diff hunks, changed definitions, direct importers and
+   call/reference sites (`path:line`), docs that mention changed names, and nonzero gaps. Do not rerun
+   `git diff` for files it shows; fetch a patch yourself only when it reports that hunks were
+   omitted.
+2. Read only what the brief does not answer, as line ranges at the pinned commit, several ranges
+   per command: `git show <head>:path | sed -n '40,90p'`, or `reposcout read . --snapshot <head>
+   --range FILE START END -f json`. Avoid dumping whole large files.
+3. Consumers and doc mentions are starting points, not a complete boundary. When gaps are nonzero
+   or dispatch is dynamic (registries, string keys, config), search the pinned commit with
+   `git grep -n PATTERN <head> -- DIR`. A listed consumer is a lead, not evidence: before
+   concluding that nothing breaks, read each listed call site or usage line in context, or run the
+   tests that exercise it, and cite what you checked.
+4. RepoScout replaces lookups, not verification. Still run the task's permitted checks, and a
+   minimal witness when you claim reachable behavior, as you would without it. A RepoScout call is
+   static evidence, never an executed check.
+5. Cite evidence as path plus line range at the pinned commit, quoting source lines verbatim
+   without diff markers; for behavior-preserving claims cite both the base and the head lines.
+   Keep static reasoning, executed checks and unexecuted suggestions separate.
 
-## Committed review and exact source
+## Other starts
 
-For two committed revisions, pin refs once (`review-context` does this) and retain commit/tree IDs.
-Use commit IDs for comparisons and the reported trees for source reads. A pinned native diff/read
-is sufficient when the next question needs no structural
-impact, selection or coverage report. A small diff never waives relevant binding/consumer evidence;
-read that source directly when needed.
+- Unknown repository: `reposcout --agent-summary DIR`; add `--focus PATH` for known related paths.
+- Unknown declaration: `reposcout find 'QUERY' DIR -f json`.
+- Known definition: `reposcout read DIR --symbol FILE SYMBOL -f json`, or `--line FILE LINE` for
+  the containing declaration.
+- Working tree, staged or since-ref changes: `reposcout changes DIR --working -f json` (`--staged`,
+  `--since REF`); add `--source` only for bodies you need.
+- Health: `reposcout --agent-summary --profile full DIR`; `reposcout explain FILE -f json`.
 
-For structural orientation, use `reposcout review-context DIR --base BASE --head HEAD -f table`.
-Comparison is direct; merge-base is explicit. Table is a body-free reading aid when its identities,
-relations and gap summaries suffice. Choose JSON directly for automation, exact counters/budgets,
-full symbol/wrapper spans, endpoint identities or ambiguous escaped paths. No Table→JSON repeat is
-required. Bodies are opt-in; both rendered-token and byte limits apply to the whole response.
+Missing relations do not prove absent consumers; test hints are not executed tests.
 
-Retain revision/side, path, hash when available and exact inclusive one-based line spans on source
-acquisition. Keep base/head distinct even for equal hashes; never substitute live content for a
-pinned side. A known range and hash can be read directly on Unix:
+## References
 
-```sh
-reposcout read DIR --snapshot TREE --range FILE START END --expect-hash FILE SHA256 -f json
-```
+Open one only when a decision needs semantics not covered above.
 
-Check successful delivery and identity before quoting. Missing, stale or omitted source supplies
-no quoteable evidence. Literal quotes must match the actual source span, not a display heading or
-inferred declaration range. Use decoded JSON or exact pinned native source for CR/control bytes.
-Known small binding spans need no whole-file reread; a preamble alone does not prove all imports.
-`read`, `changes` and `review-context` are Unix-only; use native source tools elsewhere.
-
-## Detail only when needed
-
-The starts above are usable without another document. Open a reference only when the next decision
-needs syntax or semantics not already established. Two refs, a caller question or a nonzero gap
-counter alone does not require a guide: use relevant source, or load the contract if its meaning
-matters.
-
-| Area | Unresolved detail | Reference |
-|---|---|---|
-| Repository scouting | Profiles, zero-argument behavior, detailed summary projection | [scouting.md](references/scouting.md) |
-| Known definition, explicit file context or body-free file outline | Selectors, wrappers, capture limits, ambiguity or stale recovery | [source-queries.md](references/source-queries.md) |
-| Context planning | Selection tiers, definition plans, source budgets | [context-planning.md](references/context-planning.md) |
-| Committed two-revision review | Merge-base, mapping/counterparts, coverage or selection semantics | [committed-reviews.md](references/committed-reviews.md) |
-| Working-tree, staged, since, or finding-level review | Scope, consumers, broad or deep comparison | [change-analysis.md](references/change-analysis.md) |
-| Quality assessment | Metric meaning, availability or comparison | [quality.md](references/quality.md) |
-| Conditional or compound JSON decision | A targeted structured projection | [decision-queries.md](references/decision-queries.md) |
-| Diagnostics and configuration | Unexplained gaps/errors or proposed configuration edits | [diagnostics.md](references/diagnostics.md) |
+| Area | Reference |
+|---|---|
+| Repository scouting | [scouting.md](references/scouting.md) |
+| Known definition, explicit file context or body-free file outline | [source-queries.md](references/source-queries.md) |
+| Context planning | [context-planning.md](references/context-planning.md) |
+| Committed two-revision review | [committed-reviews.md](references/committed-reviews.md) |
+| Working-tree, staged, since, or finding-level review | [change-analysis.md](references/change-analysis.md) |
+| Quality assessment | [quality.md](references/quality.md) |
+| Conditional or compound JSON decision | [decision-queries.md](references/decision-queries.md) |
+| Diagnostics and configuration | [diagnostics.md](references/diagnostics.md) |
