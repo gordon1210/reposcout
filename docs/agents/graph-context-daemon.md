@@ -14,7 +14,10 @@ The dependency graph and impact analysis cover every first-class language heuris
   and relative extends with cycle protection;
 - deterministic local `package.json` exports, imports, entrypoints, and subpaths;
 - JavaScript-runtime extensions to checked-in TypeScript and the fallback `@/` convention;
-- relative and unambiguous repository-absolute or `src`-root Python imports;
+- relative and unambiguous repository-absolute or `src`-root Python imports, including modules
+  imported from PEP 420 namespace packages; `from package import name` on a regular package keeps
+  the `__init__.py` edge and adds existing `name` submodules; missing modules below a scanned
+  package directory stay unresolved;
 - PHP namespaces through nearest Composer `autoload` / `autoload-dev` PSR-4 and PSR-0 mappings,
   conventional PHP source roots, and static include/require expressions;
 - Rust external `mod` / `#[path]`, local `use`, and Cargo library paths;

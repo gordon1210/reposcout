@@ -6,7 +6,7 @@ reference it routes to under `docs/agents/` for *how to work in the repo*. Use `
 user-facing behavior.
 
 _Last updated: 2026-10-08 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 24_
+`ANALYZER_VERSION` 25_
 
 ---
 
@@ -176,10 +176,10 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   newline. Each selected definition, range or file is delivered completely or explicitly omitted.
   File reads include module imports and registrations, share overlapping source chunks, and do
   not require declaration extraction. Recognized-format policy and captured identities stay intact.
-  Cached definition facts use analyzer version 24 while the additive schema remains 2.0.
+  Cached definition facts use analyzer version 25 while the additive schema remains 2.0.
   The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
   analyzer 21 added the task-query facts, analyzer 22 added C# facts, and analyzer 23 corrects
-  cognitive complexity.
+  cognitive complexity; analyzer 25 records Python `from` import names for namespace packages.
   Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
   `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
   inventory behavior is unchanged.
@@ -415,7 +415,7 @@ that a new maintainer still needs to interpret the current architecture and road
    compatibility checks.
 8. **The dependency graph and `--impact` cover every first-class language heuristically.** `graph.rs`
    resolves relative imports, TypeScript `baseUrl`/`paths`, deterministic local package metadata,
-   unambiguous Python absolute/`src` imports, Composer PSR-4/PSR-0 maps, and static PHP includes,
+   unambiguous Python absolute/`src` and namespace-package imports, Composer PSR-4/PSR-0 maps, and static PHP includes,
    plus Rust module/Cargo-local paths, Go module-local package imports, unique local C# namespaces,
    and project-scoped Godot resource/UID/global-name relationships. C# type relationships are
    conservative syntax evidence; Godot inheritance is file-level dependency evidence, not separate

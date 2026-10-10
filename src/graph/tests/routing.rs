@@ -242,3 +242,120 @@ fn go_up_levels() {
     assert_eq!(go_up("a/b/c", 2), "a");
     assert_eq!(go_up("a", 1), "");
 }
+
+#[test]
+fn python_from_imports_resolve_modules_inside_namespace_packages() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("meridian/api")).unwrap();
+    std::fs::write(dir.path().join("meridian/__init__.py"), "\n").unwrap();
+    std::fs::write(
+        dir.path().join("meridian/api/routes.py"),
+        "from meridian.api import customer_orders, presenters as views\nfrom .api_support import helper\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("meridian/app.py"),
+        "from .api import customer_orders\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("meridian/api/customer_orders.py"), "\n").unwrap();
+    std::fs::write(dir.path().join("meridian/api/presenters.py"), "\n").unwrap();
+    std::fs::write(dir.path().join("meridian/api/api_support.py"), "\n").unwrap();
+
+    let graph = build(
+        &[
+            file_report("meridian/__init__.py"),
+            file_report("meridian/app.py"),
+            file_report("meridian/api/routes.py"),
+            file_report("meridian/api/customer_orders.py"),
+            file_report("meridian/api/presenters.py"),
+            file_report("meridian/api/api_support.py"),
+        ],
+        dir.path(),
+    );
+
+    let edges = graph
+        .edge_list
+        .iter()
+        .map(|edge| {
+            (
+                edge.source.as_str(),
+                edge.target.as_str(),
+                edge.resolver.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(graph.unresolved_imports, 0, "{edges:?}");
+    for expected in [
+        (
+            "meridian/api/routes.py",
+            "meridian/api/customer_orders.py",
+            "python-absolute",
+        ),
+        (
+            "meridian/api/routes.py",
+            "meridian/api/presenters.py",
+            "python-absolute",
+        ),
+        (
+            "meridian/api/routes.py",
+            "meridian/api/api_support.py",
+            "python-relative",
+        ),
+        (
+            "meridian/app.py",
+            "meridian/api/customer_orders.py",
+            "python-relative",
+        ),
+    ] {
+        assert!(
+            edges.contains(&expected),
+            "missing {expected:?} in {edges:?}"
+        );
+    }
+    assert_eq!(graph.edges, 4, "{edges:?}");
+}
+
+#[test]
+fn python_missing_modules_inside_local_packages_count_as_unresolved() {
+    let dir = tempdir().unwrap();
+    for directory in ["meridian/api", "regular"] {
+        std::fs::create_dir_all(dir.path().join(directory)).unwrap();
+    }
+    std::fs::write(
+        dir.path().join("main.py"),
+        "from meridian.api import missing\n\
+         import meridian.api.gone\n\
+         from meridian.api.absent import value\n\
+         from .meridian.ghost import value\n\
+         import regular.gone\n\
+         from regular import attribute\n\
+         from requests import get\n\
+         import meridian.api\n\
+         from meridian import api\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("meridian/api/present.py"), "\n").unwrap();
+    std::fs::write(dir.path().join("regular/__init__.py"), "\n").unwrap();
+
+    let graph = build(
+        &[
+            file_report("main.py"),
+            file_report("meridian/api/present.py"),
+            file_report("regular/__init__.py"),
+        ],
+        dir.path(),
+    );
+
+    // `missing`, `gone`, `absent`, `.meridian.ghost` and `regular.gone` have no
+    // local module although their package directories are scanned. The regular
+    // package attribute import keeps its `__init__.py` edge; `requests` is
+    // external; namespace-package imports themselves name no module file.
+    assert_eq!(graph.unresolved_imports, 5);
+    assert_eq!(graph.edges, 1);
+    assert!(graph.edge_list.iter().any(|edge| {
+        edge.source == "main.py"
+            && edge.target == "regular/__init__.py"
+            && edge.resolver == "python-absolute"
+    }));
+}

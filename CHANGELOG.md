@@ -32,6 +32,13 @@ within their section.
 
 ### Fixed
 
+- Resolve Python `from package import module` imports through PEP 420 namespace packages (no
+  `__init__.py`) to the imported module files, so graph, impact and review consumers include
+  those importers. On regular packages, `from package import name` keeps the `__init__.py`
+  dependency and also links an existing `name` submodule. Missing modules below a scanned package
+  directory now count as unresolved imports instead of silently disappearing. Bumped the cached
+  analyzer version to 25.
+
 - Keep live evaluation campaigns, detailed reports, controller evidence and private grading
   packets outside Git checkouts. Add a strict typed public-summary export and a lightweight
   publication policy that rejects raw results, archives and local authoring records.

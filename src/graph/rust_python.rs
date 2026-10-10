@@ -1,7 +1,7 @@
 use super::{
     BTreeMap, BTreeSet, FirstClass, HashMap, HashSet, Path, ReadBudget, ReadOutcome, RustImport,
     detect, fs_budget, join_graph_path, normalize_path, path_in_scope, path_parent,
-    python_root_rank, resolve_py, strip_graph_prefix,
+    python_relative_base, python_root_rank, resolve_py, strip_graph_prefix,
 };
 
 pub(super) enum ImportResolution {
@@ -19,11 +19,14 @@ pub(super) struct PythonResolver {
     /// Deterministic import roots inferred from conventional `src/` layouts.
     /// The repository root is represented by the empty string and tried too.
     roots: Vec<String>,
+    /// Every directory containing a scanned Python file, directly or below it.
+    package_directories: HashSet<String>,
 }
 
 impl PythonResolver {
     pub(super) fn discover(graph_files: &[String]) -> Self {
         let mut roots = BTreeSet::from([String::new()]);
+        let mut package_directories = HashSet::new();
         for path in graph_files {
             let parts = path.split('/').collect::<Vec<_>>();
             for (index, part) in parts.iter().enumerate() {
@@ -31,12 +34,62 @@ impl PythonResolver {
                     roots.insert(parts[..=index].join("/"));
                 }
             }
+            if detect(Path::new(path)).and_then(|info| info.first_class) == Some(FirstClass::Python)
+            {
+                for length in 1..parts.len() {
+                    package_directories.insert(parts[..length].join("/"));
+                }
+            }
         }
         Self {
             roots: roots.into_iter().collect(),
+            package_directories,
         }
     }
 
+    /// Resolves `from module import names`. A module that is a namespace
+    /// package without its own file resolves each imported name as a submodule.
+    /// A regular package keeps its `__init__.py` dependency and adds every
+    /// imported name that exists as a submodule beside it.
+    pub(super) fn resolve_from(
+        &self,
+        importer_rel: &str,
+        module: &str,
+        names: &[String],
+        nodes: &HashSet<String>,
+    ) -> Vec<ImportResolution> {
+        match self.resolve(importer_rel, module, nodes) {
+            ImportResolution::NonGraph if !names.is_empty() => names
+                .iter()
+                .map(|name| self.resolve(importer_rel, &format!("{module}.{name}"), nodes))
+                .collect(),
+            ImportResolution::Resolved { target, resolver } => {
+                let mut resolutions = Vec::new();
+                if let Some(package) = target.strip_suffix("/__init__.py") {
+                    for name in names {
+                        let base = join_graph_path(package, name);
+                        if let Some(submodule) =
+                            [format!("{base}.py"), format!("{base}/__init__.py")]
+                                .into_iter()
+                                .find(|candidate| nodes.contains(candidate))
+                        {
+                            resolutions.push(ImportResolution::Resolved {
+                                target: submodule,
+                                resolver,
+                            });
+                        }
+                    }
+                }
+                resolutions.insert(0, ImportResolution::Resolved { target, resolver });
+                resolutions
+            }
+            resolution => vec![resolution],
+        }
+    }
+
+    /// Resolves a module to its file. A scanned namespace-package directory
+    /// without a module file is `NonGraph`; a missing module below a scanned
+    /// package directory is `Unresolved`.
     pub(super) fn resolve(
         &self,
         importer_rel: &str,
@@ -44,15 +97,50 @@ impl PythonResolver {
         nodes: &HashSet<String>,
     ) -> ImportResolution {
         if spec.starts_with('.') {
-            return resolve_py(importer_rel, spec, nodes).map_or(
-                ImportResolution::Unresolved,
-                |target| ImportResolution::Resolved {
+            return match resolve_py(importer_rel, spec, nodes) {
+                Some(target) => ImportResolution::Resolved {
                     target,
                     resolver: "python-relative",
                 },
-            );
+                None if self
+                    .package_directories
+                    .contains(&python_relative_base(importer_rel, spec)) =>
+                {
+                    ImportResolution::NonGraph
+                }
+                None => ImportResolution::Unresolved,
+            };
         }
+        match self.resolve_absolute(importer_rel, spec, nodes) {
+            ImportResolution::External => self.classify_missing_absolute(spec),
+            resolution => resolution,
+        }
+    }
 
+    fn classify_missing_absolute(&self, spec: &str) -> ImportResolution {
+        let segments = spec.split('.').collect::<Vec<_>>();
+        let is_package_directory = |length: usize| {
+            let module_path = segments[..length].join("/");
+            self.roots.iter().any(|root| {
+                self.package_directories
+                    .contains(&join_graph_path(root, &module_path))
+            })
+        };
+        if is_package_directory(segments.len()) {
+            ImportResolution::NonGraph
+        } else if (1..segments.len()).any(is_package_directory) {
+            ImportResolution::Unresolved
+        } else {
+            ImportResolution::External
+        }
+    }
+
+    fn resolve_absolute(
+        &self,
+        importer_rel: &str,
+        spec: &str,
+        nodes: &HashSet<String>,
+    ) -> ImportResolution {
         let module_path = spec.replace('.', "/");
         let mut candidates = Vec::new();
         for root in &self.roots {
