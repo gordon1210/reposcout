@@ -16,6 +16,10 @@
     "C": {
       "text": "Use for any code review or change-risk question (review this PR, check this branch before merge, what could these commits break, is this refactor safe) and for exploring an unfamiliar repository (where is X defined, who calls Y, what depends on this file, what is risky or unhealthy here). Start review work with `reposcout review-context . --base <base> --head <head> --profile safe --brief` (diff hunks plus changed definitions, importers, call sites and docs in one compact output) before git diff or grep. Otherwise run `reposcout --help` to pick orientation, symbol, impact or health queries.",
       "note": "Enumerated situations and question-style phrasings, with the review command and a help fallback."
+    },
+    "D": {
+      "text": "Use for any question about a change between two commits, branches or a pull request: reviewing it, judging whether it is safe to merge or ship, explaining what changed, or finding defects, regressions and risks. Run `reposcout review-context . --base <base> --head <head> --profile safe --brief` before `git diff` or `git log`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them. Also for repo orientation, symbol lookup, change impact and code health.",
+      "note": "Task categories instead of trigger verbs, naming both competing git commands."
     }
   }
 }

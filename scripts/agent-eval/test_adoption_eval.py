@@ -18,9 +18,11 @@ from test_claude_trace import assistant, init, result, tool_result, tool_use, us
 
 SKILL = adoption_eval.ROOT / "skills/reposcout"
 DEV = ["Review this PR.", "Check this branch before merge.", "What could these commits break?"]
-HELD_OUT = ["Is this change safe to ship?", "Do a code review of base..head and list real defects.",
-            "Walk me through what changed between these two revisions and flag risks.",
-            "Audit the diff for regressions."]
+TUNING = ["Is this change safe to ship?", "Do a code review of base..head and list real defects.",
+          "Walk me through what changed between these two revisions and flag risks.",
+          "Audit the diff for regressions."]
+HELD_OUT = ["Any concerns with merging this?", "Give me a quick rundown of these commits and anything that looks off.",
+            "Find the bugs introduced between base and head.", "I'm about to deploy this. Anything I should know?"]
 
 
 def stream(events):
@@ -31,18 +33,22 @@ class PhrasingTests(unittest.TestCase):
     def test_split_is_explicit(self):
         data = read_data("phrasings.json")
         self.assertEqual([item["text"] for item in data["dev"]], DEV)
+        self.assertEqual([item["text"] for item in data["tuning"]], TUNING)
         self.assertEqual([item["text"] for item in data["held_out"]], HELD_OUT)
         phrasings = load_phrasings()
-        self.assertEqual({item["set"] for item in phrasings.values() if item["id"].startswith("d")}, {"dev"})
-        self.assertEqual({item["set"] for item in phrasings.values() if item["id"].startswith("h")}, {"held-out"})
+        sets = {name: [item["id"] for item in phrasings.values() if item["set"] == name]
+                for name in ("dev", "tuning", "held-out")}
+        self.assertEqual(sets, {"dev": ["d1", "d2", "d3"], "tuning": ["h1", "h2", "h3", "h4"],
+                                "held-out": ["h5", "h6", "h7", "h8"]})
 
     def test_held_out_requires_the_flag(self):
         phrasings = load_phrasings()
         self.assertEqual(select_phrasing(phrasings, "d1", held_out=False)["text"], DEV[0])
+        self.assertEqual(select_phrasing(phrasings, "h1", held_out=False)["text"], TUNING[0])
         with self.assertRaises(AdoptionError) as caught:
-            select_phrasing(phrasings, "h1", held_out=False)
+            select_phrasing(phrasings, "h5", held_out=False)
         self.assertIn("--held-out", str(caught.exception))
-        self.assertEqual(select_phrasing(phrasings, "h1", held_out=True)["text"], HELD_OUT[0])
+        self.assertEqual(select_phrasing(phrasings, "h5", held_out=True)["text"], HELD_OUT[0])
         with self.assertRaises(AdoptionError):
             select_phrasing(phrasings, "missing", held_out=True)
 
@@ -50,7 +56,7 @@ class PhrasingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             output = Path(root) / "out"
             argv = ["run", "--model", "claude-haiku-5-5", "--arm", "silent", "--description", CURRENT,
-                    "--case", CASES[0], "--phrasing", "h1", "--repeat", "0", "--reposcout-binary", "/nonexistent",
+                    "--case", CASES[0], "--phrasing", "h5", "--repeat", "0", "--reposcout-binary", "/nonexistent",
                     "--auth-file", "/nonexistent", "--output-dir", str(output), "--claude-binary", "/nonexistent"]
             errors = io.StringIO()
             with contextlib.redirect_stderr(errors):
@@ -130,8 +136,8 @@ class DescriptionTests(unittest.TestCase):
 
     def test_candidates_are_bounded_and_round_trip(self):
         candidates = read_data("descriptions.json")["descriptions"]
-        self.assertEqual(list(candidates), [CURRENT, "A", "B", "C"])
-        for name in ("A", "B", "C"):
+        self.assertEqual(list(candidates), [CURRENT, "A", "B", "C", "D"])
+        for name in ("A", "B", "C", "D"):
             description = resolve_description(name, SKILL)
             self.assertEqual(description["swap"], description["text"])
             self.assertLess(len(description["text"]), 1024)
@@ -139,7 +145,7 @@ class DescriptionTests(unittest.TestCase):
             install_description(SKILL, copy, description["text"])
             self.assertEqual(read_description((copy / "SKILL.md").read_text()), description["text"])
         with self.assertRaises(AdoptionError):
-            resolve_description("D", SKILL)
+            resolve_description("E", SKILL)
 
     def test_invalid_text_is_refused_before_copying(self):
         for text in ("", "two\nlines", "nul\x00byte"):
@@ -170,9 +176,10 @@ class PlanTests(unittest.TestCase):
 
     def test_held_out_plan_uses_only_held_out_phrasings(self):
         runs = self.runs(phrasing_set="held-out", runs_per_cell=36)
-        self.assertEqual({run["phrasing"] for run in runs}, {"h1", "h2", "h3", "h4"})
+        self.assertEqual({run["phrasing"] for run in runs}, {"h5", "h6", "h7", "h8"})
         self.assertEqual(len(runs), 72)
         self.assertEqual({run["phrasing"] for run in self.runs()}, {"d1", "d2", "d3"})
+        self.assertEqual({run["phrasing"] for run in self.runs(phrasing_set="tuning")}, {"h1", "h2", "h3", "h4"})
 
     def test_commands_carry_the_explicit_parameters(self):
         entry = self.runs()[0]
@@ -330,13 +337,13 @@ class ExecuteRunTests(unittest.TestCase):
         self.assertTrue(self.specs[0].prompt.endswith(CAPABILITIES["reposcout"]))
 
     def test_held_out_and_foreign_cases_are_refused_before_any_work(self):
-        for options in ({"phrasing": "h2"}, {"case": "config-defaults"}, {"case": "behavior-preserving-refactor"},
+        for options in ({"phrasing": "h6"}, {"case": "config-defaults"}, {"case": "behavior-preserving-refactor"},
                         {"arm": "guided"}, {"repeat": -1}):
             with self.subTest(options=options), self.assertRaises(AdoptionError):
                 execute_run(self.parameters(**options), runner=self.runner([]), pin_capture=self.pins)
         self.assertEqual(self.specs, [])
         self.assertFalse((self.root / "out").exists())
-        outcome = execute_run(self.parameters(phrasing="h2", held_out=True), runner=self.runner(self.capped_events()),
+        outcome = execute_run(self.parameters(phrasing="h6", held_out=True), runner=self.runner(self.capped_events()),
                               pin_capture=self.pins)
         self.assertEqual(outcome["phrasing"]["set"], "held-out")
 

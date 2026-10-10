@@ -40,7 +40,7 @@ BUNDLE_ROOT = SCRIPT_ROOT / "fixtures/large-review/development"
 CASES = ("status-extraction", "cancellation-change", "event-routing-change")
 MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5")
 ARMS = ("silent", "neutral")
-PHRASING_SETS = ("dev", "held-out")
+PHRASING_SETS = ("dev", "tuning", "held-out")
 CURRENT = "current"
 DEFAULT_MAX_TURNS = 6
 DEFAULT_EFFORT = "medium"
@@ -68,10 +68,10 @@ def read_data(name):
 
 
 def load_phrasings(path=None):
-    """Map phrasing id to {id, text, set}; the set is `dev` or `held-out`."""
+    """Map phrasing id to {id, text, set}; the set is `dev`, `tuning` or `held-out`."""
     data = json.loads(Path(path).read_text(encoding="utf-8")) if path else read_data("phrasings.json")
     result = {}
-    for key, name in (("dev", "dev"), ("held_out", "held-out")):
+    for key, name in (("dev", "dev"), ("tuning", "tuning"), ("held_out", "held-out")):
         for item in data[key]:
             require(item["id"] not in result, "duplicate phrasing id")
             result[item["id"]] = {"id": item["id"], "text": item["text"], "set": name}
