@@ -16,7 +16,7 @@ CASES = frozenset(("clean-refactor", "refund-boundary", "import-wiring", "packag
                    "sparse-evidence", "review-followup", "staff-only", "renewal-holdout", "cancellation-change",
                    "event-routing-change", "status-extraction", "publication-change-a", "publication-change-b",
                    "publication-change-c"))
-VARIANTS = frozenset(("baseline", "reposcout", "reposcout-cli"))
+VARIANTS = frozenset(("baseline", "reposcout", "reposcout-guided", "reposcout-cli"))
 STATUSES = frozenset(("completed", "failed", "aborted", "notrun"))
 QUALITY = frozenset(("passed", "failed", "pending-adjudication", "unavailable"))
 BASES = frozenset(("exec-emitted-initial-turn-usage", "exec-thread-cumulative-usage",

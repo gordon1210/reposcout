@@ -157,6 +157,24 @@ class ReportingTests(unittest.TestCase):
             self.assertFalse(comparison["eligible"])
             self.assertTrue(any("notrun" in reason for reason in comparison["ineligibility_reasons"]))
 
+    def test_guided_campaign_pairs_baseline_with_the_guided_arm_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary, treatment="reposcout-guided")
+            failed = next(item for item in plan["assignments"] if item["variant"] == "reposcout-guided")
+            for assignment in plan["assignments"]:
+                campaign.write_new(Path(assignment["run_dir"]) / "outcome.json",
+                                   measured(plan, assignment, "failed" if assignment == failed else "completed"))
+            report = exporting.report(root)
+            self.assertEqual(report["treatment"], "reposcout-guided")
+            self.assertEqual({(pair["reference_variant"], pair["candidate_variant"]) for pair in report["pair_inventory"]},
+                             {("baseline", "reposcout-guided")})
+            self.assertEqual(len(report["pair_inventory"]), plan["assignment_count"] // 2)
+            self.assertEqual(report["incomplete_main_pairs"], 1)
+            self.assertEqual({group["variant"] for group in report["all_assigned_run_costs"]},
+                             {"baseline", "reposcout-guided"})
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertEqual(exporting.report(prepared(temporary)[0])["treatment"], "reposcout")
+
     def test_failed_main_arm_is_incomplete_while_cli_only_failure_is_separate(self):
         for failed_variant in ("baseline", "reposcout", "reposcout-cli"):
             with self.subTest(failed_variant=failed_variant), tempfile.TemporaryDirectory() as temporary:

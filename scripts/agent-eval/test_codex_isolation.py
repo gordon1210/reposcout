@@ -324,6 +324,15 @@ class IsolationTests(unittest.TestCase):
         finally:
             plan.cleanup()
         self.spec.artifact_dir.rmdir()
+        guided = replace(treatment, variant="reposcout-guided")
+        plan = prepare_isolation(guided)
+        try:
+            self.assertEqual(plan.probe_expectations["skills"], ["reposcout"])
+        finally:
+            plan.cleanup()
+        self.spec.artifact_dir.rmdir()
+        with self.assertRaisesRegex(IsolationError, "skill arm"):
+            prepare_isolation(replace(guided, skill_dir=None))
         only = replace(self.spec, variant="reposcout-cli", reposcout_binary=tool)
         plan = prepare_isolation(only)
         try:

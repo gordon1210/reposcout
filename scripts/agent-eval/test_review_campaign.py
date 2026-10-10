@@ -17,8 +17,8 @@ def catalog():
              "fixture_sha256": fingerprint(name)} for name in campaign.MAIN_CASES]
 
 
-def pins(timeout_seconds=campaign.LIMITS["timeout_seconds"]):
-    return {"limits": {**campaign.LIMITS, "timeout_seconds": timeout_seconds}, "usage_scope": "unknown", "codex_version": "codex-cli test",
+def pins(timeout_seconds=campaign.LIMITS["timeout_seconds"], effort=campaign.DEFAULT_EFFORT):
+    return {"effort": effort, "limits": {**campaign.LIMITS, "timeout_seconds": timeout_seconds}, "usage_scope": "unknown", "codex_version": "codex-cli test",
             "codex_binary": "/unexecuted/codex", "reposcout_binary": "/unexecuted/reposcout",
             "skill_dir": "/unexecuted/skill", "codex_sha256": fingerprint("codex"),
             "codex_runtime_sha256": fingerprint("runtime"), "reposcout_sha256": fingerprint("reposcout"),
@@ -27,10 +27,12 @@ def pins(timeout_seconds=campaign.LIMITS["timeout_seconds"]):
             "controller_ca_destination": "/etc/ssl/cert.pem"}
 
 
-def prepared(parent, stage="smoke", ablation=False, timeout_seconds=campaign.LIMITS["timeout_seconds"]):
+def prepared(parent, stage="smoke", ablation=False, timeout_seconds=campaign.LIMITS["timeout_seconds"],
+             effort=campaign.DEFAULT_EFFORT, treatment=campaign.DEFAULT_TREATMENT):
     """Make controller-owned synthetic records without Git, probes or model execution."""
     root, marker = campaign.create_campaign_root(Path(parent) / "campaign")
-    plan = campaign.build_plan(stage, 917, pins(timeout_seconds), catalog(), ablation)
+    plan = campaign.build_plan(stage, 917, pins(timeout_seconds, effort), catalog(), ablation, effort=effort,
+                               treatment=treatment)
     for assignment in plan["assignments"]:
         directory = root / "runs" / assignment["run_id"]
         directory.mkdir(mode=0o700)
@@ -248,11 +250,44 @@ class AssignmentTests(unittest.TestCase):
         with self.assertRaises(InvalidLedger):
             campaign.build_plan("exploratory", 1, {}, cases)
 
+    def test_guided_treatment_replaces_the_neutral_skill_arm_in_every_main_pair(self):
+        default = campaign.build_plan("smoke", 4, {}, catalog())
+        guided = campaign.build_plan("smoke", 4, {}, catalog(), treatment="reposcout-guided")
+        self.assertNotIn("treatment", default)
+        self.assertEqual(guided["treatment"], "reposcout-guided")
+        self.assertEqual(campaign.plan_treatment(default), "reposcout")
+        self.assertEqual({run["variant"] for run in guided["assignments"]}, {"baseline", "reposcout-guided"})
+        self.assertEqual([(run["case_id"], run["repeat_id"], run["pair_position"], run["variant"] == "baseline")
+                          for run in guided["assignments"]],
+                         [(run["case_id"], run["repeat_id"], run["pair_position"], run["variant"] == "baseline")
+                          for run in default["assignments"]])
+        self.assertTrue(all(run["capabilities_sha256"] == fingerprint(campaign.CAPABILITIES["reposcout-guided"])
+                            for run in guided["assignments"] if run["variant"] != "baseline"))
+        ablated = campaign.build_plan("exploratory", 94, {}, catalog(), True, treatment="reposcout-guided")
+        self.assertEqual({run["variant"] for run in ablated["assignments"]},
+                         {"baseline", "reposcout-guided", "reposcout-cli"})
+        for treatment in ("baseline", "reposcout-cli", "guided"):
+            with self.subTest(treatment=treatment), self.assertRaisesRegex(InvalidLedger, "unknown treatment"):
+                campaign.build_plan("smoke", 4, {}, catalog(), treatment=treatment)
+        cases = [{"case_id": name, "partition": "holdout", "title": name,
+                  "step_count": 1, "fixture_sha256": fingerprint(name)} for name in campaign.LARGE_HOLDOUT_CASES]
+        with self.assertRaisesRegex(InvalidLedger, "neutral treatment"):
+            campaign.build_plan("large-holdout-original", 1, {}, cases, treatment="reposcout-guided")
+
+    def test_guided_capability_adds_only_the_skill_direction(self):
+        step = {"step_id": 0, "task": "Review this change.", "base_tree": "a" * 40,
+                "head_tree": "b" * 40, "source_sha256": fingerprint("shared")}
+        neutral, neutral_hashes = campaign.make_prompt(step, "reposcout")
+        guided, guided_hashes = campaign.make_prompt(step, "reposcout-guided")
+        self.assertEqual(guided, neutral + " Start the review with the reposcout skill.")
+        self.assertEqual(guided_hashes["shared_prompt_sha256"], neutral_hashes["shared_prompt_sha256"])
+        self.assertNotIn("reposcout skill", campaign.make_prompt(step, "baseline")[0])
+
     def test_every_arm_receives_the_same_serial_resource_policy(self):
         step = {"step_id": 0, "task": "Review this change.", "base_tree": "a" * 40,
                 "head_tree": "b" * 40, "source_sha256": fingerprint("shared")}
         shared = set()
-        for variant in ("baseline", "reposcout", "reposcout-cli"):
+        for variant in campaign.VARIANTS:
             prompt, hashes = campaign.make_prompt(step, variant)
             self.assertIn("at most one build, test, benchmark, or RepoScout invocation at a time", prompt)
             self.assertIn("including source-query commands", prompt)
@@ -347,6 +382,84 @@ class TimeoutTests(unittest.TestCase):
             drifted = {**captured, "limits": {**captured["limits"], "timeout_seconds": 599}}
             with patch.object(campaign, "capture_pins", return_value=drifted), self.assertRaises(InvalidLedger):
                 campaign.verify_runtime_pins(plan)
+
+    def test_effort_defaults_to_max_and_is_limited_to_supported_levels(self):
+        self.assertEqual(campaign.DEFAULT_EFFORT, "max")
+        self.assertEqual(campaign.build_plan("smoke", 4, {}, catalog())["effort"], "max")
+        for value in ("none", "ultra", "", None, "MEDIUM"):
+            with self.subTest(effort=value), self.assertRaises(InvalidLedger):
+                campaign.capture_pins("unused", "unused", "unused", "unused", effort=value)
+            with self.subTest(plan_effort=value), self.assertRaises(InvalidLedger):
+                campaign.build_plan("smoke", 4, {"effort": "medium"}, catalog(), effort=value)
+
+    def test_plan_effort_must_match_the_pinned_effort(self):
+        with self.assertRaises(InvalidLedger):
+            campaign.build_plan("smoke", 4, pins(effort="medium"), catalog())
+        with self.assertRaises(InvalidLedger):
+            campaign.build_plan("smoke", 4, pins(), catalog(), effort="medium")
+        plan = campaign.build_plan("smoke", 4, pins(effort="medium"), catalog(), effort="medium")
+        self.assertEqual((plan["effort"], plan["pins"]["effort"]), ("medium", "medium"))
+
+    def test_selected_effort_is_pinned_loaded_and_passed_to_the_runner(self):
+        from codex_isolation import configuration_manifest
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary, effort="medium")
+            loaded = campaign.load_plan(root)
+            self.assertEqual((loaded["effort"], loaded["pins"]["effort"]), ("medium", "medium"))
+            assignment = loaded["assignments"][0]
+            record = read_json(Path(assignment["run_dir"]) / "case.json")
+            spec, _ = campaign._trial_spec(loaded, assignment, record, record["steps"][0], root / "planned")
+            self.assertEqual(spec.effort, "medium")
+            self.assertEqual(configuration_manifest(spec)["effort"], "medium")
+            tampered = dict(loaded, effort="high")
+            tampered["plan_sha256"] = fingerprint({key: value for key, value in tampered.items() if key != "plan_sha256"})
+            (root / "plan.json").unlink()
+            campaign.write_new(root / "plan.json", tampered)
+            with self.assertRaises(InvalidLedger):
+                campaign.load_plan(root)
+
+    def test_default_effort_trial_spec_remains_max(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, plan = prepared(temporary)
+            assignment = plan["assignments"][0]
+            record = read_json(Path(assignment["run_dir"]) / "case.json")
+            spec, _ = campaign._trial_spec(plan, assignment, record, record["steps"][0], root / "planned")
+            self.assertEqual(spec.effort, "max")
+
+    def test_usage_calibration_is_bound_to_the_selected_effort(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "calibration.json"
+            proof = {key: True for key in ("same_thread", "native_before_is_exact_prefix", "prior_responses_unchanged",
+                     "new_response_equals_cumulative_delta", "exec_equals_final_native", "stream_complete",
+                     "process_tree_drained")}
+            path.write_text(json.dumps({"schema": 1, "cli_version": "codex-cli test", "codex_sha256": "0" * 64,
+                                        "model": campaign.MODEL, "effort": "medium",
+                                        "usage_scope": "thread-cumulative", "proof": proof}))
+            path.chmod(0o600)
+            with patch("publication.private_destination", side_effect=lambda value: Path(value)):
+                scope, calibration = campaign.calibrated_usage_scope("codex-cli test", "0" * 64, path, "medium")
+                self.assertEqual(scope, "thread-cumulative")
+                self.assertEqual(calibration["evidence_sha256"], campaign.file_hash(path))
+                with self.assertRaises(InvalidLedger):
+                    campaign.calibrated_usage_scope("codex-cli test", "0" * 64, path)
+
+    def test_prepare_library_and_cli_forward_selected_effort(self):
+        arguments = {"stage": "smoke", "seed": 1, "codex_binary": "codex", "codex_version": "version",
+                     "reposcout_binary": "reposcout", "skill_dir": "skill", "effort": "medium"}
+        with patch.object(campaign, "capture_pins", side_effect=InvalidLedger("synthetic stop")) as capture:
+            with self.assertRaises(InvalidLedger):
+                campaign.prepare("unused", **arguments)
+            self.assertEqual(capture.call_args.kwargs["effort"], "medium")
+        base = ["review_campaign.py", "prepare", "unused", "--stage", "smoke", "--seed", "1",
+                "--codex-binary", "codex", "--codex-version", "version", "--reposcout-binary", "reposcout"]
+        for extra, expected in (([], "max"), (["--effort", "medium"], "medium")):
+            with patch("sys.argv", base + extra), patch("sys.stdout", new=io.StringIO()), \
+                    patch.object(campaign, "prepare", return_value={"plan_sha256": "synthetic", "assignment_count": 8}) as create:
+                campaign.main()
+                self.assertEqual(create.call_args.kwargs["effort"], expected)
+        with patch("sys.argv", base + ["--effort", "ultra"]), patch("sys.stderr", new=io.StringIO()), \
+                self.assertRaises(SystemExit):
+            campaign.main()
 
     def test_prepare_library_and_cli_forward_selected_timeout(self):
         arguments = {"stage": "smoke", "seed": 1, "codex_binary": "codex", "codex_version": "version",
@@ -453,6 +566,29 @@ class OwnershipTests(unittest.TestCase):
             (root / "plan.json").write_text(json.dumps(plan))
             with self.assertRaises(InvalidLedger):
                 campaign.load_plan(root)
+
+    def test_treatment_and_arm_tampering_are_refused(self):
+        def explicit_default(plan):
+            plan["treatment"] = "reposcout"
+
+        def relabelled_arm(plan):
+            next(item for item in plan["assignments"] if item["variant"] != "baseline")["variant"] = "reposcout"
+
+        for treatment, change in (("reposcout-guided", explicit_default), ("reposcout-guided", relabelled_arm),
+                                  ("reposcout", relabelled_arm)):
+            with self.subTest(treatment=treatment, change=change.__name__), \
+                    tempfile.TemporaryDirectory() as temporary:
+                root, plan = prepared(temporary, treatment=treatment)
+                self.assertEqual(campaign.load_plan(root)["plan_sha256"], plan["plan_sha256"])
+                if change is relabelled_arm and treatment == "reposcout":
+                    plan["treatment"] = "reposcout-guided"
+                else:
+                    change(plan)
+                plan.pop("plan_sha256")
+                plan["plan_sha256"] = fingerprint(plan)
+                (root / "plan.json").write_text(json.dumps(plan))
+                with self.assertRaises(InvalidLedger):
+                    campaign.load_plan(root)
 
     def test_runtime_drift_is_refused(self):
         plan = {"pins": pins()}

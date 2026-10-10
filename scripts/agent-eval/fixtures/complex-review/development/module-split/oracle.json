@@ -1,0 +1,242 @@
+{
+  "domain_expected": {
+    "base": {
+      "access_denied": {
+        "after": [
+          "running",
+          120
+        ],
+        "during": [
+          "paused",
+          60
+        ]
+      },
+      "awaiting_approval": {
+        "after": [
+          "running",
+          120
+        ],
+        "during": [
+          "paused",
+          60
+        ]
+      },
+      "awaiting_parts": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "customer_unavailable": {
+        "after": [
+          "running",
+          120
+        ],
+        "during": [
+          "paused",
+          60
+        ]
+      },
+      "weather": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "webhookTopics": {
+        "items": [
+          "appointment.booked",
+          "job.cancelled",
+          "job.completed",
+          "job.created",
+          "job.scheduled",
+          "job.started",
+          "sla.breached"
+        ]
+      }
+    },
+    "head": {
+      "access_denied": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "awaiting_approval": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "awaiting_parts": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "customer_unavailable": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "weather": {
+        "after": [
+          "running",
+          300
+        ],
+        "during": [
+          "running",
+          240
+        ]
+      },
+      "webhookTopics": {
+        "items": [
+          "appointment.booked",
+          "job.cancelled",
+          "job.completed",
+          "job.created",
+          "job.scheduled",
+          "job.started",
+          "sla.breached"
+        ]
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "customer-hold-no-longer-pauses-sla",
+          "impact": "Holds caused by the customer no longer pause the resolution clock, so contracted work orders accrue elapsed time while the customer blocks the work, which produces false breaches and service credits.",
+          "locations": [
+            {
+              "contains": "'job.held': { reasons: CUSTOMER_CAUSED_HOLDS },",
+              "path": "src/sla/subscriptions.ts",
+              "side": "head"
+            },
+            {
+              "contains": "held: 'workorder.held',",
+              "path": "src/workorders/model.ts",
+              "side": "head"
+            }
+          ],
+          "rubric": "The split renamed the internal hold event, but the service-level pause trigger still subscribes to the old name, so no customer-caused hold reason pauses the clock. Any reachable customer-caused hold witness with a causal explanation suffices. Public webhook topics deliberately keep their job.* names and the /jobs legacy path rewrite is retained; neither is a defect. Extra genuine source defects require independent review for all arms.",
+          "severity": "high within this application's service-level contracts",
+          "witnesses": [
+            {
+              "actual": {
+                "elapsedMinutes": 240,
+                "status": "running"
+              },
+              "expected": {
+                "elapsedMinutes": 60,
+                "status": "paused"
+              },
+              "input": {
+                "hold": "customer_unavailable at 09:00",
+                "observe": "12:00",
+                "plan": "premium",
+                "start": "Monday 08:00"
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "- **Customer-caused delays stop the clock.** A hold for `customer_unavailable`,",
+                "path": "docs/service-levels.md",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "'job.held': { reasons: CUSTOMER_CAUSED_HOLDS },",
+                "path": "src/sla/subscriptions.ts",
+                "side": "base"
+              }
+            ]
+          ],
+          "description": "Establish that customer-caused holds must pause the resolution clock.",
+          "id": "documented-pause-rule"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "held: 'workorder.held',",
+                "path": "src/workorders/model.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "publish(ctx, WorkOrderEvents.held, updated, actorId, { reason, note });",
+                "path": "src/workorders/holds.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show the event name the hold service actually publishes after the split.",
+          "id": "published-hold-event"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "[WorkOrderEvents.opened]: 'job.created',",
+                "path": "src/integrations/webhooks.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "are part of the integration contract and do not change when internal event names change.",
+                "path": "docs/integrations.md",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "const LEGACY_PREFIXES: ReadonlyArray<readonly [RegExp, string]> = [[/^\\/jobs(?=\\/|$)/, '/workorders']];",
+                "path": "src/api/router.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Distinguish the intentionally stable public topics and legacy paths from the internal event rename.",
+          "id": "intentional-public-names"
+        }
+      ]
+    }
+  ]
+}

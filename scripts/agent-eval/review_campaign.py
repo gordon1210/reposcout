@@ -5,8 +5,9 @@ in the private campaign directory; the export is an explicit metadata projection
 """
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -18,11 +19,13 @@ import tempfile
 import time
 
 from accounting import InvalidLedger, fingerprint, read_json, require
-from codex_isolation import REPOSCOUT_CHILD_TIMEOUT_SECONDS
+from codex_isolation import REPOSCOUT_CHILD_TIMEOUT_SECONDS, SKILL_VARIANTS
 
 SCHEMA = 1
 MODEL = "gpt-6.1-sol"
-EFFORT = "max"
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+DEFAULT_EFFORT = "max"
+EFFORT = DEFAULT_EFFORT
 MAIN_CASES = ("clean-refactor", "refund-boundary", "import-wiring", "package-wiring",
               "wire-units-noise", "sparse-evidence", "review-followup", "staff-only")
 SMOKE_CASES = ("clean-refactor", "import-wiring", "sparse-evidence", "review-followup")
@@ -31,10 +34,19 @@ LARGE_DEVELOPMENT_CASES = ("cancellation-change", "event-routing-change", "statu
 LARGE_HOLDOUT_CASES = ("publication-change-a", "publication-change-b")
 LARGE_FOLLOWUP_CASES = ("publication-change-a", "publication-change-b", "publication-change-c")
 LARGE_STAGES = ("large-development", "large-holdout", "large-holdout-original", "large-followup")
-VARIANTS = ("baseline", "reposcout", "reposcout-cli")
+COMPLEX_DEVELOPMENT_CASES = ("api-migration", "module-split")
+COMPLEX_HOLDOUT_CASES = ("config-defaults", "behavior-preserving-refactor")
+COMPLEX_STAGES = ("complex-development", "complex-holdout")
+BUNDLE_STAGES = (*LARGE_STAGES, *COMPLEX_STAGES)
+MAX_TIMEOUT_SECONDS = 600
+COMPLEX_TIMEOUT_SECONDS = 1200
+VARIANTS = ("baseline", "reposcout", "reposcout-guided", "reposcout-cli")
+DEFAULT_TREATMENT = "reposcout"
 TERMINAL_STATUSES = ("completed", "failed", "aborted")
 SOURCE_FILES = ("accounting.py", "review_campaign.py", "review_export.py", "review_cases.py", "review_grading.py",
                 "codex_runner.py", "codex_isolation.py", "codex_trace.py", "large_review_study.py", "publication.py")
+RUNTIMES = ("codex", "claude")
+CLAUDE_SOURCE_FILES = ("claude_runner.py", "claude_isolation.py", "claude_trace.py")
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_ROOT = Path(__file__).resolve().parent
 LIMITS = {"timeout_seconds": 180, "memory_limit_bytes": 1024 ** 3,
@@ -45,6 +57,7 @@ CAPABILITIES = {
     "reposcout": "Git, bounded shell searches, targeted source reads, the supplied one-shot application checks, and the RepoScout CLI and its bundled skill are available.",
     "reposcout-cli": "Git, bounded shell searches, targeted source reads, the supplied one-shot application checks, and the RepoScout CLI are available.",
 }
+CAPABILITIES["reposcout-guided"] = CAPABILITIES["reposcout"] + " Start the review with the reposcout skill."
 
 
 class CampaignPrerequisiteError(InvalidLedger):
@@ -108,13 +121,23 @@ def binary_version(binary):
     return result.stdout.strip()
 
 
-def validated_timeout_seconds(value):
-    require(type(value) in (int, float) and 0 < value <= 600,
-            "timeout must be positive and at most 600 seconds")
+def stage_timeout_seconds(stage):
+    """Default and ceiling of the per-episode timeout: complex stages review larger comparisons."""
+    return COMPLEX_TIMEOUT_SECONDS if stage in COMPLEX_STAGES else MAX_TIMEOUT_SECONDS
+
+
+def validated_timeout_seconds(value, ceiling=MAX_TIMEOUT_SECONDS):
+    require(type(value) in (int, float) and 0 < value <= ceiling,
+            f"timeout must be positive and at most {ceiling} seconds")
     return value
 
 
-def calibrated_usage_scope(cli_version, codex_sha256, calibration_path=None):
+def validated_effort(value):
+    require(value in EFFORTS, "unsupported reasoning effort")
+    return value
+
+
+def calibrated_usage_scope(cli_version, codex_sha256, calibration_path=None, effort=DEFAULT_EFFORT):
     if calibration_path is None:
         return "unknown", None
     from publication import private_destination
@@ -122,7 +145,7 @@ def calibrated_usage_scope(cli_version, codex_sha256, calibration_path=None):
     evidence = read_json(path)
     require(evidence.get("schema") == 1 and evidence.get("cli_version") == cli_version
             and evidence.get("codex_sha256") == codex_sha256 and evidence.get("model") == MODEL
-            and evidence.get("effort") == EFFORT and evidence.get("usage_scope") == "thread-cumulative",
+            and evidence.get("effort") == effort and evidence.get("usage_scope") == "thread-cumulative",
             "usage calibration does not match the pinned condition")
     proof = evidence.get("proof") or {}
     require(isinstance(proof, dict), "invalid usage calibration proof")
@@ -132,14 +155,23 @@ def calibrated_usage_scope(cli_version, codex_sha256, calibration_path=None):
     return "thread-cumulative", {"evidence_path": str(path), "evidence_sha256": file_hash(path)}
 
 
-def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file=None,
-                 *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None,
-                 bundle_root=None, original_campaign=None, usage_calibration=None):
-    limits = {**LIMITS, "timeout_seconds": validated_timeout_seconds(timeout_seconds)}
-    codex_binary, reposcout_binary, skill_dir = map(Path, (codex_binary, reposcout_binary, skill_dir))
-    codex_binary, reposcout_binary, skill_dir = (path.resolve() for path in
-                                                (codex_binary, reposcout_binary, skill_dir))
-    require(codex_binary.is_file() and reposcout_binary.is_file(), "missing evaluation binary")
+def plan_runtime(plan):
+    return plan.get("runtime", "codex")
+
+
+def plan_treatment(plan):
+    """The skill arm paired with baseline; guided and neutral results are never pooled."""
+    return plan.get("treatment", DEFAULT_TREATMENT)
+
+
+def runtime_module(plan, role):
+    """The runner, isolation and trace adapters of the plan's agent runtime."""
+    runtime = plan_runtime(plan)
+    require(runtime in RUNTIMES and role in ("runner", "isolation", "trace"), "unknown agent runtime")
+    return importlib.import_module(f"{runtime}_{role}")
+
+
+def _treatment_condition(reposcout_binary, skill_dir, original_campaign):
     skill = directory_hash(skill_dir)
     original = None
     if original_campaign is not None:
@@ -152,26 +184,43 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
     else:
         require(skill == directory_hash(ROOT / "skills/reposcout"),
                 "treatment requires the exact canonical RepoScout skill bundle")
+    return skill, original
+
+
+def _runtime_tools(runtime_tool_paths):
+    from review_cases import CHECK_COMMANDS
+    from codex_isolation import REQUIRED_RUNTIME_TOOLS, RuntimeUnavailableError, runtime_tool_manifest
+    try:
+        return runtime_tool_manifest(runtime_tool_paths,
+                                     required=(*REQUIRED_RUNTIME_TOOLS, *(command[0] for command in CHECK_COMMANDS.values())))
+    except RuntimeUnavailableError as error:
+        raise CampaignPrerequisiteError("required-runtime-unavailable", str(error),
+                                        evidence={"runtime": error.tool}) from None
+
+
+def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file=None,
+                 *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None,
+                 bundle_root=None, original_campaign=None, usage_calibration=None, effort=DEFAULT_EFFORT,
+                 timeout_ceiling=MAX_TIMEOUT_SECONDS):
+    effort = validated_effort(effort)
+    limits = {**LIMITS, "timeout_seconds": validated_timeout_seconds(timeout_seconds, timeout_ceiling)}
+    codex_binary, reposcout_binary, skill_dir = map(Path, (codex_binary, reposcout_binary, skill_dir))
+    codex_binary, reposcout_binary, skill_dir = (path.resolve() for path in
+                                                (codex_binary, reposcout_binary, skill_dir))
+    require(codex_binary.is_file() and reposcout_binary.is_file(), "missing evaluation binary")
+    skill, original = _treatment_condition(reposcout_binary, skill_dir, original_campaign)
     actual_version = binary_version(codex_binary)
     if actual_version != codex_version:
         raise CampaignPrerequisiteError("codex-version-drift", "declared Codex version differs from pinned binary",
                                         evidence={"expected_sha256": fingerprint(codex_version),
                                                   "actual_sha256": fingerprint(actual_version)})
     codex_sha256 = file_hash(codex_binary)
-    usage_scope, calibration = calibrated_usage_scope(actual_version, codex_sha256, usage_calibration)
-    from review_cases import CHECK_COMMANDS, answer_schema
-    from codex_isolation import (
-        REQUIRED_RUNTIME_TOOLS, RuntimeUnavailableError, codex_runtime_manifest, controller_ca_manifest,
-        runtime_tool_identities, runtime_tool_manifest,
-    )
+    usage_scope, calibration = calibrated_usage_scope(actual_version, codex_sha256, usage_calibration, effort)
+    from review_cases import answer_schema
+    from codex_isolation import codex_runtime_manifest, controller_ca_manifest, runtime_tool_identities
     runtime_assets = codex_runtime_manifest(codex_binary)
     controller_ca = controller_ca_manifest(controller_ca_file)
-    try:
-        tools = runtime_tool_manifest(runtime_tool_paths,
-                                      required=(*REQUIRED_RUNTIME_TOOLS, *(command[0] for command in CHECK_COMMANDS.values())))
-    except RuntimeUnavailableError as error:
-        raise CampaignPrerequisiteError("required-runtime-unavailable", str(error),
-                                        evidence={"runtime": error.tool}) from None
+    tools = _runtime_tools(runtime_tool_paths)
     tool_assets = runtime_tool_identities(tools)
     revision = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True,
                               capture_output=True, text=True, timeout=10).stdout.strip()
@@ -186,7 +235,7 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
             "reposcout_version": binary_version(reposcout_binary), "skill_dir": str(skill_dir),
             "skill": skill, "fixture_bundle": directory_hash(SCRIPT_ROOT / "fixtures/pr-review" if bundle_root is None else bundle_root),
             "harness_sources": {name: file_hash(SCRIPT_ROOT / name) for name in SOURCE_FILES},
-            "repository_revision": revision, "model": MODEL, "effort": EFFORT,
+            "repository_revision": revision, "model": MODEL, "effort": effort,
             "answer_schema_sha256": fingerprint(answer_schema()), "limits": limits,
             "usage_scope": usage_scope, "usage_scope_calibration": calibration,
             "capabilities_sha256": fingerprint(CAPABILITIES)}
@@ -198,33 +247,96 @@ def capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, contr
     return result
 
 
-def build_plan(stage, seed, pins, cases, include_ablation=False):
+def capture_claude_pins(claude_binary, model, reposcout_binary, skill_dir, controller_ca_file=None,
+                        *, timeout_seconds=LIMITS["timeout_seconds"], runtime_tool_paths=None,
+                        sandbox_tool_paths=None, bundle_root=None, original_campaign=None, effort=DEFAULT_EFFORT,
+                        timeout_ceiling=MAX_TIMEOUT_SECONDS):
+    """Claude Code condition: one fresh invocation per episode, with invocation-scoped usage."""
+    from claude_isolation import claude_binary as bounded_claude_binary, claude_version, sandbox_tool_manifest
+    from claude_runner import MODEL_PATTERN
+    from codex_isolation import RuntimeUnavailableError, controller_ca_manifest, runtime_tool_identities
+    from review_cases import answer_schema
+    effort = validated_effort(effort)
+    require(isinstance(model, str) and MODEL_PATTERN.fullmatch(model) is not None, "unsupported Claude model identity")
+    limits = {**LIMITS, "timeout_seconds": validated_timeout_seconds(timeout_seconds, timeout_ceiling)}
+    claude_binary = bounded_claude_binary(claude_binary)
+    reposcout_binary, skill_dir = (Path(path).resolve() for path in (reposcout_binary, skill_dir))
+    require(reposcout_binary.is_file(), "missing evaluation binary")
+    skill, original = _treatment_condition(reposcout_binary, skill_dir, original_campaign)
+    controller_ca = controller_ca_manifest(controller_ca_file)
+    tools = _runtime_tools(runtime_tool_paths)
+    tool_assets = runtime_tool_identities(tools)
+    try:
+        sandbox = sandbox_tool_manifest(sandbox_tool_paths)
+    except RuntimeUnavailableError as error:
+        raise CampaignPrerequisiteError("required-runtime-unavailable", str(error),
+                                        evidence={"runtime": error.tool}) from None
+    sandbox_assets = runtime_tool_identities(sandbox)
+    revision = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True,
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+    result = {"runtime": "claude", "claude_binary": str(claude_binary), "claude_sha256": file_hash(claude_binary),
+              "claude_version": claude_version(claude_binary),
+              "controller_ca_file": controller_ca["path"], "controller_ca_sha256": controller_ca["sha256"],
+              "controller_ca_bytes": controller_ca["bytes"], "controller_ca_destination": controller_ca["destination"],
+              "runtime_tool_paths": {name: value["path"] for name, value in tools.items()},
+              "runtime_tool_assets": tool_assets, "runtime_tools_sha256": fingerprint(tool_assets),
+              "sandbox_tool_paths": {name: value["path"] for name, value in sandbox.items()},
+              "sandbox_tool_assets": sandbox_assets, "sandbox_tools_sha256": fingerprint(sandbox_assets),
+              "reposcout_binary": str(reposcout_binary), "reposcout_sha256": file_hash(reposcout_binary),
+              "reposcout_version": binary_version(reposcout_binary), "skill_dir": str(skill_dir),
+              "skill": skill, "fixture_bundle": directory_hash(SCRIPT_ROOT / "fixtures/pr-review" if bundle_root is None else bundle_root),
+              "harness_sources": {name: file_hash(SCRIPT_ROOT / name) for name in (*SOURCE_FILES, *CLAUDE_SOURCE_FILES)},
+              "repository_revision": revision, "model": model, "effort": effort,
+              "answer_schema_sha256": fingerprint(answer_schema()), "limits": limits,
+              "usage_scope": "invocation", "usage_scope_calibration": None,
+              "capabilities_sha256": fingerprint(CAPABILITIES)}
+    if bundle_root is not None:
+        result["case_bundle"] = str(Path(bundle_root).resolve())
+    if original is not None:
+        result["original_campaign"] = str(Path(original_campaign).resolve())
+        result["original_plan_sha256"] = original["plan_sha256"]
+    return result
+
+
+def build_plan(stage, seed, pins, cases, include_ablation=False, effort=DEFAULT_EFFORT, treatment=DEFAULT_TREATMENT):
     """Pure assignment planner: balanced main-arm order and fixed replicate identities."""
-    require(stage in ("smoke", "exploratory", *LARGE_STAGES), "unknown campaign stage")
+    require(stage in ("smoke", "exploratory", *BUNDLE_STAGES), "unknown campaign stage")
     require(type(seed) is int, "seed must be an integer")
+    require(validated_effort(effort) == pins.get("effort", DEFAULT_EFFORT), "plan effort differs from pinned effort")
     require(not include_ablation or stage == "exploratory", "ablation belongs to exploratory stage")
+    require(treatment in SKILL_VARIANTS, "unknown treatment arm")
+    require(stage != "large-holdout-original" or treatment == DEFAULT_TREATMENT,
+            "the original holdout stage replays the neutral treatment")
     selected = (LARGE_DEVELOPMENT_CASES if stage == "large-development" else
+                COMPLEX_DEVELOPMENT_CASES if stage == "complex-development" else
+                COMPLEX_HOLDOUT_CASES if stage == "complex-holdout" else
                 LARGE_FOLLOWUP_CASES if stage == "large-followup" else
                 LARGE_HOLDOUT_CASES if stage in LARGE_STAGES else
                 SMOKE_CASES if stage == "smoke" else MAIN_CASES)
     catalog = {item["case_id"]: item for item in cases}
     require(len(catalog) == len(cases) and all(name in catalog for name in selected), "incomplete case catalog")
-    partition = "development" if stage == "large-development" else "holdout" if stage in LARGE_STAGES else "main"
+    partition = ("development" if stage in ("large-development", "complex-development") else
+                 "holdout" if stage in BUNDLE_STAGES else "main")
     require(all(catalog[name]["partition"] == partition for name in selected), "case partition differs from stage")
-    if stage in LARGE_STAGES:
+    if stage in BUNDLE_STAGES:
         require(all(catalog[name]["step_count"] == 1 for name in selected), "large review stages contain one invocation per episode")
+    runtime = pins.get("runtime", "codex")
+    require(runtime in RUNTIMES, "unknown agent runtime")
+    if runtime == "claude":
+        require(all(catalog[name]["step_count"] == 1 for name in selected),
+                "Claude sessions are never resumed; the stage must contain one invocation per episode")
     generator = random.Random(seed)
     first_orders = [0] * ((len(selected) + 1) // 2) + [1] * (len(selected) // 2)
     generator.shuffle(first_orders)
     orientations = dict(zip(selected, first_orders))
     assignments = []
-    repetitions = 2 if stage in LARGE_STAGES else 1 if stage == "smoke" else 3
+    repetitions = 2 if stage in BUNDLE_STAGES else 1 if stage == "smoke" else 3
     for repeat in range(1, repetitions + 1):
         order = list(selected)
         generator.shuffle(order)
         for case_id in order:
             pair_id = "pair-" + fingerprint({"stage": stage, "seed": seed, "case": case_id, "repeat": repeat})[:24]
-            arms = ["reposcout"] if stage == "large-holdout-original" else ["baseline", "reposcout"]
+            arms = [treatment] if stage == "large-holdout-original" else ["baseline", treatment]
             if (orientations[case_id] + repeat - 1) % 2:
                 arms.reverse()
             if include_ablation and case_id in ABLATION_CASES:
@@ -239,9 +351,13 @@ def build_plan(stage, seed, pins, cases, include_ablation=False):
                                     "capabilities_sha256": fingerprint(CAPABILITIES[variant])})
     plan = {"schema": SCHEMA, "kind": "codex-review-campaign-plan", "stage": stage,
             "seed": seed, "repetitions": repetitions, "ablation": include_ablation,
-            "model": MODEL, "effort": EFFORT, "pins": pins,
+            "model": pins.get("model", MODEL), "effort": effort, "pins": pins,
             "cases": [catalog[name] for name in selected], "assignments": assignments,
             "assignment_count": len(assignments), "statistical_inference": False}
+    if runtime != "codex":
+        plan["runtime"] = runtime
+    if treatment != DEFAULT_TREATMENT:
+        plan["treatment"] = treatment
     plan["plan_sha256"] = fingerprint(plan)
     return plan
 
@@ -298,21 +414,42 @@ def make_prompt(step, variant):
                     "prompt_sha256": fingerprint(prompt)}
 
 
-def prepare(destination, *, stage, seed, codex_binary, codex_version, reposcout_binary,
+def prepare(destination, *, stage, seed, codex_binary=None, codex_version=None, reposcout_binary,
             skill_dir, include_ablation=False, smoke_campaign=None, controller_ca_file=None,
-            timeout_seconds=LIMITS["timeout_seconds"], bundle_root=None, original_campaign=None,
-            fixture_signer=None, usage_calibration=None):
-    from review_cases import create_signer, list_cases, prepare_case
+            timeout_seconds=None, bundle_root=None, original_campaign=None,
+            fixture_signer=None, usage_calibration=None, effort=DEFAULT_EFFORT, runtime="codex",
+            claude_binary=None, model=None, runtime_tool_paths=None, sandbox_tool_paths=None,
+            treatment=DEFAULT_TREATMENT):
+    from review_cases import bundle_suite, create_signer, list_cases, prepare_case
     if destination is None:
         destination = Path(tempfile.gettempdir()) / ("reposcout-review-" + os.urandom(12).hex())
-    require((stage in LARGE_STAGES) == (bundle_root is not None),
+    require((stage in BUNDLE_STAGES) == (bundle_root is not None),
             "large stages require an explicit separate fixture bundle")
     require((stage == "large-holdout-original") == (original_campaign is not None),
             "only the original holdout stage references a frozen original campaign")
-    pins = capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file,
-                        timeout_seconds=timeout_seconds, bundle_root=bundle_root, original_campaign=original_campaign,
-                        usage_calibration=usage_calibration)
-    plan = build_plan(stage, seed, pins, list_cases(include_holdout=stage in LARGE_STAGES, bundle_root=bundle_root), include_ablation)
+    if bundle_root is not None:
+        require((stage in COMPLEX_STAGES) == (bundle_suite(bundle_root) == "complex"),
+                "complex stages require a complex fixture bundle and other bundle stages a large one")
+    timeout_ceiling = stage_timeout_seconds(stage)
+    if timeout_seconds is None:
+        timeout_seconds = COMPLEX_TIMEOUT_SECONDS if stage in COMPLEX_STAGES else LIMITS["timeout_seconds"]
+    require(runtime in RUNTIMES, "unknown agent runtime")
+    if runtime == "claude":
+        require(claude_binary is not None and model is not None and codex_binary is None and codex_version is None
+                and usage_calibration is None, "Claude campaigns pin a Claude binary and model only")
+        pins = capture_claude_pins(claude_binary, model, reposcout_binary, skill_dir, controller_ca_file,
+                                   timeout_seconds=timeout_seconds, runtime_tool_paths=runtime_tool_paths,
+                                   sandbox_tool_paths=sandbox_tool_paths, bundle_root=bundle_root,
+                                   original_campaign=original_campaign, effort=effort, timeout_ceiling=timeout_ceiling)
+    else:
+        require(codex_binary is not None and codex_version is not None and claude_binary is None and model is None
+                and sandbox_tool_paths is None, "Codex campaigns pin a Codex binary and version only")
+        pins = capture_pins(codex_binary, codex_version, reposcout_binary, skill_dir, controller_ca_file,
+                            timeout_seconds=timeout_seconds, runtime_tool_paths=runtime_tool_paths,
+                            bundle_root=bundle_root, original_campaign=original_campaign,
+                            usage_calibration=usage_calibration, effort=effort, timeout_ceiling=timeout_ceiling)
+    plan = build_plan(stage, seed, pins, list_cases(include_holdout=stage in BUNDLE_STAGES, bundle_root=bundle_root), include_ablation,
+                      effort=effort, treatment=treatment)
     root, marker = create_campaign_root(destination)
     signer = create_signer(root / "signing") if fixture_signer is None else read_json(fixture_signer)
     write_new(root / "signer.json", signer)
@@ -320,8 +457,8 @@ def prepare(destination, *, stage, seed, codex_binary, codex_version, reposcout_
     if smoke_campaign:
         smoke_root, _ = verify_owned(smoke_campaign)
         smoke = load_plan(smoke_root)
-        require(stage == "exploratory" and smoke["stage"] == "smoke" and smoke["pins"] == pins,
-                "smoke and exploratory conditions differ")
+        require(stage == "exploratory" and smoke["stage"] == "smoke" and smoke["pins"] == pins
+                and plan_treatment(smoke) == treatment, "smoke and exploratory conditions differ")
         plan["smoke_campaign"] = str(smoke_root)
         plan["smoke_plan_sha256"] = smoke["plan_sha256"]
     for assignment in plan["assignments"]:
@@ -346,9 +483,8 @@ def prepare(destination, *, stage, seed, codex_binary, codex_version, reposcout_
                                for step in record["steps"]]
         assignment["step_prompts"] = [make_prompt(step, assignment["variant"])[1] for step in record["steps"]]
         _, assignment["initial_prompt"] = make_prompt(record["steps"][0], assignment["variant"])
-        from codex_isolation import configuration_manifest
         spec, _ = _trial_spec(plan, assignment, record, record["steps"][0], run_dir / "planned-artifacts")
-        assignment["configuration"] = configuration_manifest(spec)
+        assignment["configuration"] = runtime_module(plan, "isolation").configuration_manifest(spec)
         assignment["configuration_sha256"] = fingerprint(assignment["configuration"])
     plan.pop("plan_sha256")
     plan["plan_sha256"] = fingerprint(plan)
@@ -362,7 +498,21 @@ def load_plan(root):
     require(plan.get("schema") == SCHEMA and plan.get("kind") == "codex-review-campaign-plan", "invalid campaign plan")
     require(plan.get("plan_sha256") == fingerprint({key: value for key, value in plan.items() if key != "plan_sha256"}),
             "immutable campaign plan hash mismatch")
-    require(plan.get("model") == MODEL and plan.get("effort") == EFFORT, "unauthorized model or effort")
+    runtime = plan_runtime(plan)
+    require(runtime in RUNTIMES and plan["pins"].get("runtime", "codex") == runtime, "unknown agent runtime")
+    if runtime == "claude":
+        from claude_runner import MODEL_PATTERN
+        authorized_model = (isinstance(plan.get("model"), str) and MODEL_PATTERN.fullmatch(plan["model"]) is not None
+                            and plan["pins"].get("model") == plan["model"])
+    else:
+        authorized_model = plan.get("model") == MODEL
+    require(authorized_model and plan.get("effort") in EFFORTS
+            and plan["pins"].get("effort") == plan["effort"], "unauthorized model or effort")
+    treatment = plan_treatment(plan)
+    require(treatment in SKILL_VARIANTS and ("treatment" not in plan or treatment != DEFAULT_TREATMENT),
+            "unknown treatment arm")
+    require(all(item["variant"] in ("baseline", treatment, "reposcout-cli") for item in plan["assignments"]),
+            "assignment arm differs from the plan treatment")
     assignments = plan["assignments"]
     require(0 < len(assignments) <= 60 and plan["assignment_count"] == len(assignments), "invalid assignment inventory")
     require(len({item["run_id"] for item in assignments}) == len(assignments), "duplicate assignment")
@@ -382,11 +532,21 @@ def load_plan(root):
 def verify_runtime_pins(plan):
     pins = plan["pins"]
     try:
-        actual = capture_pins(pins["codex_binary"], pins["codex_version"], pins["reposcout_binary"], pins["skill_dir"],
-                              pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"],
-                              runtime_tool_paths=pins.get("runtime_tool_paths"), bundle_root=pins.get("case_bundle"),
-                              original_campaign=pins.get("original_campaign"),
-                              usage_calibration=(pins.get("usage_scope_calibration") or {}).get("evidence_path"))
+        if plan_runtime(plan) == "claude":
+            actual = capture_claude_pins(pins["claude_binary"], pins["model"], pins["reposcout_binary"], pins["skill_dir"],
+                                         pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"],
+                                         runtime_tool_paths=pins.get("runtime_tool_paths"),
+                                         sandbox_tool_paths=pins.get("sandbox_tool_paths"),
+                                         bundle_root=pins.get("case_bundle"),
+                                         original_campaign=pins.get("original_campaign"), effort=pins["effort"],
+                                         timeout_ceiling=stage_timeout_seconds(plan["stage"]))
+        else:
+            actual = capture_pins(pins["codex_binary"], pins["codex_version"], pins["reposcout_binary"], pins["skill_dir"],
+                                  pins.get("controller_ca_file"), timeout_seconds=pins["limits"]["timeout_seconds"],
+                                  runtime_tool_paths=pins.get("runtime_tool_paths"), bundle_root=pins.get("case_bundle"),
+                                  original_campaign=pins.get("original_campaign"),
+                                  usage_calibration=(pins.get("usage_scope_calibration") or {}).get("evidence_path"),
+                                  effort=pins["effort"], timeout_ceiling=stage_timeout_seconds(plan["stage"]))
     except CampaignPrerequisiteError:
         raise
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
@@ -487,7 +647,8 @@ def private_probe_auth(controller):
         destination.unlink()
 
 
-def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, timeout=None, usage_baseline=None):
+def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, timeout=None, usage_baseline=None,
+                auth_file=None):
     from codex_runner import TrialSpec
     from review_cases import CHECK_COMMANDS, answer_schema
     pins = plan["pins"]
@@ -496,12 +657,36 @@ def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, time
         checks = [CHECK_COMMANDS[assignment["case_id"]]]
     variant = assignment["variant"]
     prompt, hashes = make_prompt(step, variant)
+    if plan_runtime(plan) == "claude":
+        from claude_runner import ClaudeTrialSpec
+        require(resumed is None and usage_baseline is None, "Claude sessions are never resumed")
+        spec = ClaudeTrialSpec(
+            run_id=assignment["run_id"], workspace=Path(record["workspace"]), artifact_dir=Path(artifact_dir),
+            controller_dir=Path(assignment["run_dir"]) / "controller", claude_binary=Path(pins["claude_binary"]),
+            cli_version=pins["claude_version"], prompt=prompt, answer_schema=answer_schema(), model=plan["model"],
+            effort=plan["effort"], variant=variant,
+            reposcout_binary=None if variant == "baseline" else Path(pins["reposcout_binary"]),
+            skill_dir=Path(pins["skill_dir"]) if variant in SKILL_VARIANTS else None,
+            timeout_seconds=pins["limits"]["timeout_seconds"] if timeout is None else timeout,
+            memory_limit_bytes=pins["limits"]["memory_limit_bytes"],
+            host_memory_reserve_bytes=pins["limits"]["host_memory_reserve_bytes"],
+            max_output_bytes=pins["limits"]["max_output_bytes"], usage_scope=pins["usage_scope"],
+            auth_file=None if auth_file is None else Path(auth_file),
+            expected_claude_sha256=pins["claude_sha256"], controller_ca_file=Path(pins["controller_ca_file"]),
+            expected_controller_ca_sha256=pins["controller_ca_sha256"],
+            expected_reposcout_sha256=pins["reposcout_sha256"] if variant != "baseline" else None,
+            expected_skill_sha256=pins["skill"]["sha256"] if variant in SKILL_VARIANTS else None,
+            expected_workspace_sha256=record.get("public_workspace_sha256"),
+            runtime_tool_paths=pins["runtime_tool_paths"], expected_runtime_tools_sha256=pins["runtime_tools_sha256"],
+            sandbox_tool_paths=pins["sandbox_tool_paths"], expected_sandbox_tools_sha256=pins["sandbox_tools_sha256"],
+            required_runtimes=tuple(sorted({command[0] for command in checks})))
+        return spec, hashes
     spec = TrialSpec(run_id=assignment["run_id"], workspace=Path(record["workspace"]),
                      artifact_dir=Path(artifact_dir), controller_dir=Path(assignment["run_dir"]) / "controller",
                      codex_binary=Path(pins["codex_binary"]), cli_version=pins["codex_version"],
-                     prompt=prompt, answer_schema=answer_schema(), model=MODEL, effort=EFFORT,
+                     prompt=prompt, answer_schema=answer_schema(), model=MODEL, effort=plan["effort"],
                      variant=variant, reposcout_binary=None if variant == "baseline" else Path(pins["reposcout_binary"]),
-                     skill_dir=Path(pins["skill_dir"]) if variant == "reposcout" else None,
+                     skill_dir=Path(pins["skill_dir"]) if variant in SKILL_VARIANTS else None,
                      resume_thread_id=resumed, timeout_seconds=pins["limits"]["timeout_seconds"] if timeout is None else timeout,
                      memory_limit_bytes=pins["limits"]["memory_limit_bytes"],
                      host_memory_reserve_bytes=pins["limits"]["host_memory_reserve_bytes"],
@@ -514,7 +699,7 @@ def _trial_spec(plan, assignment, record, step, artifact_dir, resumed=None, time
                    controller_ca_file=Path(pins["controller_ca_file"]),
                    expected_controller_ca_sha256=pins["controller_ca_sha256"],
                    expected_reposcout_sha256=pins["reposcout_sha256"] if variant != "baseline" else None,
-                   expected_skill_sha256=pins["skill"]["sha256"] if variant == "reposcout" else None,
+                   expected_skill_sha256=pins["skill"]["sha256"] if variant in SKILL_VARIANTS else None,
                    expected_workspace_sha256=record.get("public_workspace_sha256"),
                    runtime_tool_paths=pins.get("runtime_tool_paths"),
                    expected_runtime_tools_sha256=pins.get("runtime_tools_sha256"),
@@ -565,7 +750,9 @@ def preflight_assignment(plan, assignment, record, runner):
     artifacts = Path(tempfile.mkdtemp(prefix="preflight-", dir=directory))
     spec, _ = _trial_spec(plan, assignment, record, record["steps"][0], artifacts)
     try:
-        with private_probe_auth(directory / "controller"):
+        # The Claude preflight authenticates only with its own canary credential.
+        probe_auth = nullcontext() if plan_runtime(plan) == "claude" else private_probe_auth(directory / "controller")
+        with probe_auth:
             result = runner(spec, preflight_only=True)
         write_new(artifacts / "result.json", result)
         if result.get("process_tree_drained") is not True:
@@ -618,9 +805,10 @@ def verify_public_workspace(record, expected_hash):
     record["public_workspace_sha256"] = actual_hash
 
 
-def recover_attempts(assignment, outcome):
+def recover_attempts(assignment, outcome, runtime="codex"):
     """Recover charged attempts even when the runner did not return to the controller."""
-    from codex_trace import aggregate_episode, parse_exec_trace
+    trace_adapter = runtime_module({"runtime": runtime}, "trace")
+    aggregate_episode, parse_exec_trace = trace_adapter.aggregate_episode, trace_adapter.parse_exec_trace
     directory = Path(assignment["run_dir"])
     known = {item["step_id"]: item for item in outcome.get("invocations", [])}
     invocations, traces = [], []
@@ -690,12 +878,14 @@ def recover_attempts(assignment, outcome):
 
 
 def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=True):
-    from codex_trace import aggregate_episode, extract_execution_evidence, parse_exec_trace
     from review_cases import activate_step
     from review_grading import grade_episode
+    trace_adapter = runtime_module(plan, "trace")
+    aggregate_episode, parse_exec_trace = trace_adapter.aggregate_episode, trace_adapter.parse_exec_trace
+    extract_execution_evidence = trace_adapter.extract_execution_evidence
+    claude = plan_runtime(plan) == "claude"
     if runner is None:
-        from codex_runner import run_trial
-        runner = run_trial
+        runner = runtime_module(plan, "runner").run_trial
     run_dir = Path(assignment["run_dir"])
     require(not (run_dir / "started.json").exists() and not (run_dir / "outcome.json").exists(),
             "assigned run has already started; adverse outcomes cannot be replaced")
@@ -719,7 +909,9 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
     episode_start = time.monotonic()
     phase, index = "authentication", None
     try:
-        with private_auth_copy(auth_file, run_dir / "controller"):
+        # Claude reads only its access token, after its preflight, and never stages the credential.
+        require(not claude or auth_file is not None, "live execution requires a private authentication source")
+        with nullcontext() if claude else private_auth_copy(auth_file, run_dir / "controller"):
             thread = None
             usage_baseline = None
             for index in range(len(record["steps"])):
@@ -746,7 +938,7 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                 artifacts.mkdir(mode=0o700)
                 step = record["steps"][index]
                 spec, hashes = _trial_spec(plan, assignment, record, step, artifacts, thread, remaining,
-                                           usage_baseline=usage_baseline)
+                                           usage_baseline=usage_baseline, **({"auth_file": auth_file} if claude else {}))
                 if "step_prompts" in assignment:
                     require(hashes == assignment["step_prompts"][index], "assigned prompt drifted after planning")
                 write_new(directory / "prompt.json", {"prompt": spec.prompt, **hashes})
@@ -822,7 +1014,7 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
         except (InvalidLedger, ValueError, KeyError, TypeError) as error:
             outcome["errors"].append(_safe_error(error, phase="episode-accounting", private_directory=run_dir))
     outcome["wall_seconds"] = round(time.monotonic() - episode_start, 6)
-    recover_attempts(assignment, outcome)
+    recover_attempts(assignment, outcome, plan_runtime(plan))
     write_new(run_dir / "outcome.json", outcome)
     return outcome
 
@@ -878,8 +1070,7 @@ def run(root, *, auth_file=None, limit=None, preflight_only=False, runner=None, 
         if plan["stage"] == "exploratory":
             smoke_qualified(plan)
     if runner is None:
-        from codex_runner import run_trial
-        runner = run_trial
+        runner = runtime_module(plan, "runner").run_trial
     results = []
     with campaign_lock(root):
         for assignment in plan["assignments"]:
@@ -1005,20 +1196,27 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     create = commands.add_parser("prepare")
     create.add_argument("campaign", nargs="?", help="Private campaign outside Git; defaults to a fresh temporary directory")
-    create.add_argument("--stage", choices=("smoke", "exploratory", *LARGE_STAGES), required=True)
+    create.add_argument("--stage", choices=("smoke", "exploratory", *BUNDLE_STAGES), required=True)
     create.add_argument("--seed", type=int, required=True)
-    create.add_argument("--codex-binary", required=True)
-    create.add_argument("--codex-version", required=True)
+    create.add_argument("--runtime", choices=RUNTIMES, default="codex", help="Agent runtime; results compare only within one runtime")
+    create.add_argument("--codex-binary")
+    create.add_argument("--codex-version")
+    create.add_argument("--claude-binary", help="Claude Code executable for the claude runtime")
+    create.add_argument("--model", help="Explicit Claude model identity for the claude runtime")
     create.add_argument("--reposcout-binary", required=True)
     create.add_argument("--skill-dir", default=str(ROOT / "skills/reposcout"))
+    create.add_argument("--treatment", choices=SKILL_VARIANTS, default=DEFAULT_TREATMENT,
+                        help="Skill arm paired with baseline: neutral adoption or guided use; never pooled")
     create.add_argument("--ablation", action="store_true")
     create.add_argument("--smoke-campaign")
-    create.add_argument("--case-bundle", help="Separate bounded source/oracle bundle for a large stage")
+    create.add_argument("--case-bundle", help="Separate bounded source/oracle bundle for a large or complex stage")
     create.add_argument("--original-campaign", help="Original development plan that validated the historical canonical treatment")
     create.add_argument("--fixture-signer", help="Private disposable signer record shared by matched campaign versions")
     create.add_argument("--controller-ca-file")
     create.add_argument("--usage-calibration", help="Private counter-scope proof bound to the chosen runtime")
-    create.add_argument("--timeout-seconds", type=float, default=LIMITS["timeout_seconds"])
+    create.add_argument("--effort", choices=EFFORTS, default=DEFAULT_EFFORT, help="Reasoning effort recorded in the plan")
+    create.add_argument("--timeout-seconds", type=float,
+                        help="Per-episode timeout; defaults to 180 seconds, or 1200 for complex stages")
     execute = commands.add_parser("run")
     execute.add_argument("campaign")
     execute.add_argument("--auth-file")
@@ -1044,13 +1242,21 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "prepare":
+            if args.runtime == "codex" and (args.codex_binary is None or args.codex_version is None
+                                            or args.claude_binary is not None or args.model is not None):
+                parser.error("the codex runtime requires --codex-binary and --codex-version only")
+            if args.runtime == "claude" and (args.claude_binary is None or args.model is None
+                                             or args.codex_binary is not None or args.codex_version is not None):
+                parser.error("the claude runtime requires --claude-binary and --model only")
             destination = args.campaign or (Path(tempfile.gettempdir()) / ("reposcout-review-" + os.urandom(12).hex()))
             plan = prepare(destination, stage=args.stage, seed=args.seed, codex_binary=args.codex_binary,
                            codex_version=args.codex_version, reposcout_binary=args.reposcout_binary,
                            skill_dir=args.skill_dir, include_ablation=args.ablation, smoke_campaign=args.smoke_campaign,
                            controller_ca_file=args.controller_ca_file, timeout_seconds=args.timeout_seconds,
                            bundle_root=args.case_bundle, original_campaign=args.original_campaign,
-                           fixture_signer=args.fixture_signer, usage_calibration=args.usage_calibration)
+                           fixture_signer=args.fixture_signer, usage_calibration=args.usage_calibration,
+                           effort=args.effort, runtime=args.runtime, claude_binary=args.claude_binary, model=args.model,
+                           treatment=args.treatment)
             result = {"plan_sha256": plan["plan_sha256"], "assignment_count": plan["assignment_count"],
                       "private_campaign": str(Path(destination).absolute())}
         elif args.command == "run":

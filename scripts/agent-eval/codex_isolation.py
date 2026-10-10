@@ -11,7 +11,8 @@ import tempfile
 
 
 ISOLATION_VERSION = 1
-VARIANTS = ("baseline", "reposcout", "reposcout-cli")
+VARIANTS = ("baseline", "reposcout", "reposcout-guided", "reposcout-cli")
+SKILL_VARIANTS = ("reposcout", "reposcout-guided")
 MAX_PUBLIC_BYTES = 64 * 1024 * 1024
 MAX_PUBLIC_FILES = 4096
 MAX_RUNTIME_FILE_BYTES = 512 * 1024 * 1024
@@ -25,6 +26,8 @@ RUNTIME_TOOLS = (
     "bash", "sh", "cat", "nl", "ls", "head", "tail", "sed", "awk", "grep", "rg", "git",
     "python3", "node", "jq", "find", "sort", "cut", "wc", "pwd", "basename",
     "dirname", "readlink", "stat", "file", "env", "timeout", "sleep", "printf",
+    "mkdir", "mktemp", "rm", "cp", "mv", "touch", "tee", "tar", "tr", "diff", "which",
+    "xargs", "uniq",
 )
 REQUIRED_RUNTIME_TOOLS = ("bash", "sh", "git", "rg", "python3")
 RUNTIME_PROBES = {
@@ -283,7 +286,7 @@ def _validate_spec(spec):
         raise IsolationError("Baseline cannot receive RepoScout or its skill")
     if spec.variant != "baseline" and spec.reposcout_binary is None:
         raise IsolationError("RepoScout arm requires a pinned binary")
-    if (spec.variant == "reposcout") != (spec.skill_dir is not None):
+    if (spec.variant in SKILL_VARIANTS) != (spec.skill_dir is not None):
         raise IsolationError("Only the skill arm may receive the RepoScout skill")
     workspace = Path(spec.workspace).resolve(strict=True)
     validate_public_tree(workspace)

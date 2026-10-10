@@ -8,6 +8,13 @@ within their section.
 
 ### Added
 
+- Add a Claude Code runtime to the local review evaluations, isolated and accounted like the
+  Codex runtime, and a `reposcout-guided` arm whose task names the skill; guided and neutral
+  results are never pooled. Add generated complex TypeScript review stages
+  (`complex-development`, sealed `complex-holdout`) of about 500 files with 15k–100k-token
+  diffs and a 1,200-second episode limit. Sandboxed runs also provide common file utilities
+  such as `mkdir`, `mktemp`, `rm`, `tar` and `diff`.
+
 - Add `review-context --brief`, a compact Table/Markdown review brief with changed definitions,
   diff hunks, direct consumers, nonzero analysis gaps and head-snapshot doc mentions under a
   3,000-token default budget. Direct importers without resolved call/reference evidence, such as

@@ -45,6 +45,15 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(InvalidLedger):
             publication.project_publication({**private_report(), "assignment_count": 4})
 
+    def test_guided_arm_is_a_distinct_public_variant(self):
+        report = private_report()
+        report["runs"][1]["variant"] = "reposcout-guided"
+        self.assertEqual([row["variant"] for row in publication.project_publication(report)["runs"]],
+                         ["baseline", "reposcout-guided", "reposcout-cli"])
+        report["runs"][1]["variant"] = "guided"
+        with self.assertRaises(InvalidLedger):
+            publication.project_publication(report)
+
     def test_allowlist_omits_private_fields_at_every_source_level(self):
         report = private_report()
         private = {"host_path": "/home/private-user/checkout", "session": "private-session",

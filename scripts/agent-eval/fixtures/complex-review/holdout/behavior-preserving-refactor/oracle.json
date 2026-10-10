@@ -1,0 +1,2293 @@
+{
+  "domain_expected": {
+    "base": {
+      "aging": {
+        "aging": {
+          "-1": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 5355
+          },
+          "0": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 5355
+          },
+          "1": {
+            "1-30": 5355,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "120": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 5355,
+            "current": 0
+          },
+          "30": {
+            "1-30": 5355,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "31": {
+            "1-30": 0,
+            "31-60": 5355,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "60": {
+            "1-30": 0,
+            "31-60": 5355,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "61": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 5355,
+            "90+": 0,
+            "current": 0
+          },
+          "90": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 5355,
+            "90+": 0,
+            "current": 0
+          },
+          "91": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 5355,
+            "current": 0
+          }
+        },
+        "collections": {
+          "audit": 5,
+          "contracts": 0,
+          "creditNotes": 0,
+          "customers": 1,
+          "invoices": 1,
+          "jobs": 1,
+          "notes": 0,
+          "notifications": 3,
+          "preferences": 0,
+          "reservations": 0,
+          "sites": 1,
+          "slaClocks": 0,
+          "technicians": 1,
+          "timeEntries": 0,
+          "webhooks": 0
+        }
+      },
+      "catalog": {
+        "behaviour": {
+          "ac-repair": {
+            "checklist": [
+              "leak test",
+              "refrigerant recovered or topped up"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "backflow-test": {
+            "checklist": [
+              "test kit calibrated",
+              "differential pressure recorded"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "boiler-repair": {
+            "checklist": [
+              "fault diagnosed",
+              "repair completed",
+              "flue gas analysis"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "high",
+            "withoutAsset": "422:asset-required"
+          },
+          "boiler-service": {
+            "checklist": [
+              "flue gas analysis",
+              "pressure check",
+              "condensate trap cleaned",
+              "safety devices tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "chiller-maintenance": {
+            "checklist": [
+              "oil sample taken",
+              "condenser cleaned",
+              "controls calibrated",
+              "log sheet completed"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "commissioning": {
+            "checklist": [
+              "design parameters confirmed",
+              "performance recorded",
+              "handover pack"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "drain-clearance": {
+            "checklist": [
+              "flow test"
+            ],
+            "minimalCompletion": 200,
+            "priority": "high",
+            "withoutAsset": 201
+          },
+          "duct-cleaning": {
+            "checklist": [
+              "access panels fitted",
+              "before photos",
+              "after photos"
+            ],
+            "minimalCompletion": 200,
+            "priority": "low",
+            "withoutAsset": 201
+          },
+          "elevator-inspection": {
+            "checklist": [
+              "brake test",
+              "door interlocks",
+              "alarm line",
+              "pit inspection"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "emergency-callout": {
+            "checklist": [
+              "site made safe"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "emergency",
+            "withoutAsset": 201
+          },
+          "fire-panel-inspection": {
+            "checklist": [
+              "panel log reviewed",
+              "detectors sampled",
+              "sounders tested",
+              "batteries load tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "gas-safety-check": {
+            "checklist": [
+              "appliances tested",
+              "flues inspected",
+              "certificate issued"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": 201
+          },
+          "general": {
+            "checklist": [
+              "site left clean"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": 201
+          },
+          "generator-load-test": {
+            "checklist": [
+              "load bank connected",
+              "load steps recorded",
+              "fuel level recorded",
+              "transfer switch tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "heat-pump-install": {
+            "checklist": [
+              "site survey confirmed",
+              "unit mounted",
+              "pipework pressure tested",
+              "commissioned",
+              "customer handover"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": 201
+          },
+          "heat-pump-service": {
+            "checklist": [
+              "refrigerant pressures logged",
+              "coil cleaned",
+              "defrost cycle tested",
+              "filters replaced"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "leak-investigation": {
+            "checklist": [
+              "moisture readings",
+              "source located or ruled out"
+            ],
+            "minimalCompletion": 200,
+            "priority": "high",
+            "withoutAsset": 201
+          },
+          "solar-inverter-repair": {
+            "checklist": [
+              "dc isolation confirmed",
+              "fault codes recorded",
+              "output verified"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "thermostat-install": {
+            "checklist": [
+              "wiring checked",
+              "app paired",
+              "schedule configured"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": 201
+          },
+          "water-heater-replace": {
+            "checklist": [
+              "old unit drained",
+              "new unit installed",
+              "temperature relief valve tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          }
+        },
+        "collections": {
+          "assets": 1,
+          "audit": 5,
+          "contracts": 0,
+          "customers": 1,
+          "jobs": 20,
+          "notes": 0,
+          "notifications": 48,
+          "preferences": 0,
+          "reservations": 0,
+          "sites": 1,
+          "slaClocks": 0,
+          "technicians": 2,
+          "webhooks": 0
+        },
+        "listed": [
+          {
+            "defaultDurationMinutes": 90,
+            "defaultPriority": "normal",
+            "key": "ac-repair",
+            "label": "Air conditioning repair",
+            "requiresAsset": true,
+            "skills": [
+              "refrigerant"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 45,
+            "defaultPriority": "low",
+            "key": "backflow-test",
+            "label": "Backflow preventer test",
+            "requiresAsset": true,
+            "skills": [
+              "plumbing",
+              "backflow"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 120,
+            "defaultPriority": "high",
+            "key": "boiler-repair",
+            "label": "Boiler breakdown repair",
+            "requiresAsset": true,
+            "skills": [
+              "gas-safe"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 75,
+            "defaultPriority": "low",
+            "key": "boiler-service",
+            "label": "Annual boiler service",
+            "requiresAsset": true,
+            "skills": [
+              "gas-safe"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 240,
+            "defaultPriority": "normal",
+            "key": "chiller-maintenance",
+            "label": "Chiller maintenance",
+            "requiresAsset": true,
+            "skills": [
+              "refrigerant",
+              "hvac-commercial"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 180,
+            "defaultPriority": "normal",
+            "key": "commissioning",
+            "label": "System commissioning",
+            "requiresAsset": true,
+            "skills": [
+              "commissioning"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "high",
+            "key": "drain-clearance",
+            "label": "Drain clearance",
+            "requiresAsset": false,
+            "skills": [
+              "drainage"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 240,
+            "defaultPriority": "low",
+            "key": "duct-cleaning",
+            "label": "Ductwork cleaning",
+            "requiresAsset": false,
+            "skills": [
+              "hvac-commercial"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 150,
+            "defaultPriority": "normal",
+            "key": "elevator-inspection",
+            "label": "Elevator inspection",
+            "requiresAsset": true,
+            "skills": [
+              "lifts"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "emergency",
+            "key": "emergency-callout",
+            "label": "Emergency callout",
+            "requiresAsset": false,
+            "skills": []
+          },
+          {
+            "defaultDurationMinutes": 120,
+            "defaultPriority": "normal",
+            "key": "fire-panel-inspection",
+            "label": "Fire panel inspection",
+            "requiresAsset": true,
+            "skills": [
+              "fire-safety"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 45,
+            "defaultPriority": "low",
+            "key": "gas-safety-check",
+            "label": "Landlord gas safety check",
+            "requiresAsset": false,
+            "skills": [
+              "gas-safe"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "normal",
+            "key": "general",
+            "label": "General maintenance",
+            "requiresAsset": false,
+            "skills": []
+          },
+          {
+            "defaultDurationMinutes": 180,
+            "defaultPriority": "low",
+            "key": "generator-load-test",
+            "label": "Generator load bank test",
+            "requiresAsset": true,
+            "skills": [
+              "electrical",
+              "generators"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 960,
+            "defaultPriority": "normal",
+            "key": "heat-pump-install",
+            "label": "Heat pump installation",
+            "requiresAsset": false,
+            "skills": [
+              "refrigerant",
+              "electrical",
+              "commissioning"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 90,
+            "defaultPriority": "low",
+            "key": "heat-pump-service",
+            "label": "Heat pump service",
+            "requiresAsset": true,
+            "skills": [
+              "refrigerant",
+              "electrical"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 90,
+            "defaultPriority": "high",
+            "key": "leak-investigation",
+            "label": "Leak investigation",
+            "requiresAsset": false,
+            "skills": [
+              "plumbing"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 120,
+            "defaultPriority": "normal",
+            "key": "solar-inverter-repair",
+            "label": "Solar inverter repair",
+            "requiresAsset": true,
+            "skills": [
+              "electrical",
+              "solar"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "low",
+            "key": "thermostat-install",
+            "label": "Smart thermostat installation",
+            "requiresAsset": false,
+            "skills": [
+              "electrical"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 240,
+            "defaultPriority": "normal",
+            "key": "water-heater-replace",
+            "label": "Water heater replacement",
+            "requiresAsset": true,
+            "skills": [
+              "plumbing",
+              "electrical"
+            ]
+          }
+        ]
+      },
+      "edges": {
+        "availability": [
+          "2026-03-09 200 17",
+          "2026-03-10 200 0",
+          "2026-03-11 200 0",
+          "2026-03-12 200 17"
+        ],
+        "entries": [
+          "09:00-10:00 201",
+          "10:00-10:30 201",
+          "08:30-09:00 201",
+          "09:59-10:15 409:overlapping-entry",
+          "08:00-09:01 409:overlapping-entry",
+          "08:00-11:00 409:overlapping-entry",
+          "09:15-09:45 409:overlapping-entry"
+        ]
+      },
+      "permissionMatrix": {
+        "GET /assets/by-serial/:serial": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /assets/due": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /audit/:subject": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /config": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /contracts/:id": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/contracts": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/invoices": "200 403:forbidden 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/quotes": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/sites": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/statement": "200 403:forbidden 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /dispatch/board": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /dispatch/capacity": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /dispatch/rules": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /exports/journal": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 401:unauthenticated 401:unauthenticated",
+        "GET /health": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "GET /inventory/valuation": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /invoices/:id": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /invoices/:id/late-fee": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /invoices/overdue": "200 403:forbidden 200 403:forbidden 403:forbidden 200 401:unauthenticated 401:unauthenticated",
+        "GET /jobs": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/notifications": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/recommendations": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/reservations": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/sla": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/timeline": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /notifications": "200 200 403:forbidden 403:forbidden 403:forbidden 200 401:unauthenticated 401:unauthenticated",
+        "GET /notifications/templates": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /parts": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /quotes/:id": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/activity": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/backlog": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/kpis": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/revenue": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/utilisation": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /sites/:id/assets": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "GET /sites/:id/coverage": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /sla/compliance": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /stock/:location": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /stock/:location/reorder": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /tariffs/:region": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /technicians": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/load": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/mileage": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/route": "404:not-found 404:not-found 404:not-found 404:not-found 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/slots": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/timesheet": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/certifications/expiring": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /time-entries/pending": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /webhooks/deliveries": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /webhooks/topics": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /work-types": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "PATCH /customers/:id": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PATCH /parts/:sku/price": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/cancel": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/confirm": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/no-access": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/reschedule": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /assets": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /assets/:id/retire": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /clock/in": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /clock/out": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts/:id/activate": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts/:id/terminate": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts/roll": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/close": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/portal-users": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/reactivate": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/sites": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/suspend": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/credit-notes": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/issue": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/payments": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/void": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 422:invalid-input 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/assign": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/cancel": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/close": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/complete": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/follow-ups": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/hold": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/invoice": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/notes": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/reopen": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/reservations": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/resume": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/schedule": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/start": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /notifications/flush": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /parts": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /parts/:sku/discontinue": "404:not-found 403:forbidden 403:forbidden 404:not-found 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /quotes": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/:id/accept": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/:id/decline": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/:id/send": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/expire": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /sla/scan": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /stock/counts": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /stock/receipts": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /stock/transfers": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /technicians": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /technicians/:id/absences": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /technicians/:id/deactivate": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries/:id/correct": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries/:id/reject": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries/approve": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /webhooks": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /jobs/:id/checklist": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /preferences/:recipient": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /sites/:id/access": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /technicians/:id/certifications": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated"
+      },
+      "regions": {
+        "capital": {
+          "lines": [
+            [
+              "callout",
+              1,
+              5500,
+              5500
+            ],
+            [
+              "labor",
+              1.75,
+              7900,
+              13825
+            ],
+            [
+              "after-hours",
+              0.5,
+              13825,
+              6913
+            ],
+            [
+              "travel",
+              19,
+              110,
+              2090
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 17500,
+            "calloutFeeCents": 5500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-CA-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 5200,
+              "specialist": 10500,
+              "standard": 7900
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 3000,
+            "region": "capital",
+            "taxRateBp": 1900,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 110
+          },
+          "totals": [
+            28328,
+            5382,
+            33710
+          ]
+        },
+        "coastal": {
+          "lines": [
+            [
+              "callout",
+              1,
+              4000,
+              4000
+            ],
+            [
+              "labor",
+              1.75,
+              6800,
+              11900
+            ],
+            [
+              "after-hours",
+              0.5,
+              11900,
+              5950
+            ],
+            [
+              "travel",
+              14,
+              85,
+              1190
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 17500,
+            "calloutFeeCents": 4000,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-CO-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 4500,
+              "specialist": 9200,
+              "standard": 6800
+            },
+            "minimumLaborMinutes": 45,
+            "partsMarkupBp": 2200,
+            "region": "coastal",
+            "taxRateBp": 1900,
+            "travelFreeKm": 5,
+            "travelRatePerKmCents": 85
+          },
+          "totals": [
+            23040,
+            4378,
+            27418
+          ]
+        },
+        "highlands": {
+          "lines": [
+            [
+              "callout",
+              1,
+              3000,
+              3000
+            ],
+            [
+              "labor",
+              2,
+              6200,
+              12400
+            ],
+            [
+              "after-hours",
+              0.5,
+              12400,
+              6200
+            ],
+            [
+              "travel-time",
+              0.75,
+              6200,
+              4650
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 20000,
+            "calloutFeeCents": 3000,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": true,
+            "currency": "EUR",
+            "id": "T-HL-2026",
+            "laborIncrementMinutes": 30,
+            "laborRates": {
+              "apprentice": 4100,
+              "specialist": 8600,
+              "standard": 6200
+            },
+            "minimumLaborMinutes": 90,
+            "partsMarkupBp": 2000,
+            "region": "highlands",
+            "taxRateBp": 1900,
+            "travelFreeKm": 20,
+            "travelRatePerKmCents": 75
+          },
+          "totals": [
+            26250,
+            4988,
+            31238
+          ]
+        },
+        "lakeside": {
+          "lines": [
+            [
+              "callout",
+              1,
+              9000,
+              9000
+            ],
+            [
+              "labor",
+              1.75,
+              11200,
+              19600
+            ],
+            [
+              "after-hours",
+              0.5,
+              16800,
+              8400
+            ],
+            [
+              "travel",
+              19,
+              140,
+              2660
+            ],
+            [
+              "rounding",
+              1,
+              -2,
+              -2
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 9000,
+            "cashRoundingCents": 5,
+            "chargeTravelTime": false,
+            "currency": "CHF",
+            "id": "T-LS-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 7800,
+              "specialist": 14500,
+              "standard": 11200
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 1800,
+            "region": "lakeside",
+            "taxRateBp": 810,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 140
+          },
+          "totals": [
+            39658,
+            3212,
+            42870
+          ]
+        },
+        "metro-east": {
+          "lines": [
+            [
+              "callout",
+              1,
+              4500,
+              4500
+            ],
+            [
+              "labor",
+              1.75,
+              7200,
+              12600
+            ],
+            [
+              "after-hours",
+              0.5,
+              10800,
+              5400
+            ],
+            [
+              "travel",
+              19,
+              95,
+              1805
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 4500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-ME-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 4800,
+              "specialist": 9600,
+              "standard": 7200
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2500,
+            "region": "metro-east",
+            "taxRateBp": 1900,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 95
+          },
+          "totals": [
+            24305,
+            4618,
+            28923
+          ]
+        },
+        "metro-west": {
+          "lines": [
+            [
+              "callout",
+              1,
+              4500,
+              4500
+            ],
+            [
+              "labor",
+              1.75,
+              7400,
+              12950
+            ],
+            [
+              "after-hours",
+              0.5,
+              11100,
+              5550
+            ],
+            [
+              "travel",
+              19,
+              95,
+              1805
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 4500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-MW-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 4900,
+              "specialist": 9900,
+              "standard": 7400
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2500,
+            "region": "metro-west",
+            "taxRateBp": 1900,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 95
+          },
+          "totals": [
+            24805,
+            4713,
+            29518
+          ]
+        },
+        "northern-hills": {
+          "lines": [
+            [
+              "callout",
+              1,
+              3500,
+              3500
+            ],
+            [
+              "labor",
+              2,
+              6400,
+              12800
+            ],
+            [
+              "after-hours",
+              0.5,
+              9600,
+              4800
+            ],
+            [
+              "travel",
+              9,
+              80,
+              720
+            ],
+            [
+              "travel-time",
+              0.75,
+              6400,
+              4800
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 3500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": true,
+            "currency": "EUR",
+            "id": "T-NH-2026",
+            "laborIncrementMinutes": 30,
+            "laborRates": {
+              "apprentice": 4200,
+              "specialist": 8800,
+              "standard": 6400
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2000,
+            "region": "northern-hills",
+            "taxRateBp": 1900,
+            "travelFreeKm": 10,
+            "travelRatePerKmCents": 80
+          },
+          "totals": [
+            26620,
+            5058,
+            31678
+          ]
+        },
+        "valley": {
+          "lines": [
+            [
+              "callout",
+              1,
+              3500,
+              3500
+            ],
+            [
+              "labor",
+              2,
+              6500,
+              13000
+            ],
+            [
+              "after-hours",
+              0.5,
+              9750,
+              4875
+            ],
+            [
+              "travel",
+              4,
+              80,
+              320
+            ],
+            [
+              "travel-time",
+              0.75,
+              6500,
+              4875
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 3500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": true,
+            "currency": "EUR",
+            "id": "T-VA-2026",
+            "laborIncrementMinutes": 30,
+            "laborRates": {
+              "apprentice": 4300,
+              "specialist": 8900,
+              "standard": 6500
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2000,
+            "region": "valley",
+            "taxRateBp": 1900,
+            "travelFreeKm": 15,
+            "travelRatePerKmCents": 80
+          },
+          "totals": [
+            26570,
+            5048,
+            31618
+          ]
+        }
+      }
+    },
+    "head": {
+      "aging": {
+        "aging": {
+          "-1": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 5355
+          },
+          "0": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 5355
+          },
+          "1": {
+            "1-30": 5355,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "120": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 5355,
+            "current": 0
+          },
+          "30": {
+            "1-30": 5355,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "31": {
+            "1-30": 0,
+            "31-60": 5355,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "60": {
+            "1-30": 0,
+            "31-60": 5355,
+            "61-90": 0,
+            "90+": 0,
+            "current": 0
+          },
+          "61": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 5355,
+            "90+": 0,
+            "current": 0
+          },
+          "90": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 5355,
+            "90+": 0,
+            "current": 0
+          },
+          "91": {
+            "1-30": 0,
+            "31-60": 0,
+            "61-90": 0,
+            "90+": 5355,
+            "current": 0
+          }
+        },
+        "collections": {
+          "audit": 5,
+          "contracts": 0,
+          "creditNotes": 0,
+          "customers": 1,
+          "invoices": 1,
+          "jobs": 1,
+          "notes": 0,
+          "notifications": 3,
+          "preferences": 0,
+          "reservations": 0,
+          "sites": 1,
+          "slaClocks": 0,
+          "technicians": 1,
+          "timeEntries": 0,
+          "webhooks": 0
+        }
+      },
+      "catalog": {
+        "behaviour": {
+          "ac-repair": {
+            "checklist": [
+              "leak test",
+              "refrigerant recovered or topped up"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "backflow-test": {
+            "checklist": [
+              "test kit calibrated",
+              "differential pressure recorded"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "boiler-repair": {
+            "checklist": [
+              "fault diagnosed",
+              "repair completed",
+              "flue gas analysis"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "high",
+            "withoutAsset": "422:asset-required"
+          },
+          "boiler-service": {
+            "checklist": [
+              "flue gas analysis",
+              "pressure check",
+              "condensate trap cleaned",
+              "safety devices tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "chiller-maintenance": {
+            "checklist": [
+              "oil sample taken",
+              "condenser cleaned",
+              "controls calibrated",
+              "log sheet completed"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "commissioning": {
+            "checklist": [
+              "design parameters confirmed",
+              "performance recorded",
+              "handover pack"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "drain-clearance": {
+            "checklist": [
+              "flow test"
+            ],
+            "minimalCompletion": 200,
+            "priority": "high",
+            "withoutAsset": 201
+          },
+          "duct-cleaning": {
+            "checklist": [
+              "access panels fitted",
+              "before photos",
+              "after photos"
+            ],
+            "minimalCompletion": 200,
+            "priority": "low",
+            "withoutAsset": 201
+          },
+          "elevator-inspection": {
+            "checklist": [
+              "brake test",
+              "door interlocks",
+              "alarm line",
+              "pit inspection"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "emergency-callout": {
+            "checklist": [
+              "site made safe"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "emergency",
+            "withoutAsset": 201
+          },
+          "fire-panel-inspection": {
+            "checklist": [
+              "panel log reviewed",
+              "detectors sampled",
+              "sounders tested",
+              "batteries load tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "gas-safety-check": {
+            "checklist": [
+              "appliances tested",
+              "flues inspected",
+              "certificate issued"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": 201
+          },
+          "general": {
+            "checklist": [
+              "site left clean"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": 201
+          },
+          "generator-load-test": {
+            "checklist": [
+              "load bank connected",
+              "load steps recorded",
+              "fuel level recorded",
+              "transfer switch tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "heat-pump-install": {
+            "checklist": [
+              "site survey confirmed",
+              "unit mounted",
+              "pipework pressure tested",
+              "commissioned",
+              "customer handover"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": 201
+          },
+          "heat-pump-service": {
+            "checklist": [
+              "refrigerant pressures logged",
+              "coil cleaned",
+              "defrost cycle tested",
+              "filters replaced"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": "422:asset-required"
+          },
+          "leak-investigation": {
+            "checklist": [
+              "moisture readings",
+              "source located or ruled out"
+            ],
+            "minimalCompletion": 200,
+            "priority": "high",
+            "withoutAsset": 201
+          },
+          "solar-inverter-repair": {
+            "checklist": [
+              "dc isolation confirmed",
+              "fault codes recorded",
+              "output verified"
+            ],
+            "minimalCompletion": 200,
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          },
+          "thermostat-install": {
+            "checklist": [
+              "wiring checked",
+              "app paired",
+              "schedule configured"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "low",
+            "withoutAsset": 201
+          },
+          "water-heater-replace": {
+            "checklist": [
+              "old unit drained",
+              "new unit installed",
+              "temperature relief valve tested"
+            ],
+            "minimalCompletion": "422:completion-rejected",
+            "priority": "normal",
+            "withoutAsset": "422:asset-required"
+          }
+        },
+        "collections": {
+          "assets": 1,
+          "audit": 5,
+          "contracts": 0,
+          "customers": 1,
+          "jobs": 20,
+          "notes": 0,
+          "notifications": 48,
+          "preferences": 0,
+          "reservations": 0,
+          "sites": 1,
+          "slaClocks": 0,
+          "technicians": 2,
+          "webhooks": 0
+        },
+        "listed": [
+          {
+            "defaultDurationMinutes": 90,
+            "defaultPriority": "normal",
+            "key": "ac-repair",
+            "label": "Air conditioning repair",
+            "requiresAsset": true,
+            "skills": [
+              "refrigerant"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 45,
+            "defaultPriority": "low",
+            "key": "backflow-test",
+            "label": "Backflow preventer test",
+            "requiresAsset": true,
+            "skills": [
+              "plumbing",
+              "backflow"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 120,
+            "defaultPriority": "high",
+            "key": "boiler-repair",
+            "label": "Boiler breakdown repair",
+            "requiresAsset": true,
+            "skills": [
+              "gas-safe"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 75,
+            "defaultPriority": "low",
+            "key": "boiler-service",
+            "label": "Annual boiler service",
+            "requiresAsset": true,
+            "skills": [
+              "gas-safe"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 240,
+            "defaultPriority": "normal",
+            "key": "chiller-maintenance",
+            "label": "Chiller maintenance",
+            "requiresAsset": true,
+            "skills": [
+              "refrigerant",
+              "hvac-commercial"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 180,
+            "defaultPriority": "normal",
+            "key": "commissioning",
+            "label": "System commissioning",
+            "requiresAsset": true,
+            "skills": [
+              "commissioning"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "high",
+            "key": "drain-clearance",
+            "label": "Drain clearance",
+            "requiresAsset": false,
+            "skills": [
+              "drainage"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 240,
+            "defaultPriority": "low",
+            "key": "duct-cleaning",
+            "label": "Ductwork cleaning",
+            "requiresAsset": false,
+            "skills": [
+              "hvac-commercial"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 150,
+            "defaultPriority": "normal",
+            "key": "elevator-inspection",
+            "label": "Elevator inspection",
+            "requiresAsset": true,
+            "skills": [
+              "lifts"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "emergency",
+            "key": "emergency-callout",
+            "label": "Emergency callout",
+            "requiresAsset": false,
+            "skills": []
+          },
+          {
+            "defaultDurationMinutes": 120,
+            "defaultPriority": "normal",
+            "key": "fire-panel-inspection",
+            "label": "Fire panel inspection",
+            "requiresAsset": true,
+            "skills": [
+              "fire-safety"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 45,
+            "defaultPriority": "low",
+            "key": "gas-safety-check",
+            "label": "Landlord gas safety check",
+            "requiresAsset": false,
+            "skills": [
+              "gas-safe"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "normal",
+            "key": "general",
+            "label": "General maintenance",
+            "requiresAsset": false,
+            "skills": []
+          },
+          {
+            "defaultDurationMinutes": 180,
+            "defaultPriority": "low",
+            "key": "generator-load-test",
+            "label": "Generator load bank test",
+            "requiresAsset": true,
+            "skills": [
+              "electrical",
+              "generators"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 960,
+            "defaultPriority": "normal",
+            "key": "heat-pump-install",
+            "label": "Heat pump installation",
+            "requiresAsset": false,
+            "skills": [
+              "refrigerant",
+              "electrical",
+              "commissioning"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 90,
+            "defaultPriority": "low",
+            "key": "heat-pump-service",
+            "label": "Heat pump service",
+            "requiresAsset": true,
+            "skills": [
+              "refrigerant",
+              "electrical"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 90,
+            "defaultPriority": "high",
+            "key": "leak-investigation",
+            "label": "Leak investigation",
+            "requiresAsset": false,
+            "skills": [
+              "plumbing"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 120,
+            "defaultPriority": "normal",
+            "key": "solar-inverter-repair",
+            "label": "Solar inverter repair",
+            "requiresAsset": true,
+            "skills": [
+              "electrical",
+              "solar"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 60,
+            "defaultPriority": "low",
+            "key": "thermostat-install",
+            "label": "Smart thermostat installation",
+            "requiresAsset": false,
+            "skills": [
+              "electrical"
+            ]
+          },
+          {
+            "defaultDurationMinutes": 240,
+            "defaultPriority": "normal",
+            "key": "water-heater-replace",
+            "label": "Water heater replacement",
+            "requiresAsset": true,
+            "skills": [
+              "plumbing",
+              "electrical"
+            ]
+          }
+        ]
+      },
+      "edges": {
+        "availability": [
+          "2026-03-09 200 17",
+          "2026-03-10 200 0",
+          "2026-03-11 200 0",
+          "2026-03-12 200 17"
+        ],
+        "entries": [
+          "09:00-10:00 201",
+          "10:00-10:30 201",
+          "08:30-09:00 201",
+          "09:59-10:15 409:overlapping-entry",
+          "08:00-09:01 409:overlapping-entry",
+          "08:00-11:00 409:overlapping-entry",
+          "09:15-09:45 409:overlapping-entry"
+        ]
+      },
+      "permissionMatrix": {
+        "GET /assets/by-serial/:serial": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /assets/due": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /audit/:subject": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /config": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /contracts/:id": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/contracts": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/invoices": "200 403:forbidden 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/quotes": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/sites": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /customers/:id/statement": "200 403:forbidden 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /dispatch/board": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /dispatch/capacity": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /dispatch/rules": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /exports/journal": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 401:unauthenticated 401:unauthenticated",
+        "GET /health": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "GET /inventory/valuation": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /invoices/:id": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /invoices/:id/late-fee": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /invoices/overdue": "200 403:forbidden 200 403:forbidden 403:forbidden 200 401:unauthenticated 401:unauthenticated",
+        "GET /jobs": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/notifications": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/recommendations": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/reservations": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/sla": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /jobs/:id/timeline": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /notifications": "200 200 403:forbidden 403:forbidden 403:forbidden 200 401:unauthenticated 401:unauthenticated",
+        "GET /notifications/templates": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /parts": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /quotes/:id": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/activity": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/backlog": "200 200 200 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/kpis": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/revenue": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /reports/utilisation": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /sites/:id/assets": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "GET /sites/:id/coverage": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /sla/compliance": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /stock/:location": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /stock/:location/reorder": "200 200 403:forbidden 200 200 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /tariffs/:region": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /technicians": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/load": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/mileage": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/route": "404:not-found 404:not-found 404:not-found 404:not-found 403:forbidden 404:not-found 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/slots": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/:id/timesheet": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /technicians/certifications/expiring": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /time-entries/pending": "200 200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /webhooks/deliveries": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /webhooks/topics": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "GET /work-types": "200 200 200 200 200 200 401:unauthenticated 401:unauthenticated",
+        "PATCH /customers/:id": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PATCH /parts/:sku/price": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/cancel": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/confirm": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/no-access": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /appointments/:id/reschedule": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /assets": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /assets/:id/retire": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /clock/in": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /clock/out": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts/:id/activate": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts/:id/terminate": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /contracts/roll": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/close": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/portal-users": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/reactivate": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/sites": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /customers/:id/suspend": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/credit-notes": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/issue": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/payments": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /invoices/:id/void": "422:invalid-input 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 422:invalid-input 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/assign": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/cancel": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/close": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/complete": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/follow-ups": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/hold": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/invoice": "404:not-found 403:forbidden 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/notes": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/reopen": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/reservations": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/resume": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/schedule": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /jobs/:id/start": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /notifications/flush": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /parts": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /parts/:sku/discontinue": "404:not-found 403:forbidden 403:forbidden 404:not-found 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /quotes": "422:invalid-input 422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/:id/accept": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/:id/decline": "404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 404:not-found 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/:id/send": "404:not-found 404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /quotes/expire": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /sla/scan": "200 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /stock/counts": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /stock/receipts": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /stock/transfers": "422:invalid-input 403:forbidden 403:forbidden 422:invalid-input 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /technicians": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /technicians/:id/absences": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /technicians/:id/deactivate": "404:not-found 404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries/:id/correct": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries/:id/reject": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /time-entries/approve": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "POST /webhooks": "422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /jobs/:id/checklist": "404:not-found 403:forbidden 403:forbidden 403:forbidden 404:not-found 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /preferences/:recipient": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /sites/:id/access": "404:not-found 403:forbidden 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated",
+        "PUT /technicians/:id/certifications": "422:invalid-input 422:invalid-input 403:forbidden 403:forbidden 403:forbidden 403:forbidden 401:unauthenticated 401:unauthenticated"
+      },
+      "regions": {
+        "capital": {
+          "lines": [
+            [
+              "callout",
+              1,
+              5500,
+              5500
+            ],
+            [
+              "labor",
+              1.75,
+              7900,
+              13825
+            ],
+            [
+              "after-hours",
+              0.5,
+              13825,
+              6913
+            ],
+            [
+              "travel",
+              19,
+              110,
+              2090
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 17500,
+            "calloutFeeCents": 5500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-CA-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 5200,
+              "specialist": 10500,
+              "standard": 7900
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 3000,
+            "region": "capital",
+            "taxRateBp": 1900,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 110
+          },
+          "totals": [
+            28328,
+            5382,
+            33710
+          ]
+        },
+        "coastal": {
+          "lines": [
+            [
+              "callout",
+              1,
+              4000,
+              4000
+            ],
+            [
+              "labor",
+              1.75,
+              6800,
+              11900
+            ],
+            [
+              "after-hours",
+              0.5,
+              11900,
+              5950
+            ],
+            [
+              "travel",
+              14,
+              85,
+              1190
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 17500,
+            "calloutFeeCents": 4000,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-CO-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 4500,
+              "specialist": 9200,
+              "standard": 6800
+            },
+            "minimumLaborMinutes": 45,
+            "partsMarkupBp": 2200,
+            "region": "coastal",
+            "taxRateBp": 1900,
+            "travelFreeKm": 5,
+            "travelRatePerKmCents": 85
+          },
+          "totals": [
+            23040,
+            4378,
+            27418
+          ]
+        },
+        "highlands": {
+          "lines": [
+            [
+              "callout",
+              1,
+              3000,
+              3000
+            ],
+            [
+              "labor",
+              2,
+              6200,
+              12400
+            ],
+            [
+              "after-hours",
+              0.5,
+              12400,
+              6200
+            ],
+            [
+              "travel-time",
+              0.75,
+              6200,
+              4650
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 20000,
+            "calloutFeeCents": 3000,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": true,
+            "currency": "EUR",
+            "id": "T-HL-2026",
+            "laborIncrementMinutes": 30,
+            "laborRates": {
+              "apprentice": 4100,
+              "specialist": 8600,
+              "standard": 6200
+            },
+            "minimumLaborMinutes": 90,
+            "partsMarkupBp": 2000,
+            "region": "highlands",
+            "taxRateBp": 1900,
+            "travelFreeKm": 20,
+            "travelRatePerKmCents": 75
+          },
+          "totals": [
+            26250,
+            4988,
+            31238
+          ]
+        },
+        "lakeside": {
+          "lines": [
+            [
+              "callout",
+              1,
+              9000,
+              9000
+            ],
+            [
+              "labor",
+              1.75,
+              11200,
+              19600
+            ],
+            [
+              "after-hours",
+              0.5,
+              16800,
+              8400
+            ],
+            [
+              "travel",
+              19,
+              140,
+              2660
+            ],
+            [
+              "rounding",
+              1,
+              -2,
+              -2
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 9000,
+            "cashRoundingCents": 5,
+            "chargeTravelTime": false,
+            "currency": "CHF",
+            "id": "T-LS-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 7800,
+              "specialist": 14500,
+              "standard": 11200
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 1800,
+            "region": "lakeside",
+            "taxRateBp": 810,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 140
+          },
+          "totals": [
+            39658,
+            3212,
+            42870
+          ]
+        },
+        "metro-east": {
+          "lines": [
+            [
+              "callout",
+              1,
+              4500,
+              4500
+            ],
+            [
+              "labor",
+              1.75,
+              7200,
+              12600
+            ],
+            [
+              "after-hours",
+              0.5,
+              10800,
+              5400
+            ],
+            [
+              "travel",
+              19,
+              95,
+              1805
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 4500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-ME-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 4800,
+              "specialist": 9600,
+              "standard": 7200
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2500,
+            "region": "metro-east",
+            "taxRateBp": 1900,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 95
+          },
+          "totals": [
+            24305,
+            4618,
+            28923
+          ]
+        },
+        "metro-west": {
+          "lines": [
+            [
+              "callout",
+              1,
+              4500,
+              4500
+            ],
+            [
+              "labor",
+              1.75,
+              7400,
+              12950
+            ],
+            [
+              "after-hours",
+              0.5,
+              11100,
+              5550
+            ],
+            [
+              "travel",
+              19,
+              95,
+              1805
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 4500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": false,
+            "currency": "EUR",
+            "id": "T-MW-2026",
+            "laborIncrementMinutes": 15,
+            "laborRates": {
+              "apprentice": 4900,
+              "specialist": 9900,
+              "standard": 7400
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2500,
+            "region": "metro-west",
+            "taxRateBp": 1900,
+            "travelFreeKm": 0,
+            "travelRatePerKmCents": 95
+          },
+          "totals": [
+            24805,
+            4713,
+            29518
+          ]
+        },
+        "northern-hills": {
+          "lines": [
+            [
+              "callout",
+              1,
+              3500,
+              3500
+            ],
+            [
+              "labor",
+              2,
+              6400,
+              12800
+            ],
+            [
+              "after-hours",
+              0.5,
+              9600,
+              4800
+            ],
+            [
+              "travel",
+              9,
+              80,
+              720
+            ],
+            [
+              "travel-time",
+              0.75,
+              6400,
+              4800
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 3500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": true,
+            "currency": "EUR",
+            "id": "T-NH-2026",
+            "laborIncrementMinutes": 30,
+            "laborRates": {
+              "apprentice": 4200,
+              "specialist": 8800,
+              "standard": 6400
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2000,
+            "region": "northern-hills",
+            "taxRateBp": 1900,
+            "travelFreeKm": 10,
+            "travelRatePerKmCents": 80
+          },
+          "totals": [
+            26620,
+            5058,
+            31678
+          ]
+        },
+        "valley": {
+          "lines": [
+            [
+              "callout",
+              1,
+              3500,
+              3500
+            ],
+            [
+              "labor",
+              2,
+              6500,
+              13000
+            ],
+            [
+              "after-hours",
+              0.5,
+              9750,
+              4875
+            ],
+            [
+              "travel",
+              4,
+              80,
+              320
+            ],
+            [
+              "travel-time",
+              0.75,
+              6500,
+              4875
+            ]
+          ],
+          "tariff": {
+            "afterHoursMultiplierBp": 15000,
+            "calloutFeeCents": 3500,
+            "cashRoundingCents": 1,
+            "chargeTravelTime": true,
+            "currency": "EUR",
+            "id": "T-VA-2026",
+            "laborIncrementMinutes": 30,
+            "laborRates": {
+              "apprentice": 4300,
+              "specialist": 8900,
+              "standard": 6500
+            },
+            "minimumLaborMinutes": 60,
+            "partsMarkupBp": 2000,
+            "region": "valley",
+            "taxRateBp": 1900,
+            "travelFreeKm": 15,
+            "travelRatePerKmCents": 80
+          },
+          "totals": [
+            26570,
+            5048,
+            31618
+          ]
+        }
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "no-issues",
+      "defects": [],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "authorize(request.actor, permission);",
+                "path": "src/api/router.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that routes declared as data are authorized with the same permission before their handler runs.",
+          "id": "route-permissions-preserved"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "const merged = { ...WORK_TYPE_DEFAULTS, ...definition };",
+                "path": "src/worktypes/types.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "const merged = { ...STANDARD_TARIFF_TERMS, ...terms };",
+                "path": "src/billing/tariffs/standard.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that omitted work-type or tariff fields resolve to the values the definitions previously stated.",
+          "id": "declared-defaults-preserved"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "return (ctx) => ctx.store.collection<T>(name);",
+                "path": "src/adapters/store/collections.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "collectionAccessor<TimeEntry>('timeEntries')",
+                "path": "src/adapters/repositories/time-entries.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that repository accessors keep their persisted collection names.",
+          "id": "persisted-collection-keys"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "!(entry.end <= data.start || data.end <= entry.start)",
+                "path": "src/timesheets/entries.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "return BUCKET_LIMITS.find(([limit]) => daysOverdue <= limit)?.[1] ?? '90+';",
+                "path": "src/billing/statements.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "return technician.absences.every((absence) => on < absence.from || absence.to < on);",
+                "path": "src/technicians/service.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "if (clock?.status !== 'paused' || clock.pausedSince === undefined) return clock;",
+                "path": "src/sla/clock.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish equivalence of at least one rewritten boundary condition instead of asserting it.",
+          "id": "rewritten-conditions-equivalent"
+        }
+      ]
+    }
+  ]
+}

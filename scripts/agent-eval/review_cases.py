@@ -28,6 +28,8 @@ CHECK_COMMANDS = {
 MAX_FIXTURE_BYTES = 128 * 1024
 MAX_LARGE_FIXTURE_BYTES = 2 * 1024 * 1024
 MAX_LARGE_FIXTURE_FILES = 256
+MAX_COMPLEX_FIXTURE_BYTES = 4 * 1024 * 1024
+MAX_COMPLEX_FIXTURE_FILES = 512
 SIGNER_PRINCIPAL = "review-fixture@example.invalid"
 PUBLIC_RULES = """# Review workspace
 
@@ -67,14 +69,23 @@ def check_command(case_id, bundle_root=None):
     return list(command)
 
 
+def bundle_suite(bundle_root):
+    """The declared suite of an external bundle: `complex` raises the source ceiling, otherwise `large`."""
+    suite = read_json(_bundle_root(bundle_root) / "catalog.json").get("suite", "large")
+    require(suite in ("large", "complex"), "unknown fixture suite")
+    return suite
+
+
 def _source_limits(bundle_root):
     if bundle_root is None:
         return 32, MAX_FIXTURE_BYTES
     limits = read_json(_bundle_root(bundle_root) / "catalog.json").get("source_limits", {})
     files, size = limits.get("max_files"), limits.get("max_bytes")
-    require(type(files) is int and 0 < files <= MAX_LARGE_FIXTURE_FILES
-            and type(size) is int and 0 < size <= MAX_LARGE_FIXTURE_BYTES,
-            "external fixture bounds must be explicit and within the large-suite ceiling")
+    max_files, max_bytes = ((MAX_COMPLEX_FIXTURE_FILES, MAX_COMPLEX_FIXTURE_BYTES) if bundle_suite(bundle_root) == "complex"
+                            else (MAX_LARGE_FIXTURE_FILES, MAX_LARGE_FIXTURE_BYTES))
+    require(type(files) is int and 0 < files <= max_files
+            and type(size) is int and 0 < size <= max_bytes,
+            "external fixture bounds must be explicit and within the suite ceiling")
     return files, size
 
 

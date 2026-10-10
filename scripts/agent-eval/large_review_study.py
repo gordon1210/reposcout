@@ -12,7 +12,7 @@ import random
 import re
 
 from accounting import fingerprint, read_json, require
-from review_campaign import EFFORT, MODEL, LARGE_DEVELOPMENT_CASES, LARGE_HOLDOUT_CASES, build_plan
+from review_campaign import EFFORTS, MODEL, LARGE_DEVELOPMENT_CASES, LARGE_HOLDOUT_CASES, build_plan
 from review_export import REQUESTED_TOKEN_FIELDS, _comparison, all_run_costs, quality_state, safe_projection
 
 CAMPAIGNS = ("development-original", "development-improved", "holdout-improved", "holdout-original")
@@ -64,7 +64,7 @@ def _indexed_reports(reports):
               "usage_scope", "capabilities_sha256", "harness_sources")
     indexed = {}
     for name, report in reports.items():
-        require(report["model"] == MODEL and report["effort"] == EFFORT,
+        require(report["model"] == MODEL and report["effort"] in EFFORTS and report["effort"] == reference["effort"],
                 "study model or effort differs")
         require(report["seed"] == reference["seed"], "study seeds differ")
         require(all(key in report["pins"] and report["pins"][key] == reference["pins"].get(key) for key in common),

@@ -37,7 +37,8 @@ python3 scripts/agent-eval/review_campaign.py report /tmp/review-smoke
 ```
 
 `prepare` refuses an existing campaign destination. `run` never silently reruns an already started
-assignment. The plan fixes `gpt-6.1-sol` / `max`, the cases, repetition identities, randomized order
+assignment. The plan fixes `gpt-6.1-sol`, the reasoning effort (`prepare --effort`, one of
+`low`, `medium`, `high`, `xhigh`, `max`; default `max`), the cases, repetition identities, randomized order
 and limits. Eight smoke runs qualify isolation and accounting, not product superiority. The
 exploratory plan contains 48 A/B runs; `--ablation` adds twelve preselected CLI-only runs. The
 `qualify-smoke`, `report` and `export` commands preserve negative outcomes and explicitly pending
@@ -51,6 +52,46 @@ An ordinary review/episode failure does not itself stop the batch. Intentionally
 assertions are review evidence, separate from runtime availability. Private `failures/` receipts
 retain fixed phases, cause categories and pin hashes without arbitrary exception text; public
 errors bind successful receipt writes by hash. Receipt-write failures cannot discard known costs.
+
+### Claude Code runtime
+
+`prepare --runtime claude` runs the same cases, prompts, answer schema, serial order and limits
+through Claude Code headless (`claude -p`). It requires `--claude-binary` and an explicit
+`--model`, accepts the same `--effort` levels, and pins the resolved binary path, its SHA-256,
+`claude --version` and the Bubblewrap/socat executables used by Claude's Bash sandbox. Only
+single-invocation stages are accepted because Claude sessions are never resumed. Results compare
+only within one runtime; a Claude plan is never mixed with a Codex plan. `--treatment
+reposcout-guided` selects the directed skill arm described in the
+[evaluation guide](../../docs/codex-review-evaluation.md#comparison-conditions); guided and neutral
+plans are reported separately.
+
+```sh
+python3 scripts/agent-eval/review_campaign.py prepare /tmp/review-claude \
+  --runtime claude --claude-binary /absolute/path/to/claude --model claude-MODEL --effort medium \
+  --stage large-development --seed 20261008 --case-bundle /absolute/path/to/bundle \
+  --fixture-signer /absolute/path/to/fixture-signer.json \
+  --reposcout-binary /absolute/path/to/verified/reposcout --timeout-seconds 600
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-claude --preflight-only
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-claude --run-id RUN \
+  --auth-file /absolute/path/to/private/.credentials.json
+```
+
+Each invocation gets a fresh `HOME` and `CLAUDE_CONFIG_DIR`, `--strict-mcp-config`, project-only
+setting sources, the `Bash`, `Glob`, `Grep`, `Read` and `Skill` tools, and no agent, task or web
+tools. The treatment skill is installed as a project skill and checked by its directory hash.
+Bash runs inside both the outer Bubblewrap namespace and Claude's own sandbox, with an empty
+network allowlist; file tools are confined to the workspace and scratch directory. The controller
+reads only the OAuth access token from `--auth-file`, after the preflight passes, and hands it to
+Claude through an inherited pipe descriptor. It is never staged into the isolation and never
+visible to tools. Before the token is read, a scripted local API drives the real binary through
+Bash, Read, Grep and Glob escape attempts against a canary credential and fails closed.
+
+The stream-json trace (`--verbose`) gives the same command/evidence projection. Usage is counted
+once per message id and checked against the final result:
+`input_tokens = input + cache_creation + cache_read`, `cached_input_tokens = cache_read`,
+`cache_write_input_tokens = cache_creation` and `output_tokens = output`. Unknown counters stay
+unknown. `--json-schema` constrains the answer; the controller also validates it against the
+answer schema, and a nonconforming answer is a failed, retained outcome.
 
 `packets CAMPAIGN DIRECTORY` writes private adjudication packets with arm labels and measured costs
 removed. Their source evidence and observed commands are intentionally private. A reviewer returns
@@ -130,6 +171,25 @@ heldout tasks are sealed before development outputs and stay hidden from product
 The separate `large-followup` preset requires its own explicit bundle and fixes three cases, two
 repeats and twelve native/skill assignments. Reused opaque IDs never permit joining its new tasks
 to old campaigns without their distinct source, revision and prompt identities.
+
+The `complex-development` and `complex-holdout` presets review multi-module TypeScript comparisons
+of 30 to 100 changed files. Each fixes two single-invocation cases, two repeats and eight paired
+assignments, defaults to a 1200-second episode timeout (also its ceiling) and requires a bundle whose
+catalog declares `"suite": "complex"`; other stages refuse such a bundle. The complex suite raises the
+source ceiling to 512 files and 4 MiB per snapshot without changing the large-suite limits. Bundles
+are generated, not committed: `fixtures/complex-review/build.py` materializes one partition from the
+deterministic Fieldline generator and the committed catalogs, oracles, probes and counterfactuals into
+a new private directory outside Git, and refuses a holdout bundle whose `directory_hash` differs from
+its recorded seal. `qualify.py --bundle DIR` then runs the checked-in application tests and the private
+domain probes on base, head and counterfactual trees without any model, and `freeze.py` writes a
+deterministic archive with its manifest. Prepare with the explicit bundle, for example:
+
+```sh
+python3 -B scripts/agent-eval/fixtures/complex-review/build.py holdout --output /private/complex-holdout
+python3 -B scripts/agent-eval/fixtures/complex-review/qualify.py --bundle /private/complex-holdout
+python3 scripts/agent-eval/review_campaign.py prepare /private/complex-holdout-campaign \
+  --stage complex-holdout --runtime claude --case-bundle /private/complex-holdout ...
+```
 
 If a later invocation cannot be attributed safely, `known_usage_prefix` preserves the normalized
 prefix and its per-field invocation indices/stop reasons while full episode fields remain unknown.

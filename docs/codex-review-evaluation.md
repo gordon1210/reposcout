@@ -18,11 +18,18 @@ Keep adverse outcomes and unknown measurements in the private record.
 |---|---|
 | `baseline` | Codex, Git, `rg`, targeted or justified broader reads, and the fixture's permitted runtimes |
 | `reposcout` | The same environment, plus a pinned RepoScout binary and the exact canonical skill bundle |
+| `reposcout-guided` | The `reposcout` environment; its capability line also asks to start the review with the reposcout skill |
 | `reposcout-cli` | The same environment, plus RepoScout availability without the bundled skill |
 
 The baseline is allowed to solve the task efficiently. The treatment receives no forced command
 sequence. Native reads and nonuse of RepoScout remain legitimate observed behavior; tool
 availability does not establish tool use or explain an improvement causally.
+
+`prepare --treatment reposcout-guided` pairs baseline with `reposcout-guided` instead of
+`reposcout`; the default stays `reposcout`. The neutral arm measures unprompted adoption. The
+guided arm measures value under directed use, as when a user types `/reposcout` or a project
+instruction names the skill; it fixes the starting point, not the command sequence. A plan holds
+one treatment, and guided and neutral results are never pooled.
 
 Both arms receive the same task and business rules. A frozen manifest identifies the fixture,
 oracle, public tasks, binary, skill, harness, Codex version, model, reasoning effort, limits and
@@ -103,6 +110,15 @@ unconfirmed live identities and persistent observation failures still stop execu
 execution fence also retains its supervisor's PID namespace, so absence in another namespace
 cannot clear it. Separate verified recovery evidence may permit retiring a fence; it never
 rewrites an aborted outcome or restores missing usage observations.
+
+A campaign can instead select the Claude Code headless runtime (`prepare --runtime claude`). It
+uses the same cases, prompts, answer schema, serial order, limits and trace projection, and its
+results are compared only with other Claude results. Each invocation is fresh and never resumed.
+Claude's Bash sandbox runs inside the outer namespace with an empty network allowlist. A canary
+preflight with real Bash and file-tool escape attempts must pass before the controller reads the
+access token, and the token reaches Claude only through an inherited descriptor that tools cannot
+read. See the [evaluator commands](../scripts/agent-eval/README.md#claude-code-runtime) for the
+pins and usage mapping.
 
 ## Quality and skill behavior
 
@@ -218,6 +234,17 @@ and isolation validity, not whether RepoScout happened to win or every review wa
 These are exploratory samples. Repeated runs on one case are not independent new problem types,
 and a small set does not establish a universal percentage improvement. Report individual paired
 outcomes and variation. Broader claims need unseen tasks and a larger, separately defined study.
+
+## Complex review stages
+
+`complex-development` and `complex-holdout` each pair two single-invocation reviews of a
+generated field-service TypeScript application over two repeats: eight assignments with a
+1200-second default and maximum episode timeout. Comparisons span 30 to 100 changed files across
+modules, documentation and tests, including one behavior-preserving change. Expected behavior
+comes from the documented business contracts and private domain probes; qualification requires
+passing application checks on base and head, probe results that match the oracle, and
+counterfactual source edits that move the probe as declared. The holdout bundle is sealed by its
+`directory_hash` digest, and its cases stay out of skill and product tuning.
 
 ## Running the tools
 

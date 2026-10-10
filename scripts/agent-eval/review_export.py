@@ -4,7 +4,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from accounting import fingerprint, read_json, require, sha256
-from review_campaign import SCRIPT_ROOT, campaign_lock, file_hash, inventory, load_plan, write_new
+from review_campaign import (DEFAULT_TREATMENT, SCRIPT_ROOT, campaign_lock, file_hash, inventory, load_plan,
+                             plan_treatment, write_new)
 
 USAGE_FIELDS = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
 REQUESTED_TOKEN_FIELDS = ("input_tokens", "cache_write_input_tokens", "cached_input_tokens", "output_tokens")
@@ -17,7 +18,9 @@ ACCOUNTING_FIELDS = ("schema", "adapter", "kind", "invocation_count", "usage_bas
                      "comparable_usage", "comparable_fields",
                      "usage_complete", "provider_call_ids_available", "unknown_fields", "episode_errors",
                      "command_statistics", "money", "evidence_sha256")
-INPUT_IDENTITIES = {"workspace", "codex", "codex_runtime", "controller_ca", "reposcout", "skill", "runtime_tools"}
+INPUT_IDENTITIES = {"workspace", "codex", "codex_runtime", "claude", "controller_ca", "reposcout", "skill",
+                    "runtime_tools", "sandbox_tools"}
+ASSET_IDENTITIES = {"codex_runtime_assets", "runtime_tool_assets", "sandbox_tool_assets"}
 
 
 def _optional_hash(value):
@@ -27,11 +30,11 @@ def _optional_hash(value):
 def project_input_receipt(receipt):
     if receipt is None:
         return None
-    require(isinstance(receipt, dict) and set(receipt) <= INPUT_IDENTITIES | {"codex_runtime_assets", "runtime_tool_assets"},
+    require(isinstance(receipt, dict) and set(receipt) <= INPUT_IDENTITIES | ASSET_IDENTITIES,
             "unsupported input receipt fields")
     result = {}
     for name, value in receipt.items():
-        if name in ("codex_runtime_assets", "runtime_tool_assets"):
+        if name in ASSET_IDENTITIES:
             require(isinstance(value, dict), "runtime asset identities must be an object")
             assets = {}
             for relative, digest in value.items():
@@ -254,14 +257,14 @@ def _comparison(reference, candidate):
             "all_requested_token_fields_comparable": eligible and set(REQUESTED_TOKEN_FIELDS) <= fields}
 
 
-def comparisons(runs):
+def comparisons(runs, treatment=DEFAULT_TREATMENT):
     pairs = defaultdict(dict)
     for run in runs:
         require(run["variant"] not in pairs[run["pair_id"]], "duplicate paired arm")
         pairs[run["pair_id"]][run["variant"]] = run
     result = []
     for pair_id, arms in sorted(pairs.items()):
-        for reference, candidate in (("baseline", "reposcout"), ("baseline", "reposcout-cli"), ("reposcout", "reposcout-cli")):
+        for reference, candidate in (("baseline", treatment), ("baseline", "reposcout-cli"), (treatment, "reposcout-cli")):
             if candidate == "reposcout-cli" and candidate not in arms:
                 continue
             if reference not in arms or candidate not in arms:
@@ -319,23 +322,25 @@ def report(root, adjudications=None):
                     "adjudication grader differs from frozen campaign")
     _apply_adjudications(private_runs, index)
     runs = [project_run(run) for run in private_runs]
-    paired = [] if plan["stage"] == "large-holdout-original" else comparisons(runs)
+    treatment = plan_treatment(plan)
+    paired = [] if plan["stage"] == "large-holdout-original" else comparisons(runs, treatment)
     pins = {key: value for key, value in plan["pins"].items()
-            if key not in ("codex_binary", "reposcout_binary", "skill_dir", "controller_ca_file", "runtime_tool_paths",
-                           "case_bundle", "original_campaign")}
+            if key not in ("codex_binary", "claude_binary", "reposcout_binary", "skill_dir", "controller_ca_file",
+                           "runtime_tool_paths", "sandbox_tool_paths", "case_bundle", "original_campaign")}
     if pins.get("usage_scope_calibration"):
         pins["usage_scope_calibration"] = {"evidence_sha256": pins["usage_scope_calibration"]["evidence_sha256"]}
     result = {"schema": 1, "kind": "codex-review-campaign-report", "plan_sha256": plan["plan_sha256"],
               "stage": plan["stage"], "seed": plan["seed"], "repetitions": plan["repetitions"],
-              "ablation": plan["ablation"], "model": plan["model"], "effort": plan["effort"], "pins": pins,
+              "ablation": plan["ablation"], "treatment": treatment, "model": plan["model"], "effort": plan["effort"],
+              "pins": pins,
               "fixture_signer": plan.get("fixture_signer"),
               "assignment_count": len(runs), "status_counts": dict(Counter(run["status"] for run in runs)),
               "quality_counts": dict(Counter(quality_state(run) for run in runs)), "runs": runs,
               "all_assigned_run_costs": all_run_costs(runs), "pair_inventory": paired,
               "conditional_quality_matched_pairs": [pair for pair in paired if pair["eligible"]],
               "incomplete_main_pairs": sum(any(arms["status"] != "completed"
-                                               for arms in runs if arms["pair_id"] == pair["pair_id"] and arms["variant"] in ("baseline", "reposcout"))
-                                            for pair in paired if pair.get("candidate_variant") == "reposcout"),
+                                               for arms in runs if arms["pair_id"] == pair["pair_id"] and arms["variant"] in ("baseline", treatment))
+                                            for pair in paired if pair.get("candidate_variant") == treatment),
               "statistical_inference": False, "synthetic_fixtures": True,
               "measurement_limits": ["complete provider-call ledger and subscription charge unavailable",
                                      "quality requires independent semantic adjudication with treatment/cost labels withheld",
