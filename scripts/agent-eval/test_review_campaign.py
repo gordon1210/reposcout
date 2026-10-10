@@ -659,6 +659,27 @@ class ExecutionTests(unittest.TestCase):
             self.assertEqual(receipt["error_type"], "CampaignPrerequisiteError")
             self.assertTrue(all(run["status"] == "notrun" for run in campaign.inventory(plan)))
 
+    def test_in_trial_preflight_failure_records_its_phase_instead_of_trace_accounting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, plan = prepared(temporary)
+            assignment = plan["assignments"][0]
+            auth = Path(temporary) / "synthetic-auth.json"
+            auth.write_text("synthetic")
+
+            @model_runner
+            def runner(spec):
+                return {"run_id": spec.run_id, "status": "not-started", "process_tree_drained": True,
+                        "termination_reason": "isolation-preflight-failed", "failure_phase": "isolation-preflight",
+                        "campaign_fatal": True, "stdout_path": None, "preflight": {"passed": False}}
+
+            result = campaign.execute_assignment(plan, assignment, auth, runner=runner, check_pins=False)
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(result["campaign_fatal"])
+            self.assertEqual(result["errors"], [{"reason": "isolation-preflight-failed",
+                                                 "phase": "isolation-preflight", "step_id": 0}])
+            self.assertFalse((Path(assignment["run_dir"]) / "failures").exists())
+            self.assertFalse((Path(assignment["run_dir"]) / "step-0/trace-accounting.json").exists())
+
     def test_runtime_preflight_failure_leaves_every_assignment_unconsumed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, plan = prepared(temporary)

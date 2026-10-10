@@ -126,6 +126,27 @@ def _process_children(pid, *, on_error=None):
     return children
 
 
+PF_EXITING = 0x4
+
+
+def _process_exiting(pid):
+    """True only when every listed thread has entered the kernel exit path and cannot run user code."""
+    try:
+        tasks = list(Path(f"/proc/{pid}/task").iterdir())
+        for task in tasks:
+            try:
+                raw = (task / "stat").read_text()
+            except FileNotFoundError:
+                if _path_may_exist(task):
+                    return False
+                continue
+            if not int(raw[raw.rfind(")") + 2:].split()[6]) & PF_EXITING:
+                return False
+    except (OSError, ValueError, IndexError):
+        return False
+    return bool(tasks)
+
+
 def _pidfd_terminal(descriptor, *, wait_ms=0):
     """A flags=0 pidfd becomes ready only after the last thread has exited."""
     poller = select.poll()
@@ -271,6 +292,14 @@ class OwnedProcesses:
             rss += identity["rss"]
             try:
                 executable = Path(f"/proc/{pid}/exe").readlink().name
+            except (OSError, ValueError) as error:
+                self._note_error("read-exe", pid, error, start=identity["start"])
+                # Without an address space and with every thread exiting, the retained pidfd
+                # still owns the process and its children remain enumerable until it is drained.
+                if not (isinstance(error, FileNotFoundError) and _process_exiting(pid)):
+                    self._observation_failed(identity, error=error)
+                    continue
+            else:
                 is_scan = executable in ("reposcout", "reposcoutdev")
                 scans += is_scan
                 scan_identity = (pid, identity["start"])
@@ -278,10 +307,6 @@ class OwnedProcesses:
                     self.scan_started.setdefault(scan_identity, self.clock())
                 else:
                     self.scan_started.pop(scan_identity, None)
-            except (OSError, ValueError) as error:
-                self._note_error("read-exe", pid, error, start=identity["start"])
-                self._observation_failed(identity, error=error)
-                continue
             try:
                 children = _process_children(pid, on_error=lambda operation, error, tid: self._note_error(
                     operation, pid, error, tid=tid, start=identity["start"],

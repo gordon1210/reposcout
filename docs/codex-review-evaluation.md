@@ -105,7 +105,9 @@ Timeouts and interruptions are outcomes, not invisible retries.
 
 Process exit must be established for the whole owned process, including its threads. The
 supervisor retains process descriptors and records bounded observation diagnostics privately.
-A disappearing process entry may receive a bounded terminal-state check; permission errors,
+A disappearing process entry may receive a bounded terminal-state check. A verified identity
+whose executable link is gone while every thread is already in the kernel exit path stays owned
+through its retained descriptor and is drained like any other process. Permission errors,
 unconfirmed live identities and persistent observation failures still stop execution. A stale
 execution fence also retains its supervisor's PID namespace, so absence in another namespace
 cannot clear it. Separate verified recovery evidence may permit retiring a fence; it never

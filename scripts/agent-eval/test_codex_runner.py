@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from codex_runner import (
     OwnedProcesses, SerialLease, _drain_owned_processes, _pidfd_terminal,
-    _process_children, _record_alive, execute_process, run_trial,
+    _process_children, _process_exiting, _record_alive, execute_process, run_trial,
 )
 from codex_isolation import IsolationError, PROBE_CHECKS, prepare_isolation
 from test_codex_isolation import prepared_spec
@@ -486,6 +486,135 @@ class ProcessOwnershipTests(unittest.TestCase):
             self.assertEqual(owned.living(), [123])
         close.assert_called_once_with(92)
         self.assertTrue(owned.tracking_failed)
+
+    def test_child_exit_between_listing_and_identity_reads_is_not_a_tracking_failure(self):
+        parent, child = self.identity(123, 100), self.identity(456, 300, ppid=123)
+        for stage in ("read-stat", "pidfd-open", "verify-pidfd-stat", "read-exe"):
+            with self.subTest(stage=stage):
+                owned = OwnedProcesses(123, observe=False)
+                owned.identities[123], owned.pidfds[123] = parent, 91
+                reads = {456: 0}
+
+                def identity(pid, **_):
+                    if pid == 123:
+                        return parent
+                    reads[pid] += 1
+                    present = stage == "read-exe" or (stage != "read-stat" and reads[pid] == 1)
+                    return child if present else None
+
+                def pidfd_open(pid, flags):
+                    if stage == "pidfd-open":
+                        raise ProcessLookupError(errno.ESRCH, "reaped before pidfd_open")
+                    return 92
+
+                def executable(path):
+                    if str(path) == "/proc/456/exe":
+                        raise FileNotFoundError(errno.ENOENT, "address space already released")
+                    return Path("/usr/bin/bash")
+
+                with mock.patch("codex_runner._process_identity", side_effect=identity), \
+                        mock.patch("codex_runner._process_children", side_effect=lambda pid, **_: [456] if pid == 123 else []), \
+                        mock.patch("codex_runner.os.pidfd_open", side_effect=pidfd_open), \
+                        mock.patch("codex_runner.Path.readlink", new=executable), \
+                        mock.patch("codex_runner.Path.stat", side_effect=FileNotFoundError(errno.ENOENT, "reaped")), \
+                        mock.patch("codex_runner._process_exiting", side_effect=lambda pid: pid == 456), \
+                        mock.patch("codex_runner.os.close") as close:
+                    owned.observe()
+                self.assertFalse(owned.tracking_failed)
+                self.assertEqual(owned.untracked_identities, {})
+                self.assertEqual(set(owned.identities), {123, 456} if stage == "read-exe" else {123})
+                if stage == "verify-pidfd-stat":
+                    close.assert_called_once_with(92)
+
+    def test_exiting_process_without_address_space_stays_owned_until_drained(self):
+        owned = OwnedProcesses(123, observe=False)
+        parent = self.identity(123, 100)
+        exiting, grandchild = self.identity(456, 300, ppid=123), self.identity(789, 301, ppid=456)
+        owned.identities[123], owned.pidfds[123] = parent, 91
+        current = {123: parent, 456: exiting, 789: grandchild}
+        children = {123: [456], 456: [789], 789: []}
+
+        def executable(path):
+            if str(path) == "/proc/456/exe":
+                raise FileNotFoundError(errno.ENOENT, "address space already released")
+            return Path("/usr/bin/bash")
+
+        with mock.patch("codex_runner._process_identity", side_effect=lambda pid, **_: current.get(pid)), \
+                mock.patch("codex_runner._process_children", side_effect=lambda pid, **_: children[pid]), \
+                mock.patch("codex_runner.os.pidfd_open", side_effect=lambda pid, flags: {456: 92, 789: 93}[pid]), \
+                mock.patch("codex_runner.Path.readlink", new=executable), \
+                mock.patch("codex_runner._process_exiting", side_effect=lambda pid: pid == 456), \
+                mock.patch("codex_runner.signal.pidfd_send_signal") as send, \
+                mock.patch("codex_runner.os.close") as close:
+            self.assertEqual(owned.observe()[1], 0)
+            self.assertFalse(owned.tracking_failed)
+            self.assertEqual(set(owned.living()), {123, 456, 789})
+            owned.signal(signal.SIGKILL)
+            self.assertEqual({call.args for call in send.call_args_list},
+                             {(91, signal.SIGKILL), (92, signal.SIGKILL), (93, signal.SIGKILL)})
+            self.assertFalse(_drain_owned_processes(SimpleNamespace(poll=lambda: None), owned, timeout=0))
+            current.clear()
+            self.terminal.side_effect = lambda fd, **_: True
+            self.assertTrue(_drain_owned_processes(SimpleNamespace(poll=lambda: 0), owned, timeout=0))
+        self.assertEqual({call.args for call in close.call_args_list}, {(92,), (93,)})
+        self.assertFalse(owned.tracking_failed)
+        self.assertTrue(owned.root_confirmed)
+        self.assertEqual(owned.records(), [{"pid": 123, "start": 100}])
+
+    def test_live_process_with_unreadable_executable_still_fences(self):
+        for error, exiting in ((FileNotFoundError(errno.ENOENT, "leader exited while a worker runs"), False),
+                               (PermissionError(errno.EACCES, "unreadable executable"), True)):
+            with self.subTest(error=type(error).__name__, exiting=exiting):
+                owned = OwnedProcesses(123, observe=False)
+                parent, child = self.identity(123, 100), self.identity(456, 300, ppid=123)
+                owned.identities.update({123: parent, 456: child})
+                owned.pidfds.update({123: 91, 456: 92})
+
+                def executable(path):
+                    if str(path) == "/proc/456/exe":
+                        raise error
+                    return Path("/usr/bin/bash")
+
+                with mock.patch("codex_runner._process_identity", side_effect=lambda pid, **_: {123: parent, 456: child}[pid]), \
+                        mock.patch("codex_runner._process_children", side_effect=lambda pid, **_: [456] if pid == 123 else []), \
+                        mock.patch("codex_runner.Path.readlink", new=executable), \
+                        mock.patch("codex_runner._process_exiting", return_value=exiting):
+                    owned.observe()
+                self.assertTrue(owned.tracking_failed)
+                self.assertEqual(owned.untracked_identities, {456: child})
+                self.assertIn({"pid": 456, "start": 300}, owned.records())
+
+    def test_process_exiting_requires_every_listed_thread_in_the_kernel_exit_path(self):
+        def stat(flags):
+            return f"456 (a) b) R 123 456 456 0 -1 {flags} 0 0 0 0 0 0 0 0 20 0 2 0 300 0 0\n"
+
+        exiting, running = stat(0x40804c), stat(0x400040)
+        cases = {
+            "all-threads-exiting": ({"456": exiting, "457": exiting}, True),
+            "one-thread-running": ({"456": exiting, "457": running}, False),
+            "vanished-thread-ignored": ({"456": exiting, "457": FileNotFoundError(errno.ENOENT, "gone")}, True),
+            "unreadable-thread": ({"456": exiting, "457": PermissionError(errno.EACCES, "denied")}, False),
+            "malformed-stat": ({"456": "456 (a) Z 123\n"}, False),
+            "no-threads": ({}, False),
+            "unlisted-tasks": (FileNotFoundError(errno.ENOENT, "reaped"), False),
+        }
+        for name, (threads, expected) in cases.items():
+            with self.subTest(case=name):
+                def listing(path):
+                    if isinstance(threads, OSError):
+                        raise threads
+                    return [Path(f"/proc/456/task/{tid}") for tid in threads]
+
+                def read(path):
+                    value = threads[path.parent.name]
+                    if isinstance(value, OSError):
+                        raise value
+                    return value
+
+                with mock.patch("codex_runner.Path.iterdir", new=listing), \
+                        mock.patch("codex_runner.Path.read_text", new=read), \
+                        mock.patch("codex_runner.Path.stat", side_effect=FileNotFoundError(errno.ENOENT, "gone")):
+                    self.assertIs(_process_exiting(456), expected)
 
     def test_stale_record_without_pidfd_does_not_treat_zombie_leader_as_drained(self):
         identity = {**self.identity(123, 100), "state": "Z"}

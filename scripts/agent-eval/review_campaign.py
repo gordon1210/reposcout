@@ -960,19 +960,24 @@ def execute_assignment(plan, assignment, auth_file, *, runner=None, check_pins=T
                 write_new(directory / "result.json", result)
                 invocation["result"] = result
                 trace = None
-                try:
-                    phase = "trace-accounting"
-                    trace = parse_exec_trace(result["stdout_path"], controller=result,
-                                             expected_thread_id=thread or result.get("thread_id"))
-                    traces.append(trace)
-                    write_new(directory / "trace-accounting.json", trace)
-                    phase = "execution-evidence"
-                    receipts = extract_execution_evidence(result["stdout_path"], step_id=index,
-                                                          expected_sha256=result.get("stdout_sha256"))
-                    write_new(directory / "execution-evidence.json", receipts)
-                    execution_evidence.extend(receipts)
-                except (InvalidLedger, OSError, ValueError, KeyError, TypeError) as error:
-                    outcome["errors"].append(_safe_error(error, phase=phase, step_id=index, private_directory=run_dir))
+                if not result.get("stdout_path"):
+                    # The runner stopped before any model process, so no trace exists to account.
+                    outcome["errors"].append({"reason": result.get("termination_reason") or "model-not-started",
+                                              "phase": result.get("failure_phase") or "runner", "step_id": index})
+                else:
+                    try:
+                        phase = "trace-accounting"
+                        trace = parse_exec_trace(result["stdout_path"], controller=result,
+                                                 expected_thread_id=thread or result.get("thread_id"))
+                        traces.append(trace)
+                        write_new(directory / "trace-accounting.json", trace)
+                        phase = "execution-evidence"
+                        receipts = extract_execution_evidence(result["stdout_path"], step_id=index,
+                                                              expected_sha256=result.get("stdout_sha256"))
+                        write_new(directory / "execution-evidence.json", receipts)
+                        execution_evidence.extend(receipts)
+                    except (InvalidLedger, OSError, ValueError, KeyError, TypeError) as error:
+                        outcome["errors"].append(_safe_error(error, phase=phase, step_id=index, private_directory=run_dir))
                 if result.get("campaign_fatal") is True:
                     outcome["campaign_fatal"] = True
                 status = result.get("status")
