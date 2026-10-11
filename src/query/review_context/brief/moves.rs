@@ -884,9 +884,15 @@ mod tests {
         );
         assert_eq!(moved_in(&hunks, &sides(true, true)).moves.len(), 1);
         // Without declarations, or between a test and a non-test file, nothing moves.
-        assert!(moved(&hunks).moves.is_empty());
-        assert!(moved_in(&hunks, &sides(false, true)).moves.is_empty());
-        assert!(moved_in(&hunks, &sides(true, false)).moves.is_empty());
+        assert_eq!(moved(&hunks).moves, Vec::<ReviewBriefMove>::new());
+        assert_eq!(
+            moved_in(&hunks, &sides(false, true)).moves,
+            Vec::<ReviewBriefMove>::new()
+        );
+        assert_eq!(
+            moved_in(&hunks, &sides(true, false)).moves,
+            Vec::<ReviewBriefMove>::new()
+        );
         // One edited line keeps the whole declaration shown.
         let edited = parse(&[
             TOTAL_REMOVED,
@@ -895,7 +901,7 @@ mod tests {
         let head = side(None, Some((TOTAL_EDITED, (1, 5))));
         let sides = [side(Some((TOTAL_BASE, (1, 5))), None), head];
         let matches = moved_in(&edited, &sides);
-        assert!(matches.moves.is_empty());
+        assert_eq!(matches.moves, Vec::<ReviewBriefMove>::new());
         assert!(
             matches
                 .fates
@@ -919,7 +925,7 @@ mod tests {
                 .flatten()
                 .all(|fate| *fate == Fate::Changed)
         );
-        assert!(matches.moves.is_empty());
+        assert_eq!(matches.moves, Vec::<ReviewBriefMove>::new());
     }
 
     #[test]
@@ -975,13 +981,19 @@ mod tests {
             "diff --git a/b.ts b/b.ts\n@@ -0,0 +1,3 @@\n+alpha(one, two);\n+    beta(one, two);\n+gamma(one, two);\n",
         ]);
         let head = "alpha(one, two);\n    beta(one, two);\ngamma(one, two);\n";
-        assert!(moved_in(&hunks, &sides(head)).moves.is_empty());
+        assert_eq!(
+            moved_in(&hunks, &sides(head)).moves,
+            Vec::<ReviewBriefMove>::new()
+        );
         let hunks = parse(&[
             "diff --git a/a.ts b/a.ts\n@@ -1,3 +0,0 @@\n-  alpha(one, two);\n-  beta(one, two);\n-  gamma(one, two);\n",
             "diff --git a/b.ts b/b.ts\n@@ -0,0 +1,3 @@\n+alpha(one, two);\n+beta(one, two);\n+gamma(one, two);\n",
         ]);
         let head = "alpha(one, two);\nbeta(one, two);\ngamma(one, two);\n";
-        assert!(moved_in(&hunks, &sides(head)).moves.is_empty());
+        assert_eq!(
+            moved_in(&hunks, &sides(head)).moves,
+            Vec::<ReviewBriefMove>::new()
+        );
         let hunks = parse(&[
             "diff --git a/a.ts b/a.ts\n@@ -1,3 +0,0 @@\n-  alpha(one, two);\n-  beta(one, two);\n-  gamma(one, two);\n",
             "diff --git a/b.ts b/b.ts\n@@ -0,0 +1,3 @@\n+  alpha(one, two);\n+  beta(one, two);\n+  gamma(one, two);\n",

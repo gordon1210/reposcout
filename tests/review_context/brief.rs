@@ -1525,7 +1525,7 @@ fn brief_commands_name_paths_literally_from_the_repository_root() {
                 .collect::<Vec<_>>()
         })
         .collect();
-    assert!(!commands.is_empty());
+    assert_ne!(commands, Vec::<String>::new());
     for command in &commands {
         let specs = command.split_once(" -- ").unwrap().1;
         assert!(
