@@ -6,7 +6,8 @@ Claude Code (`claude-haiku-5-5` and `claude-sonnet-5-5` at medium effort) and Co
 (`gpt-6.1-sol` at high effort). They are exploratory samples: two cases per stage, two repeats
 per case, and a single blind grader per answer. They decided the review brief defaults and the
 bundled skill wording on this branch; they do not establish a general percentage saving. The sealed
-holdout B then showed a quality regression for guided Claude Code agents on one case.
+holdout B then showed a quality regression for guided Claude Code agents on one case; the fix for
+it was measured on the fresh sealed holdout C.
 
 Raw run records, answers, grades and private oracles stay outside Git. Only the aggregates below
 are published.
@@ -16,7 +17,7 @@ are published.
 | Element | Definition |
 |---|---|
 | Arms | `baseline`: the native review with no RepoScout. `guided`: the same task plus "Start the review with the reposcout skill." It measures what RepoScout is worth once used; it is not the default user experience. `silent`: the skill installed and never mentioned, which measures unprompted adoption. |
-| Stages | `complex-development` (`api-migration`: 48 files, about 15k diff tokens with a defect; `module-split`: 116 files, about 101k diff tokens), `complex-holdout` (`config-defaults` with a defect; `behavior-preserving-refactor` without one) and the sealed `complex-holdout-b` (`change-c`, `change-d`). |
+| Stages | `complex-development` (`api-migration`: 48 files, about 15k diff tokens with a defect; `module-split`: 116 files, about 101k diff tokens), `complex-holdout` (`config-defaults` with a defect; `behavior-preserving-refactor` without one), and the sealed `complex-holdout-b` (`change-c`, `change-d`) and `complex-holdout-c` (`change-e` with a defect; `change-f` without one). |
 | Grading | One `claude-sonnet-5-5` grader at high effort per model and case scores every answer 0–3 against the private oracle. Answers are shuffled and stripped of tool and skill mentions; the grader sees each answer's recorded executions. An answer finding that contradicts an oracle goes to an independent read-only adjudicator; a confirmed oracle gap is reported as a second, amended score next to the strict one. |
 | Tokens | `input` is the total model input, including cache reads and cache writes. Cost-weighted input is uncached input + 0.1 × cache read + 1.25 × cache write + 5 × output. All token figures are sums over the cell's runs. |
 
@@ -137,8 +138,9 @@ Answers that conclude no issues score 0 under the amended oracle.
 | Codex | baseline | 4/12 | 8/12 | 2339k | 2065k | – | 28.6k | 624k | 8 |
 | Codex | guided | 5/12 | 9/12 | 2930k | 2625k | – | 38.3k | 759k (+22%) | 14 |
 
-`Executions` counts the recorded Node or Python runs of the cell's four answers. Codex reports no
-cache-write field, so its cost-weighted input treats every uncached token at full price.
+`Executions` counts the recorded shell commands of the cell's four answers that invoke Node or
+Python; a few are lookups such as `which node`. Codex reports no cache-write field, so its
+cost-weighted input treats every uncached token at full price.
 
 How often each arm found the adjudicated change-d defect, in two runs per cell:
 
@@ -161,6 +163,90 @@ favor citations over execution. Codex guided executed as often as its baseline a
 defect. The `both` variant is therefore not good enough for Claude Code, and the follow-up is
 measured on a fresh sealed holdout.
 
+## Fix after holdout B
+
+Two changes address the holdout B regression:
+
+- The brief adds an `unresolved dispatch` line. It names added methods that reuse an existing
+  method name without a resolved caller, with up to three receiver call sites, and stays at every
+  budget rung. The brief's note now calls its impact static and asks the agent to run the
+  repository checks before concluding.
+- The skill calls RepoScout output static evidence of what changed, not of how the code behaves.
+  For new variants of an existing registry, interface, enum or config, it asks the agent to follow
+  each required input or emitted value into the unchanged code that validates, stores or orders it.
+  A no-issues verdict needs at least one executed check, and each finding, or else the riskiest
+  traced path, gets one minimal witness through the public entry point.
+
+A tuning check on the spent holdout B ran the guided arm only, two runs per case. These answers
+were checked against the oracle and the adjudicated change-d defect, not graded blind. The
+baselines are the holdout B baselines above.
+
+| Model | Arm | Defects found | Input | Cache read | Cache write | Output | Cost-weighted | Executions |
+|---|---|---|---|---|---|---|---|---|
+| Haiku | baseline | 4/4 | 4532k | 4276k | 256k | 77.4k | 1135k | 15 |
+| Haiku | guided | 4/4 | 3981k | 3729k | 252k | 66.8k | 1022k (−10%) | 14 |
+| Sonnet | baseline | 4/4 | 1132k | 1027k | 104k | 15.8k | 312k | 2 |
+| Sonnet | guided | 3/4 | 1277k | 1159k | 119k | 14.1k | 335k (+7%) | 2 |
+
+`Defects found` counts the runs that found their case's defect: the documented one in change-c
+and the adjudicated one in change-d. Guided Haiku ran checks again and found the change-d defect in
+both runs, at about twice its earlier guided cost. One of the two guided Sonnet runs on change-d
+traced the new definition fields but not the inputs that completion requires, ran no witness and
+concluded no issues. One more skill sentence, asking agents to read each dispatcher site, did not
+help: Sonnet found the change-d defect in neither run. It was discarded. Codex was not rerun on
+holdout B.
+
+## Sealed holdout C
+
+First and only look at `complex-holdout-c`, with the fix frozen before the first run, baseline and
+guided, two repeats per case. `change-e` introduces a documented defect; `change-f` expects no
+issues.
+
+| Model | Arm | Score | Input | Cache read | Cache write | Output | Cost-weighted | Executions |
+|---|---|---|---|---|---|---|---|---|
+| Haiku | baseline | 6/12 | 3633k | 3366k | 267k | 89.5k | 1118k | 8 |
+| Haiku | guided | 9/12 | 2573k | 2391k | 181k | 57.4k | 753k (−33%) | 6 |
+| Sonnet | baseline | 7/12 | 779k | 690k | 89k | 9.7k | 228k | 2 |
+| Sonnet | guided | 10/12 | 1097k | 994k | 103k | 10.6k | 281k (+23%) | 4 |
+| Codex | baseline | 4/12 | 1964k | 1703k | – | 20.3k | 533k | 7 |
+| Codex | guided | 5/12 | 2179k | 1958k | – | 25.0k | 542k (+2%) | 9 |
+
+Two of guided Sonnet's four executions and one of baseline Haiku's eight were lookups (`which
+node`, `node --version`).
+
+Scores per case, out of 6:
+
+| Model | Arm | change-e | change-f |
+|---|---|---|---|
+| Haiku | baseline | 5 | 1 |
+| Haiku | guided | 5 | 4 |
+| Sonnet | baseline | 5 | 2 |
+| Sonnet | guided | 6 | 4 |
+| Codex | baseline | 4 | 0 |
+| Codex | guided | 5 | 0 |
+
+Every one of the twelve change-e runs found the defect, so that case did not separate the arms.
+The difference comes from change-f. Guided Claude answers concluded no issues with verifiable
+evidence and an executed test-suite run in every run. Baseline Claude answers gave weaker evidence;
+one Haiku baseline run executed nothing, and another reported an issue. On change-e, neither
+Sonnet arm executed anything; the other guided runs executed at least one check each.
+
+Five change-f answers, all four Codex answers and one Haiku baseline answer, reported the same
+behavior. The new programme schedule report and visit listing show visits that fell due before a
+programme was created or resumed as unopened, although generation never opens them. An
+independent read-only adjudication judged it not a defect with medium confidence: the whole
+feature is new, the documented rule covers generation only, and the report keeps its documented
+promise. A second pass over the four Codex answers found no new rule or evidence. The scores above
+are therefore strict. Had the behavior counted as a defect, guided Claude answers would have missed
+it in all four runs, against one of four Claude baseline runs that reported it; Codex reported it
+in both arms.
+
+Against holdout B, the fix restored executed checks for guided Haiku (6 executions, against 0)
+while keeping it a third cheaper than its baseline. Guided Sonnet scored higher at 23% more
+cost-weighted input: its baselines needed only 4–5 turns on change-e and 12–16 on change-f, so the
+brief added more context than the reads it saved. Guided Codex matched its baseline's cost. Quality held or improved for
+all three models, but only Haiku saved tokens.
+
 ## Limits and adverse outcomes
 
 - Each cell holds four answers from two cases. One point is within grading noise: re-grading the
@@ -180,3 +266,13 @@ measured on a fresh sealed holdout.
 - Graders see only the executions that a command filter keeps. The first Codex grading missed
   commands wrapped in `bash -lc`. The filter was fixed and the Codex answers were graded again
   before unblinding; the Claude Code records were unaffected.
+- Holdout B tuning check: the Haiku campaign of the discarded skill sentence failed at preflight
+  because the temporary-file quota was exhausted. It was not rerun after the sentence was dropped.
+- Holdout C: one guided Haiku run aborted when process-identity protection was unavailable and
+  recorded no usage. Its unconfirmed process cleanup left the serial run lease blocked until the
+  lease was cleared by hand; a fresh campaign with the same seed then completed the run. Both
+  attempts stay recorded.
+- Holdout C was sealed against tuning, not against the orchestrating agent. The report that
+  generated it named the case with the defect, and grader reports later quoted oracle content.
+  The orchestrator also saw the tool calls of the aborted run while diagnosing it. The skill and
+  the binary were frozen before the first holdout C run, and nothing from holdout C changed them.
