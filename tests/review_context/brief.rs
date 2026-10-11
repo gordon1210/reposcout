@@ -1074,38 +1074,91 @@ fn binaries_and_hunks() -> Fixture {
     revisions(&owned(&base), &owned(&head))
 }
 
+/// Change entry headings and their shown hunk headers.
+type Shown = (BTreeSet<String>, BTreeSet<String>);
+
+/// Shown items of a rendered brief.
+fn shown_items(text: &str) -> Shown {
+    let (mut entries, mut hunks) = (BTreeSet::new(), BTreeSet::new());
+    let mut entry = None;
+    for line in text.lines() {
+        if let Some(heading) = ["modified ", "added ", "deleted ", "renamed "]
+            .iter()
+            .any(|status| line.starts_with(status))
+            .then(|| line.split_once(" ("))
+            .filter(|_| !line.starts_with("renamed or mode changed"))
+            .flatten()
+            .map(|(heading, _)| heading)
+        {
+            entries.insert(heading.to_string());
+            entry = Some(heading.to_string());
+        } else if line.starts_with("@@ ")
+            && let Some(entry) = &entry
+        {
+            let header = line.splitn(3, "@@").take(2).collect::<Vec<_>>().concat();
+            hunks.insert(format!("{entry} {header}"));
+        }
+    }
+    (entries, hunks)
+}
+
+/// Detail of the omitted-hunk sections: other hunks counted with one full diff, counted with a
+/// command, listed or none omitted; rule-explained hunks counted, grouped or none omitted.
+fn omission_detail(text: &str) -> (u8, u8) {
+    let summary = text
+        .lines()
+        .find_map(|line| line.strip_prefix("omitted from output: "))
+        .unwrap_or("");
+    let omitted = |kind: &str| {
+        summary.split(", ").any(|part| {
+            part.split_once(' ')
+                .is_some_and(|(count, rest)| count.parse::<usize>().is_ok() && rest == kind)
+        })
+    };
+    let hunks = if omitted("hunks (listed at the end)") {
+        2
+    } else if !omitted("hunks (counted at the end)") {
+        3
+    } else {
+        u8::from(!text.contains("\nfull diff: "))
+    };
+    let explained = if omitted("rule-explained hunks (grouped at the end)") {
+        1
+    } else if omitted("rule-explained hunks (counted at the end)") || hunks == 0 {
+        0
+    } else {
+        2
+    };
+    (hunks, explained)
+}
+
 #[test]
-fn brief_budgets_from_256_render_and_admit_entries_monotonically() {
+fn brief_budgets_from_256_render_and_never_show_less_at_a_larger_budget() {
     let fixture = binaries_and_hunks();
-    let mut previous: Option<(usize, usize, bool, usize)> = None;
-    for budget in [256, 300, 400, 500, 700, 1000, 1500] {
+    let mut previous: Option<(Shown, (u8, u8))> = None;
+    let mut shown = Vec::new();
+    for budget in [256, 300, 400, 500, 700, 1000, 1500, 2500, 4000] {
         let text = brief(&fixture, &["--budget", &budget.to_string()]);
         assert!(tokens(&text) <= budget, "{budget}: {text}");
-        let entries = text
-            .lines()
-            .filter(|line| line.starts_with("modified "))
-            .count();
-        let hunks = text.lines().filter(|line| line.starts_with("@@ ")).count();
-        let rules = text.lines().filter(|line| line.starts_with("  R")).count();
-        let listed = text.contains("hunks (listed at the end)");
+        let (entries, hunks) = shown_items(&text);
+        let detail = omission_detail(&text);
         if budget >= 500 {
             // Changes without hunks stay visible by path.
             for path in ["assets/data.bin", "assets/logo.png"] {
                 assert!(text.contains(path), "{budget}: {path} in {text}");
             }
         }
-        // A larger budget keeps every entry and either lists rewrite rules or omitted hunks
-        // that a smaller one only counted, or shows at least as many hunks.
-        if let Some((entries_before, rules_before, listed_before, hunks_before)) = previous {
+        // A larger budget keeps every entry and shown hunk of a smaller one and never reduces
+        // the detail of the omitted-hunk sections.
+        if let Some(((entries_before, hunks_before), detail_before)) = &previous {
+            assert!(entries.is_superset(entries_before), "{budget}: {text}");
+            assert!(hunks.is_superset(hunks_before), "{budget}: {text}");
             assert!(
-                entries >= entries_before
-                    && (rules > rules_before
-                        || (listed && !listed_before)
-                        || hunks >= hunks_before),
-                "{budget}: {text}"
+                detail.0 >= detail_before.0 && detail.1 >= detail_before.1,
+                "{budget}: {detail:?} after {detail_before:?}: {text}"
             );
         }
-        previous = Some((entries, rules, listed, hunks));
+        shown.push(hunks.len());
         if text.contains("full diff:") {
             let command = format!(
                 "full diff: git diff --no-indent-heuristic {} {}\n",
@@ -1114,7 +1167,9 @@ fn brief_budgets_from_256_render_and_admit_entries_monotonically() {
             );
             assert!(text.ends_with(&command), "{budget}: {text}");
         }
+        previous = Some(((entries, hunks), detail));
     }
+    assert!(shown.first() < shown.last(), "{shown:?}");
     let smallest = brief(&fixture, &["--budget", "256"]);
     assert!(smallest.contains("full diff:"), "{smallest}");
 }
@@ -1460,7 +1515,7 @@ fn brief_commands_name_paths_literally_from_the_repository_root() {
             .collect()
     };
     let fixture = revisions(&owned(&side(0)), &owned(&side(5)));
-    let commands: Vec<String> = [300, 400]
+    let commands: Vec<String> = [310, 400]
         .iter()
         .flat_map(|budget| {
             let text = brief(&fixture, &["--budget", &budget.to_string()]);
@@ -2491,6 +2546,25 @@ fn brief_python_renames_of_external_imports_are_shown() {
 }
 
 #[test]
+fn brief_python_renames_of_keyword_only_parameters_are_shown() {
+    let benign = |name: &str, binding: &str| {
+        format!("def show_{name}(ctx):\n    {binding} = load(ctx)\n    return render({binding})\n")
+    };
+    let probes = [
+        (
+            "pkg/x_bare.py",
+            "def k(*, user=None):\n    return load(user)\n",
+        ),
+        (
+            "pkg/x_star.py",
+            "def j(*args, user: int):\n    return load(user)\n",
+        ),
+    ];
+    let text = brief(&user_probes("pkg", "py", &benign, &probes), &[]);
+    assert_probes_shown(&text, "pkg/{a,b,c}.py:2", &probes);
+}
+
+#[test]
 fn brief_rust_renames_of_external_and_foreign_items_are_shown() {
     let benign = |name: &str, binding: &str| {
         format!(
@@ -2505,6 +2579,27 @@ fn brief_rust_renames_of_external_and_foreign_items_are_shown() {
         (
             "src/x_extern.rs",
             "extern \"C\" {\n    fn user(id: u32) -> u32;\n}\n\npub fn call(id: u32) -> u32 {\n    unsafe { user(id) }\n}\n",
+        ),
+    ];
+    let text = brief(&user_probes("src", "rs", &benign, &probes), &[]);
+    assert_probes_shown(&text, "src/{a,b,c}.rs:2", &probes);
+}
+
+#[test]
+fn brief_rust_renames_of_macros_and_extern_functions_are_shown() {
+    let benign = |name: &str, binding: &str| {
+        format!(
+            "pub fn show_{name}(ctx: u32) -> u32 {{\n    let {binding} = load(ctx);\n    render({binding})\n}}\n"
+        )
+    };
+    let probes = [
+        (
+            "src/x_macro.rs",
+            "macro_rules! user {\n    () => {\n        1\n    };\n}\n\npub fn m() -> u32 {\n    user!()\n}\n",
+        ),
+        (
+            "src/x_cabi.rs",
+            "pub extern \"C\" fn user(id: u32) -> u32 {\n    id\n}\n",
         ),
     ];
     let text = brief(&user_probes("src", "rs", &benign, &probes), &[]);

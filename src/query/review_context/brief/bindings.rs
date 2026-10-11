@@ -1,5 +1,6 @@
 //! Where a file binds the names it uses: declared in the file, imported from an in-tree module,
-//! or bound outside the tree (external imports, ambient, foreign and exported ABI declarations).
+//! or bound outside the tree (external imports, ambient, foreign and exported ABI declarations,
+//! Rust macros and Python keyword-only parameters, whose names code outside the tree spells).
 
 use crate::lang::FirstClass;
 use rustc_hash::FxHashSet;
@@ -15,7 +16,7 @@ pub(super) const IMPORTED: u8 = 2;
 pub(super) struct Bindings {
     declared: FxHashSet<String>,
     imported: FxHashSet<String>,
-    /// Bound outside the tree in this file; such a name proves no rename.
+    /// Bound outside the tree or spelled by code outside it; such a name proves no rename.
     external: FxHashSet<String>,
 }
 
@@ -51,15 +52,24 @@ pub(super) fn bindings(
         if let Some(parent) = parent
             && declares(grammar, parent, field, node)
         {
-            let exported = grammar == FirstClass::Rust && abi_symbol(parent, content);
+            let exported = grammar == FirstClass::Rust
+                && (abi_symbol(parent, content)
+                    || extern_function(parent)
+                    || parent.kind() == "macro_definition");
             let mut names = Vec::new();
             pattern(grammar, node, &mut names);
-            let target = if outside || exported {
-                &mut out.external
-            } else {
-                &mut out.declared
-            };
-            target.extend(names.into_iter().map(|name| text(name).to_string()));
+            let mut keyword = Vec::new();
+            if grammar == FirstClass::Python && field == Some("parameters") {
+                keyword_only(node, &mut keyword);
+            }
+            for name in names {
+                let target = if outside || exported || keyword.contains(&name) {
+                    &mut out.external
+                } else {
+                    &mut out.declared
+                };
+                target.insert(text(name).to_string());
+            }
         }
         imports(grammar, node, content, module, &mut out);
         let mut cursor = node.walk();
@@ -102,6 +112,42 @@ fn abi_symbol(item: Node<'_>, content: &str) -> bool {
         current = attribute.prev_named_sibling();
     }
     false
+}
+
+/// A Rust function item with an `extern` ABI.
+fn extern_function(item: Node<'_>) -> bool {
+    let mut cursor = item.walk();
+    item.kind() == "function_item"
+        && item
+            .named_children(&mut cursor)
+            .filter(|child| child.kind() == "function_modifiers")
+            .any(|modifiers| {
+                let mut cursor = modifiers.walk();
+                modifiers
+                    .named_children(&mut cursor)
+                    .any(|modifier| modifier.kind() == "extern_modifier")
+            })
+}
+
+/// Identifier nodes of the keyword-only parameters of a Python parameter list: those after a
+/// bare `*` or `*args`, except `**kwargs`.
+fn keyword_only<'t>(parameters: Node<'t>, out: &mut Vec<Node<'t>>) {
+    let splat = |node: Node<'_>, kind: &str| {
+        node.kind() == kind
+            || (node.kind() == "typed_parameter"
+                && node
+                    .named_child(0)
+                    .is_some_and(|first| first.kind() == kind))
+    };
+    let mut after = false;
+    let mut cursor = parameters.walk();
+    for parameter in parameters.named_children(&mut cursor) {
+        if parameter.kind() == "keyword_separator" || splat(parameter, "list_splat_pattern") {
+            after = true;
+        } else if after && !splat(parameter, "dictionary_splat_pattern") {
+            pattern(FirstClass::Python, parameter, out);
+        }
+    }
 }
 
 /// `node`, the `field` child of `parent`, holds names that `parent` declares.
@@ -556,7 +602,8 @@ mod tests {
                 for i, (j, l) in x: pass\n    \
                 w = (n := 1)\n    \
                 self.attr = 1\n\
-            class C(Base): pass\n";
+            class C(Base): pass\n\
+            def b(x, *, kwo=None, **rest): pass\n";
         assert_eq!(
             of(
                 FirstClass::Python,
@@ -564,21 +611,23 @@ mod tests {
                 &[
                     "user", "u", "other", "near", "charge", "os", "pkg", "pc", "k", "p", "q",
                     "args", "r", "s", "kw", "i", "j", "l", "w", "n", "attr", "self", "C", "Base",
-                    "int",
+                    "int", "x", "kwo", "rest",
                 ]
             ),
             [
-                0, 1, 0, 2, 2, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0
+                0, 1, 0, 2, 2, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1
             ]
         );
     }
 
     #[test]
-    fn rust_bindings_exclude_external_uses_and_abi_symbols() {
+    fn rust_bindings_exclude_external_uses_abi_symbols_and_macros() {
         let source = "use extcrate::{user as u, other};\n\
             use crate::m::{inner::{deep as dd}, near};\n\
             extern \"C\" { fn cfn(id: u32) -> u32; }\n\
             #[no_mangle] pub extern \"C\" fn exported() {}\n\
+            pub extern \"C\" fn cabi(arg: u32) {}\n\
+            macro_rules! mac { () => {}; }\n\
             fn f(p: u32, S { fx, fy: fz }: S) { let Some(w) = o else { return }; }\n\
             struct St;\n";
         assert_eq!(
@@ -587,10 +636,10 @@ mod tests {
                 source,
                 &[
                     "user", "u", "other", "deep", "dd", "near", "cfn", "exported", "f", "p", "fx",
-                    "fz", "fy", "w", "Some", "St",
+                    "fz", "fy", "w", "Some", "St", "cabi", "arg", "mac",
                 ]
             ),
-            [0, 1, 0, 2, 1, 2, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1]
+            [0, 1, 0, 2, 1, 2, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0]
         );
     }
 

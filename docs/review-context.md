@@ -172,9 +172,11 @@ The same input renders byte-identical output.
     or a Rust `crate::`, `self::` or `super::` path. The original-name side of an import or
     re-export specifier (`import { user as u }`, `export { user as current } from`) is never a
     declaration and qualifies only through such an in-tree specifier. A name the file also binds
-    outside the tree never qualifies: through an import from any other module, a TypeScript
-    ambient declaration (`declare`, `declare global`, `declare module`), a Rust `extern` block or
-    an item carrying `#[no_mangle]` or `#[export_name]`. Builtins, host globals and Go names
+    outside the tree, or that code outside the tree spells, never qualifies: through an import
+    from any other module, a TypeScript ambient declaration (`declare`, `declare global`,
+    `declare module`), a Rust `extern` block, an item carrying `#[no_mangle]` or `#[export_name]`,
+    a function with an `extern` ABI (`pub extern "C" fn`) or a `macro_rules!` macro, or a Python
+    keyword-only parameter (after `*` or `*args`). Builtins, host globals and Go names
     declared in another file of the package are bound nowhere in the file and never qualify;
     neither do lowercase JSX element names, non-ASCII names or any name of a file with a non-ASCII
     identifier. Within each file the applied renames must be one-to-one: a site whose old name
@@ -274,12 +276,13 @@ budgets hold: rewrite-only sites, every change entry heading, shown hunks (devia
 structural, line-for-line and deletion hunks of non-test files, then the same tiers of test
 files, then compact hunks of non-test and then of test files), a change's
 definition details right after its first admitted hunk, rewrite examples, remaining details,
-importers, doc lines and usage lines. Entry headings come first so that every change stays
-visible by path; hunks come before details and examples because the diff is the evidence the
-other sections summarize. Doc lines, importer lists and usage lines together take at most
-max(400, half the diff tokens). The `omitted from output:` line counts every removal exactly,
-and change entries without a shown hunk that do not fit are listed by path and status (at most
-40, then `+N more`).
+importers, doc lines and usage lines. A bounded number of later details, examples, importer, doc
+and usage lines that still fit are tried afterwards; entry headings and hunks are only admitted in
+that order. Entry headings come first so that every change stays visible by path; hunks come
+before details and examples because the diff is the evidence the other sections summarize. Doc
+lines, importer lists and usage lines together take at most max(400, half the diff tokens). The
+`omitted from output:` line counts every removal exactly, and change entries without a shown hunk
+that do not fit are listed by path and status (at most 40, then `+N more`).
 
 Omitted hunks are never dropped silently: `omitted hunks (N in M files):` lists them per file as
 `path @@ +a,b +c,d` (`-a,b` for deletions), followed by one
@@ -294,18 +297,21 @@ Omitted compact hunks are not part of that per-file list. `omitted rule-explaine
 files; every edit is a listed rewrite):` groups them by rewrite combination as
 `R1 R2 (5 hunks): src/{a,b}.ts:12 lib/c.ts:4,30`, one compressed `path:line` site per hunk,
 followed by one `git diff` command per ten files with the same flags and pathspecs. The sites
-are admitted before other hunks compete for the budget, but only when the hunks that are not
-compact stay the same as without them; otherwise each combination is counted as
-`R1 R2: 5 hunks in 3 files`, followed by one command for all of them. Every omitted compact hunk
-appears in exactly one group.
+are admitted only once every hunk that is not compact is shown; otherwise each combination is
+counted as `R1 R2: 5 hunks in 3 files`, followed by one command for all of them. Every omitted
+compact hunk appears in exactly one group.
 
 When the mandatory sections do not fit, they collapse level by level: first the stale-name list
 becomes one count line, then each omitted-hunk list (per file and rule-explained) becomes one
 line with its command, and finally rewrites, moves, renames, stale names and omissions (compact
 hunks counted with all other hunks) become counts followed by
-`full diff: git diff --no-indent-heuristic <base> <head>`. A level that fits but admits no shown
-hunk (no change entry when no hunk is shown) gives way to the next level. Only when even the counts exceed the budget
-does the brief fail with an error.
+`full diff: git diff --no-indent-heuristic <base> <head>`. Each finer level, and finally the
+compact-hunk sites, starts at a fixed budget: the smallest one at which it holds every item up to
+and including the first shown hunk (the first change entry when no hunk is shown; for the sites,
+every hunk that is not compact). From there it replaces the coarser levels once it admits at
+least as many change entries and hunks as they admit just below that budget. A larger budget
+therefore never drops a change entry or hunk shown at a smaller one and never uses a coarser
+level. Only when even the counts exceed the budget does the brief fail with an error.
 
 Hunks come from libgit2's Myers diff with three context lines and without Git's indent
 heuristic; the emitted commands pass `--no-indent-heuristic` to match. A plain `git diff`, whose

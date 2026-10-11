@@ -364,97 +364,173 @@ fn select(selection: &mut ReviewBriefSelection, item: BriefItem, admit: bool) {
     }
 }
 
-/// Highest collapse level of the brief's mandatory sections.
-const BRIEF_LEVELS: u8 = 3;
+/// Detail rungs of the brief's mandatory sections, coarsest first: collapse levels 3, 2, 1 and
+/// 0, then level 0 with omitted rule-explained hunks listed by site. A finer rung never shows
+/// a coarser collapse level or fewer sites.
+const BRIEF_RUNGS: [(u8, bool); 5] = [(3, false), (2, false), (1, false), (0, false), (0, true)];
 
-/// First collapse level that reduces the omitted-hunk lists to one line each.
-const OMITTED_LINE_LEVEL: u8 = 2;
+/// Shared inputs of one brief projection.
+struct BriefProjection<'a> {
+    options: &'a ReviewContextOptions,
+    counter: &'a TokenCounter,
+    deadline: std::time::Instant,
+    items: Vec<BriefItem>,
+    /// Smallest token budget from which each rung may replace the coarser ones; `None` when it
+    /// never can.
+    starts: Vec<Option<usize>>,
+}
 
 /// Brief projection renders mandatory summaries (rewrites, moves, renames, stale spellings and
-/// the omission list), then admits the longest prefix of optional evidence that fits and tries
-/// a bounded number of later items. Omitted rule-explained hunks are counted per rewrite
-/// combination; below level 2 their sites are listed instead when the sites fit and the
-/// admission with them keeps every other hunk that the admission without them keeps. Mandatory
-/// sections collapse level by level until they fit; a level that fits but admits no shown hunk
-/// (no change entry when no hunk is shown) gives way to the next level that admits one. Soft
-/// evidence stays proportional to shown diff text.
+/// the omission list) at a detail rung, admits the longest prefix of optional evidence that
+/// fits, then tries a bounded number of later items that are neither change entries nor hunks.
+/// From its start budget (see `rung_starts`) a finer rung is used once it admits at least as
+/// many entries and hunks as the coarser rungs admit just below that start, which they keep
+/// until then. A larger budget therefore never shows fewer entries or hunks and never a coarser
+/// rung. Soft evidence stays proportional to shown diff text.
 fn project_brief(
     report: &mut ReviewContextReport,
     options: &ReviewContextOptions,
     counter: &TokenCounter,
     deadline: std::time::Instant,
 ) -> Result<()> {
-    let items = brief_items(report);
-    let mut fallback = None;
-    for level in 0..=BRIEF_LEVELS {
-        set_selection(report, level, &[]);
-        if !brief_fits(report, options, counter, deadline)? {
-            continue;
-        }
-        admit(report, options, counter, deadline, level, &[], &items)?;
-        if level < OMITTED_LINE_LEVEL
-            && report
-                .brief
-                .as_ref()
-                .is_some_and(|brief| brief.hunks.iter().any(|hunk| hunk.explained))
-        {
-            let without_sites = report.brief.as_ref().map(|brief| brief.selection.clone());
-            let kept = admitted_full_hunks(report);
-            set_selection(report, level, &[BriefItem::ExplainedSites]);
-            let grouped = brief_fits(report, options, counter, deadline)? && {
-                let base = [BriefItem::ExplainedSites];
-                admit(report, options, counter, deadline, level, &base, &items)?;
-                kept.is_subset(&admitted_full_hunks(report))
-            };
-            if !grouped
-                && let (Some(selection), Some(brief)) = (without_sites, report.brief.as_mut())
-            {
-                brief.selection = selection;
-            }
-        }
-        let Some(brief) = report.brief.as_ref() else {
-            return Ok(());
-        };
-        let shown = brief
-            .hunks
-            .iter()
-            .any(|hunk| hunk.role == ReviewHunkRole::Shown);
-        let admitted = if shown {
-            brief
-                .selection
-                .hunks
-                .iter()
-                .any(|&index| brief.selection.entries.contains(&brief.hunks[index].change))
-        } else {
-            brief.entry_changes.is_empty() || !brief.selection.entries.is_empty()
-        };
-        if admitted {
-            return Ok(());
-        }
-        fallback.get_or_insert_with(|| brief.selection.clone());
-    }
-    if let (Some(selection), Some(brief)) = (fallback, report.brief.as_mut()) {
-        brief.selection = selection;
+    if report.brief.is_none() {
         return Ok(());
     }
-    anyhow::bail!(
-        "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
-    )
+    let items = brief_items(report);
+    let mut projection = BriefProjection {
+        options,
+        counter,
+        deadline,
+        items,
+        starts: Vec::new(),
+    };
+    projection.starts = rung_starts(report, &projection)?;
+    let Some(choice) = rung_choice(
+        report,
+        &projection,
+        BRIEF_RUNGS.len() - 1,
+        options.token_budget,
+    )?
+    else {
+        anyhow::bail!(
+            "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
+        )
+    };
+    let base = rung_base(choice.rung);
+    let low = longest_prefix(
+        report,
+        &projection,
+        choice.budget,
+        BRIEF_RUNGS[choice.rung].0,
+        base,
+    )?;
+    admit_greedily(report, &projection, choice.budget, low)
 }
 
-/// Admitted shown hunks that are not rule-explained, in admitted change entries.
-fn admitted_full_hunks(report: &ReviewContextReport) -> BTreeSet<usize> {
-    report.brief.as_ref().map_or_else(BTreeSet::new, |brief| {
-        brief
-            .selection
-            .hunks
-            .iter()
-            .copied()
-            .filter(|&index| {
-                let hunk = &brief.hunks[index];
-                !hunk.explained && brief.selection.entries.contains(&hunk.change)
-            })
-            .collect()
+fn rung_base(rung: usize) -> &'static [BriefItem] {
+    if BRIEF_RUNGS[rung].1 {
+        &[BriefItem::ExplainedSites]
+    } else {
+        &[]
+    }
+}
+
+/// Start budget of every rung: the coarsest rung starts where its mandatory part fits; a finer
+/// level where it also holds every item up to and including the first hunk (the first change
+/// entry without hunks); the site rung where it holds every item before the first
+/// rule-explained hunk, which follows every other hunk in admission order, and only when one
+/// exists.
+fn rung_starts(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+) -> Result<Vec<Option<usize>>> {
+    let items = &projection.items;
+    let Some(brief) = report.brief.as_ref() else {
+        return Ok(vec![None; BRIEF_RUNGS.len()]);
+    };
+    let first = items
+        .iter()
+        .position(|item| matches!(item, BriefItem::Hunk(_)))
+        .or_else(|| {
+            items
+                .iter()
+                .position(|item| matches!(item, BriefItem::Entry(_)))
+        })
+        .map_or(0, |first| first + 1);
+    let explained = items
+        .iter()
+        .position(|item| matches!(item, BriefItem::Hunk(index) if brief.hunks[*index].explained));
+    let mut starts = Vec::with_capacity(BRIEF_RUNGS.len());
+    for (rung, &(level, sites)) in BRIEF_RUNGS.iter().enumerate() {
+        let anchor = match (rung, sites) {
+            (0, _) => Some(0),
+            (_, false) => Some(first),
+            (_, true) => explained,
+        };
+        let start = match anchor {
+            Some(anchor) => {
+                set_selection(report, level, rung_base(rung));
+                let empty = brief_cost(report, projection)?;
+                set_selection(report, level, &[rung_base(rung), &items[..anchor]].concat());
+                empty
+                    .zip(brief_cost(report, projection)?)
+                    .map(|(empty, anchored)| empty.max(anchored))
+            }
+            None => None,
+        };
+        starts.push(start);
+    }
+    Ok(starts)
+}
+
+/// Rung and budget whose admission the brief shows.
+#[derive(Clone, Copy)]
+struct RungChoice {
+    rung: usize,
+    budget: usize,
+    /// Admitted change entries and hunks; both are prefixes of one admission order, so a larger
+    /// count includes every item of a smaller one.
+    admitted: usize,
+}
+
+/// Choice at `rung` or a coarser one for `budget`, or `None` when no rung fits. Only the
+/// longest fitting prefix decides it; greedy admissions never add entries or hunks.
+fn rung_choice(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    rung: usize,
+    budget: usize,
+) -> Result<Option<RungChoice>> {
+    let start = projection.starts[rung];
+    if rung > 0 && start.is_none_or(|start| budget < start) {
+        return rung_choice(report, projection, rung - 1, budget);
+    }
+    let Some(start) = start else {
+        return Ok(None);
+    };
+    if budget < start {
+        return Ok(None);
+    }
+    let kept = match start.checked_sub(1) {
+        Some(below) if rung > 0 => rung_choice(report, projection, rung - 1, below)?,
+        _ => None,
+    };
+    let (level, _) = BRIEF_RUNGS[rung];
+    set_selection(report, level, rung_base(rung));
+    if !brief_fits(report, projection, budget)? {
+        return Ok(kept);
+    }
+    longest_prefix(report, projection, budget, level, rung_base(rung))?;
+    let admitted = report.brief.as_ref().map_or(0, |brief| {
+        brief.selection.entries.len() + brief.selection.hunks.len()
+    });
+    Ok(match kept {
+        Some(kept) if admitted < kept.admitted => Some(kept),
+        _ => Some(RungChoice {
+            rung,
+            budget,
+            admitted,
+        }),
     })
 }
 
@@ -470,30 +546,40 @@ fn set_selection(report: &mut ReviewContextReport, level: u8, admitted: &[BriefI
     }
 }
 
-/// Longest fitting prefix of `items` after the `base` items at `level`, then bounded greedy
-/// admissions.
-fn admit(
+/// Selects the longest fitting prefix of the admission order after the `base` items at `level`
+/// and returns its length.
+fn longest_prefix(
     report: &mut ReviewContextReport,
-    options: &ReviewContextOptions,
-    counter: &TokenCounter,
-    deadline: std::time::Instant,
+    projection: &BriefProjection<'_>,
+    budget: usize,
     level: u8,
     base: &[BriefItem],
-    items: &[BriefItem],
-) -> Result<()> {
+) -> Result<usize> {
+    let items = &projection.items;
     let (mut low, mut high) = (0, items.len());
     while low < high {
         let middle = low + (high - low).div_ceil(2);
         set_selection(report, level, &[base, &items[..middle]].concat());
-        if brief_fits(report, options, counter, deadline)? {
+        if brief_fits(report, projection, budget)? {
             low = middle;
         } else {
             high = middle - 1;
         }
     }
     set_selection(report, level, &[base, &items[..low]].concat());
+    Ok(low)
+}
+
+/// Bounded greedy admissions of items after the longest fitting prefix of length `low`, other
+/// than change entries and hunks.
+fn admit_greedily(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    budget: usize,
+    low: usize,
+) -> Result<()> {
     let mut attempts = 0;
-    for item in items.iter().skip(low + 1) {
+    for item in projection.items.iter().skip(low + 1) {
         if attempts == BRIEF_GREEDY_ATTEMPTS {
             break;
         }
@@ -501,7 +587,8 @@ fn admit(
             break;
         };
         let entry = item_entry(report, brief, *item);
-        if entry.is_some_and(|change| !brief.selection.entries.contains(&change))
+        if matches!(item, BriefItem::Entry(_) | BriefItem::Hunk(_))
+            || entry.is_some_and(|change| !brief.selection.entries.contains(&change))
             || (matches!(item, BriefItem::Usage(_)) && entry.is_none())
         {
             continue;
@@ -510,7 +597,7 @@ fn admit(
         if let Some(brief) = report.brief.as_mut() {
             select(&mut brief.selection, *item, true);
         }
-        if !brief_fits(report, options, counter, deadline)?
+        if !brief_fits(report, projection, budget)?
             && let Some(brief) = report.brief.as_mut()
         {
             select(&mut brief.selection, *item, false);
@@ -519,18 +606,39 @@ fn admit(
     Ok(())
 }
 
-fn brief_fits(
+/// Smallest token budget that holds the current selection, or `None` when the byte budget or
+/// the soft-evidence share rules it out at every token budget.
+fn brief_cost(
     report: &ReviewContextReport,
-    options: &ReviewContextOptions,
-    counter: &TokenCounter,
-    deadline: std::time::Instant,
-) -> Result<bool> {
-    check_deadline(deadline)?;
+    projection: &BriefProjection<'_>,
+) -> Result<Option<usize>> {
+    check_deadline(projection.deadline)?;
     let parts = crate::report::review_context::render_brief_parts(
         report,
-        options.format == Format::Markdown,
+        projection.options.format == Format::Markdown,
     );
-    if parts.text.len() > options.byte_budget || counter.count(&parts.text) > options.token_budget {
+    let counter = projection.counter;
+    if parts.text.len() > projection.options.byte_budget
+        || !(parts.soft.is_empty()
+            || counter.count(&parts.soft) <= BRIEF_SOFT_TOKENS.max(counter.count(&parts.diff) / 2))
+    {
+        return Ok(None);
+    }
+    Ok(Some(counter.count(&parts.text)))
+}
+
+fn brief_fits(
+    report: &ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    budget: usize,
+) -> Result<bool> {
+    check_deadline(projection.deadline)?;
+    let parts = crate::report::review_context::render_brief_parts(
+        report,
+        projection.options.format == Format::Markdown,
+    );
+    let counter = projection.counter;
+    if parts.text.len() > projection.options.byte_budget || counter.count(&parts.text) > budget {
         return Ok(false);
     }
     Ok(parts.soft.is_empty()

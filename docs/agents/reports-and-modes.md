@@ -32,8 +32,9 @@ complete base and head files' syntax trees in an allowlisted grammar (TS/TSX/JS,
 never member, key, field, attribute or argument-name positions; the old name is bound in the
 site's base file and the new name in its head file by declarations or by imports from in-tree
 modules (relative TS/JS specifiers, relative or captured Python modules, Rust `crate`/`self`/`super`
-paths), never by external imports, ambient, `extern` or ABI-exported items, and the file's renames
-are one-to-one; the new name occurs in no base-tree
+paths), never by external imports, ambient, `extern` or ABI items (`#[no_mangle]`,
+`#[export_name]`, `extern "C" fn`), Rust `macro_rules!` names or Python keyword-only parameters,
+and the file's renames are one-to-one; the new name occurs in no base-tree
 blob and the old name in no head-tree blob (bounded scan; over the bound nothing is pure); and
 spelling changes with language meaning (Go export case, Python underscores and dunders, test
 affixes in test files) never qualify. A moved declaration folds only when the target file's other
@@ -48,11 +49,14 @@ line pairs exactly after pure renames (never between a test and a non-test file)
 changes and added, deleted or modified files whose hunks moved always stay listed. Its projection
 admits items in a fixed order under both budgets (entry headings, hunks with details after each
 change's first hunk, every other non-test hunk before every other test-file hunk and compact
-hunks after all others, examples, then soft evidence) and keeps soft evidence within max(400, diff
-tokens / 2). Mandatory summaries collapse in three levels before a budget is rejected; a level
-that admits no shown hunk gives way to the next. Omitted compact hunks are grouped by rewrite
-combination (sites and fetch commands only when they displace no other hunk, otherwise counts
-and one command). Other omitted hunks are listed per file for up to 40 files, then counted;
+hunks after all others, examples, then soft evidence; a bounded greedy pass afterwards admits no
+entry or hunk) and keeps soft evidence within max(400, diff tokens / 2). Mandatory summaries
+collapse in three levels before a budget is rejected. Each finer level, and finally compact-hunk
+sites, has a budget-independent start and takes over from it once it admits at least as many
+entries and hunks as the coarser levels keep from just below that start, so a larger budget never
+drops a shown entry or hunk and never coarsens the level. Omitted compact hunks are grouped by
+rewrite combination (sites and fetch commands only once every other hunk is shown, otherwise
+counts and one command). Other omitted hunks are listed per file for up to 40 files, then counted;
 level 2 reduces both lists to one count line with a command each, level 3 to counts and one
 full `git diff`. Commands use 12-character resolved commits (the merge base with
 `--merge-base`), `--no-indent-heuristic` to match the internal hunks, and shell-quoted
