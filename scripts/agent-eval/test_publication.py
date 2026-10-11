@@ -17,6 +17,8 @@ import review_campaign
 import review_export
 import review_cases
 
+SCRIPT_ROOT = Path(__file__).resolve().parent
+
 
 def private_report():
     runs = []
@@ -73,6 +75,27 @@ class PublicationTests(unittest.TestCase):
             self.assertNotIn(key, encoded)
         self.assertNotIn("private", encoded)
         self.assertNotIn("d" * 64, encoded)
+
+    def test_claude_basis_and_every_campaign_case_are_publishable(self):
+        cases = set(review_campaign.LARGE_FOLLOWUP_CASES + review_campaign.COMPLEX_DEVELOPMENT_CASES
+                    + review_campaign.COMPLEX_HOLDOUT_CASES + review_campaign.COMPLEX_HOLDOUT_B_CASES
+                    + review_campaign.COMPLEX_HOLDOUT_C_CASES)
+        catalogs = set()
+        for catalog in (SCRIPT_ROOT / "fixtures/complex-review").glob("*/catalog.json"):
+            catalogs.update(case["case_id"] for case in json.loads(catalog.read_text())["cases"])
+        self.assertEqual(cases & catalogs, catalogs)
+        report = private_report()
+        base = report["runs"][0]
+        report["runs"] = [{**base, "case_id": case, "variant": "baseline", "repeat_id": 1,
+                           "accounting": {**base["accounting"], "usage_basis": "claude-result-invocation-usage"}}
+                          for case in sorted(cases)]
+        report["assignment_count"] = len(report["runs"])
+        value = publication.project_publication(report)
+        self.assertEqual({row["case_id"] for row in value["runs"]}, cases)
+        self.assertEqual({row["usage_basis"] for row in value["runs"]}, {"claude-result-invocation-usage"})
+        value["runs"][0]["usage_basis"] = "claude-result-invocation-usage-v2"
+        with self.assertRaises(InvalidLedger):
+            publication.validate_publication(value)
 
     def test_validator_rejects_extra_fields_and_text_in_numeric_or_enum_fields(self):
         original = publication.project_publication(private_report())

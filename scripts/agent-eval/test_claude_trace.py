@@ -350,6 +350,18 @@ class AdoptionObservationTest(unittest.TestCase):
         self.assertEqual(observed["tokens"], {"uncached_input_tokens": 10, "cache_read_input_tokens": 22,
                                               "cache_write_input_tokens": 14, "output_tokens": 30, "source": "result"})
 
+    def test_missing_final_counters_stay_unknown_and_known_ones_are_kept(self):
+        final = result(usage(10, 14, 22, 30), subtype="error_max_turns", is_error=True)
+        del final["usage"]["output_tokens"]
+        observed = observe([init(), *bash("toolu_1", "msg_1", "git diff a b"), final])
+        self.assertEqual(observed["tokens"], {"uncached_input_tokens": 10, "cache_read_input_tokens": 22,
+                                              "cache_write_input_tokens": 14, "output_tokens": None,
+                                              "source": "result-partial"})
+        unreported = observe([init(), *bash("toolu_1", "msg_1", "git diff a b")])
+        self.assertEqual(unreported["tokens"], {"uncached_input_tokens": None, "cache_read_input_tokens": None,
+                                                "cache_write_input_tokens": None, "output_tokens": None,
+                                                "source": "unavailable"})
+
     def test_capped_stream_is_reported_and_keeps_tokens(self):
         capped = result(usage(3, 5, 8, 13), subtype="error_max_turns", is_error=True, num_turns=6,
                         terminal_reason="max_turns")

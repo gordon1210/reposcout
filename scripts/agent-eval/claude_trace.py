@@ -465,15 +465,15 @@ def parse_exec_trace(path, *, controller=None, expected_thread_id=None):
 
 
 def token_breakdown(state):
-    """Reported tokens split into uncached input, cache read, cache write and output."""
+    """Final-result tokens split into uncached input, cache read, cache write and output.
+
+    A counter the final result does not report stays None; assistant messages carry only
+    start-of-stream usage and never stand in for a missing total.
+    """
     final = state['result']
-    raw, errors = (_claude_usage(final.get('usage')) if final is not None
-                   else (dict.fromkeys(CLAUDE_USAGE), ['no-result']))
-    source = 'result'
-    if errors or any(value is None for value in raw.values()):
-        raw = {field: sum(state['messages'][identity][field] or 0 for identity in state['message_order'])
-               for field in CLAUDE_USAGE}
-        source = 'assistant-messages-start-of-stream'
+    raw = _claude_usage(final.get('usage'))[0] if final is not None else dict.fromkeys(CLAUDE_USAGE)
+    known = [value is not None for value in raw.values()]
+    source = 'result' if all(known) else 'result-partial' if any(known) else 'unavailable'
     return {'uncached_input_tokens': raw['input_tokens'], 'cache_read_input_tokens': raw['cache_read_input_tokens'],
             'cache_write_input_tokens': raw['cache_creation_input_tokens'], 'output_tokens': raw['output_tokens'],
             'source': source}

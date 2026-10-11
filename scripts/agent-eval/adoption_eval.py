@@ -46,6 +46,7 @@ DEFAULT_MAX_TURNS = 6
 DEFAULT_EFFORT = "medium"
 DEFAULT_TIMEOUT_SECONDS = 300
 REQUEST = "Reply with a short free-form answer."
+TOKEN_FIELDS = ("uncached_input_tokens", "cache_read_input_tokens", "cache_write_input_tokens", "output_tokens")
 # Unlike the review schema, one free-text field: adoption runs are never graded for answer quality.
 ADOPTION_SCHEMA = {"type": "object", "properties": {"conclusion": {"type": "string"}}, "required": ["conclusion"]}
 INVALID_STREAM_REASONS = ("runtime-isolation-violation", "credential-exposure", "isolation-preflight-failed",
@@ -251,6 +252,7 @@ def write_json(path, value):
 def execute_run(parameters, *, runner=run_trial, phrasings=None, descriptions=None, skill_dir=None,
                 bundle_root=BUNDLE_ROOT, pin_capture=capture_runtime_pins):
     """Run one adoption invocation and write its outcome; never retries or grades."""
+    from publication import private_destination
     from review_cases import create_signer, list_cases, prepare_case
     phrasings = phrasings if phrasings is not None else load_phrasings()
     skill_dir = Path(skill_dir) if skill_dir is not None else ROOT / "skills/reposcout"
@@ -261,7 +263,7 @@ def execute_run(parameters, *, runner=run_trial, phrasings=None, descriptions=No
             "case missing from the development bundle")
     run_id = run_name(parameters["description"], parameters["model"], parameters["arm"], parameters["case"],
                       parameters["phrasing"], parameters["repeat"])
-    output = Path(parameters["output_dir"])
+    output = private_destination(parameters["output_dir"])
     run_dir = output / run_id
     require(not run_dir.exists(), f"run already exists; adverse outcomes are never replaced: {run_id}")
     canonical_sha256 = directory_sha256(skill_dir)
@@ -339,8 +341,7 @@ def summarize(outcomes):
             "description": key[0], "description_sha256": key[1], "model": key[2], "arm": key[3],
             "phrasing_set": key[4], "runs": 0, "excluded": 0, "adopted": 0, "invoked": 0, "adopted_before_diff": 0,
             "brief_called": 0, "capped": 0, "turns": 0, "adoption_turns": [], "list_price_usd": 0.0,
-            "uncached_input_tokens": 0,
-            "cache_read_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 0})
+            **dict.fromkeys(TOKEN_FIELDS, 0)})
         if outcome["measurement"] != "complete":
             cell["excluded"] += 1
             continue
@@ -355,9 +356,10 @@ def summarize(outcomes):
         cell["list_price_usd"] += adoption["list_price_usd"] or 0.0
         if adoption["first_adoption_turn"] is not None:
             cell["adoption_turns"].append(adoption["first_adoption_turn"])
-        for field, value in adoption["tokens"].items():
-            if field in cell and isinstance(value, int):
-                cell[field] += value
+        for field in TOKEN_FIELDS:
+            value = adoption["tokens"].get(field)
+            if cell[field] is not None:
+                cell[field] = cell[field] + value if isinstance(value, int) else None
     rows = []
     for key in sorted(cells):
         cell = cells[key]
@@ -392,8 +394,8 @@ def render_summary(rows):
         lines.append("\t".join(str(item) for item in (
             f"{row['description']}@{row['description_sha256']}", row["model"], row["arm"], row["phrasing_set"],
             f"{row['adopted']}/{row['runs']}", rate, interval, row["invoked"], row["adopted_before_diff"],
-            row["brief_called"], row["capped"], row["excluded"], row["uncached_input_tokens"],
-            row["cache_read_input_tokens"], row["cache_write_input_tokens"], row["output_tokens"])))
+            row["brief_called"], row["capped"], row["excluded"],
+            *("-" if row[field] is None else row[field] for field in TOKEN_FIELDS))))
     return "\n".join(lines)
 
 

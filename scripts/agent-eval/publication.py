@@ -15,12 +15,13 @@ TOKEN_FIELDS = ("input_tokens", "cache_write_input_tokens", "cached_input_tokens
 CASES = frozenset(("clean-refactor", "refund-boundary", "import-wiring", "package-wiring", "wire-units-noise",
                    "sparse-evidence", "review-followup", "staff-only", "renewal-holdout", "cancellation-change",
                    "event-routing-change", "status-extraction", "publication-change-a", "publication-change-b",
-                   "publication-change-c"))
+                   "publication-change-c", "api-migration", "module-split", "config-defaults",
+                   "behavior-preserving-refactor", "change-c", "change-d", "change-e", "change-f"))
 VARIANTS = frozenset(("baseline", "reposcout", "reposcout-guided", "reposcout-cli"))
 STATUSES = frozenset(("completed", "failed", "aborted", "notrun"))
 QUALITY = frozenset(("passed", "failed", "pending-adjudication", "unavailable"))
 BASES = frozenset(("exec-emitted-initial-turn-usage", "exec-thread-cumulative-usage",
-                   "exec-invocation-cumulative-usage", "unavailable"))
+                   "exec-invocation-cumulative-usage", "claude-result-invocation-usage", "unavailable"))
 LEGACY = {
     'scripts/agent-eval/results/2026-09-12-native-pilot/integrity.json': '06cd5679916b2ca0bcd2bad9cb20c4156849cc69cc3ea2c33c57d21cf57a9668',
     'scripts/agent-eval/results/2026-09-12-native-pilot/results.json': 'a242aeb2a1ae16b958998fdbc97724c7a98eaa4b3883c37f5e3e0cfa76a87427',

@@ -11,6 +11,7 @@ from adoption_eval import (
     load_phrasings, plan_runs, read_data, read_description, resolve_description, select_phrasing, summarize,
     text_sha256, wilson,
 )
+from accounting import InvalidLedger
 from claude_isolation import claude_arguments
 from codex_isolation import directory_sha256
 from review_campaign import CAPABILITIES
@@ -229,6 +230,16 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(row["mean_turns"], 4)
         self.assertIn("2/3", adoption_eval.render_summary(list(rows.values())))
 
+    def test_unknown_token_counters_leave_the_cell_total_unknown(self):
+        partial = self.outcome(True)
+        partial["adoption"]["tokens"] = {"uncached_input_tokens": 3, "cache_read_input_tokens": 5,
+                                         "cache_write_input_tokens": 7, "output_tokens": None,
+                                         "source": "result-partial"}
+        row = summarize([self.outcome(True), partial])[0]
+        self.assertEqual((row["uncached_input_tokens"], row["cache_read_input_tokens"],
+                          row["cache_write_input_tokens"], row["output_tokens"]), (6, 10, 14, None))
+        self.assertIn("\t-", adoption_eval.render_summary([row]))
+
     def test_distinct_description_texts_are_not_pooled(self):
         changed = self.outcome(True)
         changed["description"]["text_sha256"] = text_sha256("another text")
@@ -346,6 +357,16 @@ class ExecuteRunTests(unittest.TestCase):
         outcome = execute_run(self.parameters(phrasing="h6", held_out=True), runner=self.runner(self.capped_events()),
                               pin_capture=self.pins)
         self.assertEqual(outcome["phrasing"]["set"], "held-out")
+
+    def test_an_output_inside_git_is_refused_before_any_file_is_written(self):
+        checkout = self.root / "checkout"
+        (checkout / ".git").mkdir(parents=True)
+        (checkout / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+        with self.assertRaises(InvalidLedger):
+            execute_run(self.parameters(output_dir=str(checkout / "out")), runner=self.runner([]),
+                        pin_capture=self.pins)
+        self.assertEqual(self.specs, [])
+        self.assertEqual(sorted(path.name for path in checkout.rglob("*")), [".git", "HEAD"])
 
     def test_a_run_is_never_replaced(self):
         execute_run(self.parameters(), runner=self.runner(self.capped_events()), pin_capture=self.pins)
