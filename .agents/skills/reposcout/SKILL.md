@@ -22,7 +22,7 @@ checkouts. `read`, `changes` and `review-context` are Unix-only.
    reposcout review-context . --base <base> --head <head> --profile safe --brief
    ```
 
-   It pins both commits and prints, within 8k tokens by default: recurring token rewrites
+   It pins both commits and prints, within 4k tokens by default: recurring token rewrites
    (`R1 old → new`), moved and renamed code with destinations, old spellings still in head, and the
    changed hunks with their changed definitions, direct importers and call/reference sites
    (`path:line`), docs naming changed definitions, and nonzero gaps. Hunks that only apply pure
@@ -43,7 +43,9 @@ checkouts. `read`, `changes` and `review-context` are Unix-only.
    minimal witness when you claim reachable behavior, as you would without it. A RepoScout call is
    static evidence, never an executed check.
 5. Cite evidence as path plus line range at the pinned commit, quoting source lines verbatim
-   without diff markers; for behavior-preserving claims cite both the base and the head lines.
+   without diff markers. For each finding cite the documented rule or base behavior it breaks,
+   the head line that breaks it, and one affected caller on the active path; for
+   behavior-preserving claims cite both the base and the head lines.
    Keep static reasoning, executed checks and unexecuted suggestions separate.
 
 ## Other starts

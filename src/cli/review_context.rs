@@ -44,7 +44,7 @@ pub struct ReviewContextArgs {
     #[arg(long, conflicts_with_all = ["context", "context_budget", "context_max_files", "source"])]
     pub brief: bool,
     /// Maximum tokens in the complete rendered response, using the configured encoding
-    /// [default: 4096; with --brief the full brief, capped at 8000]
+    /// [default: 4096; with --brief the full brief, capped at 4096]
     #[arg(long, value_parser = parse_source_token_budget)]
     pub budget: Option<usize>,
     /// Maximum bytes in the complete rendered response

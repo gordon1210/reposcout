@@ -93,13 +93,15 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
-  Opt-in `--brief` renders a compact Table/Markdown projection (full up to an 8,000-token default
+  Opt-in `--brief` renders a compact Table/Markdown projection (full up to a 4,096-token default
   ceiling; an explicit `--budget` wins) with diff hunks, distance-1 impact, counted transitive
   dependents and head-snapshot doc mentions. Repeated identifier renames fold to sites only where
   every site provably renames an in-tree binding of its file (allowlisted grammars, tree-wide name
   checks), and unedited declarations moved without rebinding fold to destinations; hunks of other
   repeated edits show changed lines only. `docs/review-context.md` holds the exact folding rules; summaries
-  collapse in three levels before a budget is rejected.
+  collapse in three levels before a budget is rejected. Detail never shrinks as the budget grows,
+  so just above a finer level's start the brief can leave part of its budget unused (about half
+  of the default on a synthetic 400-hunk file; the generated complex PRs use nearly all of it).
   See [review context](docs/review-context.md) for limits and trust boundaries.
   The bundled skill provides self-contained starts for common repository, source and committed
   review questions. Detailed guides are conditional on needed unfamiliar semantics, including

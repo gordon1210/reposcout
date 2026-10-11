@@ -17,7 +17,7 @@ within their section.
 
 - Add `review-context --brief`, a compact Table/Markdown review brief with changed definitions,
   diff hunks, direct consumers, nonzero analysis gaps of the changed files and head-snapshot doc
-  mentions within an 8,000-token default ceiling; an explicit `--budget` always wins. Identifier
+  mentions within a 4,096-token default ceiling; an explicit `--budget` always wins. Identifier
   renames repeated across hunks fold into rule summaries with their sites only where every site
   provably renames an in-tree binding of its file, and whole declarations moved unchanged fold
   into summaries naming their destinations. Hunks explained by other repeated edits show only
@@ -43,7 +43,9 @@ within their section.
   changed, finding defects, regressions and risks) and name `review-context --brief` before
   `git diff` or `git log`, so agents choose RepoScout for review questions without being told to.
   The review step explains rename sites, compact `[Rn]` hunks and the brief's fetch commands, and
-  asks agents to check that moved code's names resolve the same at the destination.
+  asks agents to check that moved code's names resolve the same at the destination. Each finding
+  cites the documented rule or base behavior it breaks, the breaking head line and one affected
+  caller on the active path.
 - Start committed reviews in the bundled skill with one `review-context --brief` call and read
   only what it leaves open. Listed consumers are leads: before concluding that nothing breaks,
   agents check each call site in context or run the tests that exercise it.

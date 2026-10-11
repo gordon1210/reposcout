@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 const ENTRY_LIMIT: usize = 100;
 /// Rendered-token ceiling of the agent brief when `--budget` is absent; smaller briefs render in
 /// full.
-pub const REVIEW_BRIEF_TOKENS: usize = 8000;
+pub const REVIEW_BRIEF_TOKENS: usize = 4096;
 /// Soft evidence (importers, usage and documentation lines) may always use this many tokens, and
 /// otherwise at most half of the shown diff text.
 const BRIEF_SOFT_TOKENS: usize = 400;

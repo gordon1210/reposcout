@@ -199,7 +199,7 @@ fn brief_default_budget_is_capped_and_explicit_budget_wins() {
     );
     let text = brief(&fixture, &[]);
     let used = tokens(&text);
-    assert!(used <= 8000 && used > 6000, "{used}");
+    assert!(used <= 4096 && used > 2000, "{used}");
     let smaller = brief(&fixture, &["--budget", "3000"]);
     assert!(tokens(&smaller) <= 3000 && tokens(&smaller) > 2000);
     let larger = brief(&fixture, &["--budget", "12000"]);
@@ -821,7 +821,7 @@ fn brief_groups_omitted_rule_explained_hunks_with_exact_sites_and_commands() {
         .filter(|path| path != "guard.ts")
         .collect();
     let (mut counted_form, mut grouped) = (false, false);
-    for budget in [600, 700, 1200] {
+    for budget in [600, 700, 1400] {
         let text = brief(&fixture, &["--budget", &budget.to_string()]);
         assert!(tokens(&text) <= budget, "{text}");
         assert!(text.contains("+export function clamp"), "{text}");

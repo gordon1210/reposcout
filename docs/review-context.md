@@ -22,7 +22,7 @@ reposcout review-context . --base origin/main --context \
 reposcout review-context . --base origin/main --source --diff \
   --budget 16000 --max-output-bytes 131072 -f json
 
-# Compact agent brief: rewrites, moved code, remaining hunks and direct consumers (at most 8,000 tokens)
+# Compact agent brief: rewrites, moved code, remaining hunks and direct consumers (at most 4,096 tokens)
 reposcout review-context . --base origin/main --head HEAD --brief
 ```
 
@@ -123,8 +123,8 @@ Further definition reads can use `read --snapshot <reported-tree>` with the repo
 renders Table (the default for `--brief`, also when stdout is not a terminal) or one fenced
 Markdown block; JSON and NDJSON are rejected, and it cannot be combined with `--context`,
 `--context-budget`, `--context-max-files` or `--source`. Unified diffs are included without
-`--diff`. Without `--budget` the brief renders in full up to 8,000 tokens and is projected to
-8,000 tokens beyond that; an explicit `--budget` always sets the limit, and `--max-output-bytes`
+`--diff`. Without `--budget` the brief renders in full up to 4,096 tokens and is projected to
+4,096 tokens beyond that; an explicit `--budget` always sets the limit, and `--max-output-bytes`
 applies as usual. The brief is not cut to the 100-entry output limit; its own projection applies.
 The same input renders byte-identical output.
 
@@ -311,7 +311,8 @@ and including the first shown hunk (the first change entry when no hunk is shown
 every hunk that is not compact). From there it replaces the coarser levels once it admits at
 least as many change entries and hunks as they admit just below that budget. A larger budget
 therefore never drops a change entry or hunk shown at a smaller one and never uses a coarser
-level. Only when even the counts exceed the budget does the brief fail with an error.
+level; until a finer level catches up, part of the budget can stay unused. Only when even the
+counts exceed the budget does the brief fail with an error.
 
 Hunks come from libgit2's Myers diff with three context lines and without Git's indent
 heuristic; the emitted commands pass `--no-indent-heuristic` to match. A plain `git diff`, whose
@@ -323,7 +324,7 @@ external diff setting can print other hunk boundaries for the same changes.
 | Bound | Default / ceiling |
 |---|---|
 | Rendered response | 4,096 tokens / 65,536 bytes |
-| `--brief` rendered response | Full brief, at most 8,000 tokens without `--budget` |
+| `--brief` rendered response | Full brief, at most 4,096 tokens without `--budget` |
 | `--budget` | 256–65,536 tokens |
 | `--max-output-bytes` | 1,024–1,048,576 bytes |
 | Inventory | At most 10,000 paths per revision |

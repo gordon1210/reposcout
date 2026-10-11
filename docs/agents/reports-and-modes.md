@@ -20,7 +20,7 @@ Budget projection reconsiders omitted identities against the actual format/token
 file identities ahead of declaration/range details; per-side output omissions must not downgrade
 analysis availability or be confused with absent declarations.
 `--brief` is an opt-in Table/Markdown projection of the same facts; without `--budget` it renders
-in full up to an 8,000-token ceiling, and an explicit `--budget` always wins. It omits per-file
+in full up to a 4,096-token ceiling, and an explicit `--budget` always wins. It omits per-file
 identities, folds identifier renames repeated across hunks and moved lines into summaries, shows
 hunks explained by other repeated rewrites compactly (changed lines only), flags old
 spellings left in head, lists only incoming distance-1 impact and nonzero gaps of the changed
