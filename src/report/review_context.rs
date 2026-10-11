@@ -6,7 +6,7 @@ use crate::model::{ReviewAnalysisStatus, ReviewChangeBasis, ReviewContextReport}
 use anyhow::{Result, bail};
 use std::fmt::Write as _;
 
-pub(crate) use brief::render as render_brief;
+pub(crate) use brief::{render as render_brief, render_parts as render_brief_parts};
 
 pub(crate) fn render(report: &ReviewContextReport, format: Format, pretty: bool) -> Result<String> {
     let mut output = match format {

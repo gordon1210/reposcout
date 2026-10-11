@@ -2,7 +2,7 @@ use super::{
     CallResolutionCoverage, DefinitionFact, DefinitionStatus, Deserialize, GraphEdge, LineRange,
     PathBuf, ResolvedCallReference, Serialize,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Immutable comparison identity. `base_commit` is the actual comparison base.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -110,6 +110,136 @@ pub struct ReviewBrief {
     pub usage: Vec<ReviewUsageLine>,
     /// Matching importer lines before per-file and output limits.
     pub usage_total: usize,
+    /// Per revision: changed files without call-reference support, and with incomplete references.
+    pub call_gaps: [[usize; 2]; 2],
+    /// Token edits repeated in at least three hunks, in display order (`R1`, `R2`, …).
+    pub rewrites: Vec<ReviewRewrite>,
+    /// Every parsed diff hunk, in change and hunk order.
+    pub hunks: Vec<ReviewBriefHunk>,
+    /// Rewrite-only hunks shown as examples, covering each coverable rewrite once.
+    pub examples: Vec<usize>,
+    /// Indices of changes that render as their own entry; other changes are fully described by
+    /// rewrites, moves or the rename list.
+    pub entry_changes: Vec<usize>,
+    /// Indices of renamed, copied or mode-changed changes without an entry of their own.
+    pub renames: Vec<usize>,
+    /// Changed lines recurring in another hunk, per pair of source and destination hunk, in
+    /// that order.
+    pub moves: Vec<ReviewBriefMove>,
+    /// Old spellings replaced by the change that still occur in the head snapshot.
+    pub stale: Vec<ReviewStaleName>,
+    /// Output projection state; the renderer shows only selected optional items.
+    pub selection: ReviewBriefSelection,
+}
+
+/// One token edit that the brief names once instead of repeating its hunks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewRewrite {
+    /// Changed tokens, joined by single spaces; empty for pure insertions.
+    pub old: String,
+    /// Replacement tokens, joined by single spaces; empty for pure deletions.
+    pub new: String,
+    /// The edit also applies to part of a longer identifier or literal.
+    pub inside: bool,
+    /// Distinct hunks containing the edit.
+    pub hunks: usize,
+    /// Every occurrence replaces an identifier token by an identifier token, as a whole or in
+    /// part; only hunks made of renames fold without showing their lines.
+    pub rename: bool,
+}
+
+/// Changed lines of one hunk that recur in another hunk after rewrites: removed lines of
+/// `from` (base line numbers) and the added lines of `to` (head line numbers) they pair with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewBriefMove {
+    /// Indices into `ReviewBrief::hunks`.
+    pub from: usize,
+    pub to: usize,
+    /// First and last paired base line of `from` and head line of `to`.
+    pub from_lines: [usize; 2],
+    pub to_lines: [usize; 2],
+}
+
+/// How the brief accounts for one diff hunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReviewHunkRole {
+    /// Every token edit is a listed rename rewrite.
+    Rewrite,
+    /// Every changed line recurs in another hunk after rewrites (`ReviewBrief::moves`).
+    Moved,
+    /// The hunk has its own lines to show.
+    #[default]
+    Shown,
+}
+
+/// One unified-diff hunk with its brief classification and rendered body.
+#[derive(Debug, Clone, Default)]
+pub struct ReviewBriefHunk {
+    /// Index into the report's changes.
+    pub change: usize,
+    pub old_start: usize,
+    pub old_lines: usize,
+    pub new_start: usize,
+    pub new_lines: usize,
+    pub role: ReviewHunkRole,
+    /// Rewrites whose edits occur in the hunk, as indices into `ReviewBrief::rewrites`.
+    pub rewrites: Vec<usize>,
+    /// A rewrite this hunk deviates from: an edit shares one side with it or differs in one token.
+    pub variant_of: Option<usize>,
+    /// Changed lines left out of `text` because they recur in another hunk after rewrites.
+    pub moved_lines: usize,
+    /// Changed lines left out of `text` because the line at the same position of the same block
+    /// on the other side equals them after rewrites.
+    pub unchanged_lines: usize,
+    /// First changed line on the surviving side (head, or base for deleted files).
+    pub site_line: usize,
+    /// Header line without annotations, then the body: the whole hunk, only its changed lines,
+    /// or numbered residual changed lines.
+    pub text: String,
+    /// The hunk's changed lines, for rewrite examples.
+    pub changed: Vec<String>,
+    /// Admission order among shown hunks; lower values are kept first.
+    pub priority: u8,
+    pub test: bool,
+    /// Every edit is a listed rewrite, but not every one is a proven pure rename; `text` holds
+    /// only the numbered changed lines, and omitted such hunks are grouped by rewrites.
+    pub explained: bool,
+    /// Rename rewrites applied to moved lines this hunk receives, as rewrite index and head line.
+    pub moved_sites: Vec<(usize, usize)>,
+}
+
+/// One old spelling with the head lines that still contain it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewStaleName {
+    pub old: String,
+    pub new: String,
+    /// Lines containing the old spelling in base and head.
+    pub base_lines: usize,
+    pub head_lines: usize,
+    /// Head occurrences in path and line order, bounded; `head_lines` stays exact.
+    pub hits: Vec<ReviewDocMention>,
+}
+
+/// Optional brief items admitted by output projection.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReviewBriefSelection {
+    pub examples: bool,
+    pub site_lines: bool,
+    /// Omitted rule-explained hunks are listed by site per rewrite combination; otherwise each
+    /// combination is counted and one command fetches them all.
+    pub explained_sites: bool,
+    /// Change entries with heading and analysis.
+    pub entries: BTreeSet<usize>,
+    /// Definitions, callers, type relations and entry chains of a change entry.
+    pub details: BTreeSet<usize>,
+    pub importers: BTreeSet<usize>,
+    pub hunks: BTreeSet<usize>,
+    pub mentions: BTreeSet<usize>,
+    pub usage: BTreeSet<usize>,
+    /// Mandatory sections shrink at levels 1 (no stale lines), 2 (omitted hunks as one line)
+    /// and 3 (rewrites, moves, renames, stale spellings and omissions as counts with one diff
+    /// command).
+    pub level: u8,
 }
 
 /// One line in a direct importer without resolved references that names an identifier of a change.
@@ -146,9 +276,6 @@ pub struct ReviewContextChange {
     pub diff_tokens: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff: Option<String>,
-    /// Trailing diff hunks removed by brief output projection.
-    #[serde(skip)]
-    pub diff_hunks_omitted: usize,
 }
 
 /// Old/new declaration and raw line evidence from the same captured bytes.

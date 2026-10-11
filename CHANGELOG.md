@@ -16,10 +16,17 @@ within their section.
   such as `mkdir`, `mktemp`, `rm`, `tar` and `diff`.
 
 - Add `review-context --brief`, a compact Table/Markdown review brief with changed definitions,
-  diff hunks, direct consumers, nonzero analysis gaps and head-snapshot doc mentions under a
-  3,000-token default budget. Direct importers without resolved call/reference evidence, such as
-  Python modules, list bounded usage lines that name the change's identifiers. Omissions are
-  counted exactly; JSON output is unchanged.
+  diff hunks, direct consumers, nonzero analysis gaps of the changed files and head-snapshot doc
+  mentions within an 8,000-token default ceiling; an explicit `--budget` always wins. Identifier
+  renames repeated across hunks fold into rule summaries with their sites only where every site
+  provably renames an in-tree binding of its file, and whole declarations moved unchanged fold
+  into summaries naming their destinations. Hunks explained by other repeated edits show only
+  their changed lines; deviations from a repeated edit, reorders, indentation changes in
+  indentation-sensitive languages and moves between test and non-test files stay visible. Old
+  spellings still present in head are listed for verification. Direct importers without resolved
+  call/reference evidence, such as Python modules, list bounded usage lines that name the change's
+  identifiers. Omitted hunks are counted exactly and listed or grouped with
+  `git diff --no-indent-heuristic` commands on resolved commits; JSON output is unchanged.
 
 - Add bounded external fixture bundles, shared signed review identities and fixed development,
   heldout and three-case follow-up schedules for larger local Codex evaluations, preserving all historical

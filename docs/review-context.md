@@ -22,7 +22,7 @@ reposcout review-context . --base origin/main --context \
 reposcout review-context . --base origin/main --source --diff \
   --budget 16000 --max-output-bytes 131072 -f json
 
-# Compact agent brief: definitions, diff hunks, direct consumers and docs in about 3,000 tokens
+# Compact agent brief: rewrites, moved code, remaining hunks and direct consumers (at most 8,000 tokens)
 reposcout review-context . --base origin/main --head HEAD --brief
 ```
 
@@ -123,50 +123,201 @@ Further definition reads can use `read --snapshot <reported-tree>` with the repo
 renders Table (the default for `--brief`, also when stdout is not a terminal) or one fenced
 Markdown block; JSON and NDJSON are rejected, and it cannot be combined with `--context`,
 `--context-budget`, `--context-max-files` or `--source`. Unified diffs are included without
-`--diff`. Without `--budget` the rendered brief is limited to 3,000 tokens; `--budget` and
-`--max-output-bytes` apply as usual.
+`--diff`. Without `--budget` the brief renders in full up to 8,000 tokens and is projected to
+8,000 tokens beyond that; an explicit `--budget` always sets the limit, and `--max-output-bytes`
+applies as usual. The brief is not cut to the 100-entry output limit; its own projection applies.
+The same input renders byte-identical output.
 
 - The header names short base/head commits, comparison mode and totals. Trees, blobs, hashes and
   modes are not repeated; read files with `git show <commit>:<path>`. A `gaps:` line lists only
-  nonzero capture, mapping, graph and call-resolution gaps with exact base/head counts, so a
-  missing gap line means none were recorded, while unknown hunk counts read `hunks unknown`.
-- Each change lists its status and path, changed definitions paired by kind and name with line
-  ranges per revision, and the unified diff hunks.
-- Impact lists only distance-1 evidence for each change: direct importers and imports, then
-  concrete call/reference sites as `path:line source -> target`. `[test]` marks filename/syntax
-  test hints. Evidence identical in both revisions renders once; single-revision evidence is
-  marked `(base only)` or `(head only)`. Transitive dependents and resolver-configuration scope
-  are counted, not listed; at most one shortest `entry:` chain per changed file leads from a
-  non-test head file without non-test importers through its intermediate importers.
+  nonzero gaps that limit evidence about this change with exact base/head counts: changes not
+  analyzed or without hunks, incomplete rename detection, inventory truncation, unavailable
+  inputs, changed files without graph, resolver configuration errors, and changed files whose
+  language has no call-reference resolver or whose call references are incomplete.
+  Repository-wide counters such as unresolved references stay in JSON. A missing gap line means
+  none were recorded; unknown hunk counts read `hunks unknown`.
+- `rewrites` lists token edits that recur in at least three hunks, most frequent first, as
+  `R1 \`old\` → \`new\``, `insert` or `delete`. Tokens come from the shared tokenizer; an edit
+  inside one token is reduced to the differing part between word boundaries and marked
+  `also inside names` for identifiers or `also inside literals` for strings and numbers. Only an
+  identifier token replaced by an identifier token, whole or in part, is a rename. Keywords and
+  value-like names (`true`, `null`, `and`, `not`, `Ok`, `Some`, `Self`, `globalThis`, `any`,
+  `NaN`, …), numbers, strings, operators, punctuation, insertions, deletions and edits of several
+  tokens are never renames, and a rename and another edit with the same text are separate
+  rewrites.
+- Hunks are displayed by what explains their edits. A hunk folds (rewrite-only or compact) only
+  when every block has as many removed as added lines and each removed line becomes its paired
+  added line byte for byte once the listed rewrites are applied to its tokens. Outside
+  indentation-sensitive languages a compact line may also change its leading whitespace.
+  Python, YAML, Shell, Markdown, Makefiles, Scala, Dockerfiles, unknown languages and every other
+  language not known to ignore indentation are indentation-sensitive: there a hunk whose paired
+  lines change leading whitespace is shown in full with its context lines, hides no line and
+  carries no rewrite tag.
+  - Rewrite-only: every edit is a listed rename proven pure at its site, that is, provably the
+    rename of a plain binding; anything uncertain is compact. Both tokens must be plain
+    identifier or type-identifier nodes in the syntax trees of the complete base and head files
+    of a reviewed grammar (TypeScript, TSX, JavaScript, Python, Rust and Go; other languages and
+    files without a grammar prove no rename), so text in strings, template literals, regular
+    expressions, comments and parse errors never qualifies. Member, key, field, attribute and
+    argument-name positions never qualify either: object keys and shorthand properties, member
+    accesses, JSX attribute names, TypeScript parameter properties and export aliases, Python
+    attributes, keyword arguments, keyword patterns, class-body attributes and methods and import
+    module paths, Rust fields, field shorthands, variants, path segments, impl and trait members,
+    labels, lifetimes, macro arguments and attributes, and Go fields, methods, composite-literal
+    keys and qualified type names. The old name must be bound in the base file of its site and
+    the new name in the head file, both in the same way: declared there in a non-import binding
+    position (variable, function, class, parameter, pattern or the local alias of an import), or
+    imported there from an in-tree module, that is, a TypeScript/JavaScript specifier starting
+    with `.`, a relative Python import or an absolute Python module path naming a captured file,
+    or a Rust `crate::`, `self::` or `super::` path. The original-name side of an import or
+    re-export specifier (`import { user as u }`, `export { user as current } from`) is never a
+    declaration and qualifies only through such an in-tree specifier. A name the file also binds
+    outside the tree never qualifies: through an import from any other module, a TypeScript
+    ambient declaration (`declare`, `declare global`, `declare module`), a Rust `extern` block or
+    an item carrying `#[no_mangle]` or `#[export_name]`. Builtins, host globals and Go names
+    declared in another file of the package are bound nowhere in the file and never qualify;
+    neither do lowercase JSX element names, non-ASCII names or any name of a file with a non-ASCII
+    identifier. Within each file the applied renames must be one-to-one: a site whose old name
+    also becomes another new name in its file, or whose new name also replaces another old name
+    there, is not pure. The new full identifier must occur as a whole word in no blob
+    of the base tree and the old one in no blob of the head tree, files without an inventory and
+    binaries included; a tree whose blobs exceed 64 MiB, a scan past the review deadline and any
+    identifier beyond the first 4,096 distinct ones checked prove no rename. Spelling changes with
+    language meaning are never pure: a Go rename that changes the case of the first letter, a
+    Python rename that adds or removes a leading underscore or involves a dunder name, and in
+    test files a rename that adds or removes a `test` prefix or suffix. Rename folding is
+    syntactic and textual, not semantic, and moves are not checked for rebinding through imports.
+    Such hunks are not printed, but listed under
+    `rewrite-only hunks:` by rewrite combination as compressed `path:line` sites; paths with
+    whitespace or control characters are shell-quoted like the fetch commands
+    (`'src/sp ace.ts':3`, `$'src/tab\tx.ts':3`). When the budget allows, a few `e.g.` examples
+    cover every rename with its changed lines.
+  - Compact: every edit is a listed rewrite, but at least one is not a rename proven pure or a
+    line also changes its indentation. Such hunks print only their changed lines, each run of
+    consecutive lines starting with its line number, without context lines, under a header
+    tagged with their rewrites, such as `[R1 R2]`.
+  - Full: every other hunk, printed with its context lines unless some of its lines are hidden
+    as unchanged or moved. Its header names the rewrites it contains and, for an edit that
+    shares a side or all but one token with a rewrite or has its text in the other class,
+    `deviates from Rn`.
+- A changed line is hidden when it recurs in another hunk once old spellings of single-token
+  renames are replaced by the new ones in identifier tokens of removed lines; a reversed rename
+  never matches. Lines never pair within their own hunk. A recurring line counts inside a run of
+  at least three such lines (one other line may interrupt the run) or when it is unique on both
+  sides and at least eight tokens long; blank lines count only between hidden lines. Recurring
+  lines count as moved only as whole declarations: every non-blank line of a removed base
+  declaration pairs, in order, with the same indentation and with the same line count, with a
+  line of an added head declaration. Statements moved within or between declarations, partly
+  moved, edited or re-indented declarations and declarations moved between a test file and a
+  non-test file, in either direction, stay shown. A moved declaration whose lines differ by
+  renames counts as moved only when each line becomes its counterpart byte for byte and every
+  rename in it is proven pure as above; those lines count toward the hunks of their rewrites and
+  are listed under `moved lines with rewrites (head lines):` by rewrite and head path. A
+  declaration moves only when it keeps its free names: every top-level statement of the target
+  head file outside the folded moved declarations that declares a name the moved lines use, imports
+  aside, must also be a byte-identical top-level statement of the source base file, and the
+  headers of its enclosing classes, impls and other containers (their text before the body:
+  name, bases, extended class or implemented trait) must be byte-identical in source and target,
+  so a top-level declaration moves only to the top level; otherwise the move is shown. A line
+  that becomes its counterpart at the same position of its change block byte for byte after pure
+  renames is hidden as unchanged.
+  `moved hunks` lists hunks whose every changed line recurs, as
+  `base path:lines → head path:lines` (`:lines` within the same file). Full hunks with hidden
+  lines print only the lines that are not hidden, numbered where a run of consecutive lines
+  starts, and their header counts the lines hidden as unchanged or moved, with up to three
+  destinations or sources. Token diffs work on blocks of at most 2,000 tokens; line matching
+  uses hashed line keys, linear passes and one sort, and diffs above 200,000 changed lines skip
+  it and print every line, all under the review deadline. Added, deleted and modified files
+  whose hunks moved keep a change entry; when none of their hunks is shown, the entry lists each
+  moved hunk header with the place its lines moved to or from.
+- `renamed or mode changed without a shown hunk:` lists renamed and mode-changed files whose
+  hunks are all rewrite-only or moved (at most 20, then `+N more: git diff -M --summary <base>
+  <head>`), with octal modes and the
+  folded hunk counts, so a rename or permission change is never hidden.
+- `old spellings still in head (verify intent):` lists distinctive old spellings of renamed
+  identifiers or quoted literals that head no longer declares, whose line count drops but stays
+  above zero, with base/head line counts; a name whose head line count does not drop, for
+  example because new uses replace removed ones, is not listed. Plain words in Markdown and text
+  files count only when quoted. At most twelve lines are shown across all names, then
+  `… +N more lines` with one `git grep` command that lists them all.
+- Each remaining change lists its status and path, hunk counts by role, changed definitions
+  paired by kind and name with line ranges per revision, and the hunks still shown.
+- Impact lists only incoming distance-1 evidence. Concrete call/reference sites are grouped as
+  `kind -> target: path:line source, …`; sites inside changed lines, outgoing references and the
+  change's own imports are visible in the diff and not repeated. `imported by:` lists at most six
+  importers, those without a listed reference first, then an exact `+N more`. `[test]` marks
+  filename/syntax test hints. Evidence identical in both revisions renders once; single-revision
+  evidence is marked `(base only)` or `(head only)`. Transitive dependents, resolver-configuration
+  scope and relations of changes without listed details are counted, not listed; at most one
+  shortest `entry:` chain per changed file leads from a non-test head file without non-test
+  importers through its intermediate importers.
 - For direct importers without a resolved call/reference to the changed file (for example Python,
   which has no call-reference resolver), `usage lines` list importer lines that name identifiers
-  of that change as `path:line  text`. Terms are the change's own doc-mention terms plus
+  of that change as `path:line  text`. Terms are the change's callable declarations plus callable
   declarations of the changed file whose spans use them, and names bound by `TERM as ALIAS` on the
   importer's import lines. Code matches whole words case-sensitively; quoted literals that are
   not declared identifiers and are a single lowercase word match only inside quotes. Import
   statements count only when an importer has no other matching line. Lines come from the pinned
   head snapshot, or from base (marked `(base)`) for importers seen only in the base graph; lines
-  inside a changed importer's own hunks or at a resolved reference site are skipped. Each importer
-  shows at most three lines, allocated round-robin across importers up to sixteen in total.
-- Unchanged Markdown and text files in the pinned head tree that name changed identifiers appear as
-  `path:line text` (trimmed, at most three lines per file and twelve in total). Terms come from
-  changed definition names, declared identifiers on changed diff lines and quoted identifier-like
-  literals there. Compound identifiers also match as word phrases (`event_identity` matches
-  "event identity"); single-word identifiers match whole and case-sensitively, and all-lowercase
-  ones only when quoted as code. Working-tree and index content never contribute.
+  inside a changed importer's own hunks, at a resolved reference site or listed as an old
+  spelling are skipped. Each importer shows at most three lines, allocated round-robin across
+  importers up to sixteen in total.
+- Unchanged Markdown and text files in the pinned head tree that name changed definitions appear
+  as `path:line text` (trimmed, at most three lines per file and twelve in total). Terms are
+  changed definition names of at least two words; they match one identifier token in any case
+  style (`eventIdentity`, `event_identity`, `EVENT_IDENTITY`), never the same words in prose.
+  Working-tree and index content never contribute.
 
-When the brief exceeds a budget, trailing hunks of the largest diff are removed first, halving the
-retained hunks each step, then whole diffs, usage lines, doc lines, relations, definition details
-and finally whole changes. Omitted relations, doc lines, usage lines and whole diffs are then
-reconsidered in that order against both budgets. The
-`omitted from output:` line and per-change `… N more hunks omitted` markers count every removal
-exactly, so a shown prefix plus the omitted count equals the change's hunk count.
+When the brief exceeds a budget, it keeps the header, the rewrite rules and the moved, rename,
+stale and omission summaries, and admits the remaining items in a fixed order as long as both
+budgets hold: rewrite-only sites, every change entry heading, shown hunks (deviating,
+structural, line-for-line and deletion hunks of non-test files, then the same tiers of test
+files, then compact hunks of non-test and then of test files), a change's
+definition details right after its first admitted hunk, rewrite examples, remaining details,
+importers, doc lines and usage lines. Entry headings come first so that every change stays
+visible by path; hunks come before details and examples because the diff is the evidence the
+other sections summarize. Doc lines, importer lists and usage lines together take at most
+max(400, half the diff tokens). The `omitted from output:` line counts every removal exactly,
+and change entries without a shown hunk that do not fit are listed by path and status (at most
+40, then `+N more`).
+
+Omitted hunks are never dropped silently: `omitted hunks (N in M files):` lists them per file as
+`path @@ +a,b +c,d` (`-a,b` for deletions), followed by one
+`git diff --no-indent-heuristic <base> <head> -- <paths>` command per ten files. After forty files
+a final line counts the remaining files and hunks and names the command without paths. Commands
+use the 12-character resolved base and head commits (the merge base with `--merge-base`) and
+shell-quoted `:(top,literal)path` pathspecs (`$'…'` quoting for paths with control characters),
+so they print the same hunks from any directory of the repository and match every character of a
+path literally.
+
+Omitted compact hunks are not part of that per-file list. `omitted rule-explained hunks (N in M
+files; every edit is a listed rewrite):` groups them by rewrite combination as
+`R1 R2 (5 hunks): src/{a,b}.ts:12 lib/c.ts:4,30`, one compressed `path:line` site per hunk,
+followed by one `git diff` command per ten files with the same flags and pathspecs. The sites
+are admitted before other hunks compete for the budget, but only when the hunks that are not
+compact stay the same as without them; otherwise each combination is counted as
+`R1 R2: 5 hunks in 3 files`, followed by one command for all of them. Every omitted compact hunk
+appears in exactly one group.
+
+When the mandatory sections do not fit, they collapse level by level: first the stale-name list
+becomes one count line, then each omitted-hunk list (per file and rule-explained) becomes one
+line with its command, and finally rewrites, moves, renames, stale names and omissions (compact
+hunks counted with all other hunks) become counts followed by
+`full diff: git diff --no-indent-heuristic <base> <head>`. A level that fits but admits no shown
+hunk (no change entry when no hunk is shown) gives way to the next level. Only when even the counts exceed the budget
+does the brief fail with an error.
+
+Hunks come from libgit2's Myers diff with three context lines and without Git's indent
+heuristic; the emitted commands pass `--no-indent-heuristic` to match. A plain `git diff`, whose
+indent heuristic is on by default, and any `diff.algorithm`, `diff.context`, `diff.renames` or
+external diff setting can print other hunk boundaries for the same changes.
 
 ## Limits and omissions
 
 | Bound | Default / ceiling |
 |---|---|
 | Rendered response | 4,096 tokens / 65,536 bytes |
+| `--brief` rendered response | Full brief, at most 8,000 tokens without `--budget` |
 | `--budget` | 256–65,536 tokens |
 | `--max-output-bytes` | 1,024–1,048,576 bytes |
 | Inventory | At most 10,000 paths per revision |

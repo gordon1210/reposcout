@@ -1,10 +1,18 @@
+mod bindings;
+mod hunks;
+mod lexicon;
+mod moves;
+mod rewrites;
+mod stale;
+
 use crate::model::{
-    ReviewBrief, ReviewContextChange, ReviewContextFile, ReviewContextRelation, ReviewDocMention,
-    ReviewUsageLine,
+    CallReferenceStatus, DefinitionStatus, ReviewBrief, ReviewBriefHunk, ReviewContextChange,
+    ReviewContextFile, ReviewContextRelation, ReviewDocMention, ReviewHunkRole, ReviewUsageLine,
 };
 use crate::scan::ReviewCapture;
 use anyhow::Result;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 const MAX_TERMS: usize = 32;
@@ -16,6 +24,8 @@ const MAX_USAGE: usize = 16;
 const MAX_USAGE_PER_FILE: usize = 3;
 const MAX_CHAIN_DISTANCE: usize = 8;
 const SIDES: [&str; 2] = ["base", "head"];
+/// Definition kinds whose names identify call or construction sites in importers.
+const CALLABLE_KINDS: [&str; 4] = ["function", "method", "class", "constant"];
 
 /// Derive brief-only facts from captured revisions and keep only relations touching changed paths.
 pub(super) fn prepare(
@@ -58,11 +68,445 @@ pub(super) fn prepare(
             })
             .count();
     }
-    let declared = declared(capture);
-    brief.terms = terms(changes, &declared);
+    brief.call_gaps = call_gaps(capture, changes);
+    let declared_sides = [declared(capture, 0), declared(capture, 1)];
+    let declared: BTreeSet<&str> = declared_sides.iter().flatten().copied().collect();
+    diff_facts(
+        capture,
+        changes,
+        context,
+        [&declared_sides[0], &declared_sides[1]],
+        &mut brief,
+    )?;
+    brief.terms = terms(changes);
     mentions(capture, &changed_paths, &mut brief)?;
     usage(capture, changes, relations, &declared, &mut brief)?;
+    // Lines already listed as old spellings still in head are not repeated as mentions or usage.
+    let stale: BTreeSet<_> = brief
+        .stale
+        .iter()
+        .flat_map(|name| &name.hits)
+        .map(|hit| (hit.path.clone(), hit.line))
+        .collect();
+    brief
+        .mentions
+        .retain(|mention| !stale.contains(&(mention.path.clone(), mention.line)));
+    brief
+        .usage
+        .retain(|line| line.side != SIDES[1] || !stale.contains(&(line.path.clone(), line.line)));
     Ok(brief)
+}
+
+/// Per revision: changed code files without call-reference support, and with incomplete references.
+fn call_gaps(capture: &ReviewCapture, changes: &[ReviewContextChange]) -> [[usize; 2]; 2] {
+    let mut gaps = [[0; 2]; 2];
+    for change in changes {
+        for (index, side) in [change.base.as_ref(), change.head.as_ref()]
+            .into_iter()
+            .enumerate()
+        {
+            let Some(side) = side.filter(|side| {
+                matches!(
+                    side.extraction,
+                    DefinitionStatus::Available | DefinitionStatus::ParseErrors
+                )
+            }) else {
+                continue;
+            };
+            let status = capture.revisions[index]
+                .files()
+                .get(&side.path)
+                .and_then(|file| file.graph_facts.as_ref())
+                .and_then(|facts| facts.call_references.as_ref())
+                .map(|facts| facts.status);
+            match status {
+                Some(CallReferenceStatus::Available) => {}
+                Some(CallReferenceStatus::Unsupported) | None => gaps[index][0] += 1,
+                Some(_) => gaps[index][1] += 1,
+            }
+        }
+    }
+    gaps
+}
+
+/// Languages where leading whitespace never changes meaning; every other language counts as
+/// indentation-sensitive.
+const INDENTATION_FREE: [&str; 26] = [
+    "Rust",
+    "JavaScript",
+    "TypeScript",
+    "TSX",
+    "Go",
+    "PHP",
+    "C",
+    "C++",
+    "C/C++ Header",
+    "C#",
+    "Java",
+    "Kotlin",
+    "Swift",
+    "Ruby",
+    "Lua",
+    "SQL",
+    "HTML",
+    "CSS",
+    "SCSS",
+    "JSON",
+    "TOML",
+    "XML",
+    "Godot Shader",
+    "Godot Scene",
+    "Godot Resource",
+    "Godot Project",
+];
+
+/// Leading whitespace may change the meaning of the change's file: its captured language is
+/// not known to ignore indentation.
+fn indentation_sensitive(capture: &ReviewCapture, change: &ReviewContextChange) -> bool {
+    let language = [(1, change.head.as_ref()), (0, change.base.as_ref())]
+        .into_iter()
+        .find_map(|(index, side)| {
+            capture.revisions[index]
+                .files()
+                .get(&side?.path)
+                .map(|file| file.language.as_str())
+        });
+    !language.is_some_and(|language| INDENTATION_FREE.contains(&language))
+}
+
+/// Text, declaration spans and test evidence of each change's base and head file.
+fn move_sides<'a>(
+    capture: &'a ReviewCapture,
+    changes: &[ReviewContextChange],
+    tests: &BTreeSet<(&str, &Path)>,
+) -> Vec<moves::Sides<'a>> {
+    changes
+        .iter()
+        .map(|change| {
+            let mut sides = moves::Sides::default();
+            for (index, side) in [change.base.as_ref(), change.head.as_ref()]
+                .into_iter()
+                .enumerate()
+            {
+                let Some(side) = side else {
+                    continue;
+                };
+                sides.test[index] = tests.contains(&(SIDES[index], side.path.as_path()));
+                let Some(file) = capture.revisions[index].files().get(&side.path) else {
+                    continue;
+                };
+                sides.text[index] = Some(file.content.as_str());
+                sides.spans[index] = file
+                    .definitions
+                    .definitions
+                    .iter()
+                    .map(|definition| {
+                        let span = &definition.declaration_span;
+                        (span.start_line, span.end_line)
+                    })
+                    .collect();
+            }
+            sides
+        })
+        .collect()
+}
+
+/// Hunks with their rewrite, move and display facts, moves, change entries, renames and stale
+/// names.
+/// Per change, every whole-identifier rename its hunks apply.
+fn file_renames(parsed: &[hunks::Hunk<'_>], changes: usize) -> Vec<Vec<(String, String)>> {
+    let mut renames = vec![Vec::new(); changes];
+    for hunk in parsed {
+        let whole = hunk
+            .edits
+            .iter()
+            .flatten()
+            .flatten()
+            .filter(|edit| edit.rename)
+            .filter_map(|edit| edit.whole.clone());
+        if let Some(file) = renames.get_mut(hunk.change) {
+            file.extend(whole);
+        }
+    }
+    renames
+}
+
+fn diff_facts(
+    capture: &ReviewCapture,
+    changes: &[ReviewContextChange],
+    context: &[ReviewContextFile],
+    declared: [&BTreeSet<&str>; 2],
+    brief: &mut ReviewBrief,
+) -> Result<()> {
+    let mut parsed = Vec::new();
+    for (index, change) in changes.iter().enumerate() {
+        let Some(diff) = change.diff.as_deref() else {
+            continue;
+        };
+        let both = change.base.is_some() && change.head.is_some();
+        for mut hunk in hunks::parse(index, diff) {
+            super::check_deadline(capture.deadline)?;
+            if both {
+                hunk.edits = hunks::edits(&hunk)?;
+            }
+            parsed.push(hunk);
+        }
+    }
+    let sensitive: Vec<bool> = changes
+        .iter()
+        .map(|change| indentation_sensitive(capture, change))
+        .collect();
+    let sensitive: Vec<bool> = parsed.iter().map(|hunk| sensitive[hunk.change]).collect();
+    let tests: BTreeSet<(&str, &Path)> = context
+        .iter()
+        .filter(|file| !file.test_evidence.is_empty())
+        .map(|file| (file.side.as_str(), file.path.as_path()))
+        .collect();
+    let sides = move_sides(capture, changes, &tests);
+    brief.rewrites = rewrites::rewrites(&parsed);
+    let rules = rewrites::Rules::new(&brief.rewrites);
+    let tested: Vec<bool> = sides
+        .iter()
+        .map(|side| side.test[0] || side.test[1])
+        .collect();
+    let renames = file_renames(&parsed, changes.len());
+    let lexicon = lexicon::Lexicon::new(capture, changes, &tested, &renames);
+    let pure = |rename: &lexicon::Rename<'_>| lexicon.pure(rename);
+    let mut explained = Vec::with_capacity(parsed.len());
+    for (hunk, sensitive) in parsed.iter().zip(&sensitive) {
+        super::check_deadline(capture.deadline)?;
+        explained.push(rules.explains(hunk, *sensitive, &pure)?);
+    }
+    let skip: Vec<bool> = explained
+        .iter()
+        .map(|explained| *explained != rewrites::Explained::No)
+        .collect();
+    let matches = moves::matches(
+        &parsed,
+        &skip,
+        &sensitive,
+        &sides,
+        &brief.rewrites,
+        moves::Checks {
+            pure: &pure,
+            keeps: &|source, target, moved, lines, folded| {
+                lexicon.keeps_bindings(source, target, moved, lines, folded)
+            },
+        },
+        capture.deadline,
+    )?;
+    super::check_deadline(capture.deadline)?;
+    for (index, hunk) in parsed.iter().enumerate() {
+        let change = &changes[hunk.change];
+        let test = match (&change.head, &change.base) {
+            (Some(side), _) => tests.contains(&(SIDES[1], side.path.as_path())),
+            (None, Some(side)) => tests.contains(&(SIDES[0], side.path.as_path())),
+            (None, None) => false,
+        };
+        let mut brief_hunk = brief_hunk(
+            hunk,
+            change,
+            explained[index],
+            &matches.fates[index],
+            &rules,
+            test,
+            sensitive[index] && hunk.reindented(),
+        );
+        brief_hunk
+            .moved_sites
+            .clone_from(&matches.moved_sites[index]);
+        brief.hunks.push(brief_hunk);
+    }
+    // A hunk receiving moved lines with renames is one more site of each such rewrite.
+    for hunk in &brief.hunks {
+        let rules: BTreeSet<usize> = hunk
+            .moved_sites
+            .iter()
+            .map(|(rule, _)| *rule)
+            .filter(|rule| !hunk.rewrites.contains(rule))
+            .collect();
+        for rule in rules {
+            brief.rewrites[rule].hunks += 1;
+        }
+    }
+    brief.moves = matches.moves;
+    brief.examples = rewrites::examples(&brief.hunks, brief.rewrites.len());
+    classify(changes, brief);
+    let edits = parsed
+        .iter()
+        .flat_map(|hunk| hunk.edits.iter().flatten().flatten());
+    brief.stale = stale::stale(capture, edits, &brief.rewrites, declared)?;
+    Ok(())
+}
+
+/// Changes rendering as their own entry (with a shown or moved hunk, without a diff or hunks,
+/// added or deleted), and renamed, copied or mode-changed files whose hunks are all rewrite-only
+/// or absent.
+fn classify(changes: &[ReviewContextChange], brief: &mut ReviewBrief) {
+    let mut parsed = vec![0; changes.len()];
+    let mut shown = vec![false; changes.len()];
+    for hunk in &brief.hunks {
+        parsed[hunk.change] += 1;
+        shown[hunk.change] |= hunk.role != ReviewHunkRole::Rewrite;
+    }
+    for (index, change) in changes.iter().enumerate() {
+        let renamed = match (&change.base, &change.head) {
+            (Some(base), Some(head)) => base.path != head.path || base.mode != head.mode,
+            _ => false,
+        };
+        let added_or_deleted = change.base.is_none() || change.head.is_none();
+        if shown[index] || change.diff.is_none() || added_or_deleted {
+            brief.entry_changes.push(index);
+        } else if renamed {
+            brief.renames.push(index);
+        } else if parsed[index] == 0 {
+            brief.entry_changes.push(index);
+        }
+    }
+}
+
+/// One hunk's role, hidden lines, deviation, priority and displayed text. A `reindented` hunk
+/// of an indentation-sensitive file shows in full with its context and without rewrites.
+fn brief_hunk(
+    hunk: &hunks::Hunk<'_>,
+    change: &ReviewContextChange,
+    explained: rewrites::Explained,
+    fates: &[moves::Fate],
+    rules: &rewrites::Rules<'_>,
+    test: bool,
+    reindented: bool,
+) -> ReviewBriefHunk {
+    let edited: Vec<String> = hunk
+        .lines
+        .iter()
+        .filter(|line| line.tag != ' ')
+        .map(|line| format!("{}{}", line.tag, line.text))
+        .collect();
+    let count = |fate| {
+        hunk.lines
+            .iter()
+            .zip(fates)
+            .filter(|(line, current)| line.tag != ' ' && **current == fate)
+            .count()
+    };
+    let moved_lines = count(moves::Fate::Moved);
+    let mut unchanged_lines = count(moves::Fate::Unchanged);
+    // A hunk whose lines all equal their counterparts after rewrites shows them.
+    if reindented || (moved_lines == 0 && unchanged_lines == edited.len()) {
+        unchanged_lines = 0;
+    }
+    let hidden: Vec<bool> = fates
+        .iter()
+        .map(|fate| match fate {
+            moves::Fate::Changed => false,
+            moves::Fate::Unchanged => unchanged_lines > 0,
+            moves::Fate::Moved => !reindented,
+        })
+        .collect();
+    let role = if explained == rewrites::Explained::Renames {
+        ReviewHunkRole::Rewrite
+    } else if !edited.is_empty() && moved_lines == edited.len() {
+        ReviewHunkRole::Moved
+    } else {
+        ReviewHunkRole::Shown
+    };
+    let shown = role == ReviewHunkRole::Shown;
+    let any_hidden = hunk
+        .lines
+        .iter()
+        .zip(&hidden)
+        .any(|(line, hidden)| line.tag != ' ' && *hidden);
+    let variant_of = (shown && !reindented)
+        .then(|| rules.variant_of(hunk))
+        .flatten();
+    let compact = explained == rewrites::Explained::Rewrites;
+    // Rule-explained hunks after every other hunk. Before them, every non-test hunk precedes
+    // every test hunk, each group ordered deviating, structural, line-for-line, deletion.
+    let priority = if compact {
+        8 + u8::from(test)
+    } else {
+        let kind = if variant_of.is_some() {
+            0
+        } else if change.head.is_none() {
+            3
+        } else {
+            1 + u8::from(hunk.compact())
+        };
+        kind + 4 * u8::from(test)
+    };
+    ReviewBriefHunk {
+        change: hunk.change,
+        old_start: hunk.old_start,
+        old_lines: hunk.old_lines,
+        new_start: hunk.new_start,
+        new_lines: hunk.new_lines,
+        role,
+        rewrites: if reindented {
+            Vec::new()
+        } else {
+            rules.used(hunk)
+        },
+        variant_of,
+        moved_lines: if reindented && shown { 0 } else { moved_lines },
+        unchanged_lines,
+        site_line: hunk.site_line(change.head.is_some()),
+        // Lines whose block edits are all rewrites but that are no rewrite of their
+        // counterpart show with their context.
+        text: if shown && (reindented || (!compact && rules.ruled(hunk) && !any_hidden)) {
+            raw(hunk)
+        } else if shown {
+            body(hunk, &hidden, compact)
+        } else {
+            String::new()
+        },
+        changed: edited,
+        priority,
+        test,
+        explained: compact,
+        moved_sites: Vec::new(),
+    }
+}
+
+/// Displayed hunk body: the whole hunk, only the changed lines of a line-for-line hunk, or the
+/// changed lines not `hidden`, numbered where a run of consecutive lines starts. A `numbered`
+/// hunk shows its changed lines numbered that way.
+fn body(hunk: &hunks::Hunk<'_>, hidden: &[bool], numbered: bool) -> String {
+    let mut text = String::new();
+    let any_hidden = numbered
+        || hunk
+            .lines
+            .iter()
+            .zip(hidden)
+            .any(|(line, hidden)| line.tag != ' ' && *hidden);
+    if !any_hidden && !hunk.compact() {
+        return raw(hunk);
+    }
+    text.push_str(&hunk.range_header());
+    text.push('\n');
+    let mut previous = None;
+    for (line, hidden) in hunk.lines.iter().zip(hidden) {
+        if line.tag == ' ' || *hidden {
+            continue;
+        }
+        if !any_hidden || previous == Some((line.tag, line.number.wrapping_sub(1))) {
+            text.push(line.tag);
+            text.push_str(line.text);
+        } else {
+            let _ = write!(text, "{}{}: {}", line.tag, line.number, line.text);
+        }
+        previous = Some((line.tag, line.number));
+        text.push('\n');
+    }
+    text
+}
+
+/// The whole hunk with its context lines.
+fn raw(hunk: &hunks::Hunk<'_>) -> String {
+    let mut text = hunk.raw.to_string();
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text
 }
 
 /// Shortest head-side chain from each changed file to its nearest dependent without non-test importers.
@@ -132,79 +576,32 @@ fn entry_chains(
         .collect()
 }
 
-/// Declaration names captured in either revision.
-fn declared(capture: &ReviewCapture) -> BTreeSet<&str> {
-    capture
-        .revisions
-        .iter()
-        .flat_map(|revision| revision.files().values())
+/// Declaration names captured in one revision.
+fn declared(capture: &ReviewCapture, side: usize) -> BTreeSet<&str> {
+    capture.revisions[side]
+        .files()
+        .values()
         .flat_map(|file| &file.definitions.definitions)
         .map(|definition| definition.symbol.name.as_str())
         .collect()
 }
 
-/// Changed declaration names, then declared names and identifier-like literals on changed lines.
-fn terms(changes: &[ReviewContextChange], declared: &BTreeSet<&str>) -> Vec<String> {
-    let mut ordered = Vec::new();
-    for change in changes {
-        for side in [change.base.as_ref(), change.head.as_ref()]
-            .into_iter()
-            .flatten()
-        {
-            ordered.extend(side.definitions.iter().map(|item| item.symbol.name.clone()));
-        }
-    }
-    let changed_lines: Vec<&str> = changes
-        .iter()
-        .filter_map(|change| change.diff.as_deref())
-        .flat_map(|diff| {
-            diff.lines()
-                .skip_while(|line| !line.starts_with("@@"))
-                .filter(|line| line.starts_with('+') || line.starts_with('-'))
-                .map(|line| &line[1..])
-        })
-        .collect();
-    for line in &changed_lines {
-        ordered.extend(
-            identifiers(line)
-                .filter(|word| declared.contains(word))
-                .map(str::to_string),
-        );
-    }
-    for line in &changed_lines {
-        ordered.extend(literals(line));
-    }
+/// Changed declaration names of at least two words, searched in documentation.
+fn terms(changes: &[ReviewContextChange]) -> Vec<String> {
     let mut seen = BTreeSet::new();
-    ordered
-        .into_iter()
-        .filter(|term| term.chars().count() >= MIN_TERM_CHARS && seen.insert(term.clone()))
+    changes
+        .iter()
+        .flat_map(|change| [change.base.as_ref(), change.head.as_ref()])
+        .flatten()
+        .flat_map(|side| &side.definitions)
+        .map(|definition| definition.symbol.name.clone())
+        .filter(|term| {
+            term.chars().count() >= MIN_TERM_CHARS
+                && words(term).len() >= 2
+                && seen.insert(term.clone())
+        })
         .take(MAX_TERMS)
         .collect()
-}
-
-fn identifiers(line: &str) -> impl Iterator<Item = &str> {
-    line.split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
-        .filter(|word| word.chars().next().is_some_and(|ch| !ch.is_numeric()))
-}
-
-/// Quoted identifier-like values such as status names, codes and keys.
-fn literals(line: &str) -> Vec<String> {
-    let mut found = Vec::new();
-    for quote in ['"', '\'', '`'] {
-        let mut parts = line.split(quote);
-        parts.next();
-        while let (Some(inside), Some(_)) = (parts.next(), parts.clone().next()) {
-            if inside.chars().next().is_some_and(char::is_alphabetic)
-                && inside
-                    .chars()
-                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':' | '/'))
-            {
-                found.push(inside.to_string());
-            }
-            parts.next();
-        }
-    }
-    found
 }
 
 /// Lowercase words of an identifier, split at separators and lower-to-upper case changes.
@@ -232,22 +629,15 @@ fn words(term: &str) -> Vec<String> {
     words
 }
 
-fn normalized(line: &str) -> String {
-    let mut output = String::from(" ");
-    for word in words(line) {
-        output.push_str(&word);
-        output.push(' ');
-    }
-    output
-}
-
-/// Compound terms match as identifiers or word phrases. Single words match exactly as whole
-/// identifiers; all-lowercase words are ordinary prose, so they must be quoted as code.
-fn matches(term: &str, phrase: Option<&str>, line: &str, normalized_line: &str) -> bool {
-    if let Some(phrase) = phrase {
-        return normalized_line.contains(phrase);
-    }
-    whole(term, line, !term.chars().any(char::is_uppercase))
+/// Indices of terms that occur on `line` as one identifier token in any case style, such as
+/// `eventIdentity`, `event_identity` or `EVENT_IDENTITY` for `event_identity`.
+fn identifier_hits(line: &str, phrases: &BTreeMap<String, Vec<usize>>) -> BTreeSet<usize> {
+    line.split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+        .filter(|token| token.chars().next().is_some_and(|ch| !ch.is_numeric()))
+        .filter_map(|token| phrases.get(&words(token).join(" ")))
+        .flatten()
+        .copied()
+        .collect()
 }
 
 /// Case-sensitive occurrence delimited by quotes, or by non-identifier characters.
@@ -271,16 +661,14 @@ fn mentions(
     changed: &BTreeSet<(&str, PathBuf)>,
     brief: &mut ReviewBrief,
 ) -> Result<()> {
-    let patterns: Vec<_> = brief
-        .terms
-        .iter()
-        .map(|term| {
-            let words = words(term);
-            let phrase = (words.len() > 1).then(|| format!(" {} ", words.join(" ")));
-            (term.as_str(), phrase)
-        })
-        .collect();
-    if patterns.is_empty() {
+    let mut phrases = BTreeMap::<String, Vec<usize>>::new();
+    for (index, term) in brief.terms.iter().enumerate() {
+        phrases
+            .entry(words(term).join(" "))
+            .or_default()
+            .push(index);
+    }
+    if phrases.is_empty() {
         return Ok(());
     }
     let mut documents = Vec::new();
@@ -294,15 +682,7 @@ fn mentions(
         let mut lines = Vec::new();
         let mut terms = BTreeSet::new();
         for (index, line) in file.content.lines().enumerate() {
-            let normalized_line = normalized(line);
-            let hits: BTreeSet<_> = patterns
-                .iter()
-                .enumerate()
-                .filter(|(_, (term, phrase))| {
-                    matches(term, phrase.as_deref(), line, &normalized_line)
-                })
-                .map(|(index, _)| index)
-                .collect();
+            let hits = identifier_hits(line, &phrases);
             if !hits.is_empty() {
                 lines.push((hits.len(), index + 1, line.trim()));
                 terms.extend(hits);
@@ -352,16 +732,31 @@ fn code_term(text: String, direct: bool, declared: &BTreeSet<&str>) -> CodeTerm 
     }
 }
 
-/// Change terms, then names of the changed file's declarations whose spans use one of them.
+/// Changed callable declarations, then callable declarations of the changed file whose spans
+/// use one of them.
 fn change_terms(
     capture: &ReviewCapture,
     change: &ReviewContextChange,
     declared: &BTreeSet<&str>,
 ) -> Vec<CodeTerm> {
-    let mut terms: Vec<_> = terms(std::slice::from_ref(change), declared)
+    let mut terms: Vec<CodeTerm> = Vec::new();
+    for definition in [change.base.as_ref(), change.head.as_ref()]
         .into_iter()
-        .map(|term| code_term(term, true, declared))
-        .collect();
+        .flatten()
+        .flat_map(|side| &side.definitions)
+    {
+        let name = &definition.symbol.name;
+        if CALLABLE_KINDS.contains(&definition.symbol.kind.as_str())
+            && name.chars().count() >= MIN_TERM_CHARS
+            && terms.len() < MAX_TERMS
+            && !terms.iter().any(|term| &term.text == name)
+        {
+            terms.push(code_term(name.clone(), true, declared));
+        }
+    }
+    if terms.is_empty() {
+        return terms;
+    }
     for (index, side) in [change.base.as_ref(), change.head.as_ref()]
         .into_iter()
         .enumerate()
@@ -374,6 +769,7 @@ fn change_terms(
         for definition in &file.definitions.definitions {
             let name = &definition.symbol.name;
             if terms.len() >= MAX_TERMS
+                || !CALLABLE_KINDS.contains(&definition.symbol.kind.as_str())
                 || name.chars().count() < MIN_TERM_CHARS
                 || terms.iter().any(|term| &term.text == name)
             {
@@ -590,47 +986,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn identifiers_split_into_phrase_words() {
+    fn doc_terms_match_identifier_tokens_in_any_case_style() {
         assert_eq!(words("event_identity"), ["event", "identity"]);
         assert_eq!(words("providerReceiptKey"), ["provider", "receipt", "key"]);
         assert_eq!(words("HTTPServer"), ["httpserver"]);
-        let line = "Event identity is the tuple";
-        assert!(matches(
-            "event_identity",
-            Some(" event identity "),
-            line,
-            &normalized(line)
-        ));
-        assert!(!matches(
-            "event_identity",
-            Some(" event identity "),
-            "eventidentity",
-            &normalized("eventidentity")
-        ));
-        let line = "Use `eventIdentity` or EVENT_IDENTITY";
-        assert_eq!(normalized(line), " use event identity or event identity ");
-        assert!(matches(
-            "event_identity",
-            Some(" event identity "),
-            line,
-            &normalized(line)
-        ));
-    }
-
-    #[test]
-    fn single_words_match_whole_case_sensitive_identifiers() {
-        let line = "The WELCOME promotion; WELCOMEX and welcome differ";
-        assert!(matches("WELCOME", None, line, &normalized(line)));
-        assert!(!matches("WELCOM", None, line, &normalized(line)));
-        assert!(!matches("welcomes", None, line, &normalized(line)));
-    }
-
-    #[test]
-    fn lowercase_single_words_must_be_quoted_as_code() {
-        let prose = "IDs returned by one request";
-        assert!(!matches("returned", None, prose, &normalized(prose)));
-        let table = "| some shipped units returned | `returned` |";
-        assert!(matches("returned", None, table, &normalized(table)));
+        let phrases = BTreeMap::from([("event identity".to_string(), vec![0])]);
+        assert_eq!(
+            identifier_hits("Use `eventIdentity` or EVENT_IDENTITY", &phrases),
+            BTreeSet::from([0])
+        );
+        assert!(identifier_hits("Event identity is the tuple", &phrases).is_empty());
+        assert!(identifier_hits("eventidentity", &phrases).is_empty());
     }
 
     #[test]
@@ -655,14 +1021,5 @@ mod tests {
         let terms = [code_term("returned".into(), true, &declared)];
         let lines = importer_lines("returned = 1\nkey = \"returned\"\n", &terms, |_| false);
         assert_eq!(lines, [(2, "key = \"returned\"")]);
-    }
-
-    #[test]
-    fn literals_keep_identifier_like_quoted_values() {
-        assert_eq!(
-            literals(r#"x = "partially_returned" if y == 'WELCOME' else "two words""#),
-            ["partially_returned", "WELCOME"]
-        );
-        assert!(literals("unterminated \"value").is_empty());
     }
 }

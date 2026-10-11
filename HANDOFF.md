@@ -5,7 +5,7 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-08 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
+_Last updated: 2026-10-11 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
 `ANALYZER_VERSION` 26_
 
 ---
@@ -93,8 +93,13 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
-  Opt-in `--brief` renders a compact Table/Markdown projection (3,000-token default budget) with
-  diff hunks, distance-1 impact, counted transitive dependents and head-snapshot doc mentions.
+  Opt-in `--brief` renders a compact Table/Markdown projection (full up to an 8,000-token default
+  ceiling; an explicit `--budget` wins) with diff hunks, distance-1 impact, counted transitive
+  dependents and head-snapshot doc mentions. Repeated identifier renames fold to sites only where
+  every site provably renames an in-tree binding of its file (allowlisted grammars, tree-wide name
+  checks), and unedited declarations moved without rebinding fold to destinations; hunks of other
+  repeated edits show changed lines only. `docs/review-context.md` holds the exact folding rules; summaries
+  collapse in three levels before a budget is rejected.
   See [review context](docs/review-context.md) for limits and trust boundaries.
   The bundled skill provides self-contained starts for common repository, source and committed
   review questions. Detailed guides are conditional on needed unfamiliar semantics, including

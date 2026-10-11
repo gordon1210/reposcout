@@ -49,7 +49,6 @@ pub(super) fn describe(
                 hunks_omitted: 0,
                 diff_tokens: None,
                 diff: None,
-                diff_hunks_omitted: 0,
             };
             if let (Some(old), Some(new)) = (old, new) {
                 let hunks = changed_hunks(old, new)?;

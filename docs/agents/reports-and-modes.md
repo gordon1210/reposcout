@@ -19,12 +19,45 @@ must keep counterpart coverage partial even when every supplied declaration was 
 Budget projection reconsiders omitted identities against the actual format/tokenizer and retains compact
 file identities ahead of declaration/range details; per-side output omissions must not downgrade
 analysis availability or be confused with absent declarations.
-`--brief` is an opt-in Table/Markdown projection of the same facts (3,000-token default budget).
-It omits per-file identities, lists only distance-1 impact and nonzero gaps, counts transitive
-dependents, and adds head-snapshot doc mentions and text-matched usage lines of direct importers
-without resolved references, held outside the JSON contract. Its projection removes trailing
-hunks before whole diffs, usage lines, doc lines, relations, details and changes, with exact
-omission counts. Existing flag combinations and JSON output stay unchanged.
+`--brief` is an opt-in Table/Markdown projection of the same facts; without `--budget` it renders
+in full up to an 8,000-token ceiling, and an explicit `--budget` always wins. It omits per-file
+identities, folds identifier renames repeated across hunks and moved lines into summaries, shows
+hunks explained by other repeated rewrites compactly (changed lines only), flags old
+spellings left in head, lists only incoming distance-1 impact and nonzero gaps of the changed
+files, counts transitive dependents, and adds head-snapshot doc mentions and text-matched usage
+lines of direct importers without resolved references, all held outside the JSON contract
+(`ReviewBrief` is serde-skipped). Only renames proven pure at every site fold without showing
+their lines, and only renames of plain bindings: both tokens are plain identifier nodes of the
+complete base and head files' syntax trees in an allowlisted grammar (TS/TSX/JS, Python, Rust, Go),
+never member, key, field, attribute or argument-name positions; the old name is bound in the
+site's base file and the new name in its head file by declarations or by imports from in-tree
+modules (relative TS/JS specifiers, relative or captured Python modules, Rust `crate`/`self`/`super`
+paths), never by external imports, ambient, `extern` or ABI-exported items, and the file's renames
+are one-to-one; the new name occurs in no base-tree
+blob and the old name in no head-tree blob (bounded scan; over the bound nothing is pure); and
+spelling changes with language meaning (Go export case, Python underscores and dunders, test
+affixes in test files) never qualify. A moved declaration folds only when the target file's other
+top-level declarations of names it uses match the source file byte for byte and its enclosing
+container headers are byte-identical on both sides.
+Keyword, value-like name, number, string, operator, punctuation, insertion, deletion and
+multi-token edits and unproven renames always show their changed lines. Any fold needs equal
+line counts per block and byte equality of each paired line after rewrites. Folding never hides
+a reorder within one hunk, a reversed rename, an indentation change in an indentation-sensitive
+language (such hunks render in full), or moved code other than whole declarations whose every
+line pairs exactly after pure renames (never between a test and a non-test file); renames, mode
+changes and added, deleted or modified files whose hunks moved always stay listed. Its projection
+admits items in a fixed order under both budgets (entry headings, hunks with details after each
+change's first hunk, every other non-test hunk before every other test-file hunk and compact
+hunks after all others, examples, then soft evidence) and keeps soft evidence within max(400, diff
+tokens / 2). Mandatory summaries collapse in three levels before a budget is rejected; a level
+that admits no shown hunk gives way to the next. Omitted compact hunks are grouped by rewrite
+combination (sites and fetch commands only when they displace no other hunk, otherwise counts
+and one command). Other omitted hunks are listed per file for up to 40 files, then counted;
+level 2 reduces both lists to one count line with a command each, level 3 to counts and one
+full `git diff`. Commands use 12-character resolved commits (the merge base with
+`--merge-base`), `--no-indent-heuristic` to match the internal hunks, and shell-quoted
+`:(top,literal)path` pathspecs. Output is byte-identical for identical input. Existing flag
+combinations and JSON output stay unchanged.
 
 RepoScout never allocates agents or automatically partitions review work. Tokenization remains the
 existing default/configuration/explicit CLI choice, without model-based selection.

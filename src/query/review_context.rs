@@ -7,8 +7,9 @@ mod tests;
 use crate::config::Config;
 use crate::metrics::tokens::TokenCounter;
 use crate::model::{
-    CallSymbolIdentity, ReviewChangeBasis, ReviewContextCapability, ReviewContextRelation,
-    ReviewContextReport, ReviewContextTotals, SCHEMA_VERSION,
+    CallSymbolIdentity, ReviewBrief, ReviewBriefSelection, ReviewChangeBasis,
+    ReviewContextCapability, ReviewContextRelation, ReviewContextReport, ReviewContextTotals,
+    ReviewHunkRole, SCHEMA_VERSION,
 };
 use crate::report::Format;
 use anyhow::{Result, ensure};
@@ -16,8 +17,12 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const ENTRY_LIMIT: usize = 100;
-/// Default rendered-token allowance of the agent brief when `--budget` is absent.
-pub const REVIEW_BRIEF_TOKENS: usize = 3000;
+/// Rendered-token ceiling of the agent brief when `--budget` is absent; smaller briefs render in
+/// full.
+pub const REVIEW_BRIEF_TOKENS: usize = 8000;
+/// Soft evidence (importers, usage and documentation lines) may always use this many tokens, and
+/// otherwise at most half of the shown diff text.
+const BRIEF_SOFT_TOKENS: usize = 400;
 
 /// Immutable comparison, explicit content options, and independent source/output budgets.
 #[expect(
@@ -246,167 +251,290 @@ fn project(
     }
 }
 
-/// Brief projection keeps change identities, definitions, direct relations, documentation
-/// mentions and importer usage lines ahead of trailing diff hunks; the omitted hunks remain
-/// counted per change.
+/// Optional brief evidence in admission order.
+#[derive(Clone, Copy)]
+enum BriefItem {
+    Examples,
+    SiteLines,
+    ExplainedSites,
+    Entry(usize),
+    Details(usize),
+    Hunk(usize),
+    Importers(usize),
+    Mention(usize),
+    Usage(usize),
+}
+
+/// Greedy admissions tried after the longest fitting prefix.
+const BRIEF_GREEDY_ATTEMPTS: usize = 64;
+
+/// Rewrite site lines, every change entry heading, then shown hunks with deviating hunks first
+/// and the rest by priority. A change's details follow its first hunk in that order, so detailed
+/// entries never crowd out the diff. Rewrite examples only illustrate rules that are already
+/// listed, so they follow the diff; details of changes without shown hunks, importers,
+/// documentation lines and usage lines come last.
+fn brief_items(report: &ReviewContextReport) -> Vec<BriefItem> {
+    let Some(brief) = report.brief.as_ref() else {
+        return Vec::new();
+    };
+    let path = |change: usize| {
+        let change = &report.changes[change];
+        change
+            .head
+            .as_ref()
+            .or(change.base.as_ref())
+            .map(|side| side.path.clone())
+    };
+    let mut hunks: Vec<_> = brief
+        .hunks
+        .iter()
+        .enumerate()
+        .filter(|(_, hunk)| hunk.role == ReviewHunkRole::Shown)
+        .map(|(index, hunk)| (hunk.priority, path(hunk.change), index))
+        .collect();
+    hunks.sort();
+    let mut items = vec![BriefItem::SiteLines];
+    items.extend(
+        brief
+            .entry_changes
+            .iter()
+            .map(|&change| BriefItem::Entry(change)),
+    );
+    let mut detailed = BTreeSet::new();
+    for (_, _, index) in hunks {
+        items.push(BriefItem::Hunk(index));
+        let change = brief.hunks[index].change;
+        if detailed.insert(change) {
+            items.push(BriefItem::Details(change));
+        }
+    }
+    items.push(BriefItem::Examples);
+    items.extend(
+        brief
+            .entry_changes
+            .iter()
+            .filter(|change| !detailed.contains(*change))
+            .map(|&change| BriefItem::Details(change)),
+    );
+    items.extend(
+        brief
+            .entry_changes
+            .iter()
+            .map(|&change| BriefItem::Importers(change)),
+    );
+    items.extend((0..brief.mentions.len()).map(BriefItem::Mention));
+    items.extend((0..brief.usage.len()).map(BriefItem::Usage));
+    items
+}
+
+/// Change entry an item belongs to; it renders only once that entry is admitted.
+fn item_entry(report: &ReviewContextReport, brief: &ReviewBrief, item: BriefItem) -> Option<usize> {
+    match item {
+        BriefItem::Details(change) | BriefItem::Importers(change) => Some(change),
+        BriefItem::Hunk(index) => Some(brief.hunks[index].change),
+        BriefItem::Usage(index) => {
+            let identity = &brief.usage[index].change;
+            report.changes.iter().position(|change| {
+                [&change.base, &change.head].map(|side| side.as_ref().map(|side| side.path.clone()))
+                    == *identity
+            })
+        }
+        _ => None,
+    }
+}
+
+fn select(selection: &mut ReviewBriefSelection, item: BriefItem, admit: bool) {
+    let toggle = |set: &mut BTreeSet<usize>, value: usize| {
+        if admit {
+            set.insert(value);
+        } else {
+            set.remove(&value);
+        }
+    };
+    match item {
+        BriefItem::Examples => selection.examples = admit,
+        BriefItem::SiteLines => selection.site_lines = admit,
+        BriefItem::ExplainedSites => selection.explained_sites = admit,
+        BriefItem::Entry(change) => toggle(&mut selection.entries, change),
+        BriefItem::Details(change) => toggle(&mut selection.details, change),
+        BriefItem::Hunk(index) => toggle(&mut selection.hunks, index),
+        BriefItem::Importers(change) => toggle(&mut selection.importers, change),
+        BriefItem::Mention(index) => toggle(&mut selection.mentions, index),
+        BriefItem::Usage(index) => toggle(&mut selection.usage, index),
+    }
+}
+
+/// Highest collapse level of the brief's mandatory sections.
+const BRIEF_LEVELS: u8 = 3;
+
+/// First collapse level that reduces the omitted-hunk lists to one line each.
+const OMITTED_LINE_LEVEL: u8 = 2;
+
+/// Brief projection renders mandatory summaries (rewrites, moves, renames, stale spellings and
+/// the omission list), then admits the longest prefix of optional evidence that fits and tries
+/// a bounded number of later items. Omitted rule-explained hunks are counted per rewrite
+/// combination; below level 2 their sites are listed instead when the sites fit and the
+/// admission with them keeps every other hunk that the admission without them keeps. Mandatory
+/// sections collapse level by level until they fit; a level that fits but admits no shown hunk
+/// (no change entry when no hunk is shown) gives way to the next level that admits one. Soft
+/// evidence stays proportional to shown diff text.
 fn project_brief(
     report: &mut ReviewContextReport,
     options: &ReviewContextOptions,
     counter: &TokenCounter,
     deadline: std::time::Instant,
 ) -> Result<()> {
-    report.changes.truncate(ENTRY_LIMIT);
-    report.relations.truncate(ENTRY_LIMIT);
-    let originals = report.clone();
-    loop {
-        if within_budget(report, options, counter, deadline)? {
-            restore_change_identities(report, &originals.changes, options, counter, deadline)?;
-            restore_change_details(report, &originals.changes, options, counter, deadline)?;
-            restore_brief(report, &originals, options, counter, deadline)?;
+    let items = brief_items(report);
+    let mut fallback = None;
+    for level in 0..=BRIEF_LEVELS {
+        set_selection(report, level, &[]);
+        if !brief_fits(report, options, counter, deadline)? {
+            continue;
+        }
+        admit(report, options, counter, deadline, level, &[], &items)?;
+        if level < OMITTED_LINE_LEVEL
+            && report
+                .brief
+                .as_ref()
+                .is_some_and(|brief| brief.hunks.iter().any(|hunk| hunk.explained))
+        {
+            let without_sites = report.brief.as_ref().map(|brief| brief.selection.clone());
+            let kept = admitted_full_hunks(report);
+            set_selection(report, level, &[BriefItem::ExplainedSites]);
+            let grouped = brief_fits(report, options, counter, deadline)? && {
+                let base = [BriefItem::ExplainedSites];
+                admit(report, options, counter, deadline, level, &base, &items)?;
+                kept.is_subset(&admitted_full_hunks(report))
+            };
+            if !grouped
+                && let (Some(selection), Some(brief)) = (without_sites, report.brief.as_mut())
+            {
+                brief.selection = selection;
+            }
+        }
+        let Some(brief) = report.brief.as_ref() else {
+            return Ok(());
+        };
+        let shown = brief
+            .hunks
+            .iter()
+            .any(|hunk| hunk.role == ReviewHunkRole::Shown);
+        let admitted = if shown {
+            brief
+                .selection
+                .hunks
+                .iter()
+                .any(|&index| brief.selection.entries.contains(&brief.hunks[index].change))
+        } else {
+            brief.entry_changes.is_empty() || !brief.selection.entries.is_empty()
+        };
+        if admitted {
             return Ok(());
         }
-        if trim_diff_hunks(report)
-            || report
-                .brief
-                .as_mut()
-                .is_some_and(|brief| brief.usage.pop().is_some() || brief.mentions.pop().is_some())
-            || report.relations.pop().is_some()
-            || trim_definitions(report)
-            || trim_ranges(report)
-        {
-            continue;
-        }
-        if !remove_largest_change(report)? {
-            anyhow::bail!(
-                "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
-            );
-        }
+        fallback.get_or_insert_with(|| brief.selection.clone());
     }
+    if let (Some(selection), Some(brief)) = (fallback, report.brief.as_mut()) {
+        brief.selection = selection;
+        return Ok(());
+    }
+    anyhow::bail!(
+        "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
+    )
 }
 
-fn restore_brief(
-    report: &mut ReviewContextReport,
-    originals: &ReviewContextReport,
-    options: &ReviewContextOptions,
-    counter: &TokenCounter,
-    deadline: std::time::Instant,
-) -> Result<()> {
-    for relation in &originals.relations {
-        if !report
-            .relations
+/// Admitted shown hunks that are not rule-explained, in admitted change entries.
+fn admitted_full_hunks(report: &ReviewContextReport) -> BTreeSet<usize> {
+    report.brief.as_ref().map_or_else(BTreeSet::new, |brief| {
+        brief
+            .selection
+            .hunks
             .iter()
-            .any(|retained| same_relation(retained, relation))
-        {
-            admit_relation(report, relation, originals, options, counter, deadline)?;
-        }
-    }
-    if let Some(brief) = originals.brief.as_ref() {
-        restore_items(
-            report,
-            &brief.mentions,
-            |brief| &mut brief.mentions,
-            options,
-            counter,
-            deadline,
-        )?;
-        restore_items(
-            report,
-            &brief.usage,
-            |brief| &mut brief.usage,
-            options,
-            counter,
-            deadline,
-        )?;
-    }
-    for index in 0..report.changes.len() {
-        if report.changes[index].diff.is_some() {
-            continue;
-        }
-        let Some(original) = originals
-            .changes
-            .iter()
-            .find(|original| same_change(original, &report.changes[index]))
-        else {
-            continue;
+            .copied()
+            .filter(|&index| {
+                let hunk = &brief.hunks[index];
+                !hunk.explained && brief.selection.entries.contains(&hunk.change)
+            })
+            .collect()
+    })
+}
+
+fn set_selection(report: &mut ReviewContextReport, level: u8, admitted: &[BriefItem]) {
+    if let Some(brief) = report.brief.as_mut() {
+        brief.selection = ReviewBriefSelection {
+            level,
+            ..ReviewBriefSelection::default()
         };
-        report.changes[index].diff.clone_from(&original.diff);
-        report.changes[index].diff_hunks_omitted = 0;
-        if report.changes[index].diff.is_some()
-            && !within_budget(report, options, counter, deadline)?
-        {
-            report.changes[index].diff = None;
+        for item in admitted {
+            select(&mut brief.selection, *item, true);
         }
     }
-    recount(report, options);
-    Ok(())
 }
 
-/// Reinsert omitted brief items that fit, keeping their original relative order.
-fn restore_items<T: Clone + PartialEq>(
+/// Longest fitting prefix of `items` after the `base` items at `level`, then bounded greedy
+/// admissions.
+fn admit(
     report: &mut ReviewContextReport,
-    originals: &[T],
-    items: fn(&mut crate::model::ReviewBrief) -> &mut Vec<T>,
     options: &ReviewContextOptions,
     counter: &TokenCounter,
     deadline: std::time::Instant,
+    level: u8,
+    base: &[BriefItem],
+    items: &[BriefItem],
 ) -> Result<()> {
-    for (index, item) in originals.iter().enumerate() {
-        let Some(retained) = report.brief.as_mut().map(items) else {
+    let (mut low, mut high) = (0, items.len());
+    while low < high {
+        let middle = low + (high - low).div_ceil(2);
+        set_selection(report, level, &[base, &items[..middle]].concat());
+        if brief_fits(report, options, counter, deadline)? {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    set_selection(report, level, &[base, &items[..low]].concat());
+    let mut attempts = 0;
+    for item in items.iter().skip(low + 1) {
+        if attempts == BRIEF_GREEDY_ATTEMPTS {
+            break;
+        }
+        let Some(brief) = report.brief.as_ref() else {
             break;
         };
-        if retained.contains(item) {
+        let entry = item_entry(report, brief, *item);
+        if entry.is_some_and(|change| !brief.selection.entries.contains(&change))
+            || (matches!(item, BriefItem::Usage(_)) && entry.is_none())
+        {
             continue;
         }
-        let position = retained
-            .iter()
-            .take_while(|retained| originals[..index].contains(retained))
-            .count();
-        retained.insert(position, item.clone());
-        if !within_budget(report, options, counter, deadline)?
-            && let Some(retained) = report.brief.as_mut().map(items)
+        attempts += 1;
+        if let Some(brief) = report.brief.as_mut() {
+            select(&mut brief.selection, *item, true);
+        }
+        if !brief_fits(report, options, counter, deadline)?
+            && let Some(brief) = report.brief.as_mut()
         {
-            retained.remove(position);
+            select(&mut brief.selection, *item, false);
         }
     }
     Ok(())
 }
 
-fn same_change(
-    left: &crate::model::ReviewContextChange,
-    right: &crate::model::ReviewContextChange,
-) -> bool {
-    left.base.as_ref().map(|side| &side.path) == right.base.as_ref().map(|side| &side.path)
-        && left.head.as_ref().map(|side| &side.path) == right.head.as_ref().map(|side| &side.path)
-}
-
-/// Halve the hunks of the largest retained diff, or drop a single-hunk diff entirely.
-fn trim_diff_hunks(report: &mut ReviewContextReport) -> bool {
-    let Some(change) = report
-        .changes
-        .iter_mut()
-        .filter(|change| change.diff.is_some())
-        .max_by_key(|change| change.diff.as_ref().map_or(0, String::len))
-    else {
-        return false;
-    };
-    let Some(diff) = change.diff.as_mut() else {
-        return false;
-    };
-    let starts: Vec<_> = diff
-        .starts_with("@@")
-        .then_some(0)
-        .into_iter()
-        .chain(diff.match_indices("\n@@").map(|(index, _)| index + 1))
-        .collect();
-    let keep = starts.len() / 2;
-    if keep == 0 {
-        change.diff = None;
-        change.diff_hunks_omitted = 0;
-    } else {
-        diff.truncate(starts[keep]);
-        change.diff_hunks_omitted += starts.len() - keep;
+fn brief_fits(
+    report: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<bool> {
+    check_deadline(deadline)?;
+    let parts = crate::report::review_context::render_brief_parts(
+        report,
+        options.format == Format::Markdown,
+    );
+    if parts.text.len() > options.byte_budget || counter.count(&parts.text) > options.token_budget {
+        return Ok(false);
     }
-    true
+    Ok(parts.soft.is_empty()
+        || counter.count(&parts.soft) <= BRIEF_SOFT_TOKENS.max(counter.count(&parts.diff) / 2))
 }
 
 fn direct_relation(relation: &ReviewContextRelation) -> bool {
@@ -656,7 +784,6 @@ fn restore_change_details(
         {
             let mut restored = original.clone();
             restored.diff.clone_from(&change.diff);
-            restored.diff_hunks_omitted = change.diff_hunks_omitted;
             candidates.push((serde_json::to_vec(&restored)?.len(), index, restored));
         }
     }
