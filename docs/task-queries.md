@@ -172,7 +172,10 @@ as `local-lexical`, JavaScript import rules or Rust qualification rules, plus ex
 resolver evidence. A file whose fact or work limits were reached cannot promote retained relations
 to safe bindings: missing shadow/import facts could invalidate them. Those relations remain
 unresolved with the limit reason. Inspect extraction and resolution coverage before interpreting
-zero consumers; result and output omissions are separate again.
+zero consumers; result and output omissions are separate again. Sites outside every declaration,
+such as module-level code and anonymous test callbacks, resolve from a synthetic `(module)` source;
+it is not a consumer hit because it has no readable declaration, but review-context still shows it
+as call evidence.
 
 ## Shared output and automation rules
 

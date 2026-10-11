@@ -53,7 +53,12 @@ module evidence. Parameter/local shadowing, duplicate declarations, overloads an
 receiver-based forms remain explicitly unresolved. No globally unique-name shortcut establishes a
 cross-file binding. Calls and non-call references retain separate kinds, exact sites, content
 identity and binding/resolver provenance. Consumer projection must preserve extraction, resolution
-and output gaps under hard direction/depth/result limits.
+and output gaps under hard direction/depth/result limits. Sites outside every declaration
+(module-level code and anonymous callbacks) resolve from a synthetic per-file `(module)` source of
+kind `module` whose span is the whole file; it is a source only, never a target, and consumer
+projection excludes it because no declaration read handoff exists. Catch parameters, declared
+`for…in/of` bindings, destructuring (including shorthand properties) and arrow parameters shadow
+like other locals.
 
 Godot currently supplies file/resource dependency topology, not separate symbol topology.
 GDScript inheritance/global-name references therefore contribute file dependency edges. Do not

@@ -48,6 +48,12 @@ within their section.
 
 ### Fixed
 
+- Resolve call and reference sites outside every declaration, such as module-level code, route
+  registrations and anonymous test callbacks (`describe`/`it`), from a synthetic `(module)` source
+  (kind `module`) in review-context instead of reporting them as missing-owner. JavaScript and
+  TypeScript `catch` parameters, `for…of`/`for…in` declarations, shorthand destructuring and arrow
+  parameters now shadow same-named imports. `consumers` does not return module-scope sources as
+  hits because they have no readable declaration. Analyzer version 26 refreshes cached facts.
 - Resolve Python `from package import module` imports through PEP 420 namespace packages (no
   `__init__.py`) to the imported module files, so graph, impact and review consumers include
   those importers. On regular packages, `from package import name` keeps the `__init__.py`

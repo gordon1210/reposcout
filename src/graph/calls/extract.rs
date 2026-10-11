@@ -204,6 +204,7 @@ impl<'a> State<'a> {
             declarations,
             imports: self.imports,
             relations,
+            module_span: Some(file_span(self.content)),
             coverage: self.coverage,
         }
     }
@@ -396,6 +397,15 @@ pub(super) fn span(node: Node<'_>) -> SourceSpan {
         start_line: node.start_position().row + 1,
         end_line: (node.end_position().row + usize::from(node.end_position().column != 0))
             .max(node.start_position().row + 1),
+    }
+}
+
+fn file_span(content: &str) -> SourceSpan {
+    SourceSpan {
+        start_byte: 0,
+        end_byte: content.len(),
+        start_line: 1,
+        end_line: content.lines().count().max(1),
     }
 }
 

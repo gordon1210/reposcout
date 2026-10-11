@@ -19,6 +19,11 @@ pub(crate) const MAX_DECLARATIONS_PER_FILE: usize = 8_192;
 pub(crate) const MAX_IMPORTS_PER_FILE: usize = 4_096;
 pub(crate) const MAX_RELATIONS_PER_FILE: usize = 16_384;
 
+/// Symbol kind of the synthetic source identity for module-scope call and reference sites.
+pub(crate) const MODULE_SOURCE_KIND: &str = "module";
+/// Symbol name of the synthetic source identity for module-scope call and reference sites.
+pub(crate) const MODULE_SOURCE_NAME: &str = "(module)";
+
 /// Extract content-identified call and reference facts from supplied syntax and declaration facts without I/O.
 #[must_use]
 pub(crate) fn extract(

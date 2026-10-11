@@ -20,6 +20,8 @@ pub(super) fn visit(node: Node<'_>, state: &mut State<'_>) {
         "function_signature" => record_overload(node, state),
         "formal_parameters" => record_parameters(node, state),
         "arrow_function" => record_arrow_parameter(node, state),
+        "catch_clause" => record_catch_parameter(node, state),
+        "for_in_statement" => record_loop_binding(node, state),
         "call_expression" => record_call(node, state),
         "member_expression" if !is_call_target(node) => record_member_reference(node, state),
         "subscript_expression" if !is_call_target(node) => {
@@ -239,14 +241,54 @@ fn record_arrow_parameter(node: Node<'_>, state: &mut State<'_>) {
     let Some(name) = source_text(parameter, state.content()) else {
         return;
     };
-    let scope = node
-        .child_by_field_name("body")
-        .map_or_else(|| span(node), span);
+    let scope = span(node);
     state.push_shadow(ShadowBinding {
         name: name.to_string(),
         scope,
         active_from: scope.start_byte,
     });
+}
+
+fn record_catch_parameter(node: Node<'_>, state: &mut State<'_>) {
+    let Some(parameter) = node.child_by_field_name("parameter") else {
+        return;
+    };
+    let scope = span(node);
+    for identifier in pattern_identifiers(parameter, state.content()) {
+        state.push_shadow(ShadowBinding {
+            name: identifier,
+            scope,
+            active_from: scope.start_byte,
+        });
+    }
+}
+
+/// `for (const x of xs)` / `for (let [k, v] in o)` bind `left`; without a declaration keyword it
+/// assigns existing bindings and declares nothing.
+fn record_loop_binding(node: Node<'_>, state: &mut State<'_>) {
+    let mut cursor = node.walk();
+    let Some(keyword) = node
+        .children_by_field_name("kind", &mut cursor)
+        .filter_map(|kind| source_text(kind, state.content()))
+        .find(|kind| matches!(*kind, "const" | "let" | "var" | "using"))
+    else {
+        return;
+    };
+    let Some(left) = node.child_by_field_name("left") else {
+        return;
+    };
+    let scope = if keyword == "var" {
+        function_or_program_scope(node)
+    } else {
+        span(node)
+    };
+    for identifier in pattern_identifiers(left, state.content()) {
+        state.push_shadow(ShadowBinding {
+            name: identifier,
+            scope,
+            active_from: scope.start_byte,
+        });
+    }
 }
 
 fn record_variable_shadow(node: Node<'_>, state: &mut State<'_>) {
@@ -421,7 +463,10 @@ fn pattern_identifiers(root: Node<'_>, content: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if node.kind() == "identifier" {
+        if matches!(
+            node.kind(),
+            "identifier" | "shorthand_property_identifier_pattern"
+        ) {
             if let Some(name) = source_text(node, content) {
                 names.push(name.to_string());
             }

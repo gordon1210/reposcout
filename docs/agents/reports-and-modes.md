@@ -219,6 +219,8 @@ metadata are rejected because their health semantics cannot be established.
   Seed identity and expected hashes fail closed; read handoffs use qualified symbols and hashes,
   not a line heuristic that might select a nested declaration. Call/reference topology never
   changes import impact or type-reach meanings. Truncated fact sets cannot establish safe bindings.
+  Module-scope `(module)` sources are not consumer hits; review-context still shows them as call
+  evidence.
 - All three preserve bounded table/JSON/Markdown/NDJSON formats, structured errors and pure
   renderers. Keep actual fields, limits and supported syntax synchronized with capabilities and
   [task-query documentation](../task-queries.md).

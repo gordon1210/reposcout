@@ -166,6 +166,9 @@ pub struct CallReferenceFacts {
     pub imports: Vec<CallImportBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<CallReferenceFact>,
+    /// Whole-file span identifying the module scope that owns sites outside every declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module_span: Option<SourceSpan>,
     #[serde(default)]
     pub coverage: CallFactCoverage,
 }

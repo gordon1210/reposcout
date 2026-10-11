@@ -434,3 +434,162 @@ fn rust_struct_references_use_item_hoisting_and_block_scope() {
                 && relation.reason == CallUnresolvedReason::MissingTarget)
     );
 }
+
+#[test]
+fn module_scope_sites_and_anonymous_callbacks_resolve_from_the_module_source() {
+    let dependency = extracted(
+        FirstClass::TypeScript,
+        "src/audit.ts",
+        "export function recordAudit() {}\nexport function handler() {}\n",
+    );
+    let source = r"import { describe, it } from 'node:test';
+import { recordAudit, handler } from './audit';
+describe('audit', () => {
+    it('records', () => {
+        recordAudit();
+    });
+});
+router.get('/x', handler);
+export function owned() {
+    [1].forEach(() => recordAudit());
+}
+";
+    let consumer = extracted(FirstClass::TypeScript, "tests/audit.test.ts", source);
+    let facts = [dependency, consumer];
+    let modules = resolved_modules(&facts, &[("./audit", "src/audit.ts")]);
+    let topology = resolve(&facts, &modules);
+
+    let edges = topology
+        .edges
+        .iter()
+        .map(|edge| {
+            (
+                &source[edge.site.start_byte..edge.site.end_byte],
+                edge.source.name.as_str(),
+                edge.source.kind.as_str(),
+                edge.target.name.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        edges,
+        vec![
+            ("recordAudit()", "(module)", "module", "recordAudit"),
+            ("handler", "(module)", "module", "handler"),
+            ("recordAudit()", "owned", "function", "recordAudit"),
+        ],
+        "{topology:#?}"
+    );
+    let module = &topology.edges[0].source;
+    assert_eq!(module.path, "tests/audit.test.ts");
+    assert_eq!(module.source_hash, "hash:tests/audit.test.ts");
+    assert_eq!(
+        (
+            module.declaration_span.start_byte,
+            module.declaration_span.end_byte
+        ),
+        (0, source.len())
+    );
+    assert_eq!(
+        (
+            module.declaration_span.start_line,
+            module.declaration_span.end_line
+        ),
+        (1, source.lines().count())
+    );
+    assert!(
+        topology
+            .unresolved
+            .iter()
+            .all(|fact| fact.reason != CallUnresolvedReason::MissingOwner)
+    );
+    for external in ["describe(", "it("] {
+        assert!(topology.unresolved.iter().any(|fact| {
+            source[fact.site.start_byte..fact.site.end_byte].starts_with(external)
+                && fact.reason == CallUnresolvedReason::MissingImportResolution
+        }));
+    }
+}
+
+#[test]
+fn rust_module_scope_initializers_resolve_from_the_module_source() {
+    let source = "const LIMIT: usize = limit();\nconst fn limit() -> usize { 1 }\n";
+    let facts = [extracted(FirstClass::Rust, "src/lib.rs", source)];
+    let topology = resolve(&facts, &[]);
+    assert_eq!(topology.edges.len(), 1, "{topology:#?}");
+    assert_eq!(topology.edges[0].source.name, "(module)");
+    assert_eq!(topology.edges[0].source.kind, "module");
+    assert_eq!(topology.edges[0].target.name, "limit");
+}
+
+#[test]
+fn catch_loop_destructured_and_arrow_bindings_shadow_imports() {
+    let dependency = extracted(
+        FirstClass::TypeScript,
+        "dep.ts",
+        "export function error() {}\nexport function key() {}\nexport function reason() {}\nexport function item() {}\nexport function entry() {}\n",
+    );
+    let body = r"
+    try {
+        run();
+    } catch (error) {
+        error();
+    }
+    for (const [key] of pairs) {
+        key();
+    }
+    for (const { entry } of entries) {
+        entry();
+    }
+    const { reason } = input;
+    reason();
+    list.map(item => item());
+";
+    let source = format!(
+        "import {{ error, key, reason, item, entry }} from './dep';\nexport function owned() {{{body}}}\ndescribe('module', () => {{{body}}});\n"
+    );
+    let consumer = extracted(FirstClass::TypeScript, "main.ts", &source);
+    let facts = [dependency, consumer];
+    let modules = resolved_modules(&facts, &[("./dep", "dep.ts")]);
+    let topology = resolve(&facts, &modules);
+
+    assert!(
+        !topology
+            .edges
+            .iter()
+            .any(|edge| edge.target.path == "dep.ts"),
+        "{:#?}",
+        topology.edges
+    );
+    for name in ["error()", "key()", "entry()", "reason()", "item()"] {
+        let shadowed = topology
+            .unresolved
+            .iter()
+            .filter(|fact| {
+                &source[fact.site.start_byte..fact.site.end_byte] == name
+                    && fact.reason == CallUnresolvedReason::ShadowedBinding
+            })
+            .count();
+        assert_eq!(shadowed, 2, "{name}: {topology:#?}");
+    }
+}
+
+#[test]
+fn loop_assignments_without_declarations_do_not_shadow() {
+    let dependency = extracted(
+        FirstClass::TypeScript,
+        "dep.ts",
+        "export function key() {}\n",
+    );
+    let source = "import { key } from './dep';\nexport function owned(items: unknown[]) {\n    let current;\n    for (current of items) {\n        key();\n    }\n}\n";
+    let consumer = extracted(FirstClass::TypeScript, "main.ts", source);
+    let facts = [dependency, consumer];
+    let topology = resolve(&facts, &resolved_modules(&facts, &[("./dep", "dep.ts")]));
+    assert!(
+        topology
+            .edges
+            .iter()
+            .any(|edge| edge.target.path == "dep.ts" && edge.target.name == "key"),
+        "{topology:#?}"
+    );
+}

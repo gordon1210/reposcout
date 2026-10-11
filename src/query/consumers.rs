@@ -268,6 +268,10 @@ fn traverse(
 ) -> (Vec<ConsumerHit>, usize) {
     let mut adjacency: BTreeMap<SymbolKey, Vec<(CallSymbolIdentity, usize)>> = BTreeMap::new();
     for (index, edge) in topology.edges.iter().enumerate() {
+        // Module-scope sources have no declaration that a `read --symbol` handoff could select.
+        if edge.source.kind == graph::calls::MODULE_SOURCE_KIND {
+            continue;
+        }
         if options.direction != ConsumersDirection::Outgoing {
             adjacency
                 .entry(key(&edge.target))
