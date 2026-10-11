@@ -39,6 +39,11 @@ within their section.
 
 ### Changed
 
+- Describe the bundled skill by review task (judging merge or ship safety, explaining what
+  changed, finding defects, regressions and risks) and name `review-context --brief` before
+  `git diff` or `git log`, so agents choose RepoScout for review questions without being told to.
+  The review step explains rename sites, compact `[Rn]` hunks and the brief's fetch commands, and
+  asks agents to check that moved code's names resolve the same at the destination.
 - Start committed reviews in the bundled skill with one `review-context --brief` call and read
   only what it leaves open. Listed consumers are leads: before concluding that nothing breaks,
   agents check each call site in context or run the tests that exercise it.

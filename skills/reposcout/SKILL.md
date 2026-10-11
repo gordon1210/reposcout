@@ -22,10 +22,15 @@ checkouts. `read`, `changes` and `review-context` are Unix-only.
    reposcout review-context . --base <base> --head <head> --profile safe --brief
    ```
 
-   It pins both commits and prints the diff hunks, changed definitions, direct importers and
-   call/reference sites (`path:line`), docs that mention changed names, and nonzero gaps. Do not rerun
-   `git diff` for files it shows; fetch a patch yourself only when it reports that hunks were
-   omitted.
+   It pins both commits and prints, within 8k tokens by default: recurring token rewrites
+   (`R1 old → new`), moved and renamed code with destinations, old spellings still in head, and the
+   changed hunks with their changed definitions, direct importers and call/reference sites
+   (`path:line`), docs naming changed definitions, and nonzero gaps. Hunks that only apply pure
+   identifier renames are listed as sites; hunks tagged `[R1 R2]` show only their changed lines
+   because every edit is a listed rewrite. Moved code keeps its text; check that the names it uses
+   resolve the same at the destination. Read hunks marked `deviates from Rn` first: they break a
+   recurring edit. Judge whether each rewrite belongs at its sites instead of fetching them. Run
+   `git diff` only for omitted hunks, with the commands the brief prints.
 2. Read only what the brief does not answer, as line ranges at the pinned commit, several ranges
    per command: `git show <head>:path | sed -n '40,90p'`, or `reposcout read . --snapshot <head>
    --range FILE START END -f json`. Avoid dumping whole large files.
