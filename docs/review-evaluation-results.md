@@ -7,7 +7,8 @@ Claude Code (`claude-haiku-5-5` and `claude-sonnet-5-5` at medium effort) and Co
 per case, and a single blind grader per answer. They decided the review brief defaults and the
 bundled skill wording on this branch; they do not establish a general percentage saving. The sealed
 holdout B then showed a quality regression for guided Claude Code agents on one case; the fix for
-it was measured on the fresh sealed holdout C.
+it was measured on the fresh sealed holdout C. After the skill's general guidance was restored, the
+guided arm was run again on holdout C.
 
 Raw run records, answers, grades and private oracles stay outside Git. Only the aggregates below
 are published.
@@ -281,6 +282,43 @@ cost-weighted input: its baselines needed only 4–5 turns on change-e and 12–
 brief added more context than the reads it saved. Guided Codex matched its baseline's cost. Quality held or improved for
 all three models, but only Haiku saved tokens.
 
+## Current skill on holdout C
+
+The holdout C runs used a review-first skill body of 5.5 KB. The bundled skill now restores the
+general scouting, safety and reporting guidance around the unchanged review procedure, at 10.9 KB.
+The guided arm was run again with it on holdout C: same binary, seed, cases and repeats. Holdout C
+changed nothing in the skill or the binary, but its results were known, so this is a second look,
+not a sealed one. Per model and case, one grader scored all six answers together, blind: two
+baseline answers, two guided answers with the 5.5 KB body and two with the current body. Baseline
+and 5.5 KB scores were therefore graded again and differ from the first look by up to two points
+per cell.
+
+| Model | Arm | Score | Input | Cache read | Cache write | Output | Cost-weighted | Executions |
+|---|---|---|---|---|---|---|---|---|
+| Haiku | baseline | 5/12 | 3633k | 3366k | 267k | 89.5k | 1118k | 8 |
+| Haiku | guided, 5.5 KB skill | 8/12 | 2573k | 2391k | 181k | 57.4k | 753k (−33%) | 6 |
+| Haiku | guided, current skill | 9/12 | 2816k | 2615k | 201k | 55.4k | 790k (−29%) | 2 |
+| Sonnet | baseline | 7/12 | 779k | 690k | 89k | 9.7k | 228k | 2 |
+| Sonnet | guided, 5.5 KB skill | 10/12 | 1097k | 994k | 103k | 10.6k | 281k (+23%) | 4 |
+| Sonnet | guided, current skill | 9/12 | 1226k | 1108k | 119k | 10.7k | 313k (+37%) | 3 |
+| Codex | baseline | 6/12 | 1964k | 1703k | – | 20.3k | 533k | 7 |
+| Codex | guided, 5.5 KB skill | 6/12 | 2179k | 1958k | – | 25.0k | 542k (+2%) | 9 |
+| Codex | guided, current skill | 6/12 | 1959k | 1735k | – | 22.4k | 510k (−4%) | 8 |
+
+Scores per case, out of 6 (change-e / change-f): Haiku 4/1, 4/4, 5/4; Sonnet 5/2, 6/4, 5/4; Codex
+6/0 in all three arms.
+
+- Quality: the current skill stays within one point of the 5.5 KB body for every model and at or
+  above each baseline.
+- Cost: the larger body adds 5% cost-weighted input for Haiku and 11% for Sonnet over the 5.5 KB
+  body. Guided Haiku stays 29% cheaper than its baseline; guided Sonnet costs 37% more.
+- Executions: with the current body, no guided Claude run executed anything on change-e; with the
+  5.5 KB body, each guided Haiku run there executed two checks. Every guided Claude run on change-f
+  ran the test suite; one of Sonnet's three executions was a `which node` lookup. Every guided Codex
+  run executed the suite and a witness.
+- All six Codex answers on change-f again reported the schedule-listing behavior described above
+  and score 0 under the strict oracle.
+
 ## Limits and adverse outcomes
 
 - Each cell holds four answers from two cases. One point is within grading noise: re-grading the
@@ -293,10 +331,14 @@ all three models, but only Haiku saved tokens.
   them.
 - Guided savings apply only once an agent uses RepoScout; the adoption tables above measure how
   often that happens unprompted.
-- The guided results were measured with a review-first skill body of 5.5 KB that had dropped the
-  skill's general scouting, safety and reporting guidance. The bundled skill now restores that
-  guidance around the unchanged review procedure, at 10.9 KB; guided review quality and cost were
-  not measured again with it.
+- Apart from [Current skill on holdout C](#current-skill-on-holdout-c), the guided results were
+  measured with a review-first skill body of 5.5 KB that had dropped the skill's general scouting,
+  safety and reporting guidance. The current 10.9 KB body was measured only on the already opened
+  holdout C.
+- Current skill on holdout C: one guided Sonnet run was aborted by the 1 GiB sandbox memory limit
+  after it started every test file in parallel with `node --test`, and one guided Haiku run did not
+  start because the login token would have expired within the run timeout. Neither recorded usage;
+  fresh campaigns with the same seed completed both, and both attempts stay recorded.
 - Holdout B: the first Codex campaign did not start because the host's temporary-file quota was
   exhausted. It stays recorded, and a fresh campaign with the same seed ran all eight assignments.
 - Holdout B: in 4 of 16 Claude Code runs, across both arms, the permission mode denied one compound
