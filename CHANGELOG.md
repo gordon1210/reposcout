@@ -48,7 +48,10 @@ within their section.
 
 - Describe the bundled skill by review task (judging merge or ship safety, explaining what
   changed, finding defects, regressions and risks) and name `review-context --brief` before
-  `git diff` or `git log`, so agents choose RepoScout for review questions without being told to.
+  `git diff` or `git log`. For exploring a codebase, planning work or choosing files to read, the
+  description names `reposcout --agent-summary .` before `ls`, `find` or `grep` sweeps and still
+  lists symbol lookup, definition reads, dependencies and change impact, so agents choose RepoScout
+  for review and exploration questions without being told to.
   The review step explains rename sites, compact `[Rn]` hunks and the brief's fetch commands, and
   asks agents to check that moved code's names resolve the same at the destination. Each finding
   cites the documented rule or base behavior it breaks, the breaking head line and one affected
@@ -56,9 +59,12 @@ within their section.
 - Start committed reviews in the bundled skill with one `review-context --brief` call and read
   only what it leaves open. Listed consumers are leads: before concluding that nothing breaks,
   agents check each call site in context or run the tests that exercise it.
-- Make the bundled skill's entry point sufficient for common repository, source and review
-  questions. Load detailed guides only for needed unfamiliar semantics; preserve pinned source,
-  exact quotations, trust boundaries and uncertainty without a mandatory guide-reading chain.
+- Add the committed two-revision review procedure to the bundled skill next to its repository
+  scouting, source, context-planning, health, configuration-consent, reporting and CLI-trust
+  guidance, and move committed-review details into their own reference. Load detailed guides only
+  for needed unfamiliar semantics; preserve pinned source, exact quotations, trust boundaries and
+  uncertainty without a mandatory guide-reading chain. When the CLI is missing, the skill tells
+  the user and continues without it.
 - Prefer body-free Table orientation in the committed-review skill when its revision handles,
   relationships and uncertainty fields answer the reading question. Keep JSON for automation,
   exact structured details and literal source, without requiring duplicate format requests or

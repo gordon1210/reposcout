@@ -27,8 +27,11 @@ Scores are sums over the cell's answers, out of 3 per answer.
 
 `scripts/agent-eval/adoption_eval.py`, silent arm, at most six turns, the three
 `large-review/development` cases. Adoption means the agent loads the skill or runs `reposcout` on
-its own. Phrasings are split into `dev`, `tuning` and `held_out` sets; a held-out set that decided
-once became a tuning set.
+its own. Phrasings come in two kinds: review requests that name two commits, and explore requests
+(orientation, planning, lookup, health) that name none. They are split into `dev`, `tuning` and
+`held_out` sets; a held-out set that decided once became a tuning set.
+
+Review phrasings:
 
 | Phrasings | Description | Haiku | Sonnet |
 |---|---|---|---|
@@ -42,10 +45,41 @@ once became a tuning set.
 | second held-out (h5–h8) | previous | 2/12 | – |
 | second held-out (h5–h8) | A | 3/12 | – |
 | second held-out (h5–h8) | D | 11/11 | 10/10 |
+| tuning (h1–h8) | D, control | 12/12 | – |
+| tuning (h1–h8) | E | 3/12 | – |
+| tuning (h1–h8) | F | 11/12 | – |
+| tuning (h1–h8) | G | 12/12 | – |
+| third held-out (h9–h12) | G | 12/12 | 12/12 |
 
-Sonnet adopts with every description. Haiku without adoption opens with `git diff`. Description D,
-which names the task categories (review, merge or ship safety, what changed, defects, regressions
-and risks) and the `git diff` and `git log` alternatives, is the canonical skill description.
+Explore phrasings:
+
+| Phrasings | Description | Haiku | Sonnet |
+|---|---|---|---|
+| tuning (e4–e7) | previous | 0/12 | 1/12 |
+| tuning (e4–e7) | D | 1/12 | 3/12 |
+| tuning (e4–e7) | E | 1/12 | 8/12 |
+| tuning (e4–e7) | F | 4/12 | 7/12 |
+| tuning (e4–e7) | G | 11/12 | 11/12 |
+| held-out (e8–e11) | G | 12/12 | 12/12 |
+
+Sonnet adopts with every description on review phrasings. Haiku without adoption opens with
+`git diff`. Description D names the review task categories (review, merge or ship safety, what
+changed, defects, regressions and risks) and the `git diff` and `git log` alternatives; it decided
+review adoption but named exploration only in a trailing clause, and on explore phrasings it
+reached 1/12 with Haiku and 3/12 with Sonnet. The general description before it (`previous`) did no
+better there. E puts the general uses first and D's review sentences after them, and lost Haiku's
+review adoption. F keeps D's review sentences first and appends the general uses. G does the same
+but names `reposcout --agent-summary .` before `ls`, `find` or `grep` sweeps, the same
+competing-command cue that made D work for reviews. G adopted in every held-out run and is the
+canonical skill description.
+
+Adoption counts direct CLI calls as well as skill loads. On explore phrasings Haiku adopted only by
+running the command that the description names: it loaded the skill in none of its 24 G runs, so it
+never saw the skill's guidance. In the G runs, Sonnet loaded the skill in 16 of 24 explore runs and
+12 of 12 held-out review runs, Haiku in 14 of 24 review runs. Descriptions A–D were measured with
+the earlier review-first skill body; the D control and E–G with the restored body described under
+the limits below. An agent sees only the description before it loads the skill.
+
 Earlier Codex runs with a neutral availability sentence showed no unprompted adoption on the small
 `large-*` cases; Codex adoption was not measured again.
 
@@ -257,8 +291,12 @@ all three models, but only Haiku saved tokens.
 - Development-stage campaigns before 2026-10-09 lacked `mkdir`, `mktemp`, `rm`, `tar`, `tr`,
   `which` and `diff` in the sandbox; agents in every arm lost turns on that. Later stages include
   them.
-- Guided savings apply only once an agent uses RepoScout; the adoption table above measures how
+- Guided savings apply only once an agent uses RepoScout; the adoption tables above measure how
   often that happens unprompted.
+- The guided results were measured with a review-first skill body of 5.5 KB that had dropped the
+  skill's general scouting, safety and reporting guidance. The bundled skill now restores that
+  guidance around the unchanged review procedure, at 10.9 KB; guided review quality and cost were
+  not measured again with it.
 - Holdout B: the first Codex campaign did not start because the host's temporary-file quota was
   exhausted. It stays recorded, and a fresh campaign with the same seed ran all eight assignments.
 - Holdout B: in 4 of 16 Claude Code runs, across both arms, the permission mode denied one compound

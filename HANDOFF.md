@@ -103,8 +103,10 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   so just above a finer level's start the brief can leave part of its budget unused (about half
   of the default on a synthetic 400-hunk file; the generated complex PRs use nearly all of it).
   See [review context](docs/review-context.md) for limits and trust boundaries.
-  The bundled skill provides self-contained starts for common repository, source and committed
-  review questions. Detailed guides are conditional on needed unfamiliar semantics, including
+  The bundled skill keeps its repository scouting, source, context-planning, health,
+  configuration-consent, reporting and CLI-trust guidance and adds a self-contained committed-review
+  procedure; its description names `review-context --brief` for change questions and
+  `--agent-summary` for exploration. Detailed guides are conditional on needed unfamiliar semantics, including
   working/staged/deep-review workflows. Targeted native evidence is appropriate when
   the next question needs no structural discovery; small diffs or known refs never waive needed
   consumer/binding checks. Retain exact source provenance and validate remaining uncertainty

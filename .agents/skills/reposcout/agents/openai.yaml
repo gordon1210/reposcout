@@ -1,4 +1,4 @@
 interface:
   display_name: "RepoScout"
-  short_description: "Compact PR/commit review context, scouting and definition reads"
+  short_description: "Scout, read definitions, and assess code changes"
   default_prompt: "Use $reposcout to answer the repository question with the smallest useful query, reading known definitions directly when their source is needed."
