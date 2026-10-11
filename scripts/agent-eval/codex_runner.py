@@ -42,7 +42,7 @@ class TrialSpec:
     resume_thread_id: str | None = None
     timeout_seconds: float = 180
     memory_limit_bytes: int = 1024 * 1024 * 1024
-    host_memory_reserve_bytes: int = 12 * 1024 * 1024 * 1024
+    host_memory_reserve_bytes: int = 5 * 1024 * 1024 * 1024
     max_output_bytes: int = 16 * 1024 * 1024
     usage_scope: str = "unknown"
     usage_baseline: dict | None = None

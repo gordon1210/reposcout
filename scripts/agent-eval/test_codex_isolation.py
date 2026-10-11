@@ -371,7 +371,7 @@ class IsolationTests(unittest.TestCase):
         ))
         self.assertEqual(fingerprint_manifest(first), fingerprint_manifest(second))
         self.assertNotIn(str(self.root), json.dumps(first))
-        self.assertEqual(first["limits"]["host_memory_reserve_bytes"], 12 * 1024 ** 3)
+        self.assertEqual(first["limits"]["host_memory_reserve_bytes"], 5 * 1024 ** 3)
 
 
 if __name__ == "__main__":

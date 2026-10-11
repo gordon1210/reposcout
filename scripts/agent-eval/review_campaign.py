@@ -51,7 +51,7 @@ CLAUDE_SOURCE_FILES = ("claude_runner.py", "claude_isolation.py", "claude_trace.
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_ROOT = Path(__file__).resolve().parent
 LIMITS = {"timeout_seconds": 180, "memory_limit_bytes": 1024 ** 3,
-          "host_memory_reserve_bytes": 12 * 1024 ** 3, "max_output_bytes": 16 * 1024 ** 2,
+          "host_memory_reserve_bytes": 5 * 1024 ** 3, "max_output_bytes": 16 * 1024 ** 2,
           "reposcout_child_timeout_seconds": REPOSCOUT_CHILD_TIMEOUT_SECONDS}
 CAPABILITIES = {
     "baseline": "Git, bounded shell searches, targeted source reads, and the supplied one-shot application checks are available.",

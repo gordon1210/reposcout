@@ -97,7 +97,7 @@ created for that trial. The public fixture and copied authentication state are d
 private raw traces and sanitized results have separate retention.
 
 Runs are serial and supervised for time, aggregate process memory and available host memory.
-Default limits are 180 seconds per episode, 1 GiB process memory and a 12 GiB available-memory
+Default limits are 180 seconds per episode, 1 GiB process memory and a 5 GiB available-memory
 reserve. `prepare --timeout-seconds` can explicitly select a longer episode deadline, up to
 600 seconds. Each individual RepoScout child remains limited to 180 seconds. Limits and any
 explicitly authorized changes are part of the campaign condition.
