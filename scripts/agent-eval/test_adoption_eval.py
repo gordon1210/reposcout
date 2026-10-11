@@ -299,15 +299,22 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(wilson(0, 0), (None, None))
 
     def outcome(self, adopted, *, measurement="complete", capped=False, description="A", model="claude-haiku-5-5",
-                arm="silent", phrasing="d1", turn=2, kind="review"):
+                arm="silent", phrasing="d1", turn=2, kind="review", skill="a" * 64):
         tokens = {"uncached_input_tokens": 3, "cache_read_input_tokens": 5, "cache_write_input_tokens": 7,
                   "output_tokens": 11, "source": "result"}
         return {"kind": "adoption-run", "model": model, "arm": arm, "measurement": measurement, "capped": capped,
                 "phrasing": {"id": phrasing, "set": "dev" if phrasing.startswith("d") else "held-out", "kind": kind},
                 "description": {"name": description, "text_sha256": text_sha256(description)},
+                "skill": {"installed_dir_sha256": skill},
                 "adoption": {"adopted": adopted, "invoked": adopted, "adopted_before_diff": adopted,
                              "brief_called": adopted, "num_turns": 4, "tokens": tokens, "list_price_usd": 0.01,
                              "first_adoption_turn": turn if adopted else None}}
+
+    def test_different_skill_bodies_are_not_pooled(self):
+        rows = summarize([self.outcome(True), self.outcome(False, skill="b" * 64)])
+        self.assertEqual(sorted((row["skill_sha256"], row["adopted"], row["runs"]) for row in rows),
+                         [("a" * 12, 1, 1), ("b" * 12, 0, 1)])
+        self.assertIn("b" * 12, adoption_eval.render_summary(rows))
 
     def test_rates_intervals_and_token_totals(self):
         outcomes = [self.outcome(True), self.outcome(False, capped=True), self.outcome(True, turn=4),

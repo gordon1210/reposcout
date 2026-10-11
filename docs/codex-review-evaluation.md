@@ -276,10 +276,10 @@ Metrics come from raw `tool_use` events in stream order and ignore tool results 
 
 `run` executes exactly one run and writes `outcome.json`; `plan` prints a deterministic run list (or
 runnable commands) for a matrix and seed; `summary` reports adoption rates with Wilson 95% intervals
-per description, model, arm, phrasing set and phrasing kind, with token totals. Kinds are never
-pooled; outcomes written before phrasings had a kind count as `review`. Runs execute strictly one at a
-time. Only complete runs, whose stream closed and reached a final result, enter the rates;
-incomplete runs are counted as excluded.
+per description, installed skill directory hash, model, arm, phrasing set and phrasing kind, with
+token totals. Kinds and skill bodies are never pooled; outcomes written before phrasings had a kind
+count as `review`. Runs execute strictly one at a time. Only complete runs, whose stream closed and
+reached a final result, enter the rates; incomplete runs are counted as excluded.
 
 ## Running the tools
 

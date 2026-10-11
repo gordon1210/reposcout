@@ -346,16 +346,18 @@ def execute_run(parameters, *, runner=run_trial, phrasings=None, descriptions=No
 
 
 def summarize(outcomes):
-    """Adoption rate with a Wilson 95% interval per description x model x arm x phrasing set x kind.
+    """Adoption rate with a Wilson 95% interval per description x installed skill x model x arm x phrasing set
+    x kind.
 
     An outcome without a recorded kind predates explore phrasings and counts as `review`."""
     cells = {}
     for outcome in outcomes:
         key = (outcome["description"]["name"], outcome["description"]["text_sha256"][:12], outcome["model"],
-               outcome["arm"], outcome["phrasing"]["set"], outcome["phrasing"].get("kind", "review"))
+               outcome["arm"], outcome["phrasing"]["set"], outcome["phrasing"].get("kind", "review"),
+               outcome["skill"]["installed_dir_sha256"][:12])
         cell = cells.setdefault(key, {
             "description": key[0], "description_sha256": key[1], "model": key[2], "arm": key[3],
-            "phrasing_set": key[4], "kind": key[5], "runs": 0, "excluded": 0, "adopted": 0, "invoked": 0,
+            "phrasing_set": key[4], "kind": key[5], "skill_sha256": key[6], "runs": 0, "excluded": 0, "adopted": 0, "invoked": 0,
             "adopted_before_diff": 0, "brief_called": 0, "capped": 0, "turns": 0, "adoption_turns": [],
             "list_price_usd": 0.0,
             **dict.fromkeys(TOKEN_FIELDS, 0)})
@@ -401,15 +403,15 @@ def load_outcomes(directories):
 
 
 def render_summary(rows):
-    header = ("description", "model", "arm", "set", "kind", "adopted", "rate", "wilson95", "invoked", "pre-diff",
-              "brief", "capped", "excl", "uncached", "cache-read", "cache-write", "output")
+    header = ("description", "skill", "model", "arm", "set", "kind", "adopted", "rate", "wilson95", "invoked",
+              "pre-diff", "brief", "capped", "excl", "uncached", "cache-read", "cache-write", "output")
     lines = ["\t".join(header)]
     for row in rows:
         low, high = row["wilson_95"]
         rate = "-" if row["adoption_rate"] is None else f"{row['adoption_rate']:.2f}"
         interval = "-" if low is None else f"{low:.2f}-{high:.2f}"
         lines.append("\t".join(str(item) for item in (
-            f"{row['description']}@{row['description_sha256']}", row["model"], row["arm"], row["phrasing_set"],
+            f"{row['description']}@{row['description_sha256']}", row["skill_sha256"], row["model"], row["arm"], row["phrasing_set"],
             row["kind"], f"{row['adopted']}/{row['runs']}", rate, interval, row["invoked"], row["adopted_before_diff"],
             row["brief_called"], row["capped"], row["excluded"],
             *("-" if row[field] is None else row[field] for field in TOKEN_FIELDS))))
