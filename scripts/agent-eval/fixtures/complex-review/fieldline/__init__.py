@@ -22,6 +22,8 @@ from . import (
     cleanup,
     docs,
     engagement,
+    holdout_b_c,
+    holdout_b_d,
     insights,
     operations,
     platform,
@@ -40,7 +42,8 @@ MODULES = (
     engagement, insights, api, testkit, checks_api, checks_shared, checks_foundation, checks_accounts,
     checks_workorders, checks_worktypes, checks_workforce, checks_operations, checks_billing, checks_sla,
     checks_quotes, checks_notifications,
-    checks_reports, checks_integrations, checks_security, shift_rollout, cleanup, docs,
+    checks_reports, checks_integrations, checks_security, shift_rollout, cleanup, docs, holdout_b_c,
+    holdout_b_d,
 )
 
 

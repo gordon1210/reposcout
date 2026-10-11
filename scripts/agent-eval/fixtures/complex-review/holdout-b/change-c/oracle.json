@@ -1,0 +1,179 @@
+{
+  "domain_expected": {
+    "base": {
+      "absence": {
+        "availableMinutesAfter": 0,
+        "availableMinutesBefore": 540,
+        "bookingStatus": 409,
+        "slotsAfterAbsence": [],
+        "slotsBefore": 17
+      },
+      "booking": {
+        "after": [
+          "10:30",
+          "11:00",
+          "11:30",
+          "12:00"
+        ],
+        "offeredAfter": false,
+        "offeredBefore": true
+      }
+    },
+    "head": {
+      "absence": {
+        "availableMinutesAfter": 0,
+        "availableMinutesBefore": 540,
+        "bookingStatus": 201,
+        "slotsAfterAbsence": [
+          "08:00",
+          "08:30",
+          "09:00",
+          "09:30",
+          "10:00",
+          "10:30",
+          "11:00",
+          "11:30",
+          "12:00",
+          "12:30",
+          "13:00",
+          "13:30",
+          "14:00",
+          "14:30",
+          "15:00",
+          "15:30",
+          "16:00"
+        ],
+        "slotsBefore": 17
+      },
+      "booking": {
+        "after": [
+          "10:30",
+          "11:00",
+          "11:30",
+          "12:00"
+        ],
+        "offeredAfter": false,
+        "offeredBefore": true
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "day-plan-ignores-technician-absence",
+          "impact": "After an absence is recorded for a technician, slot offers for the affected day stay unchanged and appointments can still be booked for the absent technician until some unrelated appointment change refreshes the cached plan, while the daily load already reports no availability.",
+          "locations": [
+            {
+              "contains": "const DAY_PLAN_SOURCES: readonly CollectionName[] = ['appointments'];",
+              "path": "src/scheduling/slots.ts",
+              "side": "head"
+            },
+            {
+              "contains": "bounds: workingBounds(ctx, technician, date),",
+              "path": "src/scheduling/slots.ts",
+              "side": "head"
+            },
+            {
+              "contains": "it('reflects a booking made after the first query', () => {",
+              "path": "tests/scheduling/day-plan.test.ts",
+              "side": "head"
+            }
+          ],
+          "rubric": "The memoised day plan holds the technician's working bounds, which depend on the technician's recorded absences, but its dependency list names only appointments, so recording an absence does not invalidate a plan that was already read. Both slot listing and booking validation then rely on the stale bounds, contradicting the documented rule that technicians are bookable only when they are not absent; the daily load, which does list technicians as a dependency, disagrees with the slots. The new reuse tests only exercise bookings, cancellations and dates and never an absence. A reachable witness (read a day's slots, record an absence, read again or book) with the documented rule as expected and the missing dependency as cause suffices; exact names are not required. Introducing memoisation, the store revision counters, the cache statistics route and the other memoised reads, whose dependency lists are complete, are not defects. Extra genuine source defects require independent review for all arms.",
+          "severity": "high within this application's scheduling",
+          "witnesses": [
+            {
+              "actual": {
+                "bookingStatus": 201,
+                "slotsAfterAbsence": [
+                  "08:00",
+                  "08:30",
+                  "09:00",
+                  "09:30",
+                  "10:00",
+                  "10:30",
+                  "11:00",
+                  "11:30",
+                  "12:00",
+                  "12:30",
+                  "13:00",
+                  "13:30",
+                  "14:00",
+                  "14:30",
+                  "15:00",
+                  "15:30",
+                  "16:00"
+                ]
+              },
+              "expected": {
+                "bookingStatus": 409,
+                "slotsAfterAbsence": []
+              },
+              "input": {
+                "absence": "2026-03-03 sick leave recorded after the day's slots were read",
+                "booking": "2026-03-03T09:00:00Z for 60 minutes",
+                "technician": "one technician in metro-east"
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "Technicians are bookable during the scheduling day, 08:00\u201317:00 on working days, unless",
+                "path": "docs/scheduling.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish from the scheduling contract that absent technicians are not bookable.",
+          "id": "absence-contract"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "if (!isWorkingDay(businessCalendar(ctx), date) || !isAvailable(technician, date)) return undefined;",
+                "path": "src/scheduling/slots.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that the cached plan reads the technician's availability through the working bounds.",
+          "id": "plan-depends-on-technician-record"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "const slot = availableSlots(ctx, technician, date, durationMinutes, destination, locations).find(",
+                "path": "src/scheduling/service.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that booking validation consumes the same cached slot computation.",
+          "id": "booking-uses-cached-slots"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "['appointments', 'technicians'], () =>",
+                "path": "src/scheduling/capacity.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Contrast with the daily load, whose dependency list includes technicians.",
+          "id": "load-lists-technicians"
+        }
+      ]
+    }
+  ]
+}

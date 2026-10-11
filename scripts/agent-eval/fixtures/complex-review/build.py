@@ -20,9 +20,12 @@ from fieldline import build  # noqa: E402
 PARTITIONS = {
     "development": {"api-migration": "api-migration", "module-split": "module-split"},
     "holdout": {"config-defaults": "config-defaults", "behavior-preserving-refactor": "refactor"},
+    "holdout-b": {"change-c": "holdout-b-c", "change-d": "holdout-b-d"},
 }
-# Path/digest-map SHA-256 (`review_campaign.directory_hash`) of the sealed holdout bundle.
+# Path/digest-map SHA-256 (`review_campaign.directory_hash`) of each sealed holdout bundle.
 HOLDOUT_SEAL = "df42dab9162638f301ece9889bd9524e3f4896580f2080dc39f75f222ed517f8"
+HOLDOUT_B_SEAL = "df4f4579202ec3159d8748c0d884624c048323edba84c5ec96f9cfa5e7a16eb8"
+SEALS = {"holdout": HOLDOUT_SEAL, "holdout-b": HOLDOUT_B_SEAL}
 CONTROLLER_FILES = ("oracle.json", "probe.py")
 
 
@@ -73,10 +76,10 @@ def main():
         raise ValueError("bundle must be outside the generator sources")
     materialize(args.partition, output)
     digest = directory_hash(output)["sha256"]
-    sealed = args.partition != "holdout" or digest == HOLDOUT_SEAL
+    sealed = args.partition not in SEALS or digest == SEALS[args.partition]
     print(json.dumps({"partition": args.partition, "bundle": str(output), "bundle_sha256": digest, "sealed": sealed}))
     if not sealed:
-        raise SystemExit("holdout bundle differs from the sealed digest")
+        raise SystemExit(f"{args.partition} bundle differs from the sealed digest")
 
 
 if __name__ == "__main__":

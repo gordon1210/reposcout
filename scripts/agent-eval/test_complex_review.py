@@ -39,7 +39,8 @@ class Stop(Exception):
 class ComplexStageTests(unittest.TestCase):
     def test_complex_stages_pair_two_cases_across_two_repeats_in_their_own_partition(self):
         for stage, names, partition in (("complex-development", campaign.COMPLEX_DEVELOPMENT_CASES, "development"),
-                                        ("complex-holdout", campaign.COMPLEX_HOLDOUT_CASES, "holdout")):
+                                        ("complex-holdout", campaign.COMPLEX_HOLDOUT_CASES, "holdout"),
+                                        ("complex-holdout-b", campaign.COMPLEX_HOLDOUT_B_CASES, "holdout")):
             with self.subTest(stage=stage):
                 plan = campaign.build_plan(stage, 20261010, {"runtime": "claude"}, catalog(names, partition))
                 self.assertEqual(plan["assignment_count"], 8)
@@ -56,6 +57,7 @@ class ComplexStageTests(unittest.TestCase):
     def test_only_complex_stages_raise_the_timeout_ceiling(self):
         self.assertEqual(campaign.stage_timeout_seconds("complex-development"), 1200)
         self.assertEqual(campaign.stage_timeout_seconds("complex-holdout"), 1200)
+        self.assertEqual(campaign.stage_timeout_seconds("complex-holdout-b"), 1200)
         self.assertEqual(campaign.stage_timeout_seconds("large-holdout"), 600)
         self.assertEqual(campaign.validated_timeout_seconds(1200, campaign.stage_timeout_seconds("complex-holdout")), 1200)
         with self.assertRaisesRegex(InvalidLedger, "at most 1200"):
@@ -74,6 +76,7 @@ class ComplexStageTests(unittest.TestCase):
                          "model": "claude-haiku-5-5", "reposcout_binary": "/unexecuted/reposcout",
                          "skill_dir": "/unexecuted/skill"}
             for stage, suite, timeout, expected in (("complex-holdout", "complex", None, (1200, 1200)),
+                                                    ("complex-holdout-b", "complex", None, (1200, 1200)),
                                                     ("complex-development", "complex", 900, (900, 1200)),
                                                     ("large-holdout", "large", None, (180, 600))):
                 with self.subTest(stage=stage, timeout=timeout), \
@@ -83,7 +86,7 @@ class ComplexStageTests(unittest.TestCase):
                                      timeout_seconds=timeout, **arguments)
                 self.assertEqual((capture.call_args.kwargs["timeout_seconds"],
                                   capture.call_args.kwargs["timeout_ceiling"]), expected)
-            for stage, suite in (("complex-holdout", "large"), ("large-holdout", "complex")):
+            for stage, suite in (("complex-holdout", "large"), ("complex-holdout-b", "large"), ("large-holdout", "complex")):
                 with self.subTest(stage=stage, suite=suite), \
                         patch.object(campaign, "capture_claude_pins", side_effect=Stop) as capture, \
                         self.assertRaisesRegex(InvalidLedger, "complex fixture bundle"):
@@ -114,7 +117,8 @@ class ComplexStageTests(unittest.TestCase):
 class ComplexBundleTests(unittest.TestCase):
     def test_generated_bundles_match_the_stage_presets_and_the_holdout_seal(self):
         generator = load_generator()
-        expected = {"development": campaign.COMPLEX_DEVELOPMENT_CASES, "holdout": campaign.COMPLEX_HOLDOUT_CASES}
+        expected = {"development": campaign.COMPLEX_DEVELOPMENT_CASES, "holdout": campaign.COMPLEX_HOLDOUT_CASES,
+                    "holdout-b": campaign.COMPLEX_HOLDOUT_B_CASES}
         with tempfile.TemporaryDirectory() as temporary:
             for partition, names in expected.items():
                 with self.subTest(partition=partition):
@@ -123,15 +127,16 @@ class ComplexBundleTests(unittest.TestCase):
                     self.assertEqual(review_cases.bundle_suite(bundle), "complex")
                     cases = review_cases.list_cases(include_holdout=True, bundle_root=bundle)
                     self.assertEqual([case["case_id"] for case in cases], list(names))
-                    self.assertTrue(all(case["partition"] == partition and case["step_count"] == 1 for case in cases))
+                    catalog_partition = "holdout" if partition.startswith("holdout") else partition
+                    self.assertTrue(all(case["partition"] == catalog_partition and case["step_count"] == 1 for case in cases))
                     for name in names:
                         snapshots = review_cases.snapshots(name, bundle_root=bundle)
                         self.assertFalse(any("oracle" in path or "probe" in path for path in snapshots["head"]))
                         oracle = json.loads((bundle / name / "oracle.json").read_text())
                         review_cases._resolve_obligations(
                             oracle, snapshots, [{"base_revision": "base", "head_revision": "head"}])
-                    if partition == "holdout":
-                        self.assertEqual(campaign.directory_hash(bundle)["sha256"], generator.HOLDOUT_SEAL)
+                    if partition in generator.SEALS:
+                        self.assertEqual(campaign.directory_hash(bundle)["sha256"], generator.SEALS[partition])
 
 
 if __name__ == "__main__":

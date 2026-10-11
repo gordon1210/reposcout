@@ -170,7 +170,8 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   Campaigns run either Codex or Claude Code, recorded in the plan. The `reposcout-guided` arm
   names the skill in the task and measures value, while the neutral arm measures adoption; the
   two are never pooled. Generated complex TypeScript stages (`complex-development`, sealed
-  `complex-holdout`) measure the comparisons where native review is expensive.
+  `complex-holdout` and `complex-holdout-b`) measure the comparisons where native review is
+  expensive.
 
 - **Snapshot reads and changed definitions.** `read --snapshot worktree|index|REF`
   selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with

@@ -9,7 +9,7 @@ import hashlib
 import posixpath
 import re
 
-VARIANTS = ("base", "api-migration", "module-split", "config-defaults", "refactor")
+VARIANTS = ("base", "api-migration", "module-split", "config-defaults", "refactor", "holdout-b-c", "holdout-b-d")
 MARKER = re.compile(r"«([A-Za-z0-9_.:-]+)»")
 
 # Exported work-order API: base identifier -> module-split identifier.
