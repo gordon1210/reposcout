@@ -258,8 +258,8 @@ serial lease, process ownership) through `claude_runner.run_trial` and never gra
 | Element | Definition |
 |---|---|
 | Arms | `silent`: the `reposcout` variant's skill install, and a prompt that never mentions RepoScout, skills or a CLI. `neutral`: the same prompt plus the campaigns' availability sentence. |
-| Prompt | A phrasing, a `base=<sha> head=<sha>` line and a one-line request for a free-form answer. Phrasings live in `fixtures/adoption/phrasings.json` in explicit `dev`, `tuning` and `held_out` sets; the driver refuses held-out phrasings unless `--held-out` is passed. The held-out set decides and is never tuned on. A held-out set that has decided once becomes a tuning set and a fresh held-out set replaces it: `h1`–`h4` decided first and are now `tuning`; `h5`–`h8` are held out. |
-| Descriptions | `fixtures/adoption/descriptions.json`: `current` is read from `skills/reposcout/SKILL.md` at run time; `A` to `D` are candidates. Each run installs a private copy of the skill with only the frontmatter `description:` line swapped. The description text hash and the installed skill directory hash are recorded per run; the canonical skill is never edited. |
+| Prompt | A phrasing of one of two kinds. A `review` prompt is the phrasing, a `base=<sha> head=<sha>` line and a one-line request for a free-form answer. An `explore` prompt (orientation, planning, symbol lookup, health) is the phrasing and the same request, with no revision line and no mention of commits. Every phrasing in `fixtures/adoption/phrasings.json` carries an explicit `kind` and sits in an explicit `dev`, `tuning` or `held_out` set; the driver refuses held-out phrasings unless `--held-out` is passed. The held-out set decides and is never tuned on. A held-out set that has decided once becomes a tuning set and a fresh held-out set replaces it: `h1`–`h12` and `e8`–`e11` have decided and are `tuning`; `h13`–`h16` are the held-out review phrasings and `e12`–`e15` the held-out explore phrasings. A run list holds one kind (`plan --kind`, default `review`); `run` takes the kind from the phrasing id. |
+| Descriptions | `fixtures/adoption/descriptions.json`: `current` is read from `skills/reposcout/SKILL.md` at run time; `A` to `G` are candidates, and `previous` is the general description that preceded the review rewrite. Each run installs a private copy of the skill with only the frontmatter `description:` line swapped. The description text hash and the installed skill directory hash are recorded per run; the canonical skill is never edited. |
 | Cases | The three `large-review/development` cases `status-extraction`, `cancellation-change` and `event-routing-change`. Sealed holdout cases are not accepted. |
 | Cap | `--max-turns` (default 6) and an optional `--max-budget-usd` are passed to Claude Code. A run ended by the cap is a valid `capped` outcome, not a failure. |
 
@@ -269,14 +269,15 @@ Metrics come from raw `tool_use` events in stream order and ignore tool results 
   Bash command containing a `reposcout` token anywhere, including compound commands. `invoked` is
   the stricter reading where the token is a command.
 - `adopted_before_diff`: adoption precedes the first Bash `git diff`, `git show` or `git log -p`;
-  it also holds when the run never inspects a diff.
-- `brief_called`: a Bash command with `review-context` and `--brief`.
+  it also holds when the run never inspects a diff. It describes review runs only.
+- `brief_called`: a Bash command with `review-context` and `--brief`. It describes review runs only.
 - `first_adoption_turn`, `num_turns`, `capped`, and input tokens split into uncached, cache read and
   cache write, plus output tokens.
 
 `run` executes exactly one run and writes `outcome.json`; `plan` prints a deterministic run list (or
 runnable commands) for a matrix and seed; `summary` reports adoption rates with Wilson 95% intervals
-per description, model, arm and phrasing set, with token totals. Runs execute strictly one at a
+per description, model, arm, phrasing set and phrasing kind, with token totals. Kinds are never
+pooled; outcomes written before phrasings had a kind count as `review`. Runs execute strictly one at a
 time. Only complete runs, whose stream closed and reached a final result, enter the rates;
 incomplete runs are counted as excluded.
 

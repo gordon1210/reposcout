@@ -1,10 +1,11 @@
-"""Measure whether Claude Code models use the bundled RepoScout skill unprompted on review-like tasks.
+"""Measure whether Claude Code models use the bundled RepoScout skill unprompted on review/explore tasks.
 
 Each run is one capped, ungraded Claude Code invocation inside the campaign isolation. The prompt is a
-short review request over a development fixture; the `silent` arm never mentions RepoScout, the
-`neutral` arm adds the campaigns' availability sentence. The skill description under test is swapped
-into a private copy of the bundled skill, so the canonical skill stays untouched. Adoption is read from
-raw tool_use events, independent of tool results.
+short request over a development fixture: a `review` phrasing names the commits to review, an `explore`
+phrasing asks a repository-exploration question without mentioning commits. The `silent` arm never
+mentions RepoScout, the `neutral` arm adds the campaigns' availability sentence. The skill description
+under test is swapped into a private copy of the bundled skill, so the canonical skill stays untouched.
+Adoption is read from raw tool_use events, independent of tool results.
 """
 
 import argparse
@@ -41,6 +42,7 @@ CASES = ("status-extraction", "cancellation-change", "event-routing-change")
 MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5")
 ARMS = ("silent", "neutral")
 PHRASING_SETS = ("dev", "tuning", "held-out")
+KINDS = ("review", "explore")
 CURRENT = "current"
 DEFAULT_MAX_TURNS = 6
 DEFAULT_EFFORT = "medium"
@@ -69,13 +71,14 @@ def read_data(name):
 
 
 def load_phrasings(path=None):
-    """Map phrasing id to {id, text, set}; the set is `dev`, `tuning` or `held-out`."""
+    """Map phrasing id to {id, text, set, kind}: set is `dev`, `tuning` or `held-out`; kind is `review` or `explore`."""
     data = json.loads(Path(path).read_text(encoding="utf-8")) if path else read_data("phrasings.json")
     result = {}
     for key, name in (("dev", "dev"), ("tuning", "tuning"), ("held_out", "held-out")):
         for item in data[key]:
             require(item["id"] not in result, "duplicate phrasing id")
-            result[item["id"]] = {"id": item["id"], "text": item["text"], "set": name}
+            require(item.get("kind") in KINDS, f"phrasing {item['id']} needs a kind of {' or '.join(KINDS)}")
+            result[item["id"]] = {"id": item["id"], "text": item["text"], "set": name, "kind": item["kind"]}
     return result
 
 
@@ -87,9 +90,15 @@ def select_phrasing(phrasings, phrasing_id, *, held_out):
     return chosen
 
 
-def build_prompt(arm, phrasing, base, head):
+def build_prompt(arm, phrasing, *, kind, base=None, head=None):
+    """A review prompt names the compared revisions; an explore prompt carries only the phrasing."""
     require(arm in ARMS, f"unknown arm: {arm}")
-    prompt = f"{phrasing}\nbase={base} head={head}\n{REQUEST}"
+    require(kind in KINDS, f"unknown kind: {kind}")
+    if kind == "review":
+        require(base and head, "a review prompt needs base and head")
+        prompt = f"{phrasing}\nbase={base} head={head}\n{REQUEST}"
+    else:
+        prompt = f"{phrasing}\n{REQUEST}"
     if arm == "neutral":
         prompt += "\n\n" + CAPABILITIES["reposcout"]
     return prompt
@@ -168,11 +177,14 @@ def wilson(successes, total, z=Z95):
     return max(0.0, (centre - margin) / denominator), min(1.0, (centre + margin) / denominator)
 
 
-def plan_runs(*, models, arms, descriptions, cases, phrasing_set, runs_per_cell, seed, phrasings):
-    """A deterministic run list: phrasing and case combinations cycle per cell, then all cells interleave."""
+def plan_runs(*, models, arms, descriptions, cases, phrasing_set, runs_per_cell, seed, phrasings, kind="review"):
+    """A deterministic run list of one phrasing kind: phrasing and case combinations cycle per cell, then all
+    cells interleave."""
     require(phrasing_set in PHRASING_SETS, "unknown phrasing set")
+    require(kind in KINDS, f"unknown kind: {kind}")
     require(type(runs_per_cell) is int and runs_per_cell > 0, "runs per cell must be a positive integer")
-    identifiers = [item["id"] for item in phrasings.values() if item["set"] == phrasing_set]
+    identifiers = [item["id"] for item in phrasings.values() if item["set"] == phrasing_set and item["kind"] == kind]
+    require(identifiers, f"no {kind} phrasings in the {phrasing_set} set")
     combinations = [(phrasing, case) for phrasing in identifiers for case in cases]
     runs = []
     for description in descriptions:
@@ -281,7 +293,8 @@ def execute_run(parameters, *, runner=run_trial, phrasings=None, descriptions=No
         (run_dir / "controller").mkdir(mode=0o700)
         (run_dir / "invocation").mkdir(mode=0o700)
         step = record["steps"][0]
-        prompt = build_prompt(parameters["arm"], phrasing["text"], step["base_commit"], step["head_commit"])
+        prompt = build_prompt(parameters["arm"], phrasing["text"], kind=phrasing["kind"],
+                              base=step["base_commit"], head=step["head_commit"])
         prompt_sha256 = text_sha256(prompt)
         pins = pin_capture(parameters["claude_binary"], parameters["reposcout_binary"],
                            sorted({command[0] for command in record["check_commands"]}))
@@ -299,7 +312,8 @@ def execute_run(parameters, *, runner=run_trial, phrasings=None, descriptions=No
     outcome = {
         "schema": SCHEMA, "kind": KIND, "run_id": run_id, "model": parameters["model"], "arm": parameters["arm"],
         "case": parameters["case"], "repeat": parameters["repeat"],
-        "phrasing": {"id": phrasing["id"], "set": phrasing["set"], "text": phrasing["text"]},
+        "phrasing": {"id": phrasing["id"], "set": phrasing["set"], "kind": phrasing["kind"],
+                     "text": phrasing["text"]},
         "description": {"name": description["name"], "source": description["source"],
                         "text": description["text"], "text_sha256": text_sha256(description["text"])},
         "skill": {"canonical_dir_sha256": canonical_sha256, "installed_dir_sha256": skill_sha256,
@@ -332,15 +346,18 @@ def execute_run(parameters, *, runner=run_trial, phrasings=None, descriptions=No
 
 
 def summarize(outcomes):
-    """Adoption rate with a Wilson 95% interval per description x model x arm x phrasing set."""
+    """Adoption rate with a Wilson 95% interval per description x model x arm x phrasing set x kind.
+
+    An outcome without a recorded kind predates explore phrasings and counts as `review`."""
     cells = {}
     for outcome in outcomes:
         key = (outcome["description"]["name"], outcome["description"]["text_sha256"][:12], outcome["model"],
-               outcome["arm"], outcome["phrasing"]["set"])
+               outcome["arm"], outcome["phrasing"]["set"], outcome["phrasing"].get("kind", "review"))
         cell = cells.setdefault(key, {
             "description": key[0], "description_sha256": key[1], "model": key[2], "arm": key[3],
-            "phrasing_set": key[4], "runs": 0, "excluded": 0, "adopted": 0, "invoked": 0, "adopted_before_diff": 0,
-            "brief_called": 0, "capped": 0, "turns": 0, "adoption_turns": [], "list_price_usd": 0.0,
+            "phrasing_set": key[4], "kind": key[5], "runs": 0, "excluded": 0, "adopted": 0, "invoked": 0,
+            "adopted_before_diff": 0, "brief_called": 0, "capped": 0, "turns": 0, "adoption_turns": [],
+            "list_price_usd": 0.0,
             **dict.fromkeys(TOKEN_FIELDS, 0)})
         if outcome["measurement"] != "complete":
             cell["excluded"] += 1
@@ -384,8 +401,8 @@ def load_outcomes(directories):
 
 
 def render_summary(rows):
-    header = ("description", "model", "arm", "set", "adopted", "rate", "wilson95", "invoked", "pre-diff", "brief",
-              "capped", "excl", "uncached", "cache-read", "cache-write", "output")
+    header = ("description", "model", "arm", "set", "kind", "adopted", "rate", "wilson95", "invoked", "pre-diff",
+              "brief", "capped", "excl", "uncached", "cache-read", "cache-write", "output")
     lines = ["\t".join(header)]
     for row in rows:
         low, high = row["wilson_95"]
@@ -393,7 +410,7 @@ def render_summary(rows):
         interval = "-" if low is None else f"{low:.2f}-{high:.2f}"
         lines.append("\t".join(str(item) for item in (
             f"{row['description']}@{row['description_sha256']}", row["model"], row["arm"], row["phrasing_set"],
-            f"{row['adopted']}/{row['runs']}", rate, interval, row["invoked"], row["adopted_before_diff"],
+            row["kind"], f"{row['adopted']}/{row['runs']}", rate, interval, row["invoked"], row["adopted_before_diff"],
             row["brief_called"], row["capped"], row["excluded"],
             *("-" if row[field] is None else row[field] for field in TOKEN_FIELDS))))
     return "\n".join(lines)
@@ -445,6 +462,7 @@ def build_parser():
     plan.add_argument("--descriptions", type=_csv, default=[CURRENT, "A", "B", "C"])
     plan.add_argument("--cases", type=_csv, default=list(CASES))
     plan.add_argument("--phrasing-set", choices=PHRASING_SETS, default="dev")
+    plan.add_argument("--kind", choices=KINDS, default="review", help="phrasing kind; a run list holds one kind")
     plan.add_argument("--runs-per-cell", type=int, default=12)
     plan.add_argument("--held-out", action="store_true", help="required for the held-out phrasing set")
     plan.add_argument("--emit", choices=("json", "commands"), default="json")
@@ -488,7 +506,7 @@ def main(argv=None):
             require(set(args.cases) <= set(CASES), "cases must come from the adoption development set")
             runs = plan_runs(models=args.models, arms=args.arms, descriptions=args.descriptions, cases=args.cases,
                              phrasing_set=args.phrasing_set, runs_per_cell=args.runs_per_cell, seed=args.seed,
-                             phrasings=phrasings)
+                             phrasings=phrasings, kind=args.kind)
             if args.emit == "commands":
                 require(args.reposcout_binary and args.auth_file and args.output_dir,
                         "--emit commands needs --reposcout-binary, --auth-file and --output-dir")
@@ -499,7 +517,7 @@ def main(argv=None):
                 print("\n".join(run_command_line(entry, common) for entry in runs))
             else:
                 print(json.dumps({"schema": SCHEMA, "seed": args.seed, "phrasing_set": args.phrasing_set,
-                                  "runs_per_cell": args.runs_per_cell, "runs": runs}, indent=2))
+                                  "kind": args.kind, "runs_per_cell": args.runs_per_cell, "runs": runs}, indent=2))
             return 0
         rows = summarize(load_outcomes(args.results))
         print(json.dumps(rows, indent=2, sort_keys=True) if args.json else render_summary(rows))
