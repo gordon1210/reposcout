@@ -213,11 +213,14 @@ fn header(report: &ReviewContextReport, brief: &ReviewBrief, unlisted: usize) ->
         t.changes, t.definitions, t.diff_tokens
     );
     output.push_str(
-        "note: static potential impact; [test] marks filename/syntax hints; read files with git show <commit>:<path>\n",
+        "note: static potential impact only; run the repository checks before concluding; [test] marks filename/syntax hints; read files with git show <commit>:<path>\n",
     );
     let gaps = gaps(report, brief);
     if !gaps.is_empty() {
         let _ = writeln!(output, "gaps: {}", gaps.join("; "));
+    }
+    if let Some(line) = dispatch(brief) {
+        output.push_str(&line);
     }
     let omitted = omitted(report, brief);
     if !omitted.is_empty() {
@@ -243,6 +246,62 @@ fn header(report: &ReviewContextReport, brief: &ReviewBrief, unlisted: usize) ->
         let _ = writeln!(output, "counted, not listed: {}", counted.join("; "));
     }
     output
+}
+
+/// Names listed on the unresolved-dispatch line; the remainder is counted.
+const MAX_DISPATCH_NAMES: usize = 3;
+
+/// Added methods reusing method names of existing files without resolved callers. Every level
+/// lists the same names; the collapsed level replaces head call sites with their count.
+fn dispatch(brief: &ReviewBrief) -> Option<String> {
+    if brief.dispatch.is_empty() {
+        return None;
+    }
+    let definitions: usize = brief.dispatch.iter().map(|gap| gap.definitions).sum();
+    let collapsed = brief.selection.level >= COLLAPSED;
+    let mut names = brief
+        .dispatch
+        .iter()
+        .take(MAX_DISPATCH_NAMES)
+        .map(|gap| {
+            let calls = if gap.sites_total == 0 {
+                "no receiver call found".to_string()
+            } else if collapsed {
+                format!(
+                    "{} receiver call {}",
+                    gap.sites_total,
+                    if gap.sites_total == 1 {
+                        "site"
+                    } else {
+                        "sites"
+                    }
+                )
+            } else {
+                let mut sites: Vec<_> = gap
+                    .sites
+                    .iter()
+                    .map(|(path, line)| format!("{}:{line}", path_text(path)))
+                    .collect();
+                if gap.sites_total > gap.sites.len() {
+                    sites.push(format!("+{} more", gap.sites_total - gap.sites.len()));
+                }
+                format!("called at {}", sites.join(", "))
+            };
+            format!("{} ({}) {calls}", terminal_text(&gap.name), gap.definitions)
+        })
+        .collect::<Vec<_>>();
+    if brief.dispatch.len() > MAX_DISPATCH_NAMES {
+        let more = brief.dispatch.len() - MAX_DISPATCH_NAMES;
+        names.push(format!(
+            "{more} more {}",
+            if more == 1 { "name" } else { "names" }
+        ));
+    }
+    Some(format!(
+        "unresolved dispatch: added methods {definitions} in files {} reuse existing method names without a resolved caller; trace the dispatcher and the code that validates, stores or orders their results: {}\n",
+        brief.dispatch_files,
+        names.join("; ")
+    ))
 }
 
 /// `label N` when both revisions agree, `label B/H (base/head)` otherwise; nothing when both are zero.

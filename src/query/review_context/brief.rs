@@ -1,4 +1,5 @@
 mod bindings;
+mod dispatch;
 mod hunks;
 mod lexicon;
 mod moves;
@@ -69,6 +70,7 @@ pub(super) fn prepare(
             .count();
     }
     brief.call_gaps = call_gaps(capture, changes);
+    (brief.dispatch, brief.dispatch_files) = dispatch::dispatch(capture, changes, relations);
     let declared_sides = [declared(capture, 0), declared(capture, 1)];
     let declared: BTreeSet<&str> = declared_sides.iter().flatten().copied().collect();
     diff_facts(

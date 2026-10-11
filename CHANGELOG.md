@@ -8,6 +8,13 @@ within their section.
 
 ### Added
 
+- Add an `unresolved dispatch:` line to the `review-context --brief` header for added methods
+  that implement an existing member name without any resolved caller, with bounded head receiver
+  call sites. The brief note now says that it is static and that repository checks still run
+  before concluding. The bundled skill traces inputs of new registry, interface, enum or config
+  variants into unchanged validating or storing code, requires an executed check for a no-issues
+  verdict and a minimal witness for findings, since a green suite does not cover new variants.
+
 - Add a Claude Code runtime to the local review evaluations, isolated and accounted like the
   Codex runtime, and a `reposcout-guided` arm whose task names the skill; guided and neutral
   results are never pooled. Add generated complex TypeScript review stages

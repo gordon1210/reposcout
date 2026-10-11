@@ -24,10 +24,12 @@ in full up to a 4,096-token ceiling, and an explicit `--budget` always wins. It 
 identities, folds identifier renames repeated across hunks and moved lines into summaries, shows
 hunks explained by other repeated rewrites compactly (changed lines only), flags old
 spellings left in head, lists only incoming distance-1 impact and nonzero gaps of the changed
-files, counts transitive dependents, and adds head-snapshot doc mentions and text-matched usage
-lines of direct importers without resolved references, all held outside the JSON contract
-(`ReviewBrief` is serde-skipped). Only renames proven pure at every site fold without showing
-their lines, and only renames of plain bindings: both tokens are plain identifier nodes of the
+files, names added methods that reuse an existing method name without a resolved caller
+(`unresolved dispatch`, kept at every budget rung), counts transitive dependents, and adds
+head-snapshot doc mentions and text-matched usage lines of direct importers without resolved
+references, all held outside the JSON contract (`ReviewBrief` is serde-skipped). Only renames proven
+pure at every site fold without showing their lines, and only renames of plain bindings: both tokens
+are plain identifier nodes of the
 complete base and head files' syntax trees in an allowlisted grammar (TS/TSX/JS, Python, Rust, Go),
 never member, key, field, attribute or argument-name positions; the old name is bound in the
 site's base file and the new name in its head file by declarations or by imports from in-tree

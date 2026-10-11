@@ -128,6 +128,10 @@ pub struct ReviewBrief {
     pub moves: Vec<ReviewBriefMove>,
     /// Old spellings replaced by the change that still occur in the head snapshot.
     pub stale: Vec<ReviewStaleName>,
+    /// Added methods reusing base method names without resolved callers, per member name.
+    pub dispatch: Vec<ReviewDispatchGap>,
+    /// Distinct head files declaring the added methods of `dispatch`.
+    pub dispatch_files: usize,
     /// Output projection state; the renderer shows only selected optional items.
     pub selection: ReviewBriefSelection,
 }
@@ -218,6 +222,20 @@ pub struct ReviewStaleName {
     pub head_lines: usize,
     /// Head occurrences in path and line order, bounded; `head_lines` stays exact.
     pub hits: Vec<ReviewDocMention>,
+}
+
+/// Methods that non-test changed files declare beyond their base count of that name, that reuse a
+/// method name of non-test base files and that no resolved head reference targets: new
+/// implementations reached only through dynamic dispatch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewDispatchGap {
+    pub name: String,
+    /// Added methods with this name.
+    pub definitions: usize,
+    /// Head receiver call or reference sites naming the member, outside test files and the files
+    /// declaring these added methods, in path and line order, bounded; `sites_total` stays exact.
+    pub sites: Vec<(PathBuf, usize)>,
+    pub sites_total: usize,
 }
 
 /// Optional brief items admitted by output projection.

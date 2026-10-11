@@ -6,7 +6,8 @@ description: "Use for any question about a change between two commits, branches 
 # RepoScout
 
 Every byte you load stays in context for the rest of the task. Make one targeted RepoScout call
-instead of several native lookups, then read only the line ranges you still need.
+instead of several native lookups, then read only the line ranges you still need. Its output is
+static evidence of what changed, not of how the code behaves.
 
 ## Boundaries
 
@@ -25,23 +26,29 @@ checkouts. `read`, `changes` and `review-context` are Unix-only.
    It pins both commits and prints, within 4k tokens by default: recurring token rewrites
    (`R1 old → new`), moved and renamed code with destinations, old spellings still in head, and the
    changed hunks with their changed definitions, direct importers and call/reference sites
-   (`path:line`), docs naming changed definitions, and nonzero gaps. Hunks that only apply pure
-   identifier renames are listed as sites; hunks tagged `[R1 R2]` show only their changed lines
-   because every edit is a listed rewrite. Moved code keeps its text; check that the names it uses
-   resolve the same at the destination. Read hunks marked `deviates from Rn` first: they break a
+   (`path:line`), docs naming changed definitions, nonzero gaps, and `unresolved dispatch` for
+   added implementations that no caller resolves. Hunks that only apply pure identifier renames
+   are listed as sites; hunks tagged `[R1 R2]` show only their changed lines because every edit is
+   a listed rewrite. Moved code keeps its text; check that the names it uses resolve the same at
+   the destination. Read hunks marked `deviates from Rn` first: they break a
    recurring edit. Judge whether each rewrite belongs at its sites instead of fetching them. Run
    `git diff` only for omitted hunks, with the commands the brief prints.
-2. Read only what the brief does not answer, as line ranges at the pinned commit, several ranges
-   per command: `git show <head>:path | sed -n '40,90p'`, or `reposcout read . --snapshot <head>
+2. Read what the brief does not show, as line ranges at the pinned commit, several ranges per
+   command: `git show <head>:path | sed -n '40,90p'`, or `reposcout read . --snapshot <head>
    --range FILE START END -f json`. Avoid dumping whole large files.
 3. Consumers and doc mentions are starting points, not a complete boundary. When gaps are nonzero
    or dispatch is dynamic (registries, string keys, config), search the pinned commit with
-   `git grep -n PATTERN <head> -- DIR`. A listed consumer is a lead, not evidence: before
+   `git grep -n PATTERN <head> -- DIR`. When a change adds variants to an existing registry,
+   interface, enum or config, follow each input a new variant requires, or value it emits, into
+   the unchanged code that validates, stores or orders it: one `git grep` for that key or field
+   outside the changed files, then read the hits. A listed consumer is a lead, not evidence: before
    concluding that nothing breaks, read each listed call site or usage line in context, or run the
    tests that exercise it, and cite what you checked.
-4. RepoScout replaces lookups, not verification. Still run the task's permitted checks, and a
-   minimal witness when you claim reachable behavior, as you would without it. A RepoScout call is
-   static evidence, never an executed check.
+4. RepoScout replaces lookups, not verification. Run the repository's documented check or test
+   command (README, contributing notes, package scripts) where the task permits; a no-issues
+   verdict needs at least one executed check. A green suite does not cover new variants: give each
+   finding, or else the riskiest traced path, one minimal witness through the public entry point,
+   repeating the operation when state carries over. A RepoScout call is never an executed check.
 5. Cite evidence as path plus line range at the pinned commit, quoting source lines verbatim
    without diff markers. For each finding cite the documented rule or base behavior it breaks,
    the head line that breaks it, and one affected caller on the active path; for

@@ -135,7 +135,19 @@ The same input renders byte-identical output.
   inputs, changed files without graph, resolver configuration errors, and changed files whose
   language has no call-reference resolver or whose call references are incomplete.
   Repository-wide counters such as unresolved references stay in JSON. A missing gap line means
-  none were recorded; unknown hunk counts read `hunks unknown`.
+  none were recorded; unknown hunk counts read `hunks unknown`. The note line states that the brief
+  is static potential impact only and that the repository checks still run before concluding.
+- An `unresolved dispatch:` header line appears only when non-test changed files add methods
+  beyond their base count of a name that non-test base files already declare as a method, and no
+  resolved head reference targets them: new implementations of an existing interface, registry
+  or handler member that only dynamic dispatch reaches. It counts these methods and their files
+  and lists at most three member names, those with call sites first, then by added count and
+  name, each with its added count and at most three head receiver call sites (`path:line`, then an
+  exact `+N more`) outside test files and the declaring files; `no receiver call found` marks a
+  name without one. Receivers reached through a subscript, such as `handlers[kind].validate()`,
+  are not member sites. The collapsed budget rung keeps the same names and replaces sites with
+  their count. The line is static; trace the dispatcher and the unchanged code that validates,
+  stores or orders the new implementations' results.
 - `rewrites` lists token edits that recur in at least three hunks, most frequent first, as
   `R1 \`old\` → \`new\``, `insert` or `delete`. Tokens come from the shared tokenizer; an edit
   inside one token is reduced to the differing part between word boundaries and marked

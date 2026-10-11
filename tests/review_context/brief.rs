@@ -2702,3 +2702,119 @@ fn brief_renames_through_relative_imports_still_fold() {
     );
     assert!(!text.contains("modified src/"), "{text}");
 }
+
+const HANDLER_TYPES: &str =
+    "export interface Handler {\n  validate(input: Record<string, unknown>): string[];\n}\n";
+const PLUMBING: &str = "import type { Handler } from './types';\n\nexport class Plumbing implements Handler {\n  validate(input: Record<string, unknown>): string[] {\n    return input.pipe ? [] : ['pipe'];\n  }\n}\n";
+const JOBS: &str = "import { handlers } from './handlers/registry';\n\nexport function complete(kind: string, input: Record<string, unknown>): string[] {\n  const handler = handlers[kind];\n  return handler.validate(input);\n}\n";
+
+fn handler(class: &str, field: &str) -> String {
+    format!(
+        "import type {{ Handler }} from './types';\n\nexport class {class} implements Handler {{\n  validate(input: Record<string, unknown>): string[] {{\n    return input.{field} ? [] : ['{field}'];\n  }}\n}}\n"
+    )
+}
+
+fn registry(classes: &[(&str, &str)]) -> String {
+    let mut source = String::from("import type { Handler } from './types';\n");
+    for (class, file) in classes {
+        let _ = writeln!(source, "import {{ {class} }} from './{file}';");
+    }
+    source.push_str("\nexport const handlers: Record<string, Handler> = {\n");
+    for (class, file) in classes {
+        let _ = writeln!(source, "  {file}: new {class}(),");
+    }
+    source.push_str("};\n");
+    source
+}
+
+fn dispatch_line(text: &str) -> Option<&str> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("unresolved dispatch: "))
+}
+
+#[test]
+fn brief_names_added_implementations_reached_only_through_dispatch() {
+    let electric = handler("Electric", "meter");
+    let gas = handler("Gas", "valve");
+    let fake = handler("Fake", "stub");
+    let old_registry = registry(&[("Plumbing", "plumbing")]);
+    let new_registry = registry(&[
+        ("Plumbing", "plumbing"),
+        ("Electric", "electric"),
+        ("Gas", "gas"),
+    ]);
+    let fixture = revisions(
+        &[
+            ("src/handlers/types.ts", HANDLER_TYPES),
+            ("src/handlers/plumbing.ts", PLUMBING),
+            ("src/handlers/registry.ts", &old_registry),
+            ("src/jobs.ts", JOBS),
+        ],
+        &[
+            ("src/handlers/electric.ts", &electric),
+            ("src/handlers/gas.ts", &gas),
+            ("src/handlers/registry.ts", &new_registry),
+            ("tests/fake.test.ts", &fake),
+        ],
+    );
+    let text = brief(&fixture, &[]);
+    assert!(
+        text.contains(
+            "note: static potential impact only; run the repository checks before concluding;"
+        ),
+        "{text}"
+    );
+    let line = dispatch_line(&text).unwrap_or_else(|| panic!("{text}"));
+    // The test double and the registry importer are neither implementations nor call sites.
+    assert!(
+        line.starts_with("added methods 2 in files 2 reuse existing method names"),
+        "{line}"
+    );
+    assert!(
+        line.ends_with(": validate (2) called at src/jobs.ts:5"),
+        "{line}"
+    );
+    assert_eq!(brief(&fixture, &[]), text);
+    // Every budget keeps the line within the budget; the collapsed rung counts sites instead.
+    for (budget, calls) in [
+        (3000, "called at src/jobs.ts:5"),
+        (600, "called at src/jobs.ts:5"),
+        (300, "1 receiver call site"),
+    ] {
+        let small = brief(&fixture, &["--budget", &budget.to_string()]);
+        assert!(tokens(&small) <= budget, "{small}");
+        let line = dispatch_line(&small).unwrap_or_else(|| panic!("{small}"));
+        assert!(line.ends_with(&format!(": validate (2) {calls}")), "{line}");
+    }
+}
+
+#[test]
+fn brief_omits_dispatch_line_without_added_implementations_of_existing_members() {
+    // Implementations edited in place, a new member name and direct function calls stay silent.
+    let edited = PLUMBING.replace("input.pipe", "input.pipe && input.seal");
+    let fixture = revisions(
+        &[
+            ("src/handlers/types.ts", HANDLER_TYPES),
+            ("src/handlers/plumbing.ts", PLUMBING),
+            (
+                "src/handlers/registry.ts",
+                &registry(&[("Plumbing", "plumbing")]),
+            ),
+            ("src/jobs.ts", JOBS),
+        ],
+        &[
+            ("src/handlers/plumbing.ts", &edited),
+            (
+                "src/handlers/audit.ts",
+                "export class Audit {\n  inspect(input: Record<string, unknown>): string[] {\n    return Object.keys(input);\n  }\n}\n\nexport function audited(kind: string): string {\n  return kind.trim();\n}\n",
+            ),
+            (
+                "src/report.ts",
+                "import { Audit, audited } from './handlers/audit';\n\nexport function report(kind: string): string[] {\n  return [audited(kind), ...new Audit().inspect({ kind })];\n}\n",
+            ),
+        ],
+    );
+    let text = brief(&fixture, &[]);
+    assert!(text.contains("modified src/handlers/plumbing.ts"), "{text}");
+    assert!(dispatch_line(&text).is_none(), "{text}");
+}
