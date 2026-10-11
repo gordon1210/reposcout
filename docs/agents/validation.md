@@ -194,7 +194,10 @@ ask the user.
   Keep quality, skill behavior, tool/source bytes, observed model usage and monetary cost distinct.
   Missing usage fields stay unknown. Raw records, detailed reports, private packets and local
   provenance must remain outside Git. Use only `review_campaign.py publish` for an explicitly
-  requested public summary, and run `python3 -B scripts/agent-eval/publication.py` before publishing
+  requested public summary, or the aggregate tables in
+  [`review-evaluation-results.md`](../review-evaluation-results.md) (scores, counts and token
+  totals per model and arm; no answers, prompts, oracle content, run identifiers or host paths),
+  and run `python3 -B scripts/agent-eval/publication.py` before publishing
   changes to evaluation files. This checks staged Git objects. The repository-owned
   `.githooks/pre-push` checks all outgoing commit versions when enabled for the intended checkout
   with `git config --local core.hooksPath .githooks`; the CI check validates committed objects.

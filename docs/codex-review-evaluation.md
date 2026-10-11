@@ -9,8 +9,9 @@ reduce the complete interaction's token use. It is separate from the determinist
 No live model run belongs to ordinary CI or a release gate. Offline tests validate the evaluator;
 they do not demonstrate better reviews or token savings.
 
-Private campaign observations are not committed with the evaluator.
-Keep adverse outcomes and unknown measurements in the private record.
+Campaign results, including adverse outcomes and unknown measurements, are summarized in
+[review-evaluation-results.md](review-evaluation-results.md). Raw traces, answers and sealed oracles
+stay private.
 
 ## Comparison conditions
 
