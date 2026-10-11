@@ -192,7 +192,9 @@ python3 scripts/agent-eval/review_campaign.py prepare /private/complex-holdout-c
 ```
 
 The `complex-holdout-b` preset follows the same rules for the second sealed holdout partition
-(`build.py holdout-b`, cases `change-c` and `change-d`).
+(`build.py holdout-b`, cases `change-c` and `change-d`). The `complex-holdout-c` preset does the
+same for the third sealed holdout partition (`build.py holdout-c`, cases `change-e` and
+`change-f`).
 
 If a later invocation cannot be attributed safely, `known_usage_prefix` preserves the normalized
 prefix and its per-field invocation indices/stop reasons while full episode fields remain unknown.

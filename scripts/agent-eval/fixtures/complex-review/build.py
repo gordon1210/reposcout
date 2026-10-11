@@ -21,11 +21,13 @@ PARTITIONS = {
     "development": {"api-migration": "api-migration", "module-split": "module-split"},
     "holdout": {"config-defaults": "config-defaults", "behavior-preserving-refactor": "refactor"},
     "holdout-b": {"change-c": "holdout-b-c", "change-d": "holdout-b-d"},
+    "holdout-c": {"change-e": "holdout-c-e", "change-f": "holdout-c-f"},
 }
 # Path/digest-map SHA-256 (`review_campaign.directory_hash`) of each sealed holdout bundle.
 HOLDOUT_SEAL = "df42dab9162638f301ece9889bd9524e3f4896580f2080dc39f75f222ed517f8"
 HOLDOUT_B_SEAL = "df4f4579202ec3159d8748c0d884624c048323edba84c5ec96f9cfa5e7a16eb8"
-SEALS = {"holdout": HOLDOUT_SEAL, "holdout-b": HOLDOUT_B_SEAL}
+HOLDOUT_C_SEAL = "114906f10df7fb151df90443bf3e2977bf35b8aa489a59a078e21d31502d78e4"
+SEALS = {"holdout": HOLDOUT_SEAL, "holdout-b": HOLDOUT_B_SEAL, "holdout-c": HOLDOUT_C_SEAL}
 CONTROLLER_FILES = ("oracle.json", "probe.py")
 
 

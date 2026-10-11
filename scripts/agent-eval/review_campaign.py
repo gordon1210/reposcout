@@ -37,7 +37,8 @@ LARGE_STAGES = ("large-development", "large-holdout", "large-holdout-original", 
 COMPLEX_DEVELOPMENT_CASES = ("api-migration", "module-split")
 COMPLEX_HOLDOUT_CASES = ("config-defaults", "behavior-preserving-refactor")
 COMPLEX_HOLDOUT_B_CASES = ("change-c", "change-d")
-COMPLEX_STAGES = ("complex-development", "complex-holdout", "complex-holdout-b")
+COMPLEX_HOLDOUT_C_CASES = ("change-e", "change-f")
+COMPLEX_STAGES = ("complex-development", "complex-holdout", "complex-holdout-b", "complex-holdout-c")
 BUNDLE_STAGES = (*LARGE_STAGES, *COMPLEX_STAGES)
 MAX_TIMEOUT_SECONDS = 600
 COMPLEX_TIMEOUT_SECONDS = 1200
@@ -312,6 +313,7 @@ def build_plan(stage, seed, pins, cases, include_ablation=False, effort=DEFAULT_
                 COMPLEX_DEVELOPMENT_CASES if stage == "complex-development" else
                 COMPLEX_HOLDOUT_CASES if stage == "complex-holdout" else
                 COMPLEX_HOLDOUT_B_CASES if stage == "complex-holdout-b" else
+                COMPLEX_HOLDOUT_C_CASES if stage == "complex-holdout-c" else
                 LARGE_FOLLOWUP_CASES if stage == "large-followup" else
                 LARGE_HOLDOUT_CASES if stage in LARGE_STAGES else
                 SMOKE_CASES if stage == "smoke" else MAIN_CASES)

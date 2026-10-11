@@ -24,6 +24,8 @@ from . import (
     engagement,
     holdout_b_c,
     holdout_b_d,
+    holdout_c_e,
+    holdout_c_f,
     insights,
     operations,
     platform,
@@ -43,7 +45,7 @@ MODULES = (
     checks_workorders, checks_worktypes, checks_workforce, checks_operations, checks_billing, checks_sla,
     checks_quotes, checks_notifications,
     checks_reports, checks_integrations, checks_security, shift_rollout, cleanup, docs, holdout_b_c,
-    holdout_b_d,
+    holdout_b_d, holdout_c_e, holdout_c_f,
 )
 
 

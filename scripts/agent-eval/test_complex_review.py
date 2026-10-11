@@ -40,7 +40,8 @@ class ComplexStageTests(unittest.TestCase):
     def test_complex_stages_pair_two_cases_across_two_repeats_in_their_own_partition(self):
         for stage, names, partition in (("complex-development", campaign.COMPLEX_DEVELOPMENT_CASES, "development"),
                                         ("complex-holdout", campaign.COMPLEX_HOLDOUT_CASES, "holdout"),
-                                        ("complex-holdout-b", campaign.COMPLEX_HOLDOUT_B_CASES, "holdout")):
+                                        ("complex-holdout-b", campaign.COMPLEX_HOLDOUT_B_CASES, "holdout"),
+                                        ("complex-holdout-c", campaign.COMPLEX_HOLDOUT_C_CASES, "holdout")):
             with self.subTest(stage=stage):
                 plan = campaign.build_plan(stage, 20261010, {"runtime": "claude"}, catalog(names, partition))
                 self.assertEqual(plan["assignment_count"], 8)
@@ -58,6 +59,7 @@ class ComplexStageTests(unittest.TestCase):
         self.assertEqual(campaign.stage_timeout_seconds("complex-development"), 1200)
         self.assertEqual(campaign.stage_timeout_seconds("complex-holdout"), 1200)
         self.assertEqual(campaign.stage_timeout_seconds("complex-holdout-b"), 1200)
+        self.assertEqual(campaign.stage_timeout_seconds("complex-holdout-c"), 1200)
         self.assertEqual(campaign.stage_timeout_seconds("large-holdout"), 600)
         self.assertEqual(campaign.validated_timeout_seconds(1200, campaign.stage_timeout_seconds("complex-holdout")), 1200)
         with self.assertRaisesRegex(InvalidLedger, "at most 1200"):
@@ -77,6 +79,7 @@ class ComplexStageTests(unittest.TestCase):
                          "skill_dir": "/unexecuted/skill"}
             for stage, suite, timeout, expected in (("complex-holdout", "complex", None, (1200, 1200)),
                                                     ("complex-holdout-b", "complex", None, (1200, 1200)),
+                                                    ("complex-holdout-c", "complex", None, (1200, 1200)),
                                                     ("complex-development", "complex", 900, (900, 1200)),
                                                     ("large-holdout", "large", None, (180, 600))):
                 with self.subTest(stage=stage, timeout=timeout), \
@@ -86,7 +89,8 @@ class ComplexStageTests(unittest.TestCase):
                                      timeout_seconds=timeout, **arguments)
                 self.assertEqual((capture.call_args.kwargs["timeout_seconds"],
                                   capture.call_args.kwargs["timeout_ceiling"]), expected)
-            for stage, suite in (("complex-holdout", "large"), ("complex-holdout-b", "large"), ("large-holdout", "complex")):
+            for stage, suite in (("complex-holdout", "large"), ("complex-holdout-b", "large"),
+                                ("complex-holdout-c", "large"), ("large-holdout", "complex")):
                 with self.subTest(stage=stage, suite=suite), \
                         patch.object(campaign, "capture_claude_pins", side_effect=Stop) as capture, \
                         self.assertRaisesRegex(InvalidLedger, "complex fixture bundle"):
@@ -118,7 +122,7 @@ class ComplexBundleTests(unittest.TestCase):
     def test_generated_bundles_match_the_stage_presets_and_the_holdout_seal(self):
         generator = load_generator()
         expected = {"development": campaign.COMPLEX_DEVELOPMENT_CASES, "holdout": campaign.COMPLEX_HOLDOUT_CASES,
-                    "holdout-b": campaign.COMPLEX_HOLDOUT_B_CASES}
+                    "holdout-b": campaign.COMPLEX_HOLDOUT_B_CASES, "holdout-c": campaign.COMPLEX_HOLDOUT_C_CASES}
         with tempfile.TemporaryDirectory() as temporary:
             for partition, names in expected.items():
                 with self.subTest(partition=partition):

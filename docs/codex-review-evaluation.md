@@ -240,14 +240,14 @@ outcomes and variation. Broader claims need unseen tasks and a larger, separatel
 
 ## Complex review stages
 
-`complex-development`, `complex-holdout` and `complex-holdout-b` each pair two single-invocation
-reviews of a generated field-service TypeScript application over two repeats: eight assignments with
-a 1200-second default and maximum episode timeout. Comparisons span 30 to 100 changed files across
-modules, documentation and tests, including one behavior-preserving change. Expected behavior comes
-from the documented business contracts and private domain probes; qualification requires passing
-application checks on base and head, probe results that match the oracle, and counterfactual source
-edits that move the probe as declared. Each holdout bundle is sealed by its `directory_hash` digest,
-and its cases stay out of skill and product tuning.
+`complex-development`, `complex-holdout`, `complex-holdout-b` and `complex-holdout-c` each pair two
+single-invocation reviews of a generated field-service TypeScript application over two repeats:
+eight assignments with a 1200-second default and maximum episode timeout. Comparisons span 30 to
+100 changed files across modules, documentation and tests, including one behavior-preserving change.
+Expected behavior comes from the documented business contracts and private domain probes;
+qualification requires passing application checks on base and head, probe results that match the
+oracle, and counterfactual source edits that move the probe as declared. Each holdout bundle is
+sealed by its `directory_hash` digest, and its cases stay out of skill and product tuning.
 
 ## Adoption evaluation
 

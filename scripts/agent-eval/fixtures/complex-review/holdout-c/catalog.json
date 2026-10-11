@@ -1,0 +1,50 @@
+{
+  "cases": [
+    {
+      "base_directory": "application",
+      "case_id": "change-e",
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "partition": "holdout",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the supplied comparison for introduced behavior changes in this field-service management application. Follow its documented business contracts through the active application paths as needed. Report actionable regressions with concrete inputs, expected and actual observable behavior, user impact, and source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ],
+      "title": "Field-service change E"
+    },
+    {
+      "base_directory": "application",
+      "case_id": "change-f",
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "partition": "holdout",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the supplied comparison for introduced behavior changes in this field-service management application. Follow its documented business contracts through the active application paths as needed. Report actionable regressions with concrete inputs, expected and actual observable behavior, user impact, and source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ],
+      "title": "Field-service change F"
+    }
+  ],
+  "schema": 1,
+  "source_limits": {
+    "max_bytes": 2097152,
+    "max_files": 400
+  },
+  "suite": "complex"
+}
