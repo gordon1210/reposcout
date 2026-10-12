@@ -27,7 +27,7 @@ mod snapshot_handoff;
 #[path = "review_context/brief.rs"]
 mod brief;
 
-use git2::{IndexAddOption, Oid, Repository, Signature};
+use git2::{IndexAddOption, Oid, Repository, Signature, Time};
 use reposcout::metrics::tokens::TokenCounter;
 use serde_json::Value;
 use std::fs;
@@ -98,7 +98,9 @@ fn commit(root: &Path) -> Oid {
     index.write().unwrap();
     let tree_id = index.write_tree().unwrap();
     let tree = repository.find_tree(tree_id).unwrap();
-    let signature = Signature::now("RepoScout tests", "tests@example.com").unwrap();
+    // A fixed time keeps commit ids, and the token counts of commands that print them, stable.
+    let time = Time::new(1_767_225_600, 0);
+    let signature = Signature::new("RepoScout tests", "tests@example.com", &time).unwrap();
     let parent = repository
         .head()
         .ok()
