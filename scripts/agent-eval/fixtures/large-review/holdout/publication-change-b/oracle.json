@@ -1,0 +1,299 @@
+{
+  "domain_expected": {
+    "base": {
+      "repeatedItemWithoutStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          false
+        ],
+        "evidenceStages": [
+          "editorial",
+          null
+        ],
+        "decision": "checklist_incomplete",
+        "decisionAtomic": true,
+        "finalReviewStatus": "open",
+        "approvalCount": 1,
+        "ready": false,
+        "publication": "governance_blocked",
+        "publicationAtomic": true,
+        "releaseCount": 0,
+        "releaseSourcePinned": null,
+        "stage2RecordCount": 0,
+        "firstRecordUnchanged": true
+      },
+      "repeatedItemWithStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          true
+        ],
+        "evidenceStages": [
+          "editorial",
+          "publication"
+        ],
+        "decision": "approved",
+        "decisionAtomic": null,
+        "finalReviewStatus": "approved",
+        "approvalCount": 2,
+        "ready": true,
+        "publication": "published",
+        "publicationAtomic": null,
+        "releaseCount": 1,
+        "releaseSourcePinned": true,
+        "stage2RecordCount": 1,
+        "firstRecordUnchanged": true
+      },
+      "differentItemWithoutStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          false
+        ],
+        "evidenceStages": [
+          "editorial",
+          null
+        ],
+        "decision": "checklist_incomplete",
+        "decisionAtomic": true,
+        "finalReviewStatus": "open",
+        "approvalCount": 1,
+        "ready": false,
+        "publication": "governance_blocked",
+        "publicationAtomic": true,
+        "releaseCount": 0,
+        "releaseSourcePinned": null,
+        "stage2RecordCount": 0,
+        "firstRecordUnchanged": true
+      },
+      "separateReviewerWithStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          true
+        ],
+        "evidenceStages": [
+          "editorial",
+          "publication"
+        ],
+        "decision": "approved",
+        "decisionAtomic": null,
+        "finalReviewStatus": "approved",
+        "approvalCount": 2,
+        "ready": true,
+        "publication": "published",
+        "publicationAtomic": null,
+        "releaseCount": 1,
+        "releaseSourcePinned": true,
+        "stage2RecordCount": 1,
+        "firstRecordUnchanged": true
+      },
+      "distinctReviewerRequired": {
+        "code": "distinct_reviewer",
+        "atomic": true
+      },
+      "reassignedStageNeedsCurrentActor": {
+        "actor": "admin",
+        "code": "checklist_incomplete",
+        "atomic": true,
+        "stage2Records": 0
+      },
+      "otherPlanCannotSupplyEvidence": {
+        "code": "checklist_incomplete",
+        "atomic": true
+      },
+      "workingPreviewAndStoredPublication": {
+        "ordinaryApproval": true,
+        "currentPreview": true,
+        "previewHistory": false,
+        "historySummariesOnly": true,
+        "storedReleasePinned": true,
+        "exportedApprovalBody": true,
+        "approvalUnchanged": true
+      }
+    },
+    "head": {
+      "repeatedItemWithoutStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          false
+        ],
+        "evidenceStages": [
+          "editorial",
+          null
+        ],
+        "decision": "checklist_incomplete",
+        "decisionAtomic": true,
+        "finalReviewStatus": "open",
+        "approvalCount": 1,
+        "ready": false,
+        "publication": "governance_blocked",
+        "publicationAtomic": true,
+        "releaseCount": 0,
+        "releaseSourcePinned": null,
+        "stage2RecordCount": 0,
+        "firstRecordUnchanged": true
+      },
+      "repeatedItemWithStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          true
+        ],
+        "evidenceStages": [
+          "editorial",
+          "publication"
+        ],
+        "decision": "approved",
+        "decisionAtomic": null,
+        "finalReviewStatus": "approved",
+        "approvalCount": 2,
+        "ready": true,
+        "publication": "published",
+        "publicationAtomic": null,
+        "releaseCount": 1,
+        "releaseSourcePinned": true,
+        "stage2RecordCount": 1,
+        "firstRecordUnchanged": true
+      },
+      "differentItemWithoutStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          false
+        ],
+        "evidenceStages": [
+          "editorial",
+          null
+        ],
+        "decision": "checklist_incomplete",
+        "decisionAtomic": true,
+        "finalReviewStatus": "open",
+        "approvalCount": 1,
+        "ready": false,
+        "publication": "governance_blocked",
+        "publicationAtomic": true,
+        "releaseCount": 0,
+        "releaseSourcePinned": null,
+        "stage2RecordCount": 0,
+        "firstRecordUnchanged": true
+      },
+      "separateReviewerWithStageEvidence": {
+        "inheritedPolicy": true,
+        "beforeSatisfied": [
+          true,
+          true
+        ],
+        "evidenceStages": [
+          "editorial",
+          "publication"
+        ],
+        "decision": "approved",
+        "decisionAtomic": null,
+        "finalReviewStatus": "approved",
+        "approvalCount": 2,
+        "ready": true,
+        "publication": "published",
+        "publicationAtomic": null,
+        "releaseCount": 1,
+        "releaseSourcePinned": true,
+        "stage2RecordCount": 1,
+        "firstRecordUnchanged": true
+      },
+      "distinctReviewerRequired": {
+        "code": "distinct_reviewer",
+        "atomic": true
+      },
+      "reassignedStageNeedsCurrentActor": {
+        "actor": "admin",
+        "code": "checklist_incomplete",
+        "atomic": true,
+        "stage2Records": 0
+      },
+      "otherPlanCannotSupplyEvidence": {
+        "code": "checklist_incomplete",
+        "atomic": true
+      },
+      "workingPreviewAndStoredPublication": {
+        "ordinaryApproval": true,
+        "currentPreview": true,
+        "previewHistory": true,
+        "historySummariesOnly": true,
+        "storedReleasePinned": true,
+        "exportedApprovalBody": true,
+        "approvalUnchanged": true
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "no-issues",
+      "defects": [],
+      "evidence_obligations": [
+        {
+          "id": "stage-history-identity",
+          "description": "Compare the actual grouping scope with the prior per-stage selection and the consumers' stage-local meaning.",
+          "alternatives": [
+            [
+              {
+                "side": "head",
+                "path": "src/governance/plans.mjs",
+                "contains": "return JSON.stringify([stageId, checklistId]);"
+              },
+              {
+                "side": "base",
+                "path": "src/governance/plans.mjs",
+                "contains": "const records = Object.values(state.governanceChecklist).filter(item => item.planId === plan.id && item.stageId === stage.id)"
+              }
+            ]
+          ]
+        },
+        {
+          "id": "configured-item-scope",
+          "description": "Establish that checklist identifiers are stage-local and same-stage evidence remains distinct from other stages; same reviewers are permitted unless explicitly restricted.",
+          "alternatives": [
+            [
+              {
+                "side": "head",
+                "path": "src/governance/schema.mjs",
+                "contains": "checklist: unique(list(stage.checklist ?? [], 'checklist', limits.checklist).map(item => {"
+              },
+              {
+                "side": "head",
+                "path": "src/governance/schema.mjs",
+                "contains": "distinctReviewer: stage.distinctReviewer === true,"
+              }
+            ],
+            [
+              {
+                "side": "head",
+                "path": "docs/business-contracts.md",
+                "contains": "Configured checklist item identifiers are local to their review stage."
+              }
+            ]
+          ]
+        },
+        {
+          "id": "working-preview-isolation",
+          "description": "Check the legitimate preview-history change without confusing current draft preview with stored release selection.",
+          "alternatives": [
+            [
+              {
+                "side": "head",
+                "path": "src/preview/service.mjs",
+                "contains": "const item = getDocument(state, { id: input.documentId }, actorId);"
+              },
+              {
+                "side": "head",
+                "path": "tests/preview-history.test.mjs",
+                "contains": "assert.equal(Object.hasOwn(ordinary, 'history'), false);"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

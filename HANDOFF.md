@@ -5,8 +5,8 @@ A running handoff for the next agent picking up **reposcout**. Read this first f
 reference it routes to under `docs/agents/` for *how to work in the repo*. Use `README.md` for
 user-facing behavior.
 
-_Last updated: 2026-10-07 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
-`ANALYZER_VERSION` 24_
+_Last updated: 2026-10-11 · latest release 0.5.0 · JSON `SCHEMA_VERSION` 2.0 ·
+`ANALYZER_VERSION` 26_
 
 ---
 
@@ -83,12 +83,38 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   counterpart seeds keep mapping partial and preserve file-based reference evidence. Strategy 2 reduces
   declaration/range details before dropping changed-file identities; per-side output omissions
   remain separate from analysis availability. Omitted compact identities are reconsidered against
-  both actual output budgets before restoring details, impact/context evidence and requested bodies.
+  both actual output budgets. In body-free output, affordable direct changed-declaration references,
+  including direct test callers, take precedence over weaker context metadata. Human output admits each reference
+  with its needed revision/hash handles atomically, including already captured handles beyond the
+  initial candidate prefix; final 100-entry caps remain. Smaller alternatives and existing
+  type/import/file-based fallback survive failed admission. Explicit source/diff requests retain
+  their established body allocation; source-selection order, costs and coverage remain unchanged.
   Snapshot read handoffs use Git file modes and blob
   identity independently of live source parents, while current policy still applies.
   Review deadlines are cooperative through final rendering. Literal Unix backslash paths retain
   source evidence but are explicitly outside the shared graph's representable path universe.
+  Opt-in `--brief` renders a compact Table/Markdown projection (full up to a 4,096-token default
+  ceiling; an explicit `--budget` wins) with diff hunks, distance-1 impact, counted transitive
+  dependents and head-snapshot doc mentions. Repeated identifier renames fold to sites only where
+  every site provably renames an in-tree binding of its file (allowlisted grammars, tree-wide name
+  checks), and unedited declarations moved without rebinding fold to destinations; hunks of other
+  repeated edits show changed lines only. `docs/review-context.md` holds the exact folding rules; summaries
+  collapse in three levels before a budget is rejected. Detail never shrinks as the budget grows,
+  so just above a finer level's start the brief can leave part of its budget unused (about half
+  of the default on a synthetic 400-hunk file; the generated complex PRs use nearly all of it).
   See [review context](docs/review-context.md) for limits and trust boundaries.
+  The bundled skill keeps its repository scouting, source, context-planning, health,
+  configuration-consent, reporting and CLI-trust guidance and adds a self-contained committed-review
+  procedure; its description names `review-context --brief` for change questions and
+  `--agent-summary` for exploration. Detailed guides are conditional on needed unfamiliar semantics, including
+  working/staged/deep-review workflows. Targeted native evidence is appropriate when
+  the next question needs no structural discovery; small diffs or known refs never waive needed
+  consumer/binding checks. Retain exact source provenance and validate remaining uncertainty
+  truthfully. This guidance does not change query allocation, defaults, or quality requirements.
+  For body-free committed-review orientation, Table is preferred only when its revision handles,
+  relations and uncertainty fields answer the next reading question. JSON remains the route for
+  automation, exact counters/spans/endpoint identities and ambiguous escaped paths; exact source
+  quotations retain literal bytes. No duplicate format request is required.  Output-size differences alone do not establish model-token savings.
 
 - **Tokenizer dependency refresh.** `tiktoken-rs` 0.12.1 updates its regex backends while keeping
   the supported encoding assets and user-selected/default encoding unchanged. Analyzer 24
@@ -115,11 +141,41 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   existing capture/analysis/cache facts. Analyzer 23 covers current parse-derived facts, including
   C# and corrected complexity; schema remains 2.0. Product scope and limits are in
   [task queries](docs/task-queries.md) and [task diagnostics](docs/task-diagnostics.md).
-  The offline [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
+  The [evaluation harness](scripts/agent-eval/README.md) distinguishes synthetic fixtures,
   canonical provider-call ledgers and externally attested native session windows. The historical, pre-review [38-run pilot](docs/agent-evaluation.md) passed all bounded
   retrieval/behavior oracles; all
   six routing comparisons and the composed workflow increased total tokens. No general net-saving
   or code-repair claim is established. Broader M2 evidence remains outside this pilot.
+
+- **Opt-in Codex review evaluation.** A separate [review study](docs/codex-review-evaluation.md)
+  uses signed disposable synthetic Git commits, independent domain probes and blinded review adjudication.
+  It compares competent native tools with RepoScout plus the canonical skill, with a separately
+  identified CLI-availability ablation. Controller authentication, raw traces and private oracles stay
+  outside the evaluated tool filesystem. Runs are serial, preflight isolation is mandatory and
+  every assigned outcome remains visible. Current exec usage has its own explicit observation
+  basis; it does not replace historical ledgers or imply complete billing data. Evaluate input,
+  cache-write, cache-read and output separately; input includes cache read. Episode totals exclude
+  separate orchestration and independent judging. Live model runs stay outside ordinary CI.
+  Private raw records, detailed exports, packets and adjudication provenance stay outside Git;
+  campaign preparation defaults to a fresh private temporary directory. Explicit output paths
+  reject Git checkouts and symlink aliases. `publish` emits only a strict typed public summary
+  of every assigned outcome and the four nullable token fields. The publication policy rejects
+  raw result trees, archives and authoring receipts; historical pilot bytes stay pinned.
+  The repository-owned pre-push hook checks all outgoing commit versions, while the CLI gate
+  reads exact index/commit objects. It is a scoped artifact policy, not a generic privacy scanner.
+  Runtime-specific usage calibration is an explicit private input, with unknown scope by default.
+  External fixture source reads enforce byte/file ceilings before opening excess data.
+  Results must retain adverse and unknown outcomes; offline harness tests do not
+  establish review improvements or model-token savings. External fixture presets
+  support bounded development, heldout and follow-up tasks with fixed schedules.
+  New campaigns validate runtimes and namespace isolation before consumption,
+  retain prerequisite failures and attributable partial costs, and preserve
+  exact revision/source evidence across follow-ups.
+  Campaigns run either Codex or Claude Code, recorded in the plan. The `reposcout-guided` arm
+  names the skill in the task and measures value, while the neutral arm measures adoption; the
+  two are never pooled. Generated complex TypeScript stages (`complex-development`, sealed
+  `complex-holdout`, `complex-holdout-b` and `complex-holdout-c`) measure the comparisons where
+  native review is expensive.
 
 - **Snapshot reads and changed definitions.** `read --snapshot worktree|index|REF`
   selects one captured side; Git refs are pinned once to tree OIDs. `changes` compares HEAD with
@@ -136,10 +192,12 @@ doubt, optimize for "an agent can trust and act on this in one glance" over comp
   newline. Each selected definition, range or file is delivered completely or explicitly omitted.
   File reads include module imports and registrations, share overlapping source chunks, and do
   not require declaration extraction. Recognized-format policy and captured identities stay intact.
-  Cached definition facts use analyzer version 24 while the additive schema remains 2.0.
+  Cached definition facts use analyzer version 26 while the additive schema remains 2.0.
   The tree-sitter 0.27.0 runtime previously required analyzer 19 for parser recovery changes;
   analyzer 21 added the task-query facts, analyzer 22 added C# facts, and analyzer 23 corrects
-  cognitive complexity.
+  cognitive complexity; analyzer 25 records Python `from` import names for namespace packages;
+  analyzer 26 records the module scope for call/reference sites outside declarations and JS/TS
+  catch, loop and destructuring shadow bindings.
   Non-Unix builds reject both source and outline queries before source I/O, with no fallback;
   `source_query.available` and `platforms: ["unix"]` disclose this capability boundary. Other
   inventory behavior is unchanged.
@@ -375,7 +433,7 @@ that a new maintainer still needs to interpret the current architecture and road
    compatibility checks.
 8. **The dependency graph and `--impact` cover every first-class language heuristically.** `graph.rs`
    resolves relative imports, TypeScript `baseUrl`/`paths`, deterministic local package metadata,
-   unambiguous Python absolute/`src` imports, Composer PSR-4/PSR-0 maps, and static PHP includes,
+   unambiguous Python absolute/`src` and namespace-package imports, Composer PSR-4/PSR-0 maps, and static PHP includes,
    plus Rust module/Cargo-local paths, Go module-local package imports, unique local C# namespaces,
    and project-scoped Godot resource/UID/global-name relationships. C# type relationships are
    conservative syntax evidence; Godot inheritance is file-level dependency evidence, not separate

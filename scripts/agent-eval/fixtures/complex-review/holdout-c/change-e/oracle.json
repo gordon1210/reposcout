@@ -1,0 +1,197 @@
+{
+  "domain_expected": {
+    "base": {
+      "afterPayment": {
+        "buckets": {
+          "1-30": 0,
+          "31-60": 155650,
+          "61-90": 0,
+          "90+": 0,
+          "current": 0
+        },
+        "totalOutstandingCents": 155650
+      },
+      "beforeDue": {
+        "buckets": {
+          "1-30": 0,
+          "31-60": 0,
+          "61-90": 0,
+          "90+": 0,
+          "current": 160650
+        },
+        "totalOutstandingCents": 160650
+      },
+      "invoiceTotalCents": 160650,
+      "invoicesIssued": 30,
+      "jobs": 25,
+      "overdue": {
+        "buckets": {
+          "1-30": 0,
+          "31-60": 160650,
+          "61-90": 0,
+          "90+": 0,
+          "current": 0
+        },
+        "totalOutstandingCents": 160650
+      },
+      "paymentStatus": "recorded",
+      "shortlyOverdue": {
+        "buckets": {
+          "1-30": 160650,
+          "31-60": 0,
+          "61-90": 0,
+          "90+": 0,
+          "current": 0
+        },
+        "totalOutstandingCents": 160650
+      }
+    },
+    "head": {
+      "afterPayment": {
+        "buckets": {
+          "1-30": 0,
+          "31-60": 128875,
+          "61-90": 0,
+          "90+": 0,
+          "current": 0
+        },
+        "totalOutstandingCents": 128875
+      },
+      "beforeDue": {
+        "buckets": {
+          "1-30": 0,
+          "31-60": 0,
+          "61-90": 0,
+          "90+": 0,
+          "current": 133875
+        },
+        "totalOutstandingCents": 133875
+      },
+      "invoiceTotalCents": 160650,
+      "invoicesIssued": 30,
+      "jobs": 25,
+      "overdue": {
+        "buckets": {
+          "1-30": 0,
+          "31-60": 133875,
+          "61-90": 0,
+          "90+": 0,
+          "current": 0
+        },
+        "totalOutstandingCents": 133875
+      },
+      "paymentStatus": "recorded",
+      "shortlyOverdue": {
+        "buckets": {
+          "1-30": 133875,
+          "31-60": 0,
+          "61-90": 0,
+          "90+": 0,
+          "current": 0
+        },
+        "totalOutstandingCents": 133875
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "statement-totals-cover-one-page",
+          "impact": "A customer with more outstanding invoices than one page (25 by default) receives a statement whose total outstanding balance and aging buckets cover only the invoices on the returned page, so the balance a billing clerk or the customer sees is lower than what is owed and the older or later invoices are missing from every aging bucket.",
+          "locations": [
+            {
+              "contains": "for (const line of lines) buckets[line.bucket] += line.outstandingCents;",
+              "path": "src/billing/statements.ts",
+              "side": "head"
+            },
+            {
+              "contains": "totalOutstandingCents: lines.reduce((sum, line) => sum + line.outstandingCents, 0),",
+              "path": "src/billing/statements.ts",
+              "side": "head"
+            },
+            {
+              "contains": "it('lists all outstanding invoices on the first page', () => {",
+              "path": "tests/billing/statement-paging.test.ts",
+              "side": "head"
+            }
+          ],
+          "rubric": "The statement now cuts its lines into pages before the aging buckets and the total outstanding balance are computed, and both are summed from the returned page only. The documented billing contract is that statements group the outstanding invoices by how long they are overdue and that payments reduce the outstanding balance, and the lists contract says totals count every matching item; a balance that silently omits the invoices beyond the first page contradicts it. The new statement tests use at most five invoices and so never exceed one page. A reachable witness (more than 25 issued invoices for one customer, default statement request, total or bucket compared with the sum of the invoices) with the full sum as expected and the page sum as actual suffices; exact names are not required. Paging the statement lines, the default page size of 25, the added paging block, the empty-statement test update and the paging of the other list routes, which are documented in the architecture notes, are intended and not defects. Extra genuine source defects require independent review for all arms.",
+          "severity": "high within this application's billing",
+          "witnesses": [
+            {
+              "actual": {
+                "bucket31To60Cents": 133875,
+                "totalOutstandingCents": 133875
+              },
+              "expected": {
+                "bucket31To60Cents": 160650,
+                "totalOutstandingCents": 160650
+              },
+              "input": {
+                "asOf": "2026-05-15",
+                "invoices": "30 invoices issued on 2026-03-02 to one customer, due 2026-04-01",
+                "request": "default statement without paging parameters"
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "Statements group outstanding invoices by how long they are overdue.",
+                "path": "docs/billing.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish from the billing contract that statements group the outstanding invoices and that payments reduce the outstanding balance.",
+          "id": "statement-contract"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "const { items: lines, ...paging } = paginate(outstandingLines(ctx, customerId, asOf), request);",
+                "path": "src/billing/statements.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that the buckets and the total are summed from the paged lines.",
+          "id": "totals-from-page"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "ordering happen before the page is cut, so `total` counts every matching item the caller may see.",
+                "path": "docs/architecture.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish from the list contract that totals count every matching item rather than the page.",
+          "id": "lists-count-everything"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "const invoices = issuedInvoices(world, 4);",
+                "path": "tests/billing/statement-paging.test.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that the statement tests never use more invoices than fit on one page.",
+          "id": "tests-stay-within-one-page"
+        }
+      ]
+    }
+  ]
+}

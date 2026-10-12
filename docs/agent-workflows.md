@@ -273,7 +273,7 @@ supported:
 | Language | Local resolution |
 |---|---|
 | JavaScript / TypeScript | Relative imports, `tsconfig.json`/`jsconfig.json` paths and `baseUrl`, project references, local package exports/imports/entrypoints, and checked-in TypeScript behind runtime extensions |
-| Python | Relative imports plus unambiguous repository-absolute and conventional `src/`-root modules |
+| Python | Relative imports plus unambiguous repository-absolute and conventional `src/`-root modules, including modules imported from namespace packages |
 | PHP | Composer PSR-4/PSR-0 autoload maps, conventional source roots, and static include/require paths |
 | Rust | External modules, `#[path]`, local `crate`/`self`/`super` uses, and unambiguous Cargo-local library names |
 | Go | `go.mod` module imports and relative packages, targeting a deterministic package representative |

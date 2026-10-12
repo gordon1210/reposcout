@@ -1,4 +1,4 @@
-"""Export sanitized measured results with their accounting basis, quality evidence and comparison limits."""
+"""Export private measured results with accounting, quality evidence and comparison limits."""
 
 import argparse
 import copy
@@ -63,7 +63,8 @@ def project_latency(matrix):
 
 
 def export(campaign, destination, release, exposure_path=None, prompt_path=None):
-    campaign, destination = Path(campaign), Path(destination)
+    from publication import private_destination
+    campaign, destination = Path(campaign), private_destination(destination)
     require(not destination.exists(), 'export destination already exists')
     exposure = read_json(exposure_path) if exposure_path else {'runs': []}
     prompts = read_json(prompt_path) if prompt_path else {'runs': []}
@@ -110,7 +111,7 @@ def export(campaign, destination, release, exposure_path=None, prompt_path=None)
               'source_exposure_complete_inventory': set(by_exposure) == {run['run_id'] for run in runs},
               'prompt_audit_complete_inventory': set(by_prompt) == {run['run_id'] for run in runs}}
     safe_projection(output)
-    destination.mkdir(parents=True)
+    destination.mkdir(mode=0o700, parents=True)
     write_new(destination / 'results.json', output)
     write_new(destination / 'integrity.json', {'schema': 1, 'results_canonical_json_sha256': fingerprint(output)})
     return {'run_count': len(runs), 'paired_case_count': len(comparisons),

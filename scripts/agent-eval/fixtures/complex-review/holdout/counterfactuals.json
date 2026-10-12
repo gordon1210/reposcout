@@ -1,0 +1,30 @@
+{
+  "mutations": [
+    {
+      "case_id": "config-defaults",
+      "expected_revision": "base",
+      "file": "src/billing/after-hours.ts",
+      "from": "return !isWorkingTime(businessCalendar(ctx), at);",
+      "purpose": "Pinning the consumer to the published window alone restores the observed public behavior.",
+      "to": "return !isWorkingTime({ ...businessCalendar(ctx), dayStartMinute: 480 }, at);"
+    },
+    {
+      "case_id": "behavior-preserving-refactor",
+      "expected_revision": "head",
+      "file": "src/api/routes/billing.ts",
+      "from": "    path: '/tariffs/:region',\n    permission: 'billing:read',",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes a single changed route permission.",
+      "to": "    path: '/tariffs/:region',\n    permission: 'jobs:read',"
+    },
+    {
+      "case_id": "behavior-preserving-refactor",
+      "expected_revision": "head",
+      "file": "src/adapters/repositories/invoices.ts",
+      "from": "collectionAccessor<Invoice>('invoices')",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes a single changed persisted collection key.",
+      "to": "collectionAccessor<Invoice>('invoice')"
+    }
+  ]
+}

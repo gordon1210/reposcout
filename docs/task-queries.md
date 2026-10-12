@@ -172,7 +172,10 @@ as `local-lexical`, JavaScript import rules or Rust qualification rules, plus ex
 resolver evidence. A file whose fact or work limits were reached cannot promote retained relations
 to safe bindings: missing shadow/import facts could invalidate them. Those relations remain
 unresolved with the limit reason. Inspect extraction and resolution coverage before interpreting
-zero consumers; result and output omissions are separate again.
+zero consumers; result and output omissions are separate again. Sites outside every declaration,
+such as module-level code and anonymous test callbacks, resolve from a synthetic `(module)` source;
+it is not a consumer hit because it has no readable declaration, but review-context still shows it
+as call evidence.
 
 ## Shared output and automation rules
 
@@ -185,5 +188,5 @@ fit is an error, not malformed or silently clipped output. Pretty JSON costs cou
 Capabilities expose `find_query`, `definition_plan`, `call_query` and `task_diagnostics`; inspect
 those fields when compatibility is uncertain. Existing compact scouting stays body-free and
 bounded. Normal source reads and lexical search do not require call topology. Cache facts use
-analyzer 24; the additive report schema stays 2.0. Local cache reuse and short tool output alone do
+analyzer 25; the additive report schema stays 2.0. Local cache reuse and short tool output alone do
 not establish a reduction in total model tokens.

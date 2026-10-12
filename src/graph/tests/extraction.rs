@@ -71,6 +71,33 @@ fn py_current_package_specifiers_handle_star_and_parenthesized_names() {
 }
 
 #[test]
+fn py_from_imports_keep_imported_names() {
+    let specifiers = extract_specifiers(
+        FirstClass::Python,
+        "from pkg.api import (orders, views as v)\nfrom pkg import *\nfrom .api import routes\n",
+    )
+    .specifiers;
+
+    assert_eq!(
+        specifiers,
+        vec![
+            ImportSpecifier::PythonFrom {
+                module: "pkg.api".to_string(),
+                names: vec!["orders".to_string(), "views".to_string()],
+            },
+            ImportSpecifier::PythonFrom {
+                module: "pkg".to_string(),
+                names: Vec::new(),
+            },
+            ImportSpecifier::PythonFrom {
+                module: ".api".to_string(),
+                names: vec!["routes".to_string()],
+            },
+        ]
+    );
+}
+
+#[test]
 fn py_current_package_specifiers_handle_multiline_parenthesized_names() {
     let specs = extract_py_specifiers("from . import (\n    alpha,\n    beta as renamed,\n)\n");
 

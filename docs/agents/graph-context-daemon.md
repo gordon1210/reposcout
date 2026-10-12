@@ -14,7 +14,10 @@ The dependency graph and impact analysis cover every first-class language heuris
   and relative extends with cycle protection;
 - deterministic local `package.json` exports, imports, entrypoints, and subpaths;
 - JavaScript-runtime extensions to checked-in TypeScript and the fallback `@/` convention;
-- relative and unambiguous repository-absolute or `src`-root Python imports;
+- relative and unambiguous repository-absolute or `src`-root Python imports, including modules
+  imported from PEP 420 namespace packages; `from package import name` on a regular package keeps
+  the `__init__.py` edge and adds existing `name` submodules; missing modules below a scanned
+  package directory stay unresolved;
 - PHP namespaces through nearest Composer `autoload` / `autoload-dev` PSR-4 and PSR-0 mappings,
   conventional PHP source roots, and static include/require expressions;
 - Rust external `mod` / `#[path]`, local `use`, and Cargo library paths;
@@ -50,7 +53,12 @@ module evidence. Parameter/local shadowing, duplicate declarations, overloads an
 receiver-based forms remain explicitly unresolved. No globally unique-name shortcut establishes a
 cross-file binding. Calls and non-call references retain separate kinds, exact sites, content
 identity and binding/resolver provenance. Consumer projection must preserve extraction, resolution
-and output gaps under hard direction/depth/result limits.
+and output gaps under hard direction/depth/result limits. Sites outside every declaration
+(module-level code and anonymous callbacks) resolve from a synthetic per-file `(module)` source of
+kind `module` whose span is the whole file; it is a source only, never a target, and consumer
+projection excludes it because no declaration read handoff exists. Catch parameters, declared
+`for…in/of` bindings, destructuring (including shorthand properties) and arrow parameters shadow
+like other locals.
 
 Godot currently supplies file/resource dependency topology, not separate symbol topology.
 GDScript inheritance/global-name references therefore contribute file dependency edges. Do not

@@ -1,0 +1,57 @@
+{
+  "mutations": [
+    {
+      "case_id": "change-e",
+      "expected_revision": "base",
+      "file": "src/billing/statements.ts",
+      "from": "  const { items: lines, ...paging } = paginate(outstandingLines(ctx, customerId, asOf), request);\n  const buckets: Record<AgingBucket, Cents> = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };\n  for (const line of lines) buckets[line.bucket] += line.outstandingCents;\n  return {\n    customerId,\n    asOf,\n    lines,\n    paging,\n    buckets,\n    totalOutstandingCents: lines.reduce((sum, line) => sum + line.outstandingCents, 0),\n  };",
+      "purpose": "Summing the buckets and the total over every outstanding invoice, not only the returned page, restores the observed public behavior.",
+      "to": "  const outstanding = outstandingLines(ctx, customerId, asOf);\n  const { items: lines, ...paging } = paginate(outstanding, request);\n  const buckets: Record<AgingBucket, Cents> = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };\n  for (const line of outstanding) buckets[line.bucket] += line.outstandingCents;\n  return {\n    customerId,\n    asOf,\n    lines,\n    paging,\n    buckets,\n    totalOutstandingCents: outstanding.reduce((sum, line) => sum + line.outstandingCents, 0),\n  };"
+    },
+    {
+      "case_id": "change-e",
+      "expected_revision": "head",
+      "file": "src/shared/paging.ts",
+      "from": "export const DEFAULT_PAGE_SIZE = 25;",
+      "must_differ": true,
+      "purpose": "The probe observes a statement total that depends on the size of the returned page.",
+      "to": "export const DEFAULT_PAGE_SIZE = 10;"
+    },
+    {
+      "case_id": "change-e",
+      "expected_revision": "head",
+      "file": "src/billing/statements.ts",
+      "from": "if (daysOverdue <= 60) return '31-60';",
+      "must_differ": true,
+      "purpose": "The probe observes the aging bucket of invoices that are overdue by 44 days.",
+      "to": "if (daysOverdue <= 40) return '31-60';"
+    },
+    {
+      "case_id": "change-f",
+      "expected_revision": "head",
+      "file": "src/jobs/jobs.ts",
+      "from": "source: original.source === 'programme' ? 'phone' : original.source,",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes the source recorded on a follow-up of ordinary contract work.",
+      "to": "source: 'api',"
+    },
+    {
+      "case_id": "change-f",
+      "expected_revision": "head",
+      "file": "src/sla/subscriptions.ts",
+      "from": "?.source === 'programme') return;",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes the clock of a contract work order opened by phone.",
+      "to": "?.source === 'phone') return;"
+    },
+    {
+      "case_id": "change-f",
+      "expected_revision": "head",
+      "file": "src/sla/subscriptions.ts",
+      "from": "?.source === 'programme') return;",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes the clocks of contract work orders opened by dispatch and by follow-up.",
+      "to": "?.source !== 'portal') return;"
+    }
+  ]
+}

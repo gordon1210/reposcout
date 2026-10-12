@@ -1,0 +1,59 @@
+{
+  "cases": [
+    {
+      "base_directory": "application",
+      "case_id": "api-migration",
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "partition": "development",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the supplied comparison for introduced behavior changes in this field-service management application. Follow its documented business contracts through the active application paths as needed. Report actionable regressions with concrete inputs, expected and actual observable behavior, user impact, and source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ],
+      "title": "Shared rounding helper migration"
+    },
+    {
+      "base_directory": "application",
+      "case_id": "module-split",
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "deletions": {
+        "head": [
+          "src/api/routes/jobs.ts",
+          "src/jobs/jobs.ts",
+          "src/jobs/notes.ts",
+          "src/jobs/numbering.ts",
+          "src/jobs/priorities.ts"
+        ]
+      },
+      "partition": "development",
+      "revisions": [
+        "head"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "Review the supplied comparison for introduced behavior changes in this field-service management application. Follow its documented business contracts through the active application paths as needed. Report actionable regressions with concrete inputs, expected and actual observable behavior, user impact, and source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ],
+      "title": "Work-order module split"
+    }
+  ],
+  "schema": 1,
+  "source_limits": {
+    "max_bytes": 2097152,
+    "max_files": 400
+  },
+  "suite": "complex"
+}

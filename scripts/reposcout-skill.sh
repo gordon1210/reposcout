@@ -46,6 +46,7 @@ check_canonical() {
   assert_file references/scouting.md
   assert_file references/context-planning.md
   assert_file references/source-queries.md
+  assert_file references/committed-reviews.md
   assert_file references/change-analysis.md
   assert_file references/quality.md
   assert_file references/decision-queries.md
@@ -54,14 +55,15 @@ check_canonical() {
   assert_route "Repository scouting" scouting.md
   assert_route "Context planning" context-planning.md
   assert_route "Known definition, explicit file context or body-free file outline" source-queries.md
-  assert_route "Change analysis" change-analysis.md
+  assert_route "Committed two-revision review" committed-reviews.md
+  assert_route "Working-tree, staged, since, or finding-level review" change-analysis.md
   assert_route "Quality assessment" quality.md
   assert_route "Conditional or compound JSON decision" decision-queries.md
   assert_route "Diagnostics and configuration" diagnostics.md
 
   reference_count=$(grep -o 'references/[a-z-]*\.md' "$canonical/SKILL.md" | wc -l | tr -d ' ')
-  if [ "$reference_count" -ne 7 ]; then
-    echo "the core skill must contain exactly seven routed reference links" >&2
+  if [ "$reference_count" -ne 8 ]; then
+    echo "the core skill must contain exactly eight routed reference links" >&2
     exit 1
   fi
 

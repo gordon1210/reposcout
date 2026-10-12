@@ -1,5 +1,217 @@
 # Agent evaluation fixtures and usage accounting
 
+## Opt-in Codex PR-review campaigns
+
+The [Codex review study](../../docs/codex-review-evaluation.md) adds actual non-interactive agent
+trials to these development tools. All source repositories are synthetic and disposable. Private
+domain oracles remain outside the evaluated filesystem; raw traces and controller authentication
+never belong in the public results. Live runs are explicitly authorized, serial and separate from
+ordinary CI. The historical offline tools and 2026-09 pilot below retain their original contracts.
+
+Raw campaign records, reviewer attribution and local runtime identities are private.
+Keep them outside Git; offline tests do not establish product superiority.
+
+Use an explicit native Codex executable and a verified RepoScout binary. Campaign preparation pins
+their identities and the exact canonical skill; it does not change any installed tool or skill.
+Preparation also pins known tool executables, requiring Bash, Git, `rg`, Python and Node for the
+case catalog. Selection prefers `/usr/bin`, then the controller's `PATH`; use a trusted native
+runtime on that path rather than an environment-manager shim. Selected canonical paths stay
+private, and executable hashes remain in private reports. Execution uses copied bytes and
+refuses later pin drift; it never installs missing runtimes.
+
+```sh
+python3 scripts/agent-eval/review_campaign.py prepare /tmp/review-smoke \
+  --stage smoke --seed 20261007 \
+  --codex-binary /absolute/path/to/native/codex --codex-version 'codex-cli VERSION' \
+  --reposcout-binary /absolute/path/to/verified/reposcout \
+  --skill-dir skills/reposcout --timeout-seconds 600
+
+# Verify isolation without consuming an assigned model run.
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-smoke --preflight-only --limit 1
+
+# The auth source is read only by the trusted controller, never printed or added to the fixture.
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-smoke \
+  --auth-file /absolute/path/to/private/auth.json
+
+python3 scripts/agent-eval/review_campaign.py report /tmp/review-smoke
+```
+
+`prepare` refuses an existing campaign destination. `run` never silently reruns an already started
+assignment. The plan fixes `gpt-6.1-sol`, the reasoning effort (`prepare --effort`, one of
+`low`, `medium`, `high`, `xhigh`, `max`; default `max`), the cases, repetition identities, randomized order
+and limits. Eight smoke runs qualify isolation and accounting, not product superiority. The
+exploratory plan contains 48 A/B runs; `--ablation` adds twelve preselected CLI-only runs. The
+`qualify-smoke`, `report` and `export` commands preserve negative outcomes and explicitly pending
+semantic adjudication. Consult each command's `--help` for the complete arguments.
+
+Each new assignment first attests isolation and its Python/Node launcher and standard-library
+imports under the actual tool permissions, without a model call or host credentials. Failed
+setup leaves the assignment `notrun`; a prerequisite failure after an episode has started keeps
+that failed episode and its known costs, then stops the batch before another assignment starts.
+An ordinary review/episode failure does not itself stop the batch. Intentionally failing head
+assertions are review evidence, separate from runtime availability. Private `failures/` receipts
+retain fixed phases, cause categories and pin hashes without arbitrary exception text; public
+errors bind successful receipt writes by hash. Receipt-write failures cannot discard known costs.
+
+### Claude Code runtime
+
+`prepare --runtime claude` runs the same cases, prompts, answer schema, serial order and limits
+through Claude Code headless (`claude -p`). It requires `--claude-binary` and an explicit
+`--model`, accepts the same `--effort` levels, and pins the resolved binary path, its SHA-256,
+`claude --version` and the Bubblewrap/socat executables used by Claude's Bash sandbox. Only
+single-invocation stages are accepted because Claude sessions are never resumed. Results compare
+only within one runtime; a Claude plan is never mixed with a Codex plan. `--treatment
+reposcout-guided` selects the directed skill arm described in the
+[evaluation guide](../../docs/codex-review-evaluation.md#comparison-conditions); guided and neutral
+plans are reported separately.
+
+```sh
+python3 scripts/agent-eval/review_campaign.py prepare /tmp/review-claude \
+  --runtime claude --claude-binary /absolute/path/to/claude --model claude-MODEL --effort medium \
+  --stage large-development --seed 20261008 --case-bundle /absolute/path/to/bundle \
+  --fixture-signer /absolute/path/to/fixture-signer.json \
+  --reposcout-binary /absolute/path/to/verified/reposcout --timeout-seconds 600
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-claude --preflight-only
+python3 scripts/agent-eval/review_campaign.py run /tmp/review-claude --run-id RUN \
+  --auth-file /absolute/path/to/private/.credentials.json
+```
+
+Each invocation gets a fresh `HOME` and `CLAUDE_CONFIG_DIR`, `--strict-mcp-config`, project-only
+setting sources, the `Bash`, `Glob`, `Grep`, `Read` and `Skill` tools, and no agent, task or web
+tools. The treatment skill is installed as a project skill and checked by its directory hash.
+Bash runs inside both the outer Bubblewrap namespace and Claude's own sandbox, with an empty
+network allowlist; file tools are confined to the workspace and scratch directory. The controller
+reads only the OAuth access token from `--auth-file`, after the preflight passes, and hands it to
+Claude through an inherited pipe descriptor. It is never staged into the isolation and never
+visible to tools. Before the token is read, a scripted local API drives the real binary through
+Bash, Read, Grep and Glob escape attempts against a canary credential and fails closed.
+
+The stream-json trace (`--verbose`) gives the same command/evidence projection. Usage is counted
+once per message id and checked against the final result:
+`input_tokens = input + cache_creation + cache_read`, `cached_input_tokens = cache_read`,
+`cache_write_input_tokens = cache_creation` and `output_tokens = output`. Unknown counters stay
+unknown. `--json-schema` constrains the answer; the controller also validates it against the
+answer schema, and a nonconforming answer is a failed, retained outcome.
+
+`packets CAMPAIGN DIRECTORY` writes private adjudication packets with arm labels and measured costs
+removed. Their source evidence and observed commands are intentionally private. A reviewer returns
+the packet/answer identities, their human or model-assisted identity and per-step semantic verdicts;
+claimed test execution must cite
+matching command evidence. Pass that JSON file to `report` or `export` with `--adjudications`.
+Reviewer identities must reflect the model/profile actually used. Superseded judgments retain their
+original attribution and hashes; a fresh independent review does not rename an earlier reviewer.
+
+The supplied prompt identifies the current zero-based `step_id`. Retained references use the
+earlier review's zero-based step and the zero-based index in its top-level `evidence` array:
+`step=0, index=0` identifies the first evidence item from the initial review. Schema descriptions
+and shared guidance deliver the same convention in every arm. Exact source and retained-reference
+checks remain strict. A changed prompt or task requires a new campaign. An evaluator correction
+against the unchanged visible contract may instead be reported as a separate grading version bound
+to the original answers and decisions; original grades remain immutable. In particular, semantically
+verified clean answers may use the empty or partial evidence arrays that the prompt/schema permit,
+without a private quotation quota. Incorrect supplied quotes and unsupported execution claims fail.
+
+After the eight smoke episodes (ten invocations, including two real follow-ups) have valid isolation, response structure and understood
+accounting, `qualify-smoke CAMPAIGN EVIDENCE.json` records the explicit qualification. The evidence
+contains the exact `plan_sha256`, true `isolation_passed`, `structurally_consumable` and
+`accounting_basis_understood` fields, and a nonempty `reason`. This is a measurement gate, not a
+requirement that all reviews pass or that RepoScout wins. Prepare the next campaign with the same
+pins, `--stage exploratory --smoke-campaign CAMPAIGN --ablation`.
+Fixture qualification also requires a clean Git index and worktree matching the pinned head, both
+initially and after follow-up activation. A subsequently discovered fixture defect invalidates the
+old qualification for benefit comparisons. Preserve the campaign as excluded calibration and
+prepare a new smoke campaign after correction.
+
+`prepare` defaults to a fresh private temporary campaign when its destination is omitted.
+Explicit campaign, packet and detailed-export destinations must stay outside Git checkouts and
+must not traverse symlinks. Their directories are private (mode 0700).
+
+`report` prints a private detailed report. `export CAMPAIGN DIRECTORY` writes that private report
+and its integrity hash outside Git; it includes runtime fingerprints and is not a public export.
+After checking the private export, `cleanup-public CAMPAIGN DIRECTORY --expected-results-sha256 HASH` removes only the
+recorded disposable repositories and controller directories, leaving private evidence for audit.
+Live process uncertainty blocks cleanup. Keep the host authentication source outside every
+campaign; only its private per-trial copy is used. The public system CA bundle is copied and pinned
+separately; `--controller-ca-file` can select an explicit public certificate bundle.
+`incomplete_main_pairs` counts pairs whose baseline or skill episode is not `completed`, including
+`failed`. CLI-only failures and quality/usage eligibility are reported separately. Older campaigns
+remain inspectable without inventing missing runtime attestations or rewriting their evidence.
+
+Only `publish CAMPAIGN DIRECTORY` writes a public `publication.json`. It selects bounded known
+case identities, repeat and treatment enums, outcome/quality states, the accounting basis and four
+separate nullable token counters. All assigned outcomes stay included. Free-form prose, provenance,
+source, commands, sessions, hashes, runtime/CA pins, timestamps, resource observations and archives
+are excluded by construction. An unsupported value fails closed rather than being copied through.
+Review this summary before intentionally adding it under `publications/NAME/publication.json`.
+
+`python3 -B scripts/agent-eval/publication.py` checks the exact staged Git objects, including
+staged data that differs from a cleaned working file. `--commit HEAD` checks a committed tree.
+The repository-owned `.githooks/pre-push` examines every outgoing commit, including intermediate
+raw files subsequently deleted at the tip. Enable it for this checkout only with
+`git config --local core.hooksPath .githooks`; no global hook installation is involved.
+This is a policy gate for evaluation artifact areas, not a general privacy or credential scanner. The
+lightweight policy workflow runs the same check and its contract tests without models. New raw
+results, fixture archives and authoring receipts are rejected; the historical pilot is pinned byte
+for byte. `.gitignore` provides an additional guard, but does not replace this check.
+
+Counter-scope calibration is an explicit private input: `prepare --usage-calibration FILE` must
+match the selected executable/version, model/effort and complete same-thread counter proof.
+Without this evidence the scope remains unknown; the evaluator does not infer cumulative usage
+from the controller's installed software.
+
+Current trace accounting lives in `codex_trace.py`, separately from the historical native-window
+adapter. It preserves missing fields as unknown and never turns emitted turn usage into a claimed
+complete provider-call ledger.
+
+The separate [large-review study](../../docs/large-review-evaluation.md) adds fixed development and
+heldout presets over explicitly supplied larger bundles, a shared disposable signer across matched
+versions, and a 36-assignment order/report helper. It reuses this runner and its isolation and usage
+contracts. Original treatment hashes come from the original canonical development condition; the
+heldout tasks are sealed before development outputs and stay hidden from product tuning until freeze.
+The separate `large-followup` preset requires its own explicit bundle and fixes three cases, two
+repeats and twelve native/skill assignments. Reused opaque IDs never permit joining its new tasks
+to old campaigns without their distinct source, revision and prompt identities.
+
+The `complex-development` and `complex-holdout` presets review multi-module TypeScript comparisons
+of 30 to 100 changed files. Each fixes two single-invocation cases, two repeats and eight paired
+assignments, defaults to a 1200-second episode timeout (also its ceiling) and requires a bundle whose
+catalog declares `"suite": "complex"`; other stages refuse such a bundle. The complex suite raises the
+source ceiling to 512 files and 4 MiB per snapshot without changing the large-suite limits. Bundles
+are generated, not committed: `fixtures/complex-review/build.py` materializes one partition from the
+deterministic Fieldline generator and the committed catalogs, oracles, probes and counterfactuals into
+a new private directory outside Git, and refuses a holdout bundle whose `directory_hash` differs from
+its recorded seal. `qualify.py --bundle DIR` then runs the checked-in application tests and the private
+domain probes on base, head and counterfactual trees without any model, and `freeze.py` writes a
+deterministic archive with its manifest. Prepare with the explicit bundle, for example:
+
+```sh
+python3 -B scripts/agent-eval/fixtures/complex-review/build.py holdout --output /private/complex-holdout
+python3 -B scripts/agent-eval/fixtures/complex-review/qualify.py --bundle /private/complex-holdout
+python3 scripts/agent-eval/review_campaign.py prepare /private/complex-holdout-campaign \
+  --stage complex-holdout --runtime claude --case-bundle /private/complex-holdout ...
+```
+
+The `complex-holdout-b` preset follows the same rules for the second sealed holdout partition
+(`build.py holdout-b`, cases `change-c` and `change-d`). The `complex-holdout-c` preset does the
+same for the third sealed holdout partition (`build.py holdout-c`, cases `change-e` and
+`change-f`).
+
+If a later invocation cannot be attributed safely, `known_usage_prefix` preserves the normalized
+prefix and its per-field invocation indices/stop reasons while full episode fields remain unknown.
+The all-assigned report lists `observed_partial_token_known_sums` and their run counts separately;
+fields already included in whole-episode known sums are excluded from partial sums. Failed turns
+with valid observations retain their costs without becoming eligible quality comparisons.
+Network preflight requires distinct controller/tool network namespaces plus a denied socket
+attempt and retains the actual operation/error. Same-namespace routing failures are rejected.
+
+Run the offline tests without launching a model:
+
+```sh
+python3 -m unittest discover -s scripts/agent-eval -p 'test_*.py'
+```
+
+## Historical offline evaluator
+
 This offline evaluator supports the six-feature RepoScout program. It validates canonical usage
 ledgers, prepares bounded task fixtures and checks answers. It does not execute a model, run a
 compiler, start an agent or estimate missing provider usage. These scripts are development tools;
@@ -251,7 +463,7 @@ It does not read the log, import usage or infer completion: stored usage remains
 until the separate audit and attestation steps succeed. These trials do not measure a complete
 cold/warm/after-edit matrix or correctness of code changes; report those omissions explicitly.
 
-## Sanitized campaign evidence
+## Private campaign evidence and historical pilot
 
 `native_evidence.py` extracts bounded tool/latency/compaction metadata; `close_trial.py` combines
 answer checks with explicit lifecycle evidence. `source_exposure.py` attributes delivered source
@@ -265,4 +477,5 @@ independent plaintext equality. `export_results.py` exports the campaign with `-
 `--source-exposure` and `--prompt-audit` evidence into `results.json` and `integrity.json`. Hashes
 are labeled as canonical JSON. The export retains original, routing and composed conditions,
 superseded unrun revisions and adverse outcomes. It does not publish raw session logs or source
-bodies. See the [pilot report](../../docs/agent-evaluation.md) for observed results and limitations.
+bodies, but its metadata and fingerprints are still private and its destination must be outside Git.
+Only the new review `publish` command produces a typed public summary. See the [pilot report](../../docs/agent-evaluation.md) for observed results and limitations.

@@ -82,31 +82,67 @@ fn py_from_current_package_import_resolves_comma_separated_aliased_siblings() {
 }
 
 #[test]
-fn py_from_named_package_import_keeps_dependency_on_package() {
+fn py_from_named_package_import_depends_on_package_and_existing_submodules() {
     let dir = tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("pkg/subpkg")).unwrap();
+    std::fs::create_dir_all(dir.path().join("pkg/subpkg/nested")).unwrap();
     std::fs::write(
         dir.path().join("pkg/consumer.py"),
-        "from .subpkg import name\n",
+        "from .subpkg import name, nested, ATTRIBUTE\n",
     )
     .unwrap();
-    std::fs::write(dir.path().join("pkg/subpkg/__init__.py"), "\n").unwrap();
+    std::fs::write(
+        dir.path().join("main.py"),
+        "from pkg.subpkg import name as alias, ATTRIBUTE\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("pkg/subpkg/__init__.py"), "ATTRIBUTE = 1\n").unwrap();
     std::fs::write(dir.path().join("pkg/subpkg/name.py"), "VALUE = 1\n").unwrap();
+    std::fs::write(dir.path().join("pkg/subpkg/nested/__init__.py"), "\n").unwrap();
 
     let graph = build(
         &[
+            file_report("main.py"),
             file_report("pkg/consumer.py"),
             file_report("pkg/subpkg/__init__.py"),
             file_report("pkg/subpkg/name.py"),
+            file_report("pkg/subpkg/nested/__init__.py"),
         ],
         dir.path(),
     );
 
-    assert_eq!(graph.edges, 1);
+    let edges = graph
+        .edge_list
+        .iter()
+        .map(|edge| {
+            (
+                edge.source.as_str(),
+                edge.target.as_str(),
+                edge.resolver.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    // The package `__init__.py` stays a dependency; submodules that exist are
+    // added because Python loads them unless `__init__.py` binds the name. The
+    // attribute-only name adds neither an edge nor an unresolved import.
+    assert_eq!(
+        edges,
+        vec![
+            ("main.py", "pkg/subpkg/__init__.py", "python-absolute"),
+            ("main.py", "pkg/subpkg/name.py", "python-absolute"),
+            (
+                "pkg/consumer.py",
+                "pkg/subpkg/__init__.py",
+                "python-relative"
+            ),
+            ("pkg/consumer.py", "pkg/subpkg/name.py", "python-relative"),
+            (
+                "pkg/consumer.py",
+                "pkg/subpkg/nested/__init__.py",
+                "python-relative"
+            ),
+        ]
+    );
     assert_eq!(graph.unresolved_imports, 0);
-    assert_eq!(graph.top_depended.len(), 1);
-    assert_eq!(graph.top_depended[0].path, "pkg/subpkg/__init__.py");
-    assert_eq!(graph.top_depended[0].fan_in, 1);
 }
 
 #[test]

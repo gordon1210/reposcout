@@ -1,4 +1,5 @@
 mod analysis;
+mod brief;
 mod changes;
 #[cfg(test)]
 mod tests;
@@ -6,13 +7,22 @@ mod tests;
 use crate::config::Config;
 use crate::metrics::tokens::TokenCounter;
 use crate::model::{
-    ReviewContextCapability, ReviewContextReport, ReviewContextTotals, SCHEMA_VERSION,
+    CallSymbolIdentity, ReviewBrief, ReviewBriefSelection, ReviewChangeBasis,
+    ReviewContextCapability, ReviewContextRelation, ReviewContextReport, ReviewContextTotals,
+    ReviewHunkRole, SCHEMA_VERSION,
 };
 use crate::report::Format;
 use anyhow::{Result, ensure};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 const ENTRY_LIMIT: usize = 100;
+/// Rendered-token ceiling of the agent brief when `--budget` is absent; smaller briefs render in
+/// full.
+pub const REVIEW_BRIEF_TOKENS: usize = 4096;
+/// Soft evidence (importers, usage and documentation lines) may always use this many tokens, and
+/// otherwise at most half of the shown diff text.
+const BRIEF_SOFT_TOKENS: usize = 400;
 
 /// Immutable comparison, explicit content options, and independent source/output budgets.
 #[expect(
@@ -26,6 +36,8 @@ pub struct ReviewContextOptions {
     pub context: bool,
     pub include_source: bool,
     pub include_diff: bool,
+    /// Render the compact agent brief; requires `include_diff` and a table/Markdown format.
+    pub brief: bool,
     pub token_budget: usize,
     pub byte_budget: usize,
     pub format: Format,
@@ -73,10 +85,24 @@ pub fn review_context(
     let changes = changes::describe(&capture, &counter, options.include_diff)?;
     let mut graph_limits = crate::graph::GraphReadLimits::from_config(&config);
     graph_limits.deadline = Some(capture.deadline);
-    let (mut context, relations) =
+    let (mut context, mut relations) =
         analysis::analyze(&mut capture, &changes, &counter, graph_limits)?;
     check_deadline(capture.deadline)?;
     let mut totals = totals(&changes, &context, relations.len(), capture.total_changes);
+    let brief = if options.brief {
+        ensure!(
+            options.include_diff && !options.context && !options.include_source,
+            "review-context brief requires diffs and no reading-list selection"
+        );
+        Some(brief::prepare(
+            &capture,
+            &changes,
+            &mut relations,
+            &context,
+        )?)
+    } else {
+        None
+    };
     let selection = options.context || options.include_source;
     if selection {
         crate::context::review::select(
@@ -113,11 +139,14 @@ pub fn review_context(
             "An empty dependency result is inconclusive for excluded, unavailable or unsupported graph files.",
             "Literal Unix backslash paths retain source/change evidence but are excluded from graph inputs; unsupported_graph_paths counts them.",
         ].map(str::to_string).to_vec(),
-        changes, relations, context,
+        changes, relations, context, brief,
     };
-    project(&mut report, options, &counter, capture.deadline)?;
-    let rendered =
-        crate::report::review_context::render(&report, options.format, options.pretty_json)?;
+    if options.brief {
+        project_brief(&mut report, options, &counter, capture.deadline)?;
+    } else {
+        project(&mut report, options, &counter, capture.deadline)?;
+    }
+    let rendered = render(&report, options)?;
     check_deadline(capture.deadline)?;
     Ok(ReviewContextOutput { report, rendered })
 }
@@ -163,12 +192,34 @@ fn project(
     deadline: std::time::Instant,
 ) -> Result<()> {
     report.changes.truncate(ENTRY_LIMIT);
-    report.context.truncate(ENTRY_LIMIT);
     report.relations.truncate(ENTRY_LIMIT);
+    // Keep already-captured handles needed by retained direct evidence, even when
+    // the source-selection order puts them beyond the output candidate cap.
+    let endpoints: BTreeSet<_> = report
+        .relations
+        .iter()
+        .filter(|relation| direct_relation(relation))
+        .filter_map(|relation| relation.symbol.as_ref().map(|symbol| (relation, symbol)))
+        .flat_map(|(relation, symbol)| {
+            [&symbol.source, &symbol.target]
+                .map(|endpoint| (relation.side.clone(), PathBuf::from(&endpoint.path)))
+        })
+        .collect();
+    let mut index = 0;
+    report.context.retain(|file| {
+        let keep = index < ENTRY_LIMIT
+            || (!options.include_source
+                && !options.include_diff
+                && endpoints.contains(&(file.side.clone(), file.path.clone())));
+        index += 1;
+        keep
+    });
     let originals = report.clone();
+    report.context.truncate(ENTRY_LIMIT);
     loop {
         if within_budget(report, options, counter, deadline)? {
             restore_change_identities(report, &originals.changes, options, counter, deadline)?;
+            restore_direct_evidence(report, &originals, options, counter, deadline)?;
             restore_change_details(report, &originals.changes, options, counter, deadline)?;
             restore_evidence(report, &originals, options, counter, deadline)?;
             return Ok(());
@@ -200,6 +251,563 @@ fn project(
     }
 }
 
+/// Optional brief evidence in admission order.
+#[derive(Clone, Copy)]
+enum BriefItem {
+    Examples,
+    SiteLines,
+    ExplainedSites,
+    Entry(usize),
+    Details(usize),
+    Hunk(usize),
+    Importers(usize),
+    Mention(usize),
+    Usage(usize),
+}
+
+/// Greedy admissions tried after the longest fitting prefix.
+const BRIEF_GREEDY_ATTEMPTS: usize = 64;
+
+/// Rewrite site lines, every change entry heading, then shown hunks with deviating hunks first
+/// and the rest by priority. A change's details follow its first hunk in that order, so detailed
+/// entries never crowd out the diff. Rewrite examples only illustrate rules that are already
+/// listed, so they follow the diff; details of changes without shown hunks, importers,
+/// documentation lines and usage lines come last.
+fn brief_items(report: &ReviewContextReport) -> Vec<BriefItem> {
+    let Some(brief) = report.brief.as_ref() else {
+        return Vec::new();
+    };
+    let path = |change: usize| {
+        let change = &report.changes[change];
+        change
+            .head
+            .as_ref()
+            .or(change.base.as_ref())
+            .map(|side| side.path.clone())
+    };
+    let mut hunks: Vec<_> = brief
+        .hunks
+        .iter()
+        .enumerate()
+        .filter(|(_, hunk)| hunk.role == ReviewHunkRole::Shown)
+        .map(|(index, hunk)| (hunk.priority, path(hunk.change), index))
+        .collect();
+    hunks.sort();
+    let mut items = vec![BriefItem::SiteLines];
+    items.extend(
+        brief
+            .entry_changes
+            .iter()
+            .map(|&change| BriefItem::Entry(change)),
+    );
+    let mut detailed = BTreeSet::new();
+    for (_, _, index) in hunks {
+        items.push(BriefItem::Hunk(index));
+        let change = brief.hunks[index].change;
+        if detailed.insert(change) {
+            items.push(BriefItem::Details(change));
+        }
+    }
+    items.push(BriefItem::Examples);
+    items.extend(
+        brief
+            .entry_changes
+            .iter()
+            .filter(|change| !detailed.contains(*change))
+            .map(|&change| BriefItem::Details(change)),
+    );
+    items.extend(
+        brief
+            .entry_changes
+            .iter()
+            .map(|&change| BriefItem::Importers(change)),
+    );
+    items.extend((0..brief.mentions.len()).map(BriefItem::Mention));
+    items.extend((0..brief.usage.len()).map(BriefItem::Usage));
+    items
+}
+
+/// Change entry an item belongs to; it renders only once that entry is admitted.
+fn item_entry(report: &ReviewContextReport, brief: &ReviewBrief, item: BriefItem) -> Option<usize> {
+    match item {
+        BriefItem::Details(change) | BriefItem::Importers(change) => Some(change),
+        BriefItem::Hunk(index) => Some(brief.hunks[index].change),
+        BriefItem::Usage(index) => {
+            let identity = &brief.usage[index].change;
+            report.changes.iter().position(|change| {
+                [&change.base, &change.head].map(|side| side.as_ref().map(|side| side.path.clone()))
+                    == *identity
+            })
+        }
+        _ => None,
+    }
+}
+
+fn select(selection: &mut ReviewBriefSelection, item: BriefItem, admit: bool) {
+    let toggle = |set: &mut BTreeSet<usize>, value: usize| {
+        if admit {
+            set.insert(value);
+        } else {
+            set.remove(&value);
+        }
+    };
+    match item {
+        BriefItem::Examples => selection.examples = admit,
+        BriefItem::SiteLines => selection.site_lines = admit,
+        BriefItem::ExplainedSites => selection.explained_sites = admit,
+        BriefItem::Entry(change) => toggle(&mut selection.entries, change),
+        BriefItem::Details(change) => toggle(&mut selection.details, change),
+        BriefItem::Hunk(index) => toggle(&mut selection.hunks, index),
+        BriefItem::Importers(change) => toggle(&mut selection.importers, change),
+        BriefItem::Mention(index) => toggle(&mut selection.mentions, index),
+        BriefItem::Usage(index) => toggle(&mut selection.usage, index),
+    }
+}
+
+/// Detail rungs of the brief's mandatory sections, coarsest first: collapse levels 3, 2, 1 and
+/// 0, then level 0 with omitted rule-explained hunks listed by site. A finer rung never shows
+/// a coarser collapse level or fewer sites.
+const BRIEF_RUNGS: [(u8, bool); 5] = [(3, false), (2, false), (1, false), (0, false), (0, true)];
+
+/// Shared inputs of one brief projection.
+struct BriefProjection<'a> {
+    options: &'a ReviewContextOptions,
+    counter: &'a TokenCounter,
+    deadline: std::time::Instant,
+    items: Vec<BriefItem>,
+    /// Smallest token budget from which each rung may replace the coarser ones; `None` when it
+    /// never can.
+    starts: Vec<Option<usize>>,
+}
+
+/// Brief projection renders mandatory summaries (rewrites, moves, renames, stale spellings and
+/// the omission list) at a detail rung, admits the longest prefix of optional evidence that
+/// fits, then tries a bounded number of later items that are neither change entries nor hunks.
+/// From its start budget (see `rung_starts`) a finer rung is used once it admits at least as
+/// many entries and hunks as the coarser rungs admit just below that start, which they keep
+/// until then. A larger budget therefore never shows fewer entries or hunks and never a coarser
+/// rung. Soft evidence stays proportional to shown diff text.
+fn project_brief(
+    report: &mut ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    if report.brief.is_none() {
+        return Ok(());
+    }
+    let items = brief_items(report);
+    let mut projection = BriefProjection {
+        options,
+        counter,
+        deadline,
+        items,
+        starts: Vec::new(),
+    };
+    projection.starts = rung_starts(report, &projection)?;
+    let Some(choice) = rung_choice(
+        report,
+        &projection,
+        BRIEF_RUNGS.len() - 1,
+        options.token_budget,
+    )?
+    else {
+        anyhow::bail!(
+            "review-context output budget cannot hold the status envelope; increase --budget or --max-output-bytes"
+        )
+    };
+    let base = rung_base(choice.rung);
+    let low = longest_prefix(
+        report,
+        &projection,
+        choice.budget,
+        BRIEF_RUNGS[choice.rung].0,
+        base,
+    )?;
+    admit_greedily(report, &projection, choice.budget, low)
+}
+
+fn rung_base(rung: usize) -> &'static [BriefItem] {
+    if BRIEF_RUNGS[rung].1 {
+        &[BriefItem::ExplainedSites]
+    } else {
+        &[]
+    }
+}
+
+/// Start budget of every rung: the coarsest rung starts where its mandatory part fits; a finer
+/// level where it also holds every item up to and including the first hunk (the first change
+/// entry without hunks); the site rung where it holds every item before the first
+/// rule-explained hunk, which follows every other hunk in admission order, and only when one
+/// exists.
+fn rung_starts(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+) -> Result<Vec<Option<usize>>> {
+    let items = &projection.items;
+    let Some(brief) = report.brief.as_ref() else {
+        return Ok(vec![None; BRIEF_RUNGS.len()]);
+    };
+    let first = items
+        .iter()
+        .position(|item| matches!(item, BriefItem::Hunk(_)))
+        .or_else(|| {
+            items
+                .iter()
+                .position(|item| matches!(item, BriefItem::Entry(_)))
+        })
+        .map_or(0, |first| first + 1);
+    let explained = items
+        .iter()
+        .position(|item| matches!(item, BriefItem::Hunk(index) if brief.hunks[*index].explained));
+    let mut starts = Vec::with_capacity(BRIEF_RUNGS.len());
+    for (rung, &(level, sites)) in BRIEF_RUNGS.iter().enumerate() {
+        let anchor = match (rung, sites) {
+            (0, _) => Some(0),
+            (_, false) => Some(first),
+            (_, true) => explained,
+        };
+        let start = match anchor {
+            Some(anchor) => {
+                set_selection(report, level, rung_base(rung));
+                let empty = brief_cost(report, projection)?;
+                set_selection(report, level, &[rung_base(rung), &items[..anchor]].concat());
+                empty
+                    .zip(brief_cost(report, projection)?)
+                    .map(|(empty, anchored)| empty.max(anchored))
+            }
+            None => None,
+        };
+        starts.push(start);
+    }
+    Ok(starts)
+}
+
+/// Rung and budget whose admission the brief shows.
+#[derive(Clone, Copy)]
+struct RungChoice {
+    rung: usize,
+    budget: usize,
+    /// Admitted change entries and hunks; both are prefixes of one admission order, so a larger
+    /// count includes every item of a smaller one.
+    admitted: usize,
+}
+
+/// Choice at `rung` or a coarser one for `budget`, or `None` when no rung fits. Only the
+/// longest fitting prefix decides it; greedy admissions never add entries or hunks.
+fn rung_choice(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    rung: usize,
+    budget: usize,
+) -> Result<Option<RungChoice>> {
+    let start = projection.starts[rung];
+    if rung > 0 && start.is_none_or(|start| budget < start) {
+        return rung_choice(report, projection, rung - 1, budget);
+    }
+    let Some(start) = start else {
+        return Ok(None);
+    };
+    if budget < start {
+        return Ok(None);
+    }
+    let kept = match start.checked_sub(1) {
+        Some(below) if rung > 0 => rung_choice(report, projection, rung - 1, below)?,
+        _ => None,
+    };
+    let (level, _) = BRIEF_RUNGS[rung];
+    set_selection(report, level, rung_base(rung));
+    if !brief_fits(report, projection, budget)? {
+        return Ok(kept);
+    }
+    longest_prefix(report, projection, budget, level, rung_base(rung))?;
+    let admitted = report.brief.as_ref().map_or(0, |brief| {
+        brief.selection.entries.len() + brief.selection.hunks.len()
+    });
+    Ok(match kept {
+        Some(kept) if admitted < kept.admitted => Some(kept),
+        _ => Some(RungChoice {
+            rung,
+            budget,
+            admitted,
+        }),
+    })
+}
+
+fn set_selection(report: &mut ReviewContextReport, level: u8, admitted: &[BriefItem]) {
+    if let Some(brief) = report.brief.as_mut() {
+        brief.selection = ReviewBriefSelection {
+            level,
+            ..ReviewBriefSelection::default()
+        };
+        for item in admitted {
+            select(&mut brief.selection, *item, true);
+        }
+    }
+}
+
+/// Selects the longest fitting prefix of the admission order after the `base` items at `level`
+/// and returns its length.
+fn longest_prefix(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    budget: usize,
+    level: u8,
+    base: &[BriefItem],
+) -> Result<usize> {
+    let items = &projection.items;
+    let (mut low, mut high) = (0, items.len());
+    while low < high {
+        let middle = low + (high - low).div_ceil(2);
+        set_selection(report, level, &[base, &items[..middle]].concat());
+        if brief_fits(report, projection, budget)? {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    set_selection(report, level, &[base, &items[..low]].concat());
+    Ok(low)
+}
+
+/// Bounded greedy admissions of items after the longest fitting prefix of length `low`, other
+/// than change entries and hunks.
+fn admit_greedily(
+    report: &mut ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    budget: usize,
+    low: usize,
+) -> Result<()> {
+    let mut attempts = 0;
+    for item in projection.items.iter().skip(low + 1) {
+        if attempts == BRIEF_GREEDY_ATTEMPTS {
+            break;
+        }
+        let Some(brief) = report.brief.as_ref() else {
+            break;
+        };
+        let entry = item_entry(report, brief, *item);
+        if matches!(item, BriefItem::Entry(_) | BriefItem::Hunk(_))
+            || entry.is_some_and(|change| !brief.selection.entries.contains(&change))
+            || (matches!(item, BriefItem::Usage(_)) && entry.is_none())
+        {
+            continue;
+        }
+        attempts += 1;
+        if let Some(brief) = report.brief.as_mut() {
+            select(&mut brief.selection, *item, true);
+        }
+        if !brief_fits(report, projection, budget)?
+            && let Some(brief) = report.brief.as_mut()
+        {
+            select(&mut brief.selection, *item, false);
+        }
+    }
+    Ok(())
+}
+
+/// Smallest token budget that holds the current selection, or `None` when the byte budget or
+/// the soft-evidence share rules it out at every token budget.
+fn brief_cost(
+    report: &ReviewContextReport,
+    projection: &BriefProjection<'_>,
+) -> Result<Option<usize>> {
+    check_deadline(projection.deadline)?;
+    let parts = crate::report::review_context::render_brief_parts(
+        report,
+        projection.options.format == Format::Markdown,
+    );
+    let counter = projection.counter;
+    if parts.text.len() > projection.options.byte_budget
+        || !(parts.soft.is_empty()
+            || counter.count(&parts.soft) <= BRIEF_SOFT_TOKENS.max(counter.count(&parts.diff) / 2))
+    {
+        return Ok(None);
+    }
+    Ok(Some(counter.count(&parts.text)))
+}
+
+fn brief_fits(
+    report: &ReviewContextReport,
+    projection: &BriefProjection<'_>,
+    budget: usize,
+) -> Result<bool> {
+    check_deadline(projection.deadline)?;
+    let parts = crate::report::review_context::render_brief_parts(
+        report,
+        projection.options.format == Format::Markdown,
+    );
+    let counter = projection.counter;
+    if parts.text.len() > projection.options.byte_budget || counter.count(&parts.text) > budget {
+        return Ok(false);
+    }
+    Ok(parts.soft.is_empty()
+        || counter.count(&parts.soft) <= BRIEF_SOFT_TOKENS.max(counter.count(&parts.diff) / 2))
+}
+
+fn direct_relation(relation: &ReviewContextRelation) -> bool {
+    relation.kind == "symbol-reference"
+        && relation.change_basis == Some(ReviewChangeBasis::ChangedDefinition)
+        && relation.symbol.is_some()
+}
+
+fn same_relation(left: &ReviewContextRelation, right: &ReviewContextRelation) -> bool {
+    let same_type = match (&left.type_relation, &right.type_relation) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            left.source == right.source
+                && left.target == right.target
+                && left.relation == right.relation
+                && left.resolver == right.resolver
+        }
+        _ => false,
+    };
+    left.side == right.side
+        && left.kind == right.kind
+        && left.edge.source == right.edge.source
+        && left.edge.target == right.edge.target
+        && left.edge.resolver == right.edge.resolver
+        && left.change_basis == right.change_basis
+        && left.symbol == right.symbol
+        && same_type
+}
+
+fn endpoint_available(
+    report: &ReviewContextReport,
+    side: &str,
+    endpoint: &CallSymbolIdentity,
+) -> bool {
+    let snapshot = if side == "base" {
+        &report.comparison.base_tree
+    } else {
+        &report.comparison.head_tree
+    };
+    report.changes.iter().any(|change| {
+        let changed = if side == "base" {
+            &change.base
+        } else {
+            &change.head
+        };
+        changed.as_ref().is_some_and(|changed| {
+            changed.path == Path::new(&endpoint.path)
+                && changed.sha256.as_deref() == Some(endpoint.source_hash.as_str())
+        })
+    }) || report.context.iter().any(|file| {
+        file.side == side
+            && file.snapshot == *snapshot
+            && file.path == Path::new(&endpoint.path)
+            && file.sha256.as_deref() == Some(endpoint.source_hash.as_str())
+    })
+}
+
+fn admit_relation(
+    report: &mut ReviewContextReport,
+    relation: &ReviewContextRelation,
+    originals: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<bool> {
+    if report.relations.len() == ENTRY_LIMIT {
+        return Ok(false);
+    }
+    let context_len = report.context.len();
+    if !options.include_source
+        && !options.include_diff
+        && matches!(options.format, Format::Table | Format::Markdown)
+        && direct_relation(relation)
+        && let Some(symbol) = &relation.symbol
+    {
+        for endpoint in [&symbol.source, &symbol.target] {
+            if endpoint_available(report, &relation.side, endpoint) {
+                continue;
+            }
+            let file = originals.context.iter().find(|file| {
+                let snapshot = if relation.side == "base" {
+                    &report.comparison.base_tree
+                } else {
+                    &report.comparison.head_tree
+                };
+                file.side == relation.side
+                    && file.snapshot == *snapshot
+                    && file.path == Path::new(&endpoint.path)
+                    && file.sha256.as_deref() == Some(endpoint.source_hash.as_str())
+            });
+            let Some(file) = file.filter(|_| report.context.len() < ENTRY_LIMIT) else {
+                report.context.truncate(context_len);
+                return Ok(false);
+            };
+            let mut metadata = file.clone();
+            metadata.source = None;
+            report.context.push(metadata);
+        }
+    }
+    report.relations.push(relation.clone());
+    if within_budget(report, options, counter, deadline)? {
+        return Ok(true);
+    }
+    report.relations.pop();
+    report.context.truncate(context_len);
+    Ok(false)
+}
+
+fn restore_direct_evidence(
+    report: &mut ReviewContextReport,
+    originals: &ReviewContextReport,
+    options: &ReviewContextOptions,
+    counter: &TokenCounter,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    // Explicit body requests keep their established allocation and affordable bodies.
+    if options.include_source || options.include_diff {
+        return Ok(());
+    }
+    let direct: Vec<_> = originals
+        .relations
+        .iter()
+        .filter(|relation| direct_relation(relation))
+        .collect();
+    let human = matches!(options.format, Format::Table | Format::Markdown);
+    if direct.iter().all(|original| {
+        report
+            .relations
+            .iter()
+            .any(|relation| same_relation(relation, original))
+            && (!human
+                || original.symbol.as_ref().is_some_and(|symbol| {
+                    [&symbol.source, &symbol.target]
+                        .into_iter()
+                        .all(|endpoint| endpoint_available(report, &original.side, endpoint))
+                }))
+    }) {
+        return Ok(());
+    }
+    let previous_relations = std::mem::take(&mut report.relations);
+    let previous_context = std::mem::take(&mut report.context);
+    for relation in direct {
+        admit_relation(report, relation, originals, options, counter, deadline)?;
+    }
+    // If no whole direct packet fits, preserve the existing type/import/file
+    // fallback instead of trading useful evidence for an empty reservation.
+    if report.relations.is_empty() {
+        report.relations = previous_relations;
+        report.context = previous_context;
+    }
+    recount(report, options);
+    Ok(())
+}
+
+fn render(report: &ReviewContextReport, options: &ReviewContextOptions) -> Result<String> {
+    if options.brief {
+        Ok(crate::report::review_context::render_brief(
+            report,
+            options.format == Format::Markdown,
+        ))
+    } else {
+        crate::report::review_context::render(report, options.format, options.pretty_json)
+    }
+}
+
 fn within_budget(
     report: &mut ReviewContextReport,
     options: &ReviewContextOptions,
@@ -208,8 +816,7 @@ fn within_budget(
 ) -> Result<bool> {
     check_deadline(deadline)?;
     recount(report, options);
-    let rendered =
-        crate::report::review_context::render(report, options.format, options.pretty_json)?;
+    let rendered = render(report, options)?;
     let fits =
         rendered.len() <= options.byte_budget && counter.count(&rendered) <= options.token_budget;
     check_deadline(deadline)?;
@@ -307,13 +914,26 @@ fn restore_evidence(
     counter: &TokenCounter,
     deadline: std::time::Instant,
 ) -> Result<()> {
-    for relation in originals.relations.iter().skip(report.relations.len()) {
-        report.relations.push(relation.clone());
-        if !within_budget(report, options, counter, deadline)? {
-            report.relations.pop();
+    for relation in &originals.relations {
+        if !report
+            .relations
+            .iter()
+            .any(|retained| same_relation(retained, relation))
+        {
+            admit_relation(report, relation, originals, options, counter, deadline)?;
         }
     }
-    for file in originals.context.iter().skip(report.context.len()) {
+    for file in &originals.context {
+        if report.context.len() == ENTRY_LIMIT {
+            break;
+        }
+        if report
+            .context
+            .iter()
+            .any(|retained| retained.side == file.side && retained.path == file.path)
+        {
+            continue;
+        }
         let mut metadata = file.clone();
         metadata.source = None;
         report.context.push(metadata);

@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec python3 -B "$(git rev-parse --show-toplevel)/scripts/agent-eval/publication.py" --pre-push --remote "$1"

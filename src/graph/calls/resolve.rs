@@ -26,7 +26,8 @@ pub(super) fn resolve(
             topology.coverage.examined = topology.coverage.examined.saturating_add(1);
             match resolve_relation(file, relation, &declarations, &module_index) {
                 Ok((target, resolver)) => {
-                    let Some(source) = relation.owner.clone() else {
+                    let Some(source) = relation.owner.clone().or_else(|| module_source(file))
+                    else {
                         push_unresolved(
                             &mut topology,
                             file,
@@ -102,7 +103,7 @@ fn resolve_relation(
     if relation.candidate.shadowed {
         return Err(CallUnresolvedReason::ShadowedBinding);
     }
-    if relation.owner.is_none() {
+    if relation.owner.is_none() && file.module_span.is_none() {
         return Err(CallUnresolvedReason::MissingOwner);
     }
 
@@ -118,6 +119,17 @@ fn resolve_relation(
             Err(CallUnresolvedReason::UnsupportedSyntax)
         }
     }
+}
+
+/// Synthetic source for sites outside every declaration: module-scope code and its anonymous callbacks.
+fn module_source(file: &CallReferenceFacts) -> Option<CallSymbolIdentity> {
+    file.module_span.map(|span| CallSymbolIdentity {
+        path: file.source_path.clone(),
+        source_hash: file.source_hash.clone(),
+        name: super::MODULE_SOURCE_NAME.to_string(),
+        kind: super::MODULE_SOURCE_KIND.to_string(),
+        declaration_span: span,
+    })
 }
 
 fn resolve_local(

@@ -1,0 +1,244 @@
+{
+  "domain_expected": {
+    "base": {
+      "metro-east 12.6 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 1235,
+            "quantity": 13
+          }
+        },
+        "totalCents": 21819
+      },
+      "metro-east 23.5 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 2280,
+            "quantity": 24
+          }
+        },
+        "totalCents": 23062
+      },
+      "metro-east 4.4 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 380,
+            "quantity": 4
+          }
+        },
+        "totalCents": 20801
+      },
+      "metro-east 7.5 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 760,
+            "quantity": 8
+          }
+        },
+        "totalCents": 21253
+      }
+    },
+    "head": {
+      "metro-east 12.6 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 1140,
+            "quantity": 12
+          }
+        },
+        "totalCents": 21706
+      },
+      "metro-east 23.5 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 2185,
+            "quantity": 23
+          }
+        },
+        "totalCents": 22949
+      },
+      "metro-east 4.4 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 380,
+            "quantity": 4
+          }
+        },
+        "totalCents": 20801
+      },
+      "metro-east 7.5 km": {
+        "lines": {
+          "callout": {
+            "amountCents": 4500,
+            "quantity": 1
+          },
+          "labor": {
+            "amountCents": 12600,
+            "quantity": 1.75
+          },
+          "travel": {
+            "amountCents": 665,
+            "quantity": 7
+          }
+        },
+        "totalCents": 21140
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "travel-kilometres-truncated",
+          "impact": "Every invoice with fractional travel distance whose fraction is at least one half bills one kilometre too few, so travel revenue is understated across all regions.",
+          "locations": [
+            {
+              "contains": "quantize(km, { step: 1, mode: 'down' })",
+              "path": "src/billing/travel.ts",
+              "side": "head"
+            }
+          ],
+          "rubric": "The migration replaced nearest-kilometre rounding of the summed travel distance with downward quantization. Any reachable fractional distance at or above one half with the documented nearest rounding as expected suffices; exact names or amounts in other regions are not required. The other migrated call sites (labour, travel time, overtime, mileage, scheduling, SLA, inventory and reports) keep their previous rounding and are not defects. Extra genuine source defects require independent review for all arms.",
+          "severity": "medium within this application's invoicing",
+          "witnesses": [
+            {
+              "actual": {
+                "travelAmountCents": 665,
+                "travelQuantity": 7
+              },
+              "expected": {
+                "travelAmountCents": 760,
+                "travelQuantity": 8
+              },
+              "input": {
+                "laborMinutes": 100,
+                "region": "metro-east",
+                "travelKm": 7.5
+              }
+            },
+            {
+              "actual": {
+                "travelAmountCents": 1140,
+                "travelQuantity": 12
+              },
+              "expected": {
+                "travelAmountCents": 1235,
+                "travelQuantity": 13
+              },
+              "input": {
+                "laborMinutes": 100,
+                "region": "metro-east",
+                "travelKm": 12.6
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "to the nearest whole kilometre (halves round up)",
+                "path": "docs/billing.md",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "roundToIncrement(km, 1, false)",
+                "path": "src/billing/travel.ts",
+                "side": "base"
+              }
+            ]
+          ],
+          "description": "Establish the documented travel rule or the previous nearest rounding as the expected behavior.",
+          "id": "documented-travel-rounding"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "    case 'down':\n      return Math.floor(units + NOISE);",
+                "path": "src/shared/rounding.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that the chosen quantization mode truncates instead of rounding to the nearest step.",
+          "id": "rounding-mode-semantics"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "lines.push(...travelLines(job, entries, tariff));",
+                "path": "src/billing/invoices.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Connect travel lines to a real draft invoice rather than an unused helper.",
+          "id": "active-invoice-path"
+        }
+      ]
+    }
+  ]
+}

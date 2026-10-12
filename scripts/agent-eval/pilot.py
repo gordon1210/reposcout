@@ -61,7 +61,12 @@ def guidance(case, variant, binary, before_tree):
 
 
 def prepare(destination, binary, templates, task_ids=None, revision=None, policy_path=None, composed=False):
-    destination = Path(destination).resolve()
+    from publication import private_destination
+    destination = private_destination(destination)
+    if destination.exists():
+        metadata = destination.stat()
+        require(destination.is_dir() and metadata.st_uid == os.getuid() and metadata.st_mode & 0o077 == 0,
+                'existing pilot destination must be an owner-only directory')
     binary = Path(binary).resolve(strict=True)
     require(binary.is_file(), 'pilot binary must be a regular file')
     fixed = read_json(fixtures.ROOT / 'tasks.json')
@@ -74,7 +79,7 @@ def prepare(destination, binary, templates, task_ids=None, revision=None, policy
     require(not composed or policy is not None, "composed workflow requires explicit routing policy")
     require(isinstance(template.get('template'), str) and isinstance(template.get('variant_guidance'), dict),
             'writer prompt templates missing')
-    destination.mkdir(parents=True, exist_ok=True)
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
     captured = destination / 'snapshot'
     if not captured.exists():
         captured.mkdir()

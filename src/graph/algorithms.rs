@@ -34,28 +34,16 @@ pub(crate) fn resolve_py(
         return None;
     }
 
-    let level = spec.chars().take_while(|&c| c == '.').count();
-    let remainder_str = &spec[level..];
-    let remainder: Vec<&str> = remainder_str.split('.').filter(|s| !s.is_empty()).collect();
-
-    let parent = path_parent(importer_rel);
-    let start_dir = go_up(&parent, level.saturating_sub(1));
-
-    if remainder.is_empty() {
+    let base = python_relative_base(importer_rel, spec);
+    if spec.chars().all(|c| c == '.') {
         // `from . import x` — look for __init__.py in the package dir.
-        let candidate = if start_dir.is_empty() {
+        let candidate = if base.is_empty() {
             "__init__.py".to_string()
         } else {
-            format!("{start_dir}/__init__.py")
+            format!("{base}/__init__.py")
         };
         return nodes.contains(candidate.as_str()).then_some(candidate);
     }
-
-    let base = if start_dir.is_empty() {
-        remainder.join("/")
-    } else {
-        format!("{}/{}", start_dir, remainder.join("/"))
-    };
 
     let c1 = format!("{base}.py");
     if nodes.contains(c1.as_str()) {
@@ -67,6 +55,21 @@ pub(crate) fn resolve_py(
     }
 
     None
+}
+
+/// Repository-relative directory or module path named by a relative Python
+/// import specifier, without a file extension.
+pub(super) fn python_relative_base(importer_rel: &str, spec: &str) -> String {
+    let level = spec.chars().take_while(|&c| c == '.').count();
+    let remainder: Vec<&str> = spec[level..].split('.').filter(|s| !s.is_empty()).collect();
+    let start_dir = go_up(&path_parent(importer_rel), level.saturating_sub(1));
+    if start_dir.is_empty() {
+        remainder.join("/")
+    } else if remainder.is_empty() {
+        start_dir
+    } else {
+        format!("{}/{}", start_dir, remainder.join("/"))
+    }
 }
 
 // ---------------------------------------------------------------------------

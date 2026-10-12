@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "source_limits": {
+    "max_files": 256,
+    "max_bytes": 2097152
+  },
+  "cases": [
+    {
+      "case_id": "publication-change-a",
+      "title": "Batch exchange refactor A",
+      "partition": "holdout",
+      "base_directory": "application/base",
+      "revisions": [
+        "head"
+      ],
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "The PR extracts component preparation and application in this document collaboration application's batch exchange path. Review the supplied comparison for actionable introduced regressions against the existing documented behavior. Explain any finding with a concrete trigger, expected and actual observable behavior, user impact, and sufficient source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ]
+    },
+    {
+      "case_id": "publication-change-b",
+      "title": "Batch exchange refactor B",
+      "partition": "holdout",
+      "base_directory": "application/base",
+      "revisions": [
+        "head"
+      ],
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "The PR extracts component preparation and application in this document collaboration application's batch exchange path. Review the supplied comparison for actionable introduced regressions against the existing documented behavior. Explain any finding with a concrete trigger, expected and actual observable behavior, user impact, and sufficient source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ]
+    },
+    {
+      "case_id": "publication-change-c",
+      "title": "Source iteration refactor",
+      "partition": "holdout",
+      "base_directory": "application/base",
+      "revisions": [
+        "head"
+      ],
+      "check_command": [
+        "node",
+        "tests/run.mjs"
+      ],
+      "steps": [
+        {
+          "base": "base",
+          "head": "head",
+          "task": "The PR replaces the structure parser's source-line loop with an iterator while retaining raw source ranges. Review the supplied comparison for actionable introduced regressions against this document collaboration application's existing user-visible contracts. Explain any finding with a concrete trigger, expected and actual observable behavior, user impact, and sufficient source evidence. The checked-in one-shot application checks are available. Do not modify the application."
+        }
+      ]
+    }
+  ]
+}

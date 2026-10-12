@@ -774,8 +774,9 @@ impl TopologyExtractor<'_> {
         state.parse_errors_by_node[index] = facts.parse_errors;
         state.parse_errors = state.parse_errors.saturating_add(facts.parse_errors);
         for specifier in facts.specifiers {
-            let resolution = self.resolve_import(language, path, specifier);
-            self.record_resolution(index, path, resolution, state);
+            for resolution in self.resolve_import(language, path, specifier) {
+                self.record_resolution(index, path, resolution, state);
+            }
         }
     }
 
@@ -820,8 +821,16 @@ impl TopologyExtractor<'_> {
         language: FirstClass,
         importer: &str,
         specifier: ImportSpecifier,
-    ) -> ImportResolution {
-        match specifier {
+    ) -> Vec<ImportResolution> {
+        let resolution = match specifier {
+            ImportSpecifier::PythonFrom { module, names } => {
+                return self.resolvers.python.resolve_from(
+                    importer,
+                    &module,
+                    &names,
+                    &self.universe.node_set,
+                );
+            }
             ImportSpecifier::Godot(reference) => {
                 self.resolvers
                     .godot
@@ -853,7 +862,8 @@ impl TopologyExtractor<'_> {
             ImportSpecifier::CSharpNamespace(namespace) => {
                 self.resolvers.csharp.resolve(importer, &namespace)
             }
-        }
+        };
+        vec![resolution]
     }
 
     fn record_resolution(
@@ -1230,8 +1240,8 @@ use javascript::{JsResolver, join_graph_path, sanitize_jsonc};
 mod algorithms;
 pub(crate) use algorithms::is_entrypoint;
 use algorithms::{
-    go_up, normalize_path, path_parent, resolve_py, strongly_connected, try_resolve_js,
-    try_resolve_php,
+    go_up, normalize_path, path_parent, python_relative_base, resolve_py, strongly_connected,
+    try_resolve_js, try_resolve_php,
 };
 
 mod csharp;

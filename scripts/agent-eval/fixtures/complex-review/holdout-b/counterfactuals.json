@@ -1,0 +1,57 @@
+{
+  "mutations": [
+    {
+      "case_id": "change-c",
+      "expected_revision": "base",
+      "file": "src/scheduling/slots.ts",
+      "from": "const DAY_PLAN_SOURCES: readonly CollectionName[] = ['appointments'];",
+      "purpose": "Naming the technician records as a source of the day plan restores the observed public behavior.",
+      "to": "const DAY_PLAN_SOURCES: readonly CollectionName[] = ['appointments', 'technicians'];"
+    },
+    {
+      "case_id": "change-c",
+      "expected_revision": "head",
+      "file": "src/scheduling/capacity.ts",
+      "from": "['appointments', 'technicians'], () =>",
+      "must_differ": true,
+      "purpose": "The probe observes a daily load that stays stale after an absence.",
+      "to": "['appointments'], () =>"
+    },
+    {
+      "case_id": "change-c",
+      "expected_revision": "head",
+      "file": "src/scheduling/slots.ts",
+      "from": "const DAY_PLAN_SOURCES: readonly CollectionName[] = ['appointments'];",
+      "must_differ": true,
+      "purpose": "The probe observes a day plan that stays stale after a booking.",
+      "to": "const DAY_PLAN_SOURCES: readonly CollectionName[] = [];"
+    },
+    {
+      "case_id": "change-d",
+      "expected_revision": "head",
+      "file": "src/worktypes/handlers/boiler-service.ts",
+      "from": "  defaultPriority: 'low',",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes a single changed default priority of an existing work type.",
+      "to": "  defaultPriority: 'high',"
+    },
+    {
+      "case_id": "change-d",
+      "expected_revision": "head",
+      "file": "src/assets/model.ts",
+      "from": "  boiler: 365,",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes a single changed service interval of an existing asset kind.",
+      "to": "  boiler: 180,"
+    },
+    {
+      "case_id": "change-d",
+      "expected_revision": "head",
+      "file": "src/worktypes/registry.ts",
+      "from": "normalizeKey: (key) => key.trim().toLowerCase(),",
+      "must_differ": true,
+      "purpose": "The equivalence probe observes work type key normalisation.",
+      "to": "normalizeKey: (key) => key.trim(),"
+    }
+  ]
+}

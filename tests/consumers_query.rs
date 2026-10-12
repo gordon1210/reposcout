@@ -371,3 +371,47 @@ fn consumers_returns_imported_class_references_and_excludes_shadowed_names() {
     );
     assert!(result.report.coverage.resolution.unresolved > 0);
 }
+
+#[test]
+fn module_scope_callers_never_become_unreadable_consumer_hits() {
+    let root = fixture("typescript");
+    fs::write(
+        root.path().join("setup.test.ts"),
+        "import { work } from './dep';\ndescribe('work', () => { it('runs', () => { work(); }); });\n",
+    )
+    .unwrap();
+    let cfg = Config {
+        jobs: 2,
+        ..Config::default()
+    };
+    for direction in [
+        ConsumersDirection::Incoming,
+        ConsumersDirection::Outgoing,
+        ConsumersDirection::Both,
+    ] {
+        let mut request = options("dep.ts", "work");
+        request.direction = direction;
+        request.depth = 2;
+        let result = consumers(root.path(), &cfg, &[], &request).unwrap();
+        assert!(
+            result
+                .report
+                .hits
+                .iter()
+                .all(|hit| hit.symbol.kind != "module" && hit.symbol.name != "(module)"),
+            "{direction:?}: {}",
+            result.rendered
+        );
+        if direction == ConsumersDirection::Incoming {
+            assert!(
+                result
+                    .report
+                    .hits
+                    .iter()
+                    .any(|hit| hit.symbol.name == "caller"),
+                "{}",
+                result.rendered
+            );
+        }
+    }
+}

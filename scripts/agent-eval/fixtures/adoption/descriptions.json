@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "descriptions": {
+    "current": {
+      "source": "skill",
+      "note": "Read from the skill's SKILL.md frontmatter at run time."
+    },
+    "A": {
+      "text": "Use when asked to review, check or assess a pull request, branch, diff or set of commits, or what a change could break. Run `reposcout review-context . --base <base> --head <head> --profile safe --brief` instead of `git diff`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them. Also for repo orientation, symbol lookup, change impact and code health.",
+      "note": "Short trigger-first form that names the competing diff command."
+    },
+    "B": {
+      "text": "Use when the user asks to review a PR, branch, diff or commits, check changes before merge, find what a change could break, or understand an unfamiliar repository. Before running `git diff` or grepping for callers, run `reposcout review-context . --base <base> --head <head> --profile safe --brief`: it prints the diff hunks, changed definitions, direct importers, call sites and docs naming changed identifiers in one compact output. Other RepoScout commands: orientation and file or symbol reads, dependency and change-impact queries, code-health and duplication reports.",
+      "note": "Quoted trigger phrases, an ordering cue before the diff command and the token figure."
+    },
+    "C": {
+      "text": "Use for any code review or change-risk question (review this PR, check this branch before merge, what could these commits break, is this refactor safe) and for exploring an unfamiliar repository (where is X defined, who calls Y, what depends on this file, what is risky or unhealthy here). Start review work with `reposcout review-context . --base <base> --head <head> --profile safe --brief` (diff hunks plus changed definitions, importers, call sites and docs in one compact output) before git diff or grep. Otherwise run `reposcout --help` to pick orientation, symbol, impact or health queries.",
+      "note": "Enumerated situations and question-style phrasings, with the review command and a help fallback."
+    },
+    "D": {
+      "text": "Use for any question about a change between two commits, branches or a pull request: reviewing it, judging whether it is safe to merge or ship, explaining what changed, or finding defects, regressions and risks. Run `reposcout review-context . --base <base> --head <head> --profile safe --brief` before `git diff` or `git log`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them. Also for repo orientation, symbol lookup, change impact and code health.",
+      "note": "Task categories instead of trigger verbs, naming both competing git commands."
+    },
+    "E": {
+      "text": "Scout and query software repositories with the RepoScout CLI. Use before exploring an unfamiliar codebase, planning implementation or refactoring work, or selecting files for an agent context; to locate symbols and read known definitions; to map dependencies and change impact; and to measure complexity, duplication, churn, risk and test presence. Also use for any question about a code change, staged, uncommitted, or between two commits, branches or a pull request: reviewing it, judging whether it is safe to merge or ship, explaining what changed, or finding defects, regressions and risks. For committed changes, run `reposcout review-context . --base <base> --head <head> --profile safe --brief` before `git diff` or `git log`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them.",
+      "note": "General scouting, planning, lookup, impact and health uses first, then D's review categories and command."
+    },
+    "previous": {
+      "text": "Scout and query software repositories with the RepoScout CLI to plan codebase reading, locate symbols, read known definitions, measure repository health, explain files, map dependencies, assess change impact, and review diffs. Use before exploring an unfamiliar codebase, planning implementation or refactoring work, selecting files for an agent context, investigating declarations or dependencies, reviewing staged, working-tree, or branch changes, or evaluating complexity, duplication, churn, risk, and test presence.",
+      "note": "The general description that preceded the review rewrite."
+    },
+    "F": {
+      "text": "Use for any question about a change between two commits, branches or a pull request: reviewing it, judging whether it is safe to merge or ship, explaining what changed, or finding defects, regressions and risks. Run `reposcout review-context . --base <base> --head <head> --profile safe --brief` before `git diff` or `git log`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them. Also use it before exploring an unfamiliar codebase, planning implementation or refactoring work, or selecting files for an agent context; to locate symbols and read known definitions; to map dependencies and change impact; and to measure complexity, duplication, churn, risk and test presence.",
+      "note": "D's review sentences first, then E's general uses."
+    },
+    "G": {
+      "text": "Use for any question about a change between two commits, branches or a pull request: reviewing it, judging whether it is safe to merge or ship, explaining what changed, or finding defects, regressions and risks. Run `reposcout review-context . --base <base> --head <head> --profile safe --brief` before `git diff` or `git log`: one call returns the changed hunks, changed definitions, importers, call sites and docs that name them. Also use it to explore an unfamiliar codebase, plan implementation or refactoring work, or choose files to read: run `reposcout --agent-summary .` before `ls`, `find` or `grep` sweeps; one compact call returns the file inventory, largest and riskiest files, symbols, complexity and test presence. It also locates symbols, reads known definitions and maps dependencies and change impact.",
+      "note": "D's review sentences first, then an exploration command named before the competing ls, find and grep sweeps."
+    }
+  }
+}

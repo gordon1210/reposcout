@@ -50,6 +50,11 @@ pub(super) enum ImportSpecifier {
     GoPackage(String),
     CSharpNamespace(String),
     Godot(super::godot::Reference),
+    /// `from module import names`; `names` is empty for a wildcard import.
+    PythonFrom {
+        module: String,
+        names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,7 +178,9 @@ pub(super) fn module_specifiers(extraction: SpecifierExtraction) -> Vec<String> 
         .specifiers
         .into_iter()
         .filter_map(|specifier| match specifier {
-            ImportSpecifier::Module(value) => Some(value),
+            ImportSpecifier::Module(value) | ImportSpecifier::PythonFrom { module: value, .. } => {
+                Some(value)
+            }
             ImportSpecifier::PhpNamespace(_)
             | ImportSpecifier::PhpInclude(_)
             | ImportSpecifier::Rust(_)
@@ -309,7 +316,16 @@ pub(super) fn extract_python_node(node: Node<'_>, content: &str, specs: &mut Vec
                 return;
             };
             if !module.chars().all(|ch| ch == '.') {
-                specs.push(ImportSpecifier::Module(module.to_string()));
+                let mut cursor = node.walk();
+                let names = node
+                    .named_children(&mut cursor)
+                    .filter(|child| child.id() != module_node.id())
+                    .filter_map(|child| python_import_name(child, content))
+                    .collect();
+                specs.push(ImportSpecifier::PythonFrom {
+                    module: module.to_string(),
+                    names,
+                });
                 return;
             }
 

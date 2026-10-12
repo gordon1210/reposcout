@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "dev": [
+    {"id": "d1", "kind": "review", "text": "Review this PR."},
+    {"id": "d2", "kind": "review", "text": "Check this branch before merge."},
+    {"id": "d3", "kind": "review", "text": "What could these commits break?"},
+    {"id": "e1", "kind": "explore", "text": "Give me an overview of this repository and tell me where to start reading."},
+    {"id": "e2", "kind": "explore", "text": "Which parts of this codebase are the most complex or risky to change?"},
+    {"id": "e3", "kind": "explore", "text": "Where is the main entry point, and what does it depend on?"}
+  ],
+  "tuning": [
+    {"id": "h1", "kind": "review", "text": "Is this change safe to ship?"},
+    {"id": "h2", "kind": "review", "text": "Do a code review of base..head and list real defects."},
+    {"id": "h3", "kind": "review", "text": "Walk me through what changed between these two revisions and flag risks."},
+    {"id": "h4", "kind": "review", "text": "Audit the diff for regressions."},
+    {"id": "h5", "kind": "review", "text": "Any concerns with merging this?"},
+    {"id": "h6", "kind": "review", "text": "Give me a quick rundown of these commits and anything that looks off."},
+    {"id": "h7", "kind": "review", "text": "Find the bugs introduced between base and head."},
+    {"id": "h8", "kind": "review", "text": "I'm about to deploy this. Anything I should know?"},
+    {"id": "h9", "kind": "review", "text": "Should this go in as is?"},
+    {"id": "h10", "kind": "review", "text": "Look over these commits the way a senior reviewer would."},
+    {"id": "h11", "kind": "review", "text": "What is risky about this change set?"},
+    {"id": "h12", "kind": "review", "text": "Summarize this change for the release notes and point out anything broken."},
+    {"id": "e4", "kind": "explore", "text": "I need to add a feature here. Which files should I read first?"},
+    {"id": "e5", "kind": "explore", "text": "Is there duplicated code in this repository worth consolidating?"},
+    {"id": "e6", "kind": "explore", "text": "Find where configuration is loaded and which modules use it."},
+    {"id": "e7", "kind": "explore", "text": "What would break if I changed the most widely imported module?"},
+    {"id": "e8", "kind": "explore", "text": "Map out how this project is structured."},
+    {"id": "e9", "kind": "explore", "text": "Which files would you read first to understand the data model?"},
+    {"id": "e10", "kind": "explore", "text": "Are there untested or unhealthy areas in this codebase?"},
+    {"id": "e11", "kind": "explore", "text": "Plan a refactoring of the largest file: what depends on it?"}
+  ],
+  "held_out": [
+    {"id": "h13", "kind": "review", "text": "Can you sign off on this change?"},
+    {"id": "h14", "kind": "review", "text": "What did this branch change, and is any of it wrong?"},
+    {"id": "h15", "kind": "review", "text": "Check these commits for anything that would fail in production."},
+    {"id": "h16", "kind": "review", "text": "Is this pull request ready to land?"},
+    {"id": "e12", "kind": "explore", "text": "How is this codebase organized?"},
+    {"id": "e13", "kind": "explore", "text": "Where would I start if I had to fix a bug in the core logic?"},
+    {"id": "e14", "kind": "explore", "text": "Which modules depend on each other most heavily?"},
+    {"id": "e15", "kind": "explore", "text": "Give me a reading list for getting started on this project."}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "mutations": [
+    {
+      "case_id": "api-migration",
+      "expected_revision": "base",
+      "file": "src/billing/travel.ts",
+      "from": "quantize(km, { step: 1, mode: 'down' })",
+      "purpose": "Restoring nearest-kilometre rounding alone restores the documented travel lines.",
+      "to": "quantize(km, { step: 1, mode: 'nearest' })"
+    },
+    {
+      "case_id": "module-split",
+      "expected_revision": "base",
+      "file": "src/sla/subscriptions.ts",
+      "from": "'job.held': { reasons: CUSTOMER_CAUSED_HOLDS },",
+      "purpose": "Subscribing the pause trigger to the published hold event alone restores customer-caused pauses.",
+      "to": "'workorder.held': { reasons: CUSTOMER_CAUSED_HOLDS },"
+    }
+  ]
+}

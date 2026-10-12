@@ -52,7 +52,18 @@ pub(super) fn run_review_context(
     args: &reposcout::cli::ReviewContextArgs,
     pretty: bool,
 ) -> Result<ExitCode> {
-    let format = query_format(&args.common, pretty)?;
+    // The brief is text-only, so it does not inherit the non-terminal JSON default.
+    let format = if args.brief && args.common.format.is_none() && args.common.output.is_none() {
+        require_json_for_pretty(pretty, false)?;
+        Format::Table
+    } else {
+        query_format(&args.common, pretty)?
+    };
+    if args.brief && !matches!(format, Format::Table | Format::Markdown) {
+        return Err(usage_error(
+            "review-context --brief supports table or Markdown output",
+        ));
+    }
     let repository = git2::Repository::discover(&args.path)?;
     let root = repository
         .workdir()
@@ -88,8 +99,13 @@ pub(super) fn run_review_context(
                 || args.context_budget.is_some()
                 || args.context_max_files.is_some(),
             include_source: args.source,
-            include_diff: args.diff,
-            token_budget: args.budget,
+            include_diff: args.diff || args.brief,
+            brief: args.brief,
+            token_budget: args.budget.unwrap_or(if args.brief {
+                reposcout::query::REVIEW_BRIEF_TOKENS
+            } else {
+                4096
+            }),
             byte_budget: args.max_output_bytes,
             format,
             pretty_json: pretty,

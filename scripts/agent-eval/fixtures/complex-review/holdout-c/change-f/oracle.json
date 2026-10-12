@@ -1,0 +1,376 @@
+{
+  "domain_expected": {
+    "base": {
+      "access": [
+        [
+          "/dispatch/board",
+          200,
+          403,
+          403
+        ],
+        [
+          "/contracts/:id",
+          200,
+          200,
+          403
+        ],
+        [
+          "/reports/backlog",
+          200,
+          200,
+          403
+        ],
+        [
+          "/sla/compliance",
+          200,
+          200,
+          403
+        ]
+      ],
+      "clocks": [
+        [
+          200,
+          "premium",
+          "running",
+          0,
+          480
+        ],
+        [
+          200,
+          "premium",
+          "running",
+          0,
+          480
+        ],
+        [
+          404,
+          "not-found"
+        ]
+      ],
+      "followUp": [
+        "phone",
+        true,
+        [
+          "follow-up",
+          "included-visit"
+        ],
+        true
+      ],
+      "followUpClock": [
+        200,
+        "premium",
+        "running",
+        0,
+        480
+      ],
+      "opened": [
+        [
+          "boiler-service",
+          "normal",
+          true,
+          [
+            "included-visit"
+          ]
+        ],
+        [
+          "general",
+          "high",
+          true,
+          [
+            "included-visit"
+          ]
+        ],
+        [
+          "emergency-callout",
+          "emergency",
+          false,
+          []
+        ]
+      ],
+      "portalJob": [
+        [
+          200,
+          "premium",
+          "running",
+          0,
+          480
+        ],
+        "portal"
+      ],
+      "serviceClock": [
+        200,
+        "premium",
+        "met",
+        0,
+        480
+      ],
+      "sources": [
+        "phone",
+        "phone"
+      ]
+    },
+    "head": {
+      "access": [
+        [
+          "/dispatch/board",
+          200,
+          403,
+          403
+        ],
+        [
+          "/contracts/:id",
+          200,
+          200,
+          403
+        ],
+        [
+          "/reports/backlog",
+          200,
+          200,
+          403
+        ],
+        [
+          "/sla/compliance",
+          200,
+          200,
+          403
+        ]
+      ],
+      "clocks": [
+        [
+          200,
+          "premium",
+          "running",
+          0,
+          480
+        ],
+        [
+          200,
+          "premium",
+          "running",
+          0,
+          480
+        ],
+        [
+          404,
+          "not-found"
+        ]
+      ],
+      "followUp": [
+        "phone",
+        true,
+        [
+          "follow-up",
+          "included-visit"
+        ],
+        true
+      ],
+      "followUpClock": [
+        200,
+        "premium",
+        "running",
+        0,
+        480
+      ],
+      "opened": [
+        [
+          "boiler-service",
+          "normal",
+          true,
+          [
+            "included-visit"
+          ]
+        ],
+        [
+          "general",
+          "high",
+          true,
+          [
+            "included-visit"
+          ]
+        ],
+        [
+          "emergency-callout",
+          "emergency",
+          false,
+          []
+        ]
+      ],
+      "portalJob": [
+        [
+          200,
+          "premium",
+          "running",
+          0,
+          480
+        ],
+        "portal"
+      ],
+      "serviceClock": [
+        200,
+        "premium",
+        "met",
+        0,
+        480
+      ],
+      "sources": [
+        "phone",
+        "phone"
+      ]
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "no-issues",
+      "defects": [],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "if (jobs(ctx).get(String(event.jobId))?.source === 'programme') return;",
+                "path": "src/sla/subscriptions.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "Planned programme visits (source `programme`) run no clock.",
+                "path": "docs/service-levels.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that skipping the service level clock is limited to work orders opened by a programme and is stated in the service level notes.",
+          "id": "planned-visits-run-no-clock"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "source: original.source === 'programme' ? 'phone' : original.source,",
+                "path": "src/jobs/jobs.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "it('leave their follow-ups as ordinary contract work orders with a clock', () => {",
+                "path": "tests/programmes/coexistence.test.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that a follow-up of a planned visit is an ordinary work order and still starts the contract clock.",
+          "id": "follow-ups-keep-clock"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "it('run no SLA clock, while other contract work orders do', () => {",
+                "path": "tests/programmes/coexistence.test.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that work orders opened through the existing routes on a contract site still run the clock.",
+          "id": "other-work-orders-keep-clock"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "generated: { ...current.generated, [visit.key]: job.id },",
+                "path": "src/programmes/generate.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "it('never opens a visit twice', () => {",
+                "path": "tests/programmes/generate.test.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that a visit that already has a work order is never opened again.",
+          "id": "visits-generated-once"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "it('counts every date from the start so clamped dates do not drift', () => {",
+                "path": "tests/programmes/cadence.test.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "const due = shiftMonths(startsOn, count * step);",
+                "path": "src/programmes/cadence.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that a clamped month end does not move the dates after it.",
+          "id": "month-end-dates-do-not-drift"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "const updated = programmes(ctx).update(programme.id, { status: 'active', activeFrom: today(ctx) });",
+                "path": "src/programmes/service.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "Visits that fell due before that",
+                "path": "docs/programmes.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that a resumed programme plans from the resume date and the documentation says so.",
+          "id": "paused-programmes-do-not-catch-up"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "it('define exactly one visit for every asset kind', () => {",
+                "path": "tests/programmes/kinds/index.test.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that every asset kind has a planned visit of a registered work type.",
+          "id": "every-asset-kind-has-a-visit"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "'programmes:write': {",
+                "path": "tests/api/security/permissions.test.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "it('refuses every other role', () => {",
+                "path": "tests/api/programmes.test.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that changing programmes is limited to the admin and dispatcher roles by a dedicated permission.",
+          "id": "programme-writes-limited-to-staff"
+        }
+      ]
+    }
+  ]
+}

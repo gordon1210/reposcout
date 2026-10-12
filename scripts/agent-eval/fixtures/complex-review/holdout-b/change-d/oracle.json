@@ -1,0 +1,429 @@
+{
+  "domain_expected": {
+    "base": {
+      "assetRequired": [
+        422,
+        "asset-required"
+      ],
+      "assets": {
+        "boiler": [
+          201,
+          365
+        ],
+        "chiller": [
+          201,
+          90
+        ],
+        "elevator": [
+          201,
+          30
+        ],
+        "solar-inverter": [
+          201,
+          730
+        ],
+        "tumble-dryer": [
+          422,
+          "invalid-input"
+        ]
+      },
+      "assigned": 200,
+      "catalogue": [
+        [
+          "boiler-repair",
+          "Boiler breakdown repair",
+          [
+            "gas-safe"
+          ],
+          120,
+          "high",
+          true
+        ],
+        [
+          "boiler-service",
+          "Annual boiler service",
+          [
+            "gas-safe"
+          ],
+          75,
+          "low",
+          true
+        ],
+        [
+          "chiller-maintenance",
+          "Chiller maintenance",
+          [
+            "refrigerant",
+            "hvac-commercial"
+          ],
+          240,
+          "normal",
+          true
+        ],
+        [
+          "commissioning",
+          "System commissioning",
+          [
+            "commissioning"
+          ],
+          180,
+          "normal",
+          true
+        ],
+        [
+          "emergency-callout",
+          "Emergency callout",
+          [],
+          60,
+          "emergency",
+          false
+        ],
+        [
+          "general",
+          "General maintenance",
+          [],
+          60,
+          "normal",
+          false
+        ],
+        [
+          "heat-pump-install",
+          "Heat pump installation",
+          [
+            "refrigerant",
+            "electrical",
+            "commissioning"
+          ],
+          960,
+          "normal",
+          false
+        ],
+        [
+          "leak-investigation",
+          "Leak investigation",
+          [
+            "plumbing"
+          ],
+          90,
+          "high",
+          false
+        ]
+      ],
+      "completed": [
+        200,
+        "completed"
+      ],
+      "completion": [
+        422,
+        "completion-rejected",
+        [
+          "the customer must sign the gas safety record"
+        ]
+      ],
+      "opened": {
+        "EMERGENCY-CALLOUT": [
+          201,
+          "emergency-callout",
+          "emergency",
+          [
+            "site made safe"
+          ]
+        ],
+        "boiler-service": [
+          201,
+          "boiler-service",
+          "low",
+          [
+            "flue gas analysis",
+            "pressure check",
+            "condensate trap cleaned",
+            "safety devices tested"
+          ]
+        ],
+        "general": [
+          201,
+          "general",
+          "normal",
+          [
+            "site left clean"
+          ]
+        ],
+        "leak-investigation": [
+          201,
+          "leak-investigation",
+          "high",
+          [
+            "moisture readings",
+            "source located or ruled out"
+          ]
+        ],
+        "teleportation": [
+          422,
+          null,
+          null,
+          []
+        ]
+      },
+      "unqualified": [
+        409,
+        "technician-not-qualified",
+        [
+          "gas-safe"
+        ]
+      ]
+    },
+    "head": {
+      "assetRequired": [
+        422,
+        "asset-required"
+      ],
+      "assets": {
+        "boiler": [
+          201,
+          365
+        ],
+        "chiller": [
+          201,
+          90
+        ],
+        "elevator": [
+          201,
+          30
+        ],
+        "solar-inverter": [
+          201,
+          730
+        ],
+        "tumble-dryer": [
+          422,
+          "invalid-input"
+        ]
+      },
+      "assigned": 200,
+      "catalogue": [
+        [
+          "boiler-repair",
+          "Boiler breakdown repair",
+          [
+            "gas-safe"
+          ],
+          120,
+          "high",
+          true
+        ],
+        [
+          "boiler-service",
+          "Annual boiler service",
+          [
+            "gas-safe"
+          ],
+          75,
+          "low",
+          true
+        ],
+        [
+          "chiller-maintenance",
+          "Chiller maintenance",
+          [
+            "refrigerant",
+            "hvac-commercial"
+          ],
+          240,
+          "normal",
+          true
+        ],
+        [
+          "commissioning",
+          "System commissioning",
+          [
+            "commissioning"
+          ],
+          180,
+          "normal",
+          true
+        ],
+        [
+          "emergency-callout",
+          "Emergency callout",
+          [],
+          60,
+          "emergency",
+          false
+        ],
+        [
+          "general",
+          "General maintenance",
+          [],
+          60,
+          "normal",
+          false
+        ],
+        [
+          "heat-pump-install",
+          "Heat pump installation",
+          [
+            "refrigerant",
+            "electrical",
+            "commissioning"
+          ],
+          960,
+          "normal",
+          false
+        ],
+        [
+          "leak-investigation",
+          "Leak investigation",
+          [
+            "plumbing"
+          ],
+          90,
+          "high",
+          false
+        ]
+      ],
+      "completed": [
+        200,
+        "completed"
+      ],
+      "completion": [
+        422,
+        "completion-rejected",
+        [
+          "the customer must sign the gas safety record"
+        ]
+      ],
+      "opened": {
+        "EMERGENCY-CALLOUT": [
+          201,
+          "emergency-callout",
+          "emergency",
+          [
+            "site made safe"
+          ]
+        ],
+        "boiler-service": [
+          201,
+          "boiler-service",
+          "low",
+          [
+            "flue gas analysis",
+            "pressure check",
+            "condensate trap cleaned",
+            "safety devices tested"
+          ]
+        ],
+        "general": [
+          201,
+          "general",
+          "normal",
+          [
+            "site left clean"
+          ]
+        ],
+        "leak-investigation": [
+          201,
+          "leak-investigation",
+          "high",
+          [
+            "moisture readings",
+            "source located or ruled out"
+          ]
+        ],
+        "teleportation": [
+          422,
+          null,
+          null,
+          []
+        ]
+      },
+      "unqualified": [
+        409,
+        "technician-not-qualified",
+        [
+          "gas-safe"
+        ]
+      ]
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "no-issues",
+      "defects": [],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "defaultPriority: 'low',",
+                "path": "src/worktypes/handlers/boiler-service.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "defaultPriority: 'high',",
+                "path": "src/worktypes/handlers/boiler-repair.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that the work types that existed before keep their stated priority, duration and checklist.",
+          "id": "existing-work-types-unchanged"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "fallback: generalWork,",
+                "path": "src/worktypes/registry.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that unknown work type keys still resolve to general maintenance.",
+          "id": "unknown-keys-still-general"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "assert.deepEqual(emergencies, ['emergency-callout', 'gas-leak-response']);",
+                "path": "tests/worktypes/catalog.test.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "`src/assets/model.ts`. Only emergency work opens at emergency priority by default:",
+                "path": "docs/work-orders.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish that the second emergency-priority work type is a stated part of the change and not an accidental default.",
+          "id": "emergency-default-is-intended"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "  boiler: 365,",
+                "path": "src/assets/model.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "  'air-handler': 180,",
+                "path": "src/assets/model.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Show that the service intervals of the asset kinds that existed before are not altered.",
+          "id": "existing-asset-intervals-unchanged"
+        }
+      ]
+    }
+  ]
+}

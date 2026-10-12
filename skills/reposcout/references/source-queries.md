@@ -1,8 +1,8 @@
 # Explicit source queries
 
-Use this reference when a file and definition or line are already known, or when a file's body-free
-declaration surface answers the next question. Do not run a scout, outline or locate merely as a
-prerequisite. If the exact complete small span is already known and no snapshot, hash or coverage
+Use this reference for source-selection syntax or semantics not already established by the
+entry guide or retained evidence. A known read needs no additional guide, scout, outline or locate
+as a prerequisite. If the exact complete small span is already known and no snapshot, hash or coverage
 evidence is needed, prefer a targeted native read. Avoid rereading unchanged source that is still
 available in model context.
 

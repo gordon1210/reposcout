@@ -6,6 +6,125 @@ within their section.
 
 ## [Unreleased]
 
+### Added
+
+- Add an `unresolved dispatch:` line to the `review-context --brief` header for added methods
+  that implement an existing member name without any resolved caller, with bounded head receiver
+  call sites. The brief note now says that it is static and that repository checks still run
+  before concluding. The bundled skill traces inputs of new registry, interface, enum or config
+  variants into unchanged validating or storing code, requires an executed check for a no-issues
+  verdict and a minimal witness for findings, since a green suite does not cover new variants.
+
+- Add a Claude Code runtime to the local review evaluations, isolated and accounted like the
+  Codex runtime, and a `reposcout-guided` arm whose task names the skill; guided and neutral
+  results are never pooled. Add generated complex TypeScript review stages
+  (`complex-development`, sealed `complex-holdout`, `complex-holdout-b` and `complex-holdout-c`)
+  of about 500 files with 15k–100k-token diffs and a 1,200-second episode limit. Sandboxed runs
+  also provide common file utilities such as `mkdir`, `mktemp`, `rm`, `tar` and `diff`.
+
+- Add `review-context --brief`, a compact Table/Markdown review brief with changed definitions,
+  diff hunks, direct consumers, nonzero analysis gaps of the changed files and head-snapshot doc
+  mentions within a 4,096-token default ceiling; an explicit `--budget` always wins. Identifier
+  renames repeated across hunks fold into rule summaries with their sites only where every site
+  provably renames an in-tree binding of its file, and whole declarations moved unchanged fold
+  into summaries naming their destinations. Hunks explained by other repeated edits show only
+  their changed lines; deviations from a repeated edit, reorders, indentation changes in
+  indentation-sensitive languages and moves between test and non-test files stay visible. Old
+  spellings still present in head are listed for verification. Direct importers without resolved
+  call/reference evidence, such as Python modules, list bounded usage lines that name the change's
+  identifiers. Omitted hunks are counted exactly and listed or grouped with
+  `git diff --no-indent-heuristic` commands on resolved commits; JSON output is unchanged.
+
+- Add bounded external fixture bundles, shared signed review identities and fixed development,
+  heldout and three-case follow-up schedules for larger local Codex evaluations, preserving all historical
+  cases and results. Qualification and real model results remain separate from harness tests.
+
+- Add opt-in Codex review evaluations over disposable synthetic repositories, with independent
+  domain oracles, isolated baseline/RepoScout/skill comparisons, blinded quality adjudication and
+  complete assigned-run reporting. Historical negative results remain intact; evaluator tests
+  and smaller source outputs are not presented as evidence of model-token savings.
+
+### Changed
+
+- Describe the bundled skill by review task (judging merge or ship safety, explaining what
+  changed, finding defects, regressions and risks) and name `review-context --brief` before
+  `git diff` or `git log`. For exploring a codebase, planning work or choosing files to read, the
+  description names `reposcout --agent-summary .` before `ls`, `find` or `grep` sweeps and still
+  lists symbol lookup, definition reads, dependencies and change impact, so agents choose RepoScout
+  for review and exploration questions without being told to.
+  The review step explains rename sites, compact `[Rn]` hunks and the brief's fetch commands, and
+  asks agents to check that moved code's names resolve the same at the destination. Each finding
+  cites the documented rule or base behavior it breaks, the breaking head line and one affected
+  caller on the active path.
+- Start committed reviews in the bundled skill with one `review-context --brief` call and read
+  only what it leaves open. Listed consumers are leads: before concluding that nothing breaks,
+  agents check each call site in context or run the tests that exercise it.
+- Add the committed two-revision review procedure to the bundled skill next to its repository
+  scouting, source, context-planning, health, configuration-consent, reporting and CLI-trust
+  guidance, and move committed-review details into their own reference. Load detailed guides only
+  for needed unfamiliar semantics; preserve pinned source, exact quotations, trust boundaries and
+  uncertainty without a mandatory guide-reading chain. When the CLI is missing, the skill tells
+  the user and continues without it.
+- Prefer body-free Table orientation in the committed-review skill when its revision handles,
+  relationships and uncertainty fields answer the reading question. Keep JSON for automation,
+  exact structured details and literal source, without requiring duplicate format requests or
+  changing CLI defaults. Deterministic output-size checks do not establish model-token savings.
+- Reuse pinned source provenance in committed reviews and choose validation for unresolved
+  questions. Keep working/staged/deep-review routes available without treating extra replay
+  breadth as better review quality or requiring a fixed tool sequence.
+
+### Fixed
+
+- Resolve call and reference sites outside every declaration, such as module-level code, route
+  registrations and anonymous test callbacks (`describe`/`it`), from a synthetic `(module)` source
+  (kind `module`) in review-context instead of reporting them as missing-owner. JavaScript and
+  TypeScript `catch` parameters, `for…of`/`for…in` declarations, shorthand destructuring and arrow
+  parameters now shadow same-named imports. `consumers` does not return module-scope sources as
+  hits because they have no readable declaration. Analyzer version 26 refreshes cached facts.
+- Resolve Python `from package import module` imports through PEP 420 namespace packages (no
+  `__init__.py`) to the imported module files, so graph, impact and review consumers include
+  those importers. On regular packages, `from package import name` keeps the `__init__.py`
+  dependency and also links an existing `name` submodule. Missing modules below a scanned package
+  directory now count as unresolved imports instead of silently disappearing. Bumped the cached
+  analyzer version to 25.
+
+- Render `review-context` Table and Markdown diff and source bodies with real newlines instead of
+  literal `\n`, still escaping other control characters.
+
+- Keep live evaluation campaigns, detailed reports, controller evidence and private grading
+  packets outside Git checkouts. Add a strict typed public-summary export and a lightweight
+  publication policy that rejects raw results, archives and local authoring records.
+- Bound external review-fixture reads before loading source bytes, rejecting excessive byte/file
+  counts and nonregular files. Make counter-scope calibration an explicit private input instead
+  of relying on a controller-specific runtime fingerprint.
+
+- Retain affordable direct changed-declaration references before weaker body-free `review-context`
+  metadata under output pressure, including resolved test callers. Human formats admit needed
+  revision/hash handles together with each reference, including handles beyond the initial
+  candidate prefix; failed packets roll back without losing smaller alternatives. Source
+  selection, coverage, output caps and JSON shape remain unchanged. Explicit source/diff requests
+  retain their established body allocation.
+- Accept semantically verified clean review answers with the empty or partial evidence arrays
+  permitted by their visible contract. Preserve strict checks on supplied quotations, revisions,
+  findings and execution claims, and retain original grades alongside versioned offline corrections.
+- Require a distinct tool network namespace as well as a denied socket probe, retaining the
+  observed namespace, operation and error. Preserve attributable normalized costs before an
+  invalid review follow-up in separate partial-cost summaries without inventing complete totals
+  or adding cumulative counters twice; original evaluation exports remain unchanged.
+- Pin and copy the review evaluator's required runtimes, including Node outside `/usr/bin`, and
+  verify launcher/import availability before consuming a model assignment. Preserve redacted
+  private failure phases and pin differences, stop batches on shared prerequisite failures, and
+  count failed main-arm episodes as incomplete pairs without rewriting historical outcomes.
+- State the review episode's zero-based step ID and retained-evidence indexing convention in
+  delivered evaluation prompts and answer schemas. Preserve the ambiguous campaign's original
+  strict grades as excluded calibration; do not rewrite answers or relax source checks.
+- Confirm owned evaluation processes have fully exited before accepting transient missing-process
+  observations, bind retained execution fences to their PID namespace, and preserve private
+  observation diagnostics. Keep failed campaigns and separate recovery evidence intact.
+- Align prepared review fixtures' Git index with each pinned head, including follow-up revisions,
+  and adjudicate alternative witness representations without treating their shape as a proven
+  behavior error. Preserve affected observed campaigns as excluded calibration evidence.
+
 ## [0.5.0] - 2026-10-07
 
 ### Added

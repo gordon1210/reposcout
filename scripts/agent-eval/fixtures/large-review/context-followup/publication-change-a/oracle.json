@@ -1,0 +1,532 @@
+{
+  "domain_expected": {
+    "base": {
+      "partialNewCollection": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "collection_mismatch",
+          "collection_mismatch"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": {
+          "previewApplicable": true,
+          "previewDiagnostics": [],
+          "code": "ok",
+          "imported": [
+            "a",
+            "b"
+          ],
+          "stateUnchangedOnFailure": null
+        }
+      },
+      "boundCollectionFailure": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "revision_conflict",
+          "revision_conflict"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": null
+      },
+      "atomicFailure": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b",
+          "c"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "allFailedPartial": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_empty_result",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "orderedSuccess": {
+        "previewNoMutation": true,
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "events": [
+          {
+            "action": "collection.created",
+            "sequence": 1,
+            "target": "collection_0001"
+          },
+          {
+            "action": "document.created",
+            "sequence": 2,
+            "target": "document_0001"
+          },
+          {
+            "action": "collection.created",
+            "sequence": 3,
+            "target": "collection_0002"
+          },
+          {
+            "action": "document.created",
+            "sequence": 4,
+            "target": "document_0002"
+          },
+          {
+            "action": "exchange.imported",
+            "sequence": 5,
+            "target": "exchange_0001"
+          }
+        ],
+        "documentSequences": [
+          2,
+          4
+        ],
+        "revisionSequences": [
+          2,
+          4
+        ],
+        "bindings": {
+          "x": "collection_0001",
+          "y": "collection_0002"
+        },
+        "firstBody": "[B](doc:document_0002)",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "diagnosticPriority": {
+        "diagnostics": [
+          "revision_conflict"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true
+      },
+      "synchronization": {
+        "previewNoMutation": true,
+        "counts": {
+          "unchanged": 1,
+          "create": 0,
+          "revise": 1,
+          "conflicting": 0,
+          "unmapped": 0
+        },
+        "predictedKeys": [
+          "b"
+        ],
+        "importedKeys": [
+          "b"
+        ],
+        "unchanged": [
+          "a"
+        ],
+        "firstHistoryLength": 1,
+        "secondHistoryLength": 2,
+        "secondBody": "Second B",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "establishedCollections": {
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "collectionCount": 1,
+        "membershipCount": 1,
+        "documentCount": 2,
+        "sameCollection": true,
+        "bindings": {
+          "manual": "collection_0001"
+        },
+        "events": [
+          "collection.created",
+          "document.created",
+          "document.created",
+          "exchange.imported"
+        ],
+        "documentSequences": [
+          2,
+          3
+        ],
+        "revisionSequences": [
+          2,
+          3
+        ]
+      }
+    },
+    "head": {
+      "partialNewCollection": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "collection_mismatch",
+          "collection_mismatch"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 1,
+        "remainingFailedMembershipCount": 1,
+        "unexpectedFailedCollectionEvents": 1,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 1,
+          "memberships": 1,
+          "documents": 1,
+          "revisions": 1,
+          "events": 3,
+          "sequence": 3
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": {
+          "previewApplicable": false,
+          "previewDiagnostics": [
+            "duplicate_collection"
+          ],
+          "code": "exchange_empty_result",
+          "imported": [],
+          "stateUnchangedOnFailure": true
+        }
+      },
+      "boundCollectionFailure": {
+        "previewApplicable": true,
+        "previewNoMutation": true,
+        "predictedKeys": [
+          "c"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "rejectionCodes": [
+          "revision_conflict",
+          "revision_conflict"
+        ],
+        "receiptKeys": [
+          "c"
+        ],
+        "receiptCollectionKeys": [
+          "stable"
+        ],
+        "remainingFailedCollectionCount": 0,
+        "remainingFailedMembershipCount": 0,
+        "unexpectedFailedCollectionEvents": 0,
+        "retainedNewDocumentTitles": [
+          "C"
+        ],
+        "oldHistoryLength": 1,
+        "deltas": {
+          "collections": 0,
+          "memberships": 0,
+          "documents": 1,
+          "revisions": 1,
+          "events": 2,
+          "sequence": 2
+        },
+        "replayed": true,
+        "replayUnchanged": true,
+        "retry": null
+      },
+      "atomicFailure": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b",
+          "c"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "allFailedPartial": {
+        "previewNoMutation": true,
+        "previewApplicable": false,
+        "predictedKeys": [],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "diagnostics": [
+          "collection_mismatch"
+        ],
+        "code": "exchange_empty_result",
+        "stateUnchanged": true,
+        "receiptCount": 0
+      },
+      "orderedSuccess": {
+        "previewNoMutation": true,
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "events": [
+          {
+            "action": "collection.created",
+            "sequence": 1,
+            "target": "collection_0001"
+          },
+          {
+            "action": "document.created",
+            "sequence": 2,
+            "target": "document_0001"
+          },
+          {
+            "action": "collection.created",
+            "sequence": 3,
+            "target": "collection_0002"
+          },
+          {
+            "action": "document.created",
+            "sequence": 4,
+            "target": "document_0002"
+          },
+          {
+            "action": "exchange.imported",
+            "sequence": 5,
+            "target": "exchange_0001"
+          }
+        ],
+        "documentSequences": [
+          2,
+          4
+        ],
+        "revisionSequences": [
+          2,
+          4
+        ],
+        "bindings": {
+          "x": "collection_0001",
+          "y": "collection_0002"
+        },
+        "firstBody": "[B](doc:document_0002)",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "diagnosticPriority": {
+        "diagnostics": [
+          "revision_conflict"
+        ],
+        "rejectedKeys": [
+          "a",
+          "b"
+        ],
+        "code": "exchange_atomic_rejected",
+        "stateUnchanged": true
+      },
+      "synchronization": {
+        "previewNoMutation": true,
+        "counts": {
+          "unchanged": 1,
+          "create": 0,
+          "revise": 1,
+          "conflicting": 0,
+          "unmapped": 0
+        },
+        "predictedKeys": [
+          "b"
+        ],
+        "importedKeys": [
+          "b"
+        ],
+        "unchanged": [
+          "a"
+        ],
+        "firstHistoryLength": 1,
+        "secondHistoryLength": 2,
+        "secondBody": "Second B",
+        "replayed": true,
+        "replayUnchanged": true
+      },
+      "establishedCollections": {
+        "importedKeys": [
+          "a",
+          "b"
+        ],
+        "collectionCount": 1,
+        "membershipCount": 1,
+        "documentCount": 2,
+        "sameCollection": true,
+        "bindings": {
+          "manual": "collection_0001"
+        },
+        "events": [
+          "collection.created",
+          "document.created",
+          "document.created",
+          "exchange.imported"
+        ],
+        "documentSequences": [
+          2,
+          3
+        ],
+        "revisionSequences": [
+          2,
+          3
+        ]
+      }
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "component-checkpoint-after-lazy-preparation",
+          "severity": "medium",
+          "impact": "A partially rejected import persists an otherwise empty destination collection, its owner membership and audit event. That reserved destination name can prevent a corrected later import. Ordinary document writes within the rejected component still roll back.",
+          "locations": [
+            {
+              "side": "head",
+              "path": "src/exchange/import-plan.mjs",
+              "contains": "      const first = prepared.rows.next();"
+            },
+            {
+              "side": "head",
+              "path": "src/exchange/import-component.mjs",
+              "contains": "      yield { item, collectionId: resolver.resolve(item.collectionKey),"
+            }
+          ],
+          "witnesses": [
+            {
+              "input": {
+                "actor": "admin",
+                "policy": "partial",
+                "documents": {
+                  "a": "new destination; portable link to b",
+                  "b": "same destination; target is existing B in a different collection",
+                  "c": "independent document in a valid existing binding"
+                },
+                "destination": "new, unbound Imported manuals collection"
+              },
+              "expected": {
+                "imported": [
+                  "c"
+                ],
+                "rejected": [
+                  "a",
+                  "b"
+                ],
+                "error": "collection_mismatch",
+                "failedDestinationPersisted": false,
+                "failedMembershipPersisted": false,
+                "failedCreationEventPersisted": false
+              },
+              "actual": {
+                "imported": [
+                  "c"
+                ],
+                "rejected": [
+                  "a",
+                  "b"
+                ],
+                "error": "collection_mismatch",
+                "failedDestinationPersisted": true,
+                "failedMembershipPersisted": true,
+                "failedCreationEventPersisted": true
+              }
+            }
+          ],
+          "rubric": "One root defect advances a mutating lazy destination resolver before taking the component checkpoint. A reachable public partial import with a later failed component operation and an independent success can retain the earlier collection-side effects. A correct shorter witness is sufficient; the private names, second corrected-retry symptom, synchronization consumers, exact oracle path set or minimum read/hop count are never required. If a finding demonstrates only retained state, do not demand the later retry. If it alleges lost document rollback or a wholly failed/atomic public request committing dirty state, that claim needs independent proof because the outer transaction normally restores those requests. Static proof is admissible; tests need not be run. Other genuine introduced source defects require independent semantic review for every arm instead of automatic false-positive labeling."
+        }
+      ],
+      "evidence_obligations": []
+    }
+  ],
+  "interpretation": "Public checks retain their existing coverage. Private workflow samples establish the specified boundary distinction, successful sequencing, diagnostics, replay and sync behavior; passing samples are not a universal correctness proof. The clean review has no mandatory nonempty evidence/quote or file-reading quota. All supplied quotations and revision identities must nevertheless be exact and factual claims supported."
+}

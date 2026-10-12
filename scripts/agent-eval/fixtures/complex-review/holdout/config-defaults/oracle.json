@@ -1,0 +1,228 @@
+{
+  "domain_expected": {
+    "base": {
+      "2026-03-02 06:30-07:30": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ],
+      "2026-03-02 07:00-08:00": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ],
+      "2026-03-02 07:30-08:30": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ],
+      "2026-03-02 08:00-09:00": [
+        [
+          "labor",
+          1,
+          7200
+        ]
+      ],
+      "2026-03-02 16:00-17:00": [
+        [
+          "labor",
+          1,
+          7200
+        ]
+      ],
+      "2026-03-02 17:00-18:00": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ],
+      "2026-03-07 08:30-09:30": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ]
+    },
+    "head": {
+      "2026-03-02 06:30-07:30": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ],
+      "2026-03-02 07:00-08:00": [
+        [
+          "labor",
+          1,
+          7200
+        ]
+      ],
+      "2026-03-02 07:30-08:30": [
+        [
+          "labor",
+          1,
+          7200
+        ]
+      ],
+      "2026-03-02 08:00-09:00": [
+        [
+          "labor",
+          1,
+          7200
+        ]
+      ],
+      "2026-03-02 16:00-17:00": [
+        [
+          "labor",
+          1,
+          7200
+        ]
+      ],
+      "2026-03-02 17:00-18:00": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ],
+      "2026-03-07 08:30-09:30": [
+        [
+          "after-hours",
+          1,
+          10800
+        ]
+      ]
+    }
+  },
+  "steps": [
+    {
+      "conclusion": "issues",
+      "defects": [
+        {
+          "id": "after-hours-follows-scheduling-day",
+          "impact": "Labour that starts between 07:00 and 08:00 on working days is billed at the standard rate instead of the published after-hours rate, understating invoices in every region.",
+          "locations": [
+            {
+              "contains": "    dayStartMinute: 420,",
+              "path": "src/config/defaults.ts",
+              "side": "head"
+            },
+            {
+              "contains": "return !isWorkingTime(businessCalendar(ctx), at);",
+              "path": "src/billing/after-hours.ts",
+              "side": "head"
+            },
+            {
+              "contains": "const invoice = labour(MONDAY, '06:30', '07:30');",
+              "path": "tests/billing/labor.test.ts",
+              "side": "head"
+            }
+          ],
+          "rubric": "The earlier scheduling-day default reaches after-hours billing through the shared business calendar, although the published after-hours window is fixed and independent of rostering; the changed billing test only exercises a start before the new day start and so no longer covers the 07:00-08:00 window. A reachable witness in that window with the documented rule as expected and the causal path suffices; exact names are not required. Shift-based scheduling, slots, capacity, utilisation and SLA coverage are not defects. Extra genuine source defects require independent review for all arms.",
+          "severity": "medium within this application's invoicing",
+          "witnesses": [
+            {
+              "actual": {
+                "lines": [
+                  [
+                    "labor",
+                    1,
+                    7200
+                  ]
+                ]
+              },
+              "expected": {
+                "lines": [
+                  [
+                    "after-hours",
+                    1,
+                    10800
+                  ]
+                ]
+              },
+              "input": {
+                "date": "2026-03-02",
+                "labor": "07:30-08:30",
+                "region": "metro-east"
+              }
+            }
+          ]
+        }
+      ],
+      "evidence_obligations": [
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "3. **After-hours labour.** Labour that starts before 08:00 or at or after 17:00 on a working",
+                "path": "docs/billing.md",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Establish the fixed after-hours window from the business contract.",
+          "id": "published-after-hours-window"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "return !isWorkingTime(businessCalendar(ctx), at);",
+                "path": "src/billing/after-hours.ts",
+                "side": "head"
+              },
+              {
+                "contains": "    dayStartMinute: scheduling.dayStartMinute,",
+                "path": "src/context.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "if (isAfterHours(ctx, entry.start)) afterHoursMinutes += entry.minutes;",
+                "path": "src/billing/labor.ts",
+                "side": "head"
+              },
+              {
+                "contains": "    dayStartMinute: 420,",
+                "path": "src/config/defaults.ts",
+                "side": "head"
+              }
+            ]
+          ],
+          "description": "Connect the changed default to the after-hours decision of a real invoice.",
+          "id": "shared-calendar-consumer"
+        },
+        {
+          "alternatives": [
+            [
+              {
+                "contains": "const invoice = labour(MONDAY, '06:30', '07:30');",
+                "path": "tests/billing/labor.test.ts",
+                "side": "head"
+              }
+            ],
+            [
+              {
+                "contains": "const invoice = labour(MONDAY, '07:30', '08:30');",
+                "path": "tests/billing/labor.test.ts",
+                "side": "base"
+              }
+            ]
+          ],
+          "description": "Explain why the passing checks do not cover the affected window.",
+          "id": "masking-check"
+        }
+      ]
+    }
+  ]
+}
