@@ -6,6 +6,8 @@ within their section.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
 ### Added
 
 - Add an `unresolved dispatch:` line to the `review-context --brief` header for added methods
