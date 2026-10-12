@@ -6,6 +6,13 @@ within their section.
 
 ## [Unreleased]
 
+### Fixed
+
+- Parse newer PHP syntax with tree-sitter-php 0.25: files with a group `use` declaration behind
+  a leading backslash now report their imports and functions instead of parse errors, and
+  `clone` with arguments, partial application such as `$f(?, 2)` and asymmetric visibility such
+  as `private(set)` no longer count as parse errors. Analyzer version 27 refreshes cached facts.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added
