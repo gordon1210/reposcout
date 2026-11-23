@@ -6,6 +6,16 @@ within their section.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-23
+
+### Security
+
+- Update the HTTPS updater's certificate verifier and bundled trust store to reject distrusted
+  emSign intermediates. To upgrade from v0.6.0, follow the
+  [verified installation procedure](docs/getting-started.md#verified-installation).
+  See [RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382.html) and
+  [RUSTSEC-2026-0381](https://rustsec.org/advisories/RUSTSEC-2026-0381.html).
+
 ### Fixed
 
 - Parse newer PHP syntax with tree-sitter-php 0.25: files with a group `use` declaration behind
