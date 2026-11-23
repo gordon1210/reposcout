@@ -6,6 +6,11 @@ within their section.
 
 ## [Unreleased]
 
+### Fixed
+
+- Recognize PHP `match` expressions used as cast or `clone` operands. Analyzer version 28
+  refreshes cached parse-derived facts for the updated PHP grammar and Tree-sitter runtime.
+
 ## [0.6.1] - 2026-11-23
 
 ### Security

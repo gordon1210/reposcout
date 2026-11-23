@@ -146,6 +146,20 @@ $worker = function (bool $value): int {
 }
 
 #[test]
+fn php_match_expressions_are_cast_and_clone_operands() {
+    let src = r"<?php
+function sample(bool $flag): object {
+    $number = (int) match ($flag) { true => 1, default => 0 };
+    return clone match ($number) { 1 => new stdClass(), default => new stdClass() };
+}
+";
+    let complexity = analyze_first_class("x.php", FirstClass::Php, src);
+    assert_eq!(complexity.functions.len(), 1);
+    assert_eq!(complexity.functions[0].name, "sample");
+    assert_eq!(complexity.functions[0].cyclomatic, 3);
+}
+
+#[test]
 fn csharp_ast_complexity_counts_methods_local_functions_and_lambdas() {
     let src = r"
 class Service
