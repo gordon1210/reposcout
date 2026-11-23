@@ -116,8 +116,10 @@ pub(super) fn table(report: &ScanReport) -> Result<String> {
                 validation
                     .target
                     .as_deref()
-                    .map(|target| format!(": {}", terminal_text(target)))
-                    .unwrap_or_default(),
+                    .map_or_else(Default::default, |target| format!(
+                        ": {}",
+                        terminal_text(target)
+                    )),
                 validation.reason
             )
             .unwrap();
@@ -204,8 +206,10 @@ pub(super) fn markdown(report: &ScanReport) -> Result<String> {
                 validation
                     .target
                     .as_deref()
-                    .map(|target| format!(": {}", markdown_code_span(target)))
-                    .unwrap_or_default(),
+                    .map_or_else(Default::default, |target| format!(
+                        ": {}",
+                        markdown_code_span(target)
+                    )),
                 markdown_text(&validation.reason)
             )
             .unwrap();

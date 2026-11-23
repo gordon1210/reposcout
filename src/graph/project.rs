@@ -199,8 +199,7 @@ fn project_files(
             GraphFile {
                 path: path.clone(),
                 language: detect(Path::new(path))
-                    .map(|language| language.name.to_string())
-                    .unwrap_or_default(),
+                    .map_or_else(Default::default, |language| language.name.to_string()),
                 fan_in: dependents.len(),
                 fan_out: dependencies.len(),
                 dependencies,
@@ -404,8 +403,7 @@ pub(super) fn dominant_relation(relations: Option<&BTreeMap<&str, usize>>) -> St
                 .iter()
                 .max_by(|left, right| left.1.cmp(right.1).then_with(|| right.0.cmp(left.0)))
         })
-        .map(|(relation, _)| (*relation).to_string())
-        .unwrap_or_default()
+        .map_or_else(Default::default, |(relation, _)| (*relation).to_string())
 }
 
 pub(super) fn normalize_graph_focus(path: &Path, root: &Path) -> String {

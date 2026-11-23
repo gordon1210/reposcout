@@ -500,8 +500,7 @@ fn canonicalize_existing_parent(path: &Path) -> Result<PathBuf> {
     let mut anchor = parent;
     let mut suffix = path
         .file_name()
-        .map(|name| vec![name.to_os_string()])
-        .unwrap_or_default();
+        .map_or_else(Default::default, |name| vec![name.to_os_string()]);
     while !anchor.exists() {
         let name = anchor
             .file_name()

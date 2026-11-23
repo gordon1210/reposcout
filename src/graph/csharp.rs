@@ -65,8 +65,7 @@ pub(super) fn file_namespace(root: Node<'_>, content: &str) -> String {
         .find(|node| node.kind() == "file_scoped_namespace_declaration")
         .and_then(|node| node.child_by_field_name("name"))
         .and_then(|name| name.utf8_text(content.as_bytes()).ok())
-        .map(normalize)
-        .unwrap_or_default()
+        .map_or_else(Default::default, normalize)
 }
 
 pub(super) fn type_scope(node: Node<'_>, content: &str, file_namespace: &str) -> String {

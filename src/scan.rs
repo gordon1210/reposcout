@@ -429,14 +429,13 @@ fn prepare_scan(
     )?;
     let scoped_changed_files = changed_files
         .as_ref()
-        .map(|changed| {
+        .map_or_else(Default::default, |changed| {
             changed
                 .iter()
                 .filter(|path| path_is_within_target(path, &root, &discovered.target))
                 .cloned()
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let impact_changed_files =
         impact_changed_files(cfg, changed_files.as_ref(), &root, &discovered.target)?;
     let context_changes =
@@ -463,14 +462,13 @@ fn prepare_scan(
     };
     let all_report_paths = full_discovered
         .as_ref()
-        .map(|discovered| {
+        .map_or_else(Default::default, |discovered| {
             discovered
                 .files
                 .iter()
                 .map(|file| file.report_path.clone())
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let planning_discovered = needs_planning_universe.then_some(full_discovered).flatten();
     let planning_test_frameworks = match planning_discovered.as_ref() {
         Some(files) => detect_test_frameworks(files, cfg, &effective_exclusions, deadline)?,

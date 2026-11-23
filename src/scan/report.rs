@@ -547,8 +547,7 @@ fn build_change_summary(
     let graph_diagnostics = graphs
         .planning
         .as_ref()
-        .map(crate::graph::diagnostic_facts)
-        .unwrap_or_default();
+        .map_or_else(Default::default, crate::graph::diagnostic_facts);
     Some(crate::change_summary::build(
         crate::change_summary::Inputs {
             scope: diff_scope_name(cfg).unwrap_or("full"),

@@ -46,18 +46,15 @@ pub(crate) fn build(inputs: Inputs<'_>) -> ChangeSummary {
         .filter(|path| lang::detect(Path::new(path)).is_some_and(lang::LangInfo::is_first_class))
         .cloned()
         .collect::<HashSet<_>>();
-    let graph_covered: HashSet<String> = inputs
-        .impact
-        .map(|impact| impact.graph_changed_files.iter().cloned().collect())
-        .unwrap_or_default();
+    let graph_covered: HashSet<String> = inputs.impact.map_or_else(Default::default, |impact| {
+        impact.graph_changed_files.iter().cloned().collect()
+    });
     let direct = inputs
         .impact
-        .map(|impact| impact.direct_dependents.clone())
-        .unwrap_or_default();
-    let transitive = inputs
-        .impact
-        .map(|impact| impact.transitive_dependents.clone())
-        .unwrap_or_default();
+        .map_or_else(Default::default, |impact| impact.direct_dependents.clone());
+    let transitive = inputs.impact.map_or_else(Default::default, |impact| {
+        impact.transitive_dependents.clone()
+    });
     let direct_set = direct.iter().cloned().collect::<HashSet<_>>();
     let transitive_set = transitive.iter().cloned().collect::<HashSet<_>>();
 
@@ -511,8 +508,7 @@ fn classify_gaps(
 fn config_governs(config: &str, path: &str) -> bool {
     let parent = Path::new(config)
         .parent()
-        .map(normalize)
-        .unwrap_or_default();
+        .map_or_else(Default::default, normalize);
     parent.is_empty()
         || path == parent
         || path

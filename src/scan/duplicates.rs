@@ -149,8 +149,7 @@ pub(super) fn contributes_new_duplicate_lines(
                     &range,
                     selected
                         .get(&instance.path)
-                        .map(Vec::as_slice)
-                        .unwrap_or_default(),
+                        .map_or_else(Default::default, Vec::as_slice),
                 ) >= min_new_lines
             })
         })

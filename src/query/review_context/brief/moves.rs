@@ -834,8 +834,8 @@ mod tests {
         Sides {
             text: [base.map(|base| base.0), head.map(|head| head.0)],
             spans: [
-                base.map(|base| vec![base.1]).unwrap_or_default(),
-                head.map(|head| vec![head.1]).unwrap_or_default(),
+                base.map_or_else(Default::default, |base| vec![base.1]),
+                head.map_or_else(Default::default, |head| vec![head.1]),
             ],
             test: [false; 2],
         }

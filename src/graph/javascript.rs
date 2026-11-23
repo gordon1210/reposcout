@@ -532,23 +532,22 @@ pub(super) fn read_package_config(
     let has_exports = value.get("exports").is_some();
     let exports = value
         .get("exports")
-        .map(package_exports)
-        .unwrap_or_default();
+        .map_or_else(Default::default, package_exports);
     let has_imports = value.get("imports").is_some();
-    let imports = value
-        .get("imports")
-        .and_then(Value::as_object)
-        .map(|imports| {
-            imports
-                .iter()
-                .filter(|(pattern, _)| pattern.starts_with('#'))
-                .map(|(pattern, value)| PackageMapping {
-                    pattern: pattern.clone(),
-                    targets: package_targets(value),
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let imports =
+        value
+            .get("imports")
+            .and_then(Value::as_object)
+            .map_or_else(Default::default, |imports| {
+                imports
+                    .iter()
+                    .filter(|(pattern, _)| pattern.starts_with('#'))
+                    .map(|(pattern, value)| PackageMapping {
+                        pattern: pattern.clone(),
+                        targets: package_targets(value),
+                    })
+                    .collect::<Vec<_>>()
+            });
     let entrypoints = ["source", "module", "main", "types", "typings"]
         .into_iter()
         .filter_map(|field| value.get(field).and_then(Value::as_str))

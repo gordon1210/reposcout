@@ -242,9 +242,9 @@ fn planning_seeds(
         .filter(|file| matches_focus(&path_key(&file.path), &focus_keys))
         .map(|file| path_key(&file.path))
         .collect::<HashSet<_>>();
-    let changed_keys: HashSet<String> = changes
-        .map(|changes| changes.paths.iter().map(|path| path_key(path)).collect())
-        .unwrap_or_default();
+    let changed_keys: HashSet<String> = changes.map_or_else(Default::default, |changes| {
+        changes.paths.iter().map(|path| path_key(path)).collect()
+    });
     let changed_files = files
         .iter()
         .filter(|file| changed_keys.contains(&path_key(&file.path)))
@@ -858,9 +858,9 @@ pub(crate) fn build_for_target_with_diagnostics(
     let (outline_only, outline_stats) =
         attach_selection_outlines(&mut selection, files, outlines, cfg.max_complexity);
 
-    let mut changed_paths = changes
-        .map(|changes| changes.paths.iter().cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
+    let mut changed_paths = changes.map_or_else(Default::default, |changes| {
+        changes.paths.iter().cloned().collect::<Vec<_>>()
+    });
     changed_paths.sort();
 
     Ok(ContextPlan {
@@ -887,9 +887,7 @@ pub(crate) fn build_for_target_with_diagnostics(
         unmatched_focus: seeds.unmatched_focus,
         change_scope: changes.map(|changes| changes.scope.clone()),
         changed_files: changed_paths,
-        graph_languages: graph
-            .map(|graph| graph.languages.clone())
-            .unwrap_or_default(),
+        graph_languages: graph.map_or_else(Default::default, |graph| graph.languages.clone()),
         graph_unresolved_imports: graph.map_or(0, |graph| graph.unresolved_imports),
         graph_parse_errors: graph.map_or(0, |graph| graph.parse_errors),
         graph_config_errors: graph.map_or(0, |graph| graph.config_errors),

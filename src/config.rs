@@ -709,8 +709,7 @@ fn resolve_with_options(
                 ignored: false,
                 keys: file
                     .as_ref()
-                    .map(FileConfig::defined_keys)
-                    .unwrap_or_default(),
+                    .map_or_else(Default::default, FileConfig::defined_keys),
             };
             if let Some(file) = file {
                 config.apply_file(file);

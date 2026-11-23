@@ -135,8 +135,7 @@ impl ChurnCache {
         // larger on-disk artifact than the active profile permits.
         let views = load_json::<ViewsData>(&views_path, max_cache_bytes)
             .filter(|data| data.version == CACHE_VERSION)
-            .map(|data| data.views)
-            .unwrap_or_default();
+            .map_or_else(Default::default, |data| data.views);
         ChurnCache {
             enabled: true,
             events_path: base.join("events.json"),
@@ -215,13 +214,12 @@ impl ChurnCache {
             .filter(|data| {
                 data.version == CACHE_VERSION && data.history_state == self.history_state
             })
-            .map(|data| {
+            .map_or_else(Default::default, |data| {
                 data.events
                     .into_iter()
                     .map(|event| (event.oid.clone(), event))
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         self.events = Some(events);
     }
 
@@ -247,8 +245,9 @@ impl ChurnCache {
             let mut events = self
                 .events
                 .as_ref()
-                .map(|events| events.values().cloned().collect::<Vec<_>>())
-                .unwrap_or_default();
+                .map_or_else(Default::default, |events| {
+                    events.values().cloned().collect::<Vec<_>>()
+                });
             events.sort_by(|a, b| a.oid.cmp(&b.oid));
             let data = EventsData {
                 version: CACHE_VERSION.to_string(),

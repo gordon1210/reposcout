@@ -122,8 +122,7 @@ fn added<'a>(
         let base = change
             .base
             .as_ref()
-            .map(|base| methods(capture, 0, &base.path))
-            .unwrap_or_default();
+            .map_or_else(Default::default, |base| methods(capture, 0, &base.path));
         let head_path = head.path.to_string_lossy();
         for (name, lines) in methods(capture, 1, &head.path) {
             if !existing.contains(name) {

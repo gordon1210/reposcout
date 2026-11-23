@@ -757,8 +757,7 @@ fn symbol_scope(language: FirstClass, path: &str, namespace: &str) -> String {
         return normalize_name(language_family(language), namespace);
     }
     path.rsplit_once('/')
-        .map(|(parent, _)| parent.to_string())
-        .unwrap_or_default()
+        .map_or_else(Default::default, |(parent, _)| parent.to_string())
 }
 
 fn python_module(path: &str) -> String {

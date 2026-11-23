@@ -922,12 +922,11 @@ pub(super) fn group_sort_key(group: &CloneGroup) -> (String, usize, usize) {
     group
         .instances
         .first()
-        .map(|instance| {
+        .map_or_else(Default::default, |instance| {
             (
                 instance.path.to_string_lossy().into_owned(),
                 instance.start_byte,
                 instance.end_byte,
             )
         })
-        .unwrap_or_default()
 }

@@ -414,8 +414,7 @@ pub(super) fn production_duplication(
     let (duplicated_lines, lines) = source_files.fold((0usize, 0usize), |totals, file| {
         let regions = test_regions
             .get(&file.path)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
+            .map_or_else(Default::default, Vec::as_slice);
         let test_lines = regions
             .iter()
             .map(|range| {
