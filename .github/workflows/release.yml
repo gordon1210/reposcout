@@ -448,7 +448,6 @@ jobs:
           ANNOUNCEMENT_IS_PRERELEASE: ${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease }}
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
-          RELEASE_COMMIT: "${{ github.sha }}"
         shell: bash
         run: |
           # Write and read notes from a file to avoid quoting breaking things
@@ -458,9 +457,9 @@ jobs:
           if [[ "$ANNOUNCEMENT_IS_PRERELEASE" == "true" ]]; then
             prerelease_args+=(--prerelease)
           fi
+          # The existing tag fixes the source. An explicit target can require workflow write access.
           gh release create "$RELEASE_TAG" \
             --verify-tag \
-            --target "$RELEASE_COMMIT" \
             "${prerelease_args[@]}" \
             --title "$ANNOUNCEMENT_TITLE" \
             --notes-file "$RUNNER_TEMP/notes.txt" \

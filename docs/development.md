@@ -169,7 +169,9 @@ The Apple Silicon build uses `macos-15`; the GNU/Linux binary remains on `ubuntu
 its current glibc baseline. Platform-independent planning, installer, and publishing jobs use
 `ubuntu-24.04`. Release builds check binary linkage and run a tiny scan using the executable inside
 each packed archive. Publication also checks that both target archives, checksums, installer, SBOM,
-source archive, and final manifest are present. Internal Actions artifacts expire after seven days;
+source archive, and final manifest are present. The publish step uses the existing tag with
+`gh release create --verify-tag`. An explicit target can require workflow write access if workflow
+files on `main` change during the build. Internal Actions artifacts expire after seven days;
 published GitHub Release assets are separate.
 
 The release workflow is intentionally hand-hardened and `allow-dirty = ["ci"]` prevents
